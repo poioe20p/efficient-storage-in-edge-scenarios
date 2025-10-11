@@ -6,6 +6,7 @@
 #   ./cleanup.sh            # Clean everything (network + docker)
 #   ./cleanup.sh -n|--network  # Clean only network artifacts
 #   ./cleanup.sh -d|--docker   # Clean only Docker containers (and related)
+#   ./cleanup.sh --images      # Also remove project images tagged :latest
 #   NAT_IFACE=enp0s9 NAT_SUBNET=192.168.100.0/24 ./cleanup.sh   # Override defaults
 #
 # Notes:
@@ -38,6 +39,7 @@ Usage: $SCRIPT_NAME [options]
 Options:
 	-n, --network    Clean only network artifacts
 	-d, --docker     Clean only Docker resources (containers, dangling images, networks)
+	    --images     Remove project images tagged :latest (in addition to selected mode)
 	-h, --help       Show this help
 
 Environment:
@@ -187,13 +189,52 @@ docker_cleanup() {
 	log "✅ Docker cleanup complete."
 }
 
+# Remove project images tagged :latest
+images_cleanup() {
+	local DOCKER
+	DOCKER=$(docker_cmd)
+	if [[ -z "$DOCKER" ]]; then
+		warn "Docker not installed; skipping image removal."
+		return 0
+	fi
+	# Project image tags (must match build_images.sh)
+	local images=(
+		ovs-container
+		ubuntu-nat-router
+		ubuntu-host-1
+		ubuntu-host-2
+		ubuntu-mongodb
+	)
+	local removed=0
+	for img in "${images[@]}"; do
+		if ${DOCKER} images -q "${img}:latest" >/dev/null 2>&1; then
+			# images -q prints ID or nothing; capture and check non-empty
+			local id
+			id=$(${DOCKER} images -q "${img}:latest" | head -n 1)
+			if [[ -n "$id" ]]; then
+				${DOCKER} rmi -f "${img}:latest" >/dev/null 2>&1 || true
+				((++removed))
+				log "Removed image: ${img}:latest"
+			fi
+		fi
+	done
+	if [[ $removed -eq 0 ]]; then
+		log "No project :latest images found to remove."
+	else
+		log "✅ Removed ${removed} project image(s)."
+	fi
+}
+
 MODE="all"  # all | network | docker
+DO_IMAGES=false
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-n|--network)
 			MODE="network"; shift ;;
 		-d|--docker)
 			MODE="docker"; shift ;;
+		-i|--images)
+			DO_IMAGES=true; shift ;;
 		-h|--help)
 			print_usage; exit 0 ;;
 		*)
@@ -213,5 +254,10 @@ case "$MODE" in
 		docker_cleanup
 		;;
 esac
+
+# Optional images removal
+if [[ "$DO_IMAGES" == true ]]; then
+    images_cleanup
+fi
 
 log "🎯 Cleanup finished ($MODE)."

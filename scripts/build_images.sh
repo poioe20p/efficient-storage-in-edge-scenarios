@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Ensure we're running under bash even if invoked via sh
+if [ -z "${BASH_VERSION:-}" ]; then
+	exec bash "$0" "$@"
+fi
+
 # Robust, explicit Docker image builder with error handling.
 #
 # Usage:
@@ -78,7 +83,7 @@ docker_cmd() {
 		return
 	fi
 	# If user is in docker group, use docker directly
-	if command -v id >/dev/null 2>&1 && id -nG 2>/dev/null | grep -q '\bdocker\b'; then
+	if command -v id >/dev/null 2>&1 && id -nG 2>/dev/null | grep -qw docker; then
 		echo docker
 		return
 	fi
@@ -149,7 +154,8 @@ for entry in "${IMAGES[@]}"; do
 	IFS=":" read -r dir tag <<<"$entry"
 	if should_build "$dir" "$tag" "${SELECTION[@]}"; then
 		build_image "$dir" "$tag"
-		((build_count++))
+		# Use pre-increment to avoid set -e exiting when previous value is 0
+		((++build_count))
 	else
 		log "Skipping $dir ($tag)"
 	fi

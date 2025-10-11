@@ -4,8 +4,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install MongoDB (from MongoDB upstream APT repo)
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends \
-	     ca-certificates curl gnupg \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates curl gnupg iputils-ping net-tools \
 	&& rm -rf /var/lib/apt/lists/* \
 	# Add MongoDB GPG key and repo for Ubuntu 22.04 (jammy)
 	&& mkdir -p /etc/apt/keyrings \

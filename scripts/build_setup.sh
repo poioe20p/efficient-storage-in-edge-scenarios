@@ -99,16 +99,26 @@ docker run -dit --name container1 --network none ubuntu-host-1
 docker run -dit --name container2 --network none ubuntu-host-2
 docker run -dit --name nat-router --privileged --network none ubuntu-nat-router
 
-# Launch MongoDB with env-file (preferred)
-MONGO_ENV_FILE="../.env-mongo"
-if [[ ! -f "$MONGO_ENV_FILE" ]]; then
-  echo "Missing env file: $MONGO_ENV_FILE"; exit 1
+# Load MongoDB env-file if present (to reuse init creds)
+MONGO_ENV_FILE=${MONGO_ENV_FILE:-"../.env-mongo"}
+if [[ -f "$MONGO_ENV_FILE" ]]; then
+  echo "Loading MongoDB environment from: $MONGO_ENV_FILE"
+  # Export all simple KEY=VALUE entries from the env file
+  set -a
+  . "$MONGO_ENV_FILE"
+  set +a
+  
+  docker run -dit --name mongodb --network none \
+    --env-file "$MONGO_ENV_FILE" \
+    -v mongodb-data:/data/db \
+    ubuntu-mongodb
+else
+  echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
+  echo "MongoDB will start without authentication!"
+  docker run -dit --name mongodb --network none \
+    -v mongodb-data:/data/db \
+    ubuntu-mongodb
 fi
-
-docker run -dit --name mongodb --network none \
-  --env-file "$MONGO_ENV_FILE" \
-  -v mongodb-data:/data/db \
-  ubuntu-mongodb
 
 if [[ $? -ne 0 ]]; then
     echo "Failed to start application containers. Aborting."
@@ -148,7 +158,7 @@ sudo nsenter -t $PID1 -n ip link set eth0 up
 sudo nsenter -t $PID1 -n ip addr add 10.0.0.2/24 dev eth0
 sudo nsenter -t $PID1 -n ip route add default via 10.0.0.1  # router as gateway
 
-# Configure container2 (similar to container1)
+# Configure container2
 sudo nsenter -t $PID2 -n ip link set veth2-peer name eth0
 sudo nsenter -t $PID2 -n ip link set eth0 address 00:00:00:00:00:03   # static MAC
 sudo nsenter -t $PID2 -n ip link set eth0 up

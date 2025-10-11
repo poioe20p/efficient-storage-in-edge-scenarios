@@ -11,24 +11,103 @@
 
 set -euo pipefail
 
-# ---- Config (override via environment) ----
+# ---- Helpers ----
+log() {
+  echo "[test_db] $*"
+}
+
+# Warning logger (non-fatal diagnostics)
+warn() {
+  echo "[test_db][WARN] $*" 1>&2
+}
+
+# Helper: strip Windows CR from a variable by name (when env file has CRLF)
+strip_cr_var() {
+  local name="$1"
+  if [[ -n "${!name-}" ]]; then
+    # shellcheck disable=SC2086
+    printf -v "$name" '%s' "${!name//$'\r'/}"
+  fi
+}
+
+# Helper: URL-encode username/password for Mongo URI
+url_encode() {
+  local s="$1" out="" i c
+  for (( i=0; i<${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9._~-]) out+="$c" ;;
+      *) printf -v hex '%%%02X' "'${c}'"; out+="$hex" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Helper: mask password in URI for logs
+mask_url() {
+  sed -E 's#(mongodb://[^:/]+):([^@]*)@#\1:***@#' <<<"$1"
+}
+
+# Load MongoDB env-file if present (to reuse init creds)
+MONGO_ENV_FILE=${MONGO_ENV_FILE:-"../.env-mongo"}
+if [[ -f "$MONGO_ENV_FILE" ]]; then
+  # Export all simple KEY=VALUE entries from the env file
+  set -a
+  . "$MONGO_ENV_FILE"
+  set +a
+fi
+
+# ---- Config (override via environment where applicable) ----
 CONTAINER1=${CONTAINER1:-container1}
 CONTAINER2=${CONTAINER2:-container2}
 
 # If parts are provided, assemble MONGO_URL; else default to test DB
 MONGO_HOST=${MONGO_HOST:-10.0.0.4}
 MONGO_PORT=${MONGO_PORT:-27017}
-MONGO_DB=${MONGO_DB:-test}
-MONGO_USER=${MONGO_USER:-}
-MONGO_PASS=${MONGO_PASS:-}
+# Prefer DB from env init if present, otherwise default to 'test'
+MONGO_DB=${MONGO_DB:-${MONGO_INITDB_DATABASE:-test}}
+MONGO_USER=${MONGO_INITDB_USERNAME:-${MONGO_USER:-}}
+MONGO_PASS=${MONGO_INITDB_PASSWORD:-${MONGO_PASS:-}}
 
-if [[ -n "$MONGO_USER" && -n "$MONGO_PASS" ]]; then
-  MONGO_URL=${MONGO_URL:-"mongodb://${MONGO_USER}:${MONGO_PASS}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}?authSource=${MONGO_DB}"}
-else
-  MONGO_URL=${MONGO_URL:-"mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}"}
+# Sanitize possible CRLF artifacts from env/Windows
+for v in CONTAINER1 CONTAINER2 MONGO_HOST MONGO_PORT MONGO_DB MONGO_USER MONGO_PASS MONGO_AUTHSOURCE MONGO_URL; do
+  strip_cr_var "$v"
+done
+
+# Infer authSource if not provided:
+# - If using the root username from init, default to 'admin'
+# - Else prefer app database from init, else fall back to MONGO_DB
+if [[ -z "${MONGO_AUTHSOURCE:-}" ]]; then
+  if [[ -n "${MONGO_INITDB_ROOT_USERNAME:-}" && "$MONGO_USER" == "${MONGO_INITDB_ROOT_USERNAME}" ]]; then
+    MONGO_AUTHSOURCE=admin
+  elif [[ -n "${MONGO_INITDB_DATABASE:-}" ]]; then
+    MONGO_AUTHSOURCE="${MONGO_INITDB_DATABASE}"
+  else
+    MONGO_AUTHSOURCE="$MONGO_DB"
+  fi
 fi
 
-COLLECTION=${COLLECTION:-items}
+# Build URLs: if user provided MONGO_URL, use it for both ping and CRUD.
+# Otherwise, construct:
+#  - MONGO_URL_APP: targets the application DB (for inserts/reads)
+#  - MONGO_URL_PING: targets the authSource DB (for readiness ping)
+if [[ -n "${MONGO_URL:-}" ]]; then
+  MONGO_URL_APP="$MONGO_URL"
+  MONGO_URL_PING="$MONGO_URL"
+else
+  if [[ -n "$MONGO_USER" && -n "$MONGO_PASS" ]]; then
+      UENC="$(url_encode "$MONGO_USER")"
+      PENC="$(url_encode "$MONGO_PASS")"
+      MONGO_URL_APP="mongodb://${UENC}:${PENC}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}?authSource=${MONGO_AUTHSOURCE}"
+      MONGO_URL_PING="mongodb://${UENC}:${PENC}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_AUTHSOURCE}?authSource=${MONGO_AUTHSOURCE}"
+  else
+    MONGO_URL_APP="mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}"
+    MONGO_URL_PING="$MONGO_URL_APP"
+  fi
+fi
+
+# Collection in use (fixed for this setup)
+COLLECTION="items"
 # Readiness wait configuration
 MONGO_WAIT_TRIES=${MONGO_WAIT_TRIES:-20}
 MONGO_WAIT_SLEEP=${MONGO_WAIT_SLEEP:-1}
@@ -36,24 +115,21 @@ MONGO_WAIT_SLEEP=${MONGO_WAIT_SLEEP:-1}
 # If you use auth, set MONGO_URL to include creds, e.g.:
 # export MONGO_URL="mongodb://admin:secret@10.0.0.4:27017/test?authSource=admin"
 
-log() {
-  echo "[test_db] $*"
-}
-
 print_usage() {
   cat <<EOF
 Usage: $(basename "$0") [--help]
 
-Environment overrides:
+Environment:
   CONTAINER1         First host container name (default: ${CONTAINER1})
   CONTAINER2         Second host container name (default: ${CONTAINER2})
-  MONGO_URL          MongoDB connection string (default constructed from parts)
+  MONGO_URL          MongoDB connection string (constructed from parts if not set)
   MONGO_HOST         MongoDB host (default: ${MONGO_HOST})
   MONGO_PORT         MongoDB port (default: ${MONGO_PORT})
   MONGO_DB           MongoDB database name (default: ${MONGO_DB})
-  MONGO_USER         MongoDB user (optional)
-  MONGO_PASS         MongoDB password (optional)
-  COLLECTION         MongoDB collection (default: ${COLLECTION})
+  MONGO_AUTHSOURCE   Authentication DB (default: ${MONGO_AUTHSOURCE}; set to 'admin' if using root)
+  MONGO_USER         MongoDB user (required unless MONGO_URL includes credentials)
+  MONGO_PASS         MongoDB password (required unless MONGO_URL includes credentials)
+  COLLECTION         MongoDB collection (fixed: ${COLLECTION})
   MONGO_WAIT_TRIES   Max attempts to wait for Mongo (default: ${MONGO_WAIT_TRIES})
   MONGO_WAIT_SLEEP   Seconds between attempts (default: ${MONGO_WAIT_SLEEP})
 
@@ -77,6 +153,9 @@ require_container() {
     log "ERROR: container '$name' is not running."
     exit 1
   fi
+
+  # Strip Windows CR (\r) if the env file used CRLF line endings to avoid malformed URLs
+  # Removed CR stripping from here, handled by strip_cr_var
 }
 
 check_mongosh() {
@@ -92,12 +171,16 @@ wait_for_mongo() {
   log "Waiting for MongoDB to be reachable from ${name} (tries=${MONGO_WAIT_TRIES}, sleep=${MONGO_WAIT_SLEEP}s)..."
   local i
   for (( i=1; i<=MONGO_WAIT_TRIES; i++ )); do
-    if docker exec "$name" bash -lc "mongosh --quiet '${MONGO_URL}' --eval 'db.runCommand({ping:1})'" >/dev/null 2>&1; then
+  if docker exec "$name" bash -lc "mongosh --quiet '${MONGO_URL_PING}' --eval 'db.runCommand({ping:1})'" >/dev/null 2>"/tmp/mongosh_err_${name}.log"; then
       log "MongoDB reachable from ${name}."
       return 0
     fi
     sleep "${MONGO_WAIT_SLEEP}"
   done
+  # Show last mongosh error to help diagnose (auth vs network)
+  if [[ -f "/tmp/mongosh_err_${name}.log" ]]; then
+    warn "mongosh last error from ${name}: $(tail -n 1 "/tmp/mongosh_err_${name}.log" | tr -d '\r')"
+  fi
   log "ERROR: MongoDB not reachable from ${name} after ${MONGO_WAIT_TRIES} attempts."
   exit 1
 }
@@ -109,7 +192,7 @@ insert_item() {
   local js
   js="const r=Math.floor(Math.random()*1000000); db.${COLLECTION}.insertOne({from: '${from_label}', ts: new Date(), rand: r, note: 'hello from '+ '${from_label}'});"
   log "Inserting from ${from_label} via ${name}"
-  docker exec "$name" bash -lc "mongosh --quiet '${MONGO_URL}' --eval \"${js}\"" >/dev/null
+  docker exec "$name" bash -lc "mongosh --quiet '${MONGO_URL_APP}' --eval \"${js}\"" >/dev/null
 }
 
 read_all() {
@@ -118,21 +201,38 @@ read_all() {
   local js
   js="printjson(db.${COLLECTION}.find().toArray())"
   log "Reading all items via ${from_label} (${name})"
-  docker exec "$name" bash -lc "mongosh --quiet '${MONGO_URL}' --eval \"${js}\""
+  docker exec "$name" bash -lc "mongosh --quiet '${MONGO_URL_APP}' --eval \"${js}\""
 }
 
 main() {
   require_cmd docker
   log "Using containers: ${CONTAINER1}, ${CONTAINER2}"
-  log "Mongo URL: ${MONGO_URL}"
-  log "Collection: ${COLLECTION}"
+  log "Mongo URL (app): $(mask_url "${MONGO_URL_APP}")"
+  log "Mongo URL (ping): $(mask_url "${MONGO_URL_PING}")"
 
   require_container "$CONTAINER1"
   require_container "$CONTAINER2"
   check_mongosh "$CONTAINER1"
   check_mongosh "$CONTAINER2"
 
-  # Ensure MongoDB is ready before inserting
+  # Authentication required: ensure we have credentials either via parts or in MONGO_URL
+  if [[ -z "$MONGO_USER" || -z "$MONGO_PASS" ]]; then
+    if [[ "${MONGO_URL_APP}" != *"mongodb://"*"@"* ]]; then
+      log "ERROR: Authentication enabled. Set MONGO_INITDB_USERNAME/MONGO_INITDB_PASSWORD (or MONGO_USER/MONGO_PASS), or provide MONGO_URL with credentials."
+      exit 2
+    fi
+  fi
+
+  # Quick network diagnostic: can we ping the Mongo host IP?
+  if docker exec "$CONTAINER1" bash -lc "command -v ping >/dev/null 2>&1"; then
+    if ! docker exec "$CONTAINER1" bash -lc "ping -c 1 -W 1 ${MONGO_HOST} >/dev/null"; then
+      warn "Network ping to ${MONGO_HOST} failed from ${CONTAINER1}. Check OVS wiring and IP assignments."
+    else
+      log "Network ping to ${MONGO_HOST} OK from ${CONTAINER1}."
+    fi
+  fi
+
+  # Ensure MongoDB is ready before inserting (auth and service)
   wait_for_mongo "$CONTAINER1"
 
   # Step 1: Both insert an item
