@@ -70,3 +70,16 @@
 
 - **What it does:** Removes network artifacts, all containers, and the `mongodb`/`mongodb-data` volumes. Use other flags (`--network`, `--docker`, `--images`, `--volumes`) for targeted cleanup.
 - **Result:** Host returns to a clean state with docker resources and custom networks removed.
+
+## Monitoring MongoDB traffic (for OpenFlow policy design)
+
+- **Context:** The MongoDB container connects to the OVS bridge through interface `veth5` and uses IP `10.0.0.4` on the LAN segment. MongoDB listens on TCP port `27017`.
+- **Capture interface:** Select `veth5` in Wireshark (or run `sudo wireshark` on the host after provisioning). This interface mirrors traffic between the switch and the MongoDB container.
+- **Display filter:** To focus on all MongoDB traffic, use:
+
+  ```text
+  ip.addr == 10.0.0.4 && tcp.port == 27017
+  ```
+
+  Drop the `tcp.port` clause if you want every packet to or from the host regardless of protocol (`ip.addr == 10.0.0.4`).
+- **What to collect:** Note the source/destination IPs, TCP ports, and application flows observed while running `scripts/test_db.sh` or real workloads. This data feeds into OpenFlow rules (e.g., matching `ip`, `tcp`, and `port` fields) when you program the OVS controller to monitor or prioritize MongoDB traffic.
