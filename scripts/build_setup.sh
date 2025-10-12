@@ -100,12 +100,14 @@ docker run -dit --name container2 --network none ubuntu-host-2
 docker run -dit --name nat-router --privileged --network none ubuntu-nat-router
 
 # Load MongoDB env-file if present (to reuse init creds)
-MONGO_ENV_FILE=${MONGO_ENV_FILE:-"../.env-mongo"}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MONGO_ENV_FILE=${MONGO_ENV_FILE:-"${SCRIPT_DIR}/../.env-mongo"}
+echo "Using MongoDB env file: $MONGO_ENV_FILE"
 if [[ -f "$MONGO_ENV_FILE" ]]; then
   echo "Loading MongoDB environment from: $MONGO_ENV_FILE"
   # Export all simple KEY=VALUE entries from the env file
   set -a
-  . "$MONGO_ENV_FILE"
+  source "$MONGO_ENV_FILE"
   set +a
   
   docker run -dit --name mongodb --network none \

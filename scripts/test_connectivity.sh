@@ -7,7 +7,7 @@
 # Defaults reflect the setup used in this repo:
 #   host1 (container1) -> 10.0.0.2
 #   host2 (container2) -> 10.0.0.3
-#   mongodb            -> 10.0.0.5
+#   mongodb            -> 10.0.0.4
 #   gateway (router)   -> 10.0.0.1
 #
 # Usage:
@@ -36,7 +36,7 @@ Usage: $SCRIPT_NAME [--help]
 Runs connectivity checks from each container to the others, the gateway, and the internet.
 
 Defaults:
-	Containers: container1 (10.0.0.2), container2 (10.0.0.3), mongodb (10.0.0.5), gateway (10.0.0.1)
+	Containers: container1 (10.0.0.2), container2 (10.0.0.3), mongodb (10.0.0.4), gateway (10.0.0.1)
 
 Environment overrides:
 	CONTAINER1, CONTAINER2, MONGO
@@ -57,7 +57,7 @@ CONTAINER2=${CONTAINER2:-container2}
 MONGO=${MONGO:-mongodb}
 IP1=${IP1:-10.0.0.2}
 IP2=${IP2:-10.0.0.3}
-IP_MONGO=${IP_MONGO:-10.0.0.5}
+IP_MONGO=${IP_MONGO:-10.0.0.4}
 GW_IP=${GW_IP:-10.0.0.1}
 INTERNET_HOST=${INTERNET_HOST:-www.google.com}
 PING_COUNT=${PING_COUNT:-2}

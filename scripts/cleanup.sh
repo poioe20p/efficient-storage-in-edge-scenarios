@@ -40,6 +40,8 @@ Options:
 	-n, --network    Clean only network artifacts
 	-d, --docker     Clean only Docker resources (containers, dangling images, networks)
 	    --images     Remove project images tagged :latest (in addition to selected mode)
+	-v, --volumes    Remove MongoDB volumes (mongodb, mongodb-data)
+	-r, --reset      Remove all containers and prune MongoDB volumes (mongodb, mongodb-data)
 	-h, --help       Show this help
 
 Environment:
@@ -225,8 +227,79 @@ images_cleanup() {
 	fi
 }
 
+volumes_cleanup() {
+	log "🧹 Removing MongoDB volumes"
+	local DOCKER
+	DOCKER=$(docker_cmd)
+	if [[ -z "$DOCKER" ]]; then
+		warn "Docker not installed; skipping volume removal."
+		return 0
+	fi
+	local volumes=(mongodb mongodb-data)
+	local removed=0
+	for vol in "${volumes[@]}"; do
+		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
+			if ${DOCKER} volume rm "$vol" >/dev/null 2>&1; then
+				log "Removed volume: $vol"
+				((removed++))
+			else
+				warn "Failed to remove volume: $vol"
+			fi
+		else
+			log "Volume not present, skipping: $vol"
+		fi
+	done
+	if [[ $removed -gt 0 ]]; then
+		log "✅ Removed ${removed} volume(s)."
+	fi
+}
+
+reset_cleanup() {
+	log "♻️ Performing full reset (containers + MongoDB volumes)"
+	local DOCKER
+	DOCKER=$(docker_cmd)
+	if [[ -z "$DOCKER" ]]; then
+		warn "Docker not installed; skipping reset."
+		return 0
+	fi
+
+	local containers
+	if containers=$(${DOCKER} ps -aq 2>/dev/null); then
+		if [[ -n "$containers" ]]; then
+			${DOCKER} container rm -f $containers >/dev/null 2>&1 || warn "Failed to remove one or more containers"
+		else
+			log "No containers to remove."
+		fi
+	else
+		warn "Failed to list containers for reset."
+	fi
+
+	# Ensure named MongoDB containers are removed even if stopped
+	${DOCKER} container rm -f mongodb mongodb-data >/dev/null 2>&1 || true
+
+	local volumes=(mongodb mongodb-data)
+	local removed=0
+	for vol in "${volumes[@]}"; do
+		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
+			if ${DOCKER} volume rm -f "$vol" >/dev/null 2>&1; then
+				log "Removed volume: $vol"
+				((removed++))
+			else
+				warn "Failed to remove volume: $vol"
+			fi
+		else
+			log "Volume not present, skipping: $vol"
+		fi
+	done
+	if [[ $removed -gt 0 ]]; then
+		log "✅ Reset removed ${removed} MongoDB volume(s)."
+	fi
+}
+
 MODE="all"  # all | network | docker
 DO_IMAGES=false
+DO_VOLUMES=false
+DO_RESET=false
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-n|--network)
@@ -235,6 +308,10 @@ while [[ $# -gt 0 ]]; do
 			MODE="docker"; shift ;;
 		-i|--images)
 			DO_IMAGES=true; shift ;;
+		-v|--volumes)
+			DO_VOLUMES=true; shift ;;
+		-r|--reset)
+			DO_RESET=true; shift ;;
 		-h|--help)
 			print_usage; exit 0 ;;
 		*)
@@ -258,6 +335,16 @@ esac
 # Optional images removal
 if [[ "$DO_IMAGES" == true ]]; then
     images_cleanup
+fi
+
+# Optional volume removal
+if [[ "$DO_VOLUMES" == true ]]; then
+	volumes_cleanup
+fi
+
+# Reset option (containers + MongoDB volumes)
+if [[ "$DO_RESET" == true ]]; then
+	reset_cleanup
 fi
 
 log "🎯 Cleanup finished ($MODE)."

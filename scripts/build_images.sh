@@ -61,6 +61,20 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
 DOCKER_DIR="${REPO_ROOT}/docker"
+MONGO_ENV_FILE="${REPO_ROOT}/.env-mongo"
+
+# Export variables in MONGO_ENV_FILE for use as build args if needed
+if [[ -f "$MONGO_ENV_FILE" ]]; then
+	log "Loading MongoDB environment from: $MONGO_ENV_FILE"
+	# Export all simple KEY=VALUE entries from the env file
+	set -a
+	source "$MONGO_ENV_FILE"
+	set +a
+else
+	log "MongoDB env file not found at: $MONGO_ENV_FILE"
+	log "MongoDB image will build, but container may start without authentication!"
+fi
+
 
 [[ -d "$DOCKER_DIR" ]] || {
 	error "Docker directory not found at: $DOCKER_DIR"

@@ -49,7 +49,8 @@ mask_url() {
 }
 
 # Load MongoDB env-file if present (to reuse init creds)
-MONGO_ENV_FILE=${MONGO_ENV_FILE:-"../.env-mongo"}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MONGO_ENV_FILE=${MONGO_ENV_FILE:-"${SCRIPT_DIR}/../.env-mongo"}
 if [[ -f "$MONGO_ENV_FILE" ]]; then
   # Export all simple KEY=VALUE entries from the env file
   set -a
@@ -65,12 +66,14 @@ CONTAINER2=${CONTAINER2:-container2}
 MONGO_HOST=${MONGO_HOST:-10.0.0.4}
 MONGO_PORT=${MONGO_PORT:-27017}
 # Prefer DB from env init if present, otherwise default to 'test'
-MONGO_DB=${MONGO_DB:-${MONGO_INITDB_DATABASE:-test}}
-MONGO_USER=${MONGO_INITDB_USERNAME:-${MONGO_USER:-}}
-MONGO_PASS=${MONGO_INITDB_PASSWORD:-${MONGO_PASS:-}}
+MONGO_DB=${MONGO_DB:-${MONGO_DATABASE:-test}}
+MONGO_USER=${MONGO_APP_USERNAME:-${MONGO_USER:-}}
+MONGO_PASS=${MONGO_APP_PASSWORD:-${MONGO_PASS:-}}
+MONGO_ADMIN_USER=${MONGO_ADMIN_USERNAME:-}
+MONGO_DATABASE_VALUE=${MONGO_DATABASE:-}
 
 # Sanitize possible CRLF artifacts from env/Windows
-for v in CONTAINER1 CONTAINER2 MONGO_HOST MONGO_PORT MONGO_DB MONGO_USER MONGO_PASS MONGO_AUTHSOURCE MONGO_URL; do
+for v in CONTAINER1 CONTAINER2 MONGO_HOST MONGO_PORT MONGO_DB MONGO_USER MONGO_PASS MONGO_AUTHSOURCE MONGO_URL MONGO_ADMIN_USER MONGO_DATABASE_VALUE; do
   strip_cr_var "$v"
 done
 
@@ -78,10 +81,10 @@ done
 # - If using the root username from init, default to 'admin'
 # - Else prefer app database from init, else fall back to MONGO_DB
 if [[ -z "${MONGO_AUTHSOURCE:-}" ]]; then
-  if [[ -n "${MONGO_INITDB_ROOT_USERNAME:-}" && "$MONGO_USER" == "${MONGO_INITDB_ROOT_USERNAME}" ]]; then
+  if [[ -n "$MONGO_ADMIN_USER" && "$MONGO_USER" == "$MONGO_ADMIN_USER" ]]; then
     MONGO_AUTHSOURCE=admin
-  elif [[ -n "${MONGO_INITDB_DATABASE:-}" ]]; then
-    MONGO_AUTHSOURCE="${MONGO_INITDB_DATABASE}"
+  elif [[ -n "$MONGO_DATABASE_VALUE" ]]; then
+    MONGO_AUTHSOURCE="$MONGO_DATABASE_VALUE"
   else
     MONGO_AUTHSOURCE="$MONGO_DB"
   fi
@@ -129,6 +132,9 @@ Environment:
   MONGO_AUTHSOURCE   Authentication DB (default: ${MONGO_AUTHSOURCE}; set to 'admin' if using root)
   MONGO_USER         MongoDB user (required unless MONGO_URL includes credentials)
   MONGO_PASS         MongoDB password (required unless MONGO_URL includes credentials)
+  MONGO_APP_USERNAME Same as MONGO_USER but picked up automatically when set
+  MONGO_APP_PASSWORD Same as MONGO_PASS but picked up automatically when set
+  MONGO_ADMIN_USERNAME Root user name (used to infer authSource=admin when matching MONGO_USER)
   COLLECTION         MongoDB collection (fixed: ${COLLECTION})
   MONGO_WAIT_TRIES   Max attempts to wait for Mongo (default: ${MONGO_WAIT_TRIES})
   MONGO_WAIT_SLEEP   Seconds between attempts (default: ${MONGO_WAIT_SLEEP})
@@ -218,7 +224,7 @@ main() {
   # Authentication required: ensure we have credentials either via parts or in MONGO_URL
   if [[ -z "$MONGO_USER" || -z "$MONGO_PASS" ]]; then
     if [[ "${MONGO_URL_APP}" != *"mongodb://"*"@"* ]]; then
-      log "ERROR: Authentication enabled. Set MONGO_INITDB_USERNAME/MONGO_INITDB_PASSWORD (or MONGO_USER/MONGO_PASS), or provide MONGO_URL with credentials."
+      log "ERROR: Authentication enabled. Set MONGO_APP_USERNAME/MONGO_APP_PASSWORD (or MONGO_USER/MONGO_PASS), or provide MONGO_URL with credentials."
       exit 2
     fi
   fi
