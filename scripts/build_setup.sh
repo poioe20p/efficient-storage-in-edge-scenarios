@@ -227,13 +227,27 @@ echo "Starting Ryu controller and connecting OVS bridge to it..."
 docker rm -f ryu 2>/dev/null
 
 # Run Ryu controller (using host networking so OVS can reach it at 127.0.0.1:6633)
-docker run -dit --name ryu --network host osrg/ryu ryu-manager ryu.app.simple_switch_13
+# docker run -dit --name ryu --network host osrg/ryu ryu-manager ryu.app.simple_switch_13
+cd ..
+echo "Current directory for Ryu controller: $PWD"
 # docker run -dit --name ryu --network host \
 #   -v "$PWD":/workspace \
 #   -w /workspace \
 #   -e PYTHONPATH=/workspace \
 #   osrg/ryu \
-#   ryu-manager --verbose ryu_controller.ryu_learn_and_log
+#   ryu-manager --verbose sf_efficient_storage_in_edge_scenarios/ryu_controller.ryu_learn_and_log
+# docker run -dit --name ryu --network host \
+#   -v "$PWD":/workspace \
+#   -w /workspace \
+#   -e PYTHONPATH=/workspace \
+#   ryu-local \
+#   --verbose ryu_controller.ryu_learn_and_log
+
+docker run -dit --name ryu --network host \
+  -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+  ryu-local bash -c "pip install -e /workspace/ryu && ryu-manager --verbose ryu_controller.ryu_learn_and_log"
+
+cd scripts
 
 # Point OVS bridge to Ryu controller
 docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633

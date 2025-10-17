@@ -1,28 +1,40 @@
-from __future__ import annotations
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
-from urllib.parse import quote_plus
+"""Configuration helpers for MongoDB credentials."""
+
+import os
+from collections import namedtuple
+
 from dotenv import dotenv_values
+
+try:
+	from urllib.parse import quote_plus
+except ImportError:  # Python 2 fallback (osrg/ryu container)
+	from urllib import quote_plus
+
 
 ENV_FILE_NAME = ".env-mongo"
 
+MongoConfigTuple = namedtuple(
+	"MongoConfigTuple",
+	[
+		"admin_username",
+		"admin_password",
+		"database",
+		"app_username",
+		"app_password",
+	],
+)
 
-@dataclass(frozen=True)
-class MongoConfig:
+
+class MongoConfig(MongoConfigTuple):
 	"""MongoDB-related configuration loaded from ``.env-mongo``."""
 
-	admin_username: str
-	admin_password: str
-	database: str
-	app_username: str
-	app_password: str
+	__slots__ = ()
 
 	@classmethod
-	def load(cls, env_path: Optional[str] = None) -> "MongoConfig":
+	def load(cls, env_path=None):
 		"""Load credentials from the supplied env file or the default one."""
 
-		path = Path(env_path) if env_path else Path(__file__).with_name(ENV_FILE_NAME)
+		path = env_path or os.path.join(os.path.dirname(__file__), ENV_FILE_NAME)
 		values = dotenv_values(path)
 		required = (
 			"MONGO_ADMIN_USERNAME",
@@ -33,30 +45,30 @@ class MongoConfig:
 		)
 		missing = [key for key in required if not values.get(key)]
 		if missing:
-			raise ValueError(f"Missing MongoDB env vars: {', '.join(missing)}")
+			raise ValueError("Missing MongoDB env vars: %s" % ", ".join(missing))
 
 		return cls(
-			admin_username=str(values["MONGO_ADMIN_USERNAME"]),
-			admin_password=str(values["MONGO_ADMIN_PASSWORD"]),
-			database=str(values["MONGO_DATABASE"]),
-			app_username=str(values["MONGO_APP_USERNAME"]),
-			app_password=str(values["MONGO_APP_PASSWORD"]),
+			values["MONGO_ADMIN_USERNAME"],
+			values["MONGO_ADMIN_PASSWORD"],
+			values["MONGO_DATABASE"],
+			values["MONGO_APP_USERNAME"],
+			values["MONGO_APP_PASSWORD"],
 		)
 
-	def app_uri(self, host: str = "localhost", port: int = 27017, auth_db: Optional[str] = None) -> str:
+	def app_uri(self, host="localhost", port=27017, auth_db=None):
 		"""Build a connection string for the application MongoDB user."""
 
 		username = quote_plus(self.app_username)
 		password = quote_plus(self.app_password)
 		database = quote_plus(auth_db or self.database)
-		return f"mongodb://{username}:{password}@{host}:{port}/{database}"
+		return "mongodb://%s:%s@%s:%s/%s" % (username, password, host, port, database)
 
-	def admin_uri(self, host: str = "localhost", port: int = 27017) -> str:
+	def admin_uri(self, host="localhost", port=27017):
 		"""Build a connection string for the admin MongoDB user."""
 
 		username = quote_plus(self.admin_username)
 		password = quote_plus(self.admin_password)
-		return f"mongodb://{username}:{password}@{host}:{port}/admin"
+		return "mongodb://%s:%s@%s:%s/admin" % (username, password, host, port)
 
 
 __all__ = ["MongoConfig"]

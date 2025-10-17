@@ -125,6 +125,7 @@ IMAGES=(
 	"ubuntu-host-1:ubuntu-host-1"
 	"ubuntu-host-2:ubuntu-host-2"
 	"ubuntu-mongodb:ubuntu-mongodb"
+	"Ryu:ryu-controller"
 )
 
 ### Build helper
@@ -137,9 +138,15 @@ build_image() {
 	[[ -d "$ctx" ]] || { error "Build directory not found: $ctx"; return 2; }
 	[[ -f "$dockerfile" ]] || { error "Dockerfile not found: $dockerfile"; return 2; }
 
+	if [[ "$dir" == "Ryu" ]]; then
+		log "Using repository root as build context for Ryu so vendored sources are available."
+		ctx="$REPO_ROOT"
+		dockerfile="$DOCKER_DIR/$dir/Dockerfile"
+	fi
+
 	log "Building image '$tag' from '$dir'..."
 	# You can add build args here if needed, e.g., --pull or --no-cache via env flags
-	${DOCKER} build -t "$tag" "$ctx"
+	${DOCKER} build -t "$tag" -f "$dockerfile" "$ctx"
 	log "Image built: $tag"
 }
 

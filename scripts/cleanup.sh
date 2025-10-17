@@ -6,6 +6,7 @@
 #   ./cleanup.sh            # Clean everything (network + docker)
 #   ./cleanup.sh -n|--network  # Clean only network artifacts
 #   ./cleanup.sh -d|--docker   # Clean only Docker containers (and related)
+#   ./cleanup.sh -s|--stop-containers  # Stop running containers (no removal)
 #   ./cleanup.sh --images      # Also remove project images tagged :latest
 #   NAT_IFACE=enp0s9 NAT_SUBNET=192.168.100.0/24 ./cleanup.sh   # Override defaults
 #
@@ -39,6 +40,7 @@ Usage: $SCRIPT_NAME [options]
 Options:
 	-n, --network    Clean only network artifacts
 	-d, --docker     Clean only Docker resources (containers, dangling images, networks)
+	-s, --stop-containers  Stop all running containers (no removal)
 	    --images     Remove project images tagged :latest (in addition to selected mode)
 	-v, --volumes    Remove MongoDB volumes (mongodb, mongodb-data)
 	-r, --reset      Remove all containers and prune MongoDB volumes (mongodb, mongodb-data)
@@ -191,6 +193,29 @@ docker_cleanup() {
 	log "✅ Docker cleanup complete."
 }
 
+# Stop running containers without removing them
+stop_containers() {
+	local DOCKER
+	DOCKER=$(docker_cmd)
+	if [[ -z "$DOCKER" ]]; then
+		warn "Docker not installed; skipping container stop."
+		return 0
+	fi
+
+	log "⏸️ Stopping running containers"
+	local running
+	if running=$(${DOCKER} ps -q 2>/dev/null); then
+		if [[ -n "$running" ]]; then
+			${DOCKER} stop $running >/dev/null 2>&1 || warn "Failed to stop one or more containers"
+			log "Stopped containers: $(echo "$running" | wc -w)"
+		else
+			log "No running containers to stop."
+		fi
+	else
+		warn "Failed to list running containers."
+	fi
+}
+
 # Remove project images tagged :latest
 images_cleanup() {
 	local DOCKER
@@ -206,6 +231,8 @@ images_cleanup() {
 		ubuntu-host-1
 		ubuntu-host-2
 		ubuntu-mongodb
+		ryu-controller
+		ryu-local
 	)
 	local removed=0
 	for img in "${images[@]}"; do
@@ -300,12 +327,16 @@ MODE="all"  # all | network | docker
 DO_IMAGES=false
 DO_VOLUMES=false
 DO_RESET=false
+DO_STOP_CONTAINERS=false
+MODE_SELECTED=false
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-n|--network)
-			MODE="network"; shift ;;
+			MODE="network"; MODE_SELECTED=true; shift ;;
 		-d|--docker)
-			MODE="docker"; shift ;;
+			MODE="docker"; MODE_SELECTED=true; shift ;;
+		-s|--stop-containers)
+			DO_STOP_CONTAINERS=true; shift ;;
 		-i|--images)
 			DO_IMAGES=true; shift ;;
 		-v|--volumes)
@@ -319,7 +350,13 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
+if [[ "$DO_STOP_CONTAINERS" == true && "$MODE_SELECTED" == false && "$MODE" == "all" ]]; then
+	MODE="none"
+fi
+
 case "$MODE" in
+	none)
+		;;
 	all)
 		network_cleanup
 		docker_cleanup
@@ -331,6 +368,11 @@ case "$MODE" in
 		docker_cleanup
 		;;
 esac
+
+# Optional stop-only handling (can be combined with other flags)
+if [[ "$DO_STOP_CONTAINERS" == true ]]; then
+	stop_containers
+fi
 
 # Optional images removal
 if [[ "$DO_IMAGES" == true ]]; then
