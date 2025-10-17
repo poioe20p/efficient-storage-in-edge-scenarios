@@ -206,6 +206,14 @@ echo "Configuring host side of WAN link..."
 sudo ip link set veth4 up
 sudo ip addr add 192.168.100.1/24 dev veth4  # host acts as router’s gateway
 
+# Ensure the host can reach the lab subnet (10.0.0.0/24) for tools like MongoDB Compass
+echo "Ensuring host route to 10.0.0.0/24 via 192.168.100.2..."
+if ! sudo ip route replace 10.0.0.0/24 via 192.168.100.2 dev veth4 >/dev/null 2>&1; then
+  echo "WARNING: failed to program route to 10.0.0.0/24; check host networking." >&2
+else
+  ip route show 10.0.0.0/24
+fi
+
 # Enable IP forwarding + NAT on host for Internet access
 # You need to adjust below enp0s3 to the network interface VM is using
 sudo sysctl -w net.ipv4.ip_forward=1
@@ -220,6 +228,12 @@ docker rm -f ryu 2>/dev/null
 
 # Run Ryu controller (using host networking so OVS can reach it at 127.0.0.1:6633)
 docker run -dit --name ryu --network host osrg/ryu ryu-manager ryu.app.simple_switch_13
+# docker run -dit --name ryu --network host \
+#   -v "$PWD":/workspace \
+#   -w /workspace \
+#   -e PYTHONPATH=/workspace \
+#   osrg/ryu \
+#   ryu-manager --verbose ryu_controller.ryu_learn_and_log
 
 # Point OVS bridge to Ryu controller
 docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633
