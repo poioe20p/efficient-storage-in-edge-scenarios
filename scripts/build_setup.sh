@@ -1,6 +1,40 @@
 #!/bin/bash
 
 # ==============================
+# Controller selection (default: os-ken)
+# ==============================
+CONTROLLER_CHOICE_RAW=${1:-os-ken}
+CONTROLLER_CHOICE=${CONTROLLER_CHOICE_RAW,,}
+CONTROLLER_IMAGE=""
+CONTROLLER_CONTAINER=""
+CONTROLLER_APP=""
+CONTROLLER_PORT=6633
+CONTROLLER_FRIENDLY=""
+
+case "$CONTROLLER_CHOICE" in
+  os-ken|osken)
+    CONTROLLER_IMAGE="osken-controller"
+    CONTROLLER_CONTAINER="osken"
+    CONTROLLER_APP="sdn_controller.osken_learn_and_log"
+    CONTROLLER_FRIENDLY="OS-Ken"
+    ;;
+  ryu)
+    CONTROLLER_IMAGE="ryu-controller"
+    CONTROLLER_CONTAINER="ryu"
+    CONTROLLER_APP="sdn_controller.ryu_learn_and_log"
+    CONTROLLER_FRIENDLY="Ryu"
+    ;;
+  *)
+    echo "Unsupported controller '$CONTROLLER_CHOICE_RAW'. Choose 'os-ken' or 'ryu'." >&2
+    exit 1
+    ;;
+esac
+
+CONTROLLER_ARGS=(--verbose "$CONTROLLER_APP")
+
+echo "Selected SDN controller: $CONTROLLER_FRIENDLY (image: $CONTROLLER_IMAGE, container: $CONTROLLER_CONTAINER)"
+
+# ==============================
 # 0 - Cleanup old runs
 # ==============================
 echo "Cleaning up network and Docker resources..."
@@ -28,7 +62,7 @@ fi
 # --privileged: needed to run OVS
 # --cap-add=NET_ADMIN: needed to create/manage network interfaces
 # --cap-add=SYS_MODULE: needed to load kernel modules (OVS datapath)
-# --network host: use host network (needed for Ryu controller communication)
+# --network host: use host network (needed for SDN controller communication)
 # -v /lib/modules:/lib/modules: share host kernel modules with container
 echo "Starting OVS container..."
 docker run -dit --name ovs --privileged \
@@ -220,25 +254,31 @@ sudo sysctl -w net.ipv4.ip_forward=1
 sudo iptables -t nat -A POSTROUTING -s 192.168.100.0/24 -o enp0s3 -j MASQUERADE
 
 # ==============================
-# Step 10: Start Ryu Controller
-echo "Starting Ryu controller and connecting OVS bridge to it..."
+# Step 10: Start SDN Controller
+echo "Starting $CONTROLLER_FRIENDLY controller and connecting OVS bridge to it..."
 # ==============================
-# Remove old OS-Ken container if it exists
-docker rm -f osken 2>/dev/null
+# Remove existing controller container if it exists
+docker rm -f "$CONTROLLER_CONTAINER" 2>/dev/null
 
-# Run OS-Ken controller (using host networking so OVS can reach it at 127.0.0.1:6633)
+# Run selected controller (using host networking so OVS can reach it at 127.0.0.1:6633)
 cd ..
-echo "Current directory for sdn controller: $PWD"
+echo "Current directory for $CONTROLLER_FRIENDLY controller: $PWD"
 
-docker run -dit --name osken --network host \
+docker run -dit --name "$CONTROLLER_CONTAINER" --network host \
   -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-  osken-controller \
-  --verbose sdn_controller.osken_learn_and_log
+  "$CONTROLLER_IMAGE" \
+  "${CONTROLLER_ARGS[@]}"
+
+# docker run -dit --name ryu --network host osrg/ryu ryu-manager ryu.app.simple_switch_13
 
 cd scripts
 
-# Point OVS bridge to Ryu controller
-docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633
+# Point OVS bridge to SDN controller
+# Use 127.0.0.1 as both OVS and the controller are on the host network namespace
+# Open TCP socket at CONTROLLER_PORT and keepalive for switch to controller connection
+# Once the controller is started the controller connection will be established automatically because
+# the switch is already running and the controller is reachable
+docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:$CONTROLLER_PORT
 
 # Show OVS status
 docker exec ovs ovs-vsctl show

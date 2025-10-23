@@ -1,20 +1,14 @@
 FROM python:3.9-slim
 
-ENV PYTHONUNBUFFERED=1 \
-	PIP_NO_CACHE_DIR=1
-
-# # Eventlet's greendns shim in upstream Ryu cannot handle PyMongo's
-# # getaddrinfo(type=...) call, so disable it to avoid heartbeat failures.
-ENV EVENTLET_NO_GREENDNS=1
-
 RUN apt-get update && \
 	apt-get install -y --no-install-recommends \
 		gcc \
-		libxml2-dev \
-		libxslt1-dev \
+		# python-dev \
 		libffi-dev \
 		libssl-dev \
-		netcat-openbsd \
+		libxml2-dev \
+		libxslt1-dev \
+		zlib1g-dev \
 	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -24,7 +18,6 @@ COPY docker/Ryu/entrypoint.sh /usr/local/bin/ryu-entrypoint.sh
 
 RUN pip install --upgrade pip setuptools wheel && \
 	pip install -e /workspace/ryu && \
-	pip install os-ken && \
 	pip install python-dotenv pymongo && \
 	chmod +x /usr/local/bin/ryu-entrypoint.sh
 	

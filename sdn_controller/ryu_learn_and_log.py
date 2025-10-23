@@ -2,8 +2,8 @@
 import eventlet
 eventlet.monkey_patch()
 from datetime import datetime
-from config import MongoConfig
-from pymongo import MongoClient
+# from config import MongoConfig
+# from pymongo import MongoClient
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import (
@@ -12,14 +12,15 @@ from ryu.controller.handler import (
     set_ev_cls,
 )
 from ryu.lib.packet import ethernet, packet
-from ryu.ofproto import ofproto_v1_3
+from ryu.ofproto import ofproto_v1_0
 from ryu.lib.mac import haddr_to_bin
 
 
 class RyuLearnAndLog(app_manager.RyuApp):
-    OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+    OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
+        # Initialize the parent class (OSKenApp) using super() to inherit properties and methods.
         super(RyuLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         self.mongo = None
@@ -60,19 +61,19 @@ class RyuLearnAndLog(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         """Runs when a switch connects; sets up table-miss flow entry."""
-        datapath = ev.msg.datapath
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
+        datapath = ev.msg.datapath  # Get the switch (datapath) that sent the message
+        ofproto = datapath.ofproto # Get the OpenFlow protocol constants for this datapath
+        parser = datapath.ofproto_parser # Get the OpenFlow message parser for creating messages
         # table-miss to controller
-        match = parser.OFPMatch()
-        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
+        match = parser.OFPMatch() # Create a match object that matches all packets (table-miss)
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)] # Action to send packets to the controller
         mod = datapath.ofproto_parser.OFPFlowMod(
                 datapath=datapath, match=match, cookie=0,
                 command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
                 priority=5,
                 flags=ofproto.OFPFF_SEND_FLOW_REM, actions=actions)
         datapath.send_msg(mod)
-        self._ensure_mongo_connector()
+        # self._ensure_mongo_connector()
 
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -140,33 +141,33 @@ class RyuLearnAndLog(app_manager.RyuApp):
         datapath.send_msg(out)  # Send the packet-out message to the switch to forward only the current packet (not the upcoming ones)
         
         
-    def _ensure_mongo_connector(self):
-        if self._mongo_thread is None:
-            # Create and start a new thread to handle MongoDB connection attempts
-            self._mongo_thread = eventlet.spawn(self._mongo_connector)
+    # def _ensure_mongo_connector(self):
+    #     if self._mongo_thread is None:
+    #         # Create and start a new thread to handle MongoDB connection attempts
+    #         self._mongo_thread = eventlet.spawn(self._mongo_connector)
 
-    def _mongo_connector(self):
-        # Attempt to connect to MongoDB in a loop until successful
-        while True:
-            if self.mongo_config is None:
-                try:
-                    self.mongo_config = MongoConfig.load()
-                except Exception as exc:  # pragma: no cover - external dependency
-                    self.logger.warning("MongoDB config load failed: %s", exc)
-                    eventlet.sleep(5)
-                    continue
-            try:
-                client = MongoClient(
-                    self.mongo_config.app_uri(),
-                    connect=False,
-                    serverSelectionTimeoutMS=2000,
-                )
-                client.admin.command("ping")
-                self.mongo = client
-                self.db = client[self.mongo_config.database]
-                self._mongo_ready = True
-                self.logger.info("MongoDB connection established")
-                return
-            except Exception as exc:  # pragma: no cover - external dependency
-                self.logger.warning("MongoDB connection attempt failed: %s", exc)
-                eventlet.sleep(5)
+    # def _mongo_connector(self):
+    #     # Attempt to connect to MongoDB in a loop until successful
+    #     while True:
+    #         if self.mongo_config is None:
+    #             try:
+    #                 self.mongo_config = MongoConfig.load()
+    #             except Exception as exc:  # pragma: no cover - external dependency
+    #                 self.logger.warning("MongoDB config load failed: %s", exc)
+    #                 eventlet.sleep(5)
+    #                 continue
+    #         try:
+    #             client = MongoClient(
+    #                 self.mongo_config.app_uri(),
+    #                 connect=False,
+    #                 serverSelectionTimeoutMS=2000,
+    #             )
+    #             client.admin.command("ping")
+    #             self.mongo = client
+    #             self.db = client[self.mongo_config.database]
+    #             self._mongo_ready = True
+    #             self.logger.info("MongoDB connection established")
+    #             return
+    #         except Exception as exc:  # pragma: no cover - external dependency
+    #             self.logger.warning("MongoDB connection attempt failed: %s", exc)
+    #             eventlet.sleep(5)
