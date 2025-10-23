@@ -45,17 +45,51 @@ Usage:
 	./build_images.sh ovs-container  # Build only the OVS image (by tag)
 	./build_images.sh OVS ubuntu-host-1 ubuntu-mongodb  # Build selected images
 
+Options:
+	-r, --reset NAME   Remove the running/stopped container associated with NAME before rebuilding.
+	-h, --help         Show this help message and exit.
+
 Notes:
 - The script auto-detects the project root based on its own location.
 - It will try to use "docker" directly if you have permission; otherwise it will use "sudo docker" when available.
 EOF
 }
 
-# Early help: if first arg is -h/--help, print usage and exit 0
-if [[ ${1-} == "-h" || ${1-} == "--help" ]]; then
-		print_usage
-		exit 0
-fi
+RESET_TARGETS=()
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-h|--help)
+			print_usage
+			exit 0
+			;;
+		-r|--reset)
+			if [[ $# -lt 2 ]]; then
+				error "Option $1 requires a container or image name argument."
+				exit 1
+			fi
+			RESET_TARGETS+=("$2")
+			shift 2
+			;;
+		--)
+			shift
+			POSITIONAL_ARGS+=("$@")
+			break
+			;;
+		-*)
+			error "Unknown option: $1"
+			print_usage
+			exit 1
+			;;
+		*)
+			POSITIONAL_ARGS+=("$1")
+			shift
+			;;
+	esac
+done
+
+set -- "${POSITIONAL_ARGS[@]}"
 
 ### Resolve paths (script lives in repo/scripts; docker dir is repo/docker)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -118,6 +152,68 @@ log "Repository root: $REPO_ROOT"
 log "Docker build context base: $DOCKER_DIR"
 log "Docker command: $DOCKER"
 
+declare -A CONTAINER_NAME_MAP=(
+	["ovs"]="ovs"
+	["ovs-container"]="ovs"
+	["ryu"]="ryu"
+	["ryu-controller"]="ryu"
+	["os-ken"]="osken"
+	["osken-controller"]="osken"
+	["ubuntu-host-1"]="container1"
+	["ubuntu-host-2"]="container2"
+	["ubuntu-nat-router"]="nat-router"
+	["ubuntu-mongodb"]="mongodb"
+	["container1"]="container1"
+	["container2"]="container2"
+	["nat-router"]="nat-router"
+	["mongodb"]="mongodb"
+)
+
+resolve_container_name() {
+	local dir_l=${1,,}
+	local tag_l=${2,,}
+	if [[ -n ${CONTAINER_NAME_MAP[$dir_l]:-} ]]; then
+		printf '%s' "${CONTAINER_NAME_MAP[$dir_l]}"
+		return
+	fi
+	if [[ -n ${CONTAINER_NAME_MAP[$tag_l]:-} ]]; then
+		printf '%s' "${CONTAINER_NAME_MAP[$tag_l]}"
+		return
+	fi
+	printf '%s' ""
+}
+
+matches_reset_target() {
+	local target_l=${1,,}
+	local dir_l=${2,,}
+	local tag_l=${3,,}
+	local container_l=${4,,}
+	if [[ $target_l == "$dir_l" || $target_l == "$tag_l" ]]; then
+		return 0
+	fi
+	if [[ -n $container_l && $target_l == "$container_l" ]]; then
+		return 0
+	fi
+	return 1
+}
+
+reset_container() {
+	local target="$1"
+	local container_name="$2"
+	if [[ -z $container_name ]]; then
+		container_name=${target,,}
+	fi
+	if ${DOCKER} ps -a --format '{{.Names}}' | grep -Fxq "$container_name"; then
+		log "Reset requested for '$target': removing container '$container_name'..."
+		${DOCKER} rm -f "$container_name" >/dev/null
+		log "Container '$container_name' removed."
+	else
+		log "Reset requested for '$target', but no container named '$container_name' was found."
+	fi
+}
+
+declare -A RESET_APPLIED=()
+
 ### Define images: "directory:tag"
 IMAGES=(
 	"OVS:ovs-container"
@@ -126,6 +222,7 @@ IMAGES=(
 	"ubuntu-host-2:ubuntu-host-2"
 	"ubuntu-mongodb:ubuntu-mongodb"
 	"Ryu:ryu-controller"
+	"os-ken:osken-controller"
 )
 
 ### Build helper
@@ -138,11 +235,13 @@ build_image() {
 	[[ -d "$ctx" ]] || { error "Build directory not found: $ctx"; return 2; }
 	[[ -f "$dockerfile" ]] || { error "Dockerfile not found: $dockerfile"; return 2; }
 
-	if [[ "$dir" == "Ryu" ]]; then
-		log "Using repository root as build context for Ryu so vendored sources are available."
-		ctx="$REPO_ROOT"
-		dockerfile="$DOCKER_DIR/$dir/Dockerfile"
-	fi
+	case "$dir" in
+		"Ryu"|"os-ken")
+			log "Using repository root as build context for $dir so application sources are available."
+			ctx="$REPO_ROOT"
+			dockerfile="$DOCKER_DIR/$dir/Dockerfile"
+			;;
+		esac
 
 	log "Building image '$tag' from '$dir'..."
 	# You can add build args here if needed, e.g., --pull or --no-cache via env flags
@@ -174,6 +273,19 @@ build_count=0
 for entry in "${IMAGES[@]}"; do
 	IFS=":" read -r dir tag <<<"$entry"
 	if should_build "$dir" "$tag" "${SELECTION[@]}"; then
+		container_name=$(resolve_container_name "$dir" "$tag")
+		if ((${#RESET_TARGETS[@]})); then
+			for idx in "${!RESET_TARGETS[@]}"; do
+				target=${RESET_TARGETS[$idx]}
+				if [[ -n ${RESET_APPLIED[$idx]:-} ]]; then
+					continue
+				fi
+				if matches_reset_target "$target" "$dir" "$tag" "$container_name"; then
+					reset_container "$target" "$container_name"
+					RESET_APPLIED[$idx]=1
+				fi
+			done
+		fi
 		build_image "$dir" "$tag"
 		# Use pre-increment to avoid set -e exiting when previous value is 0
 		((++build_count))
@@ -181,6 +293,14 @@ for entry in "${IMAGES[@]}"; do
 		log "Skipping $dir ($tag)"
 	fi
 done
+
+if ((${#RESET_TARGETS[@]})); then
+	for idx in "${!RESET_TARGETS[@]}"; do
+		if [[ -z ${RESET_APPLIED[$idx]:-} ]]; then
+			warn "Reset requested for '${RESET_TARGETS[$idx]}', but no matching image was built."
+		fi
+	done
+fi
 
 if [[ $build_count -eq 0 ]]; then
 	warn "No images selected to build. Check your arguments."

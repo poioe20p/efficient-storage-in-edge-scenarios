@@ -21,6 +21,7 @@ A minimal set of everyday Docker commands with brief notes.
 - `docker push NAME:TAG` — upload to registry
 - `docker history IMAGE` — show image layer history
 - `docker inspect IMAGE` — low-level details (JSON)
+- `docker build --no-cache -t <name> <where>` -
 
 ## Containers (run/exec/stop)
 

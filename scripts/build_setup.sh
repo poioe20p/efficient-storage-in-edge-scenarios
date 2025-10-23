@@ -223,29 +223,17 @@ sudo iptables -t nat -A POSTROUTING -s 192.168.100.0/24 -o enp0s3 -j MASQUERADE
 # Step 10: Start Ryu Controller
 echo "Starting Ryu controller and connecting OVS bridge to it..."
 # ==============================
-# Remove old Ryu container if it exists
-docker rm -f ryu 2>/dev/null
+# Remove old OS-Ken container if it exists
+docker rm -f osken 2>/dev/null
 
-# Run Ryu controller (using host networking so OVS can reach it at 127.0.0.1:6633)
-# docker run -dit --name ryu --network host osrg/ryu ryu-manager ryu.app.simple_switch_13
+# Run OS-Ken controller (using host networking so OVS can reach it at 127.0.0.1:6633)
 cd ..
-echo "Current directory for Ryu controller: $PWD"
-# docker run -dit --name ryu --network host \
-#   -v "$PWD":/workspace \
-#   -w /workspace \
-#   -e PYTHONPATH=/workspace \
-#   osrg/ryu \
-#   ryu-manager --verbose sf_efficient_storage_in_edge_scenarios/ryu_controller.ryu_learn_and_log
-# docker run -dit --name ryu --network host \
-#   -v "$PWD":/workspace \
-#   -w /workspace \
-#   -e PYTHONPATH=/workspace \
-#   ryu-local \
-#   --verbose ryu_controller.ryu_learn_and_log
+echo "Current directory for sdn controller: $PWD"
 
-docker run -dit --name ryu --network host \
+docker run -dit --name osken --network host \
   -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-  ryu-local bash -c "pip install -e /workspace/ryu && ryu-manager --verbose ryu_controller.ryu_learn_and_log"
+  osken-controller \
+  --verbose sdn_controller.osken_learn_and_log
 
 cd scripts
 

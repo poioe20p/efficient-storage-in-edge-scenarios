@@ -198,3 +198,7 @@ ryu/.coverage
 ryu/covhtml/
 ryu/coverage.xml
 ryu/nosetests.xml
+sdn_controller/examples/myswitch.py
+sdn_controller/examples/myswitch_cont.py
+sdn_controller/examples/myhub.py
+sdn_controller/examples/myhub_cont.py

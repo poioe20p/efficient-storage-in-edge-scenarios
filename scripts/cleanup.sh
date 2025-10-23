@@ -233,6 +233,7 @@ images_cleanup() {
 		ubuntu-mongodb
 		ryu-controller
 		ryu-local
+		osken-controller
 	)
 	local removed=0
 	for img in "${images[@]}"; do
