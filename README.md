@@ -20,7 +20,7 @@
   ./scripts/build_images.sh
   ```
 
-- **What it does:** Builds all project images (`ovs-container`, `ubuntu-nat-router`, `ubuntu-host-1`, `ubuntu-host-2`, `ubuntu-mongodb`) using the Dockerfiles in `docker/`.
+- **What it does:** Builds all project images (`ovs-container`, `ubuntu-nat-router`, `ubuntu-host`, `ubuntu-mongodb`) using the Dockerfiles in `docker/`.
 - **Result:** `docker images` lists the refreshed `:latest` tags for each component, ready to be launched.
 
 ### 3. Provision the topology (`scripts/build_setup.sh`)

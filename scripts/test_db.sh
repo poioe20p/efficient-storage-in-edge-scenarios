@@ -6,7 +6,7 @@
 # - Then each host reads and prints all documents from the collection
 #
 # Requirements:
-# - host containers have mongosh installed (ubuntu-host-1/2 images should include mongodb-mongosh)
+# - host containers have mongosh installed (ubuntu-host/2 images should include mongodb-mongosh)
 # - MongoDB is reachable at the URL below (adjust if you use auth)
 
 set -euo pipefail

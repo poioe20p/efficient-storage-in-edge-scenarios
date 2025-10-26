@@ -228,11 +228,8 @@ images_cleanup() {
 	local images=(
 		ovs-container
 		ubuntu-nat-router
-		ubuntu-host-1
-		ubuntu-host-2
+		ubuntu-host
 		ubuntu-mongodb
-		ryu-controller
-		ryu-local
 		osken-controller
 	)
 	local removed=0

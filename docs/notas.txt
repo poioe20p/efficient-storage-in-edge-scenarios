@@ -1,0 +1,4 @@
+1. Controlador é iniciado
+- Conexão com o switch não estabelicida
+
+2. 

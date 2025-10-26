@@ -109,6 +109,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
     # Packet In Handler
     # This method is triggered when a packet is received by the switch.
     # It learns MAC addresses and their associated ports, logs the event, and forwards the packet.
+    # The next time a packet with the same source and destination MAC addresses is received, it will be forwarded directly without flooding or 
+    # involving the controller again.
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, event):
         """Learn MAC-port mappings, log the event, and forward the packet."""
@@ -153,20 +155,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data
 
-        if self.mongo is not None and self.db is not None:
-            try:
-                self.db.events.insert_one(
-                    {
-                        "type": "packet_in",
-                        "dpid": dpid,
-                        "src": src,
-                        "dst": dst,
-                        "in_port": in_port,
-                        "ts": datetime.now(),
-                    }
-                )
-            except Exception as exc:  # pragma: no cover - external dependency
-                self.logger.warning("Mongo insert failed: %s", exc)
 
         # Create a packet-out message to send the packet out of the switch
         out = datapath.ofproto_parser.OFPPacketOut(
@@ -178,6 +166,21 @@ class KenLearnAndLog(app_manager.OSKenApp):
         )
         # Send the packet-out message to the switch
         datapath.send_msg(out)
+
+        if self.mongo is not None and self.db is not None:
+            try:
+                self.db.events.insert_one(
+                    {
+                        "type": "packet_in",
+                        "dpid": dpid,
+                        "src": src,
+                        "dst": dst,
+                        "in_port": in_port,
+                        "ts": datetime.now().timestamp(),
+                    }
+                )
+            except Exception as exc:  # pragma: no cover - external dependency
+                self.logger.warning("Mongo insert failed: %s", exc)
 
     def _ensure_mongo_connector(self):
         if self._mongo_thread is None:

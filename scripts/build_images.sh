@@ -11,7 +11,7 @@ fi
 #   ./build_images.sh                # Build all images
 #   ./build_images.sh OVS            # Build only the OVS image (by directory name)
 #   ./build_images.sh ovs-container  # Build only the OVS image (by tag)
-#   ./build_images.sh OVS ubuntu-host-1 ubuntu-mongodb  # Build selected images
+#   ./build_images.sh OVS ubuntu-host ubuntu-mongodb  # Build selected images
 #
 # Notes:
 # - The script auto-detects the project root based on its own location.
@@ -43,7 +43,7 @@ Usage:
 	./build_images.sh                # Build all images
 	./build_images.sh OVS            # Build only the OVS image (by directory name)
 	./build_images.sh ovs-container  # Build only the OVS image (by tag)
-	./build_images.sh OVS ubuntu-host-1 ubuntu-mongodb  # Build selected images
+	./build_images.sh OVS ubuntu-host ubuntu-mongodb  # Build selected images
 
 Options:
 	-r, --reset NAME   Remove the running/stopped container associated with NAME before rebuilding.
@@ -155,12 +155,12 @@ log "Docker command: $DOCKER"
 declare -A CONTAINER_NAME_MAP=(
 	["ovs"]="ovs"
 	["ovs-container"]="ovs"
-	["ryu"]="ryu"
-	["ryu-controller"]="ryu"
+	# ["ryu"]="ryu"
+	# ["ryu-controller"]="ryu"
 	["os-ken"]="osken"
 	["osken-controller"]="osken"
-	["ubuntu-host-1"]="container1"
-	["ubuntu-host-2"]="container2"
+	["ubuntu-host"]="container1"
+	["ubuntu-host"]="container2"
 	["ubuntu-nat-router"]="nat-router"
 	["ubuntu-mongodb"]="mongodb"
 	["container1"]="container1"
@@ -218,10 +218,8 @@ declare -A RESET_APPLIED=()
 IMAGES=(
 	"OVS:ovs-container"
 	"ubuntu-nat-router:ubuntu-nat-router"
-	"ubuntu-host-1:ubuntu-host-1"
-	"ubuntu-host-2:ubuntu-host-2"
+	"ubuntu-host:ubuntu-host"
 	"ubuntu-mongodb:ubuntu-mongodb"
-	"Ryu:ryu-controller"
 	"os-ken:osken-controller"
 )
 
@@ -236,7 +234,7 @@ build_image() {
 	[[ -f "$dockerfile" ]] || { error "Dockerfile not found: $dockerfile"; return 2; }
 
 	case "$dir" in
-		"Ryu"|"os-ken")
+		"os-ken")
 			log "Using repository root as build context for $dir so application sources are available."
 			ctx="$REPO_ROOT"
 			dockerfile="$DOCKER_DIR/$dir/Dockerfile"
