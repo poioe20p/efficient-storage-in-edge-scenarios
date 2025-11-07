@@ -21,20 +21,21 @@ class KenLearnAndLog(app_manager.OSKenApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        # Initialize the parent class (OSKenApp) using super() to inherit properties and methods.
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        self.mongo = None
-        self.db = None
         self.mongo_config = None
         self._mongo_thread = None
+        self._mongo_setup_thread = None
+        self._mongo_client = None
+        self._db = None
+        self._mongo_uri = None
         self._mongo_ready = False
 
     def add_flow(self, datapath, in_port, dst, src, actions):
         # Get the OpenFlow protocol object for the given switch (datapath)
         ofproto = datapath.ofproto
 
-        # Create a match object based on the input port, source MAC address (src), and destination MAC address (dst)
+        # Create a match objectE based on the input port, source MAC address (src), and destination MAC address (dst)
         match = datapath.ofproto_parser.OFPMatch(
             in_port=in_port,                      # Match the input port
             eth_dst=dst,                          # Match the destination MAC address (eth_dst = layer-2 destination)
@@ -48,6 +49,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 actions,
             )
         ]
+        
+        # Potencialmente guardar na db os flows adicionadas
         mod = datapath.ofproto_parser.OFPFlowMod(
             datapath=datapath,                    # The switch (datapath) to apply the flow modification
             match=match,                          # The match criteria defined above (in_port, src, dst)
@@ -164,51 +167,123 @@ class KenLearnAndLog(app_manager.OSKenApp):
             actions=actions,
             data=data,
         )
+        
         # Send the packet-out message to the switch
         datapath.send_msg(out)
 
-        if self.mongo is not None and self.db is not None:
-            try:
-                self.db.events.insert_one(
-                    {
-                        "type": "packet_in",
-                        "dpid": dpid,
-                        "src": src,
-                        "dst": dst,
-                        "in_port": in_port,
-                        "ts": datetime.now().timestamp(),
-                    }
-                )
-            except Exception as exc:  # pragma: no cover - external dependency
-                self.logger.warning("Mongo insert failed: %s", exc)
+        db = self._db
+        if db is None:
+            self.logger.debug("MongoDB handle not ready; skipping event persistence")
+            return
+
+        try:
+            client_nodes = getattr(self._mongo_client, "nodes", None)
+            self.logger.debug(
+                "Attempting packet log insert into db=%s via uri=%s nodes=%s",
+                db.name,
+                self._mongo_uri or "<unavailable>",
+                client_nodes,
+            )
+            db.events.insert_one(
+                {
+                    "type": "packet_in",
+                    "dpid": dpid,
+                    "src": src,
+                    "dst": dst,
+                    "in_port": in_port,
+                    "out_port": out_port,
+                    "ts": datetime.now().timestamp(),
+                }
+            )
+            self.logger.debug(
+                "Packet log insert succeeded for uri=%s",
+                self._mongo_uri or "<unavailable>",
+            )
+        except Exception as exc:
+            client_nodes = getattr(self._mongo_client, "nodes", None)
+            self.logger.warning(
+                "Mongo insert failed via uri=%s nodes=%s: %s",
+                self._mongo_uri or "<unavailable>",
+                client_nodes,
+                exc,
+            )
 
     def _ensure_mongo_connector(self):
-        if self._mongo_thread is None:
-            # Create and start a new thread to handle MongoDB connection attempts
-            self._mongo_thread = eventlet.spawn(self._mongo_connector)
-
-    def _mongo_connector(self):
-        # Attempt to connect to MongoDB in a loop until successful
-        while True:
-            if self.mongo_config is None:
-                try:
-                    self.mongo_config = MongoConfig.load()
-                except Exception as exc:  # pragma: no cover - external dependency
-                    self.logger.warning("MongoDB config load failed: %s", exc)
-                    eventlet.sleep(5)
-                    continue
+        if self.mongo_config is None:
             try:
-                client = MongoClient(
-                    self.mongo_config.app_uri(),
-                    connect=False,
-                    serverSelectionTimeoutMS=2000,
-                )
-                client.admin.command("ping")
-                self.mongo = client
-                self.db = client[self.mongo_config.database]
-                self._mongo_ready = True
-                self.logger.info("MongoDB connection established")
+                self.mongo_config = MongoConfig.load()
+            except Exception as exc:
+                self.logger.warning("MongoDB config load failed: %s", exc)
                 return
-            except Exception as exc:  # pragma: no cover - external dependency
-                self.logger.warning("MongoDB connection attempt failed: %s", exc)
+            self.logger.info(
+                "MongoDB targets router=%s:%s config=%s:%s",
+                self.mongo_config.router_host,
+                self.mongo_config.router_port,
+                self.mongo_config.config_host,
+                self.mongo_config.config_port,
+            )
+
+        def start_connector_thread():
+            if self._mongo_thread and not self._mongo_thread.dead:
+                return
+            self._mongo_uri = self.mongo_config.router_app_uri()
+            self.logger.debug("Starting MongoDB connector targeting %s", self._mongo_uri)
+            self._mongo_thread = eventlet.spawn(
+                self._mongo_connector_loop,
+                self._mongo_uri,
+            )
+
+        if not self._mongo_ready:
+            if self._mongo_setup_thread and not self._mongo_setup_thread.dead:
+                return
+
+            def setup_sharding():
+                try:
+                    from sdn_controller.database import MongoDatabase
+
+                    db_helper = MongoDatabase(self.mongo_config)
+                    db_helper.setup_sharded_cluster(self.mongo_config.database, self.mongo_config)
+                    self._mongo_ready = True
+                    self.logger.info("MongoDB sharded cluster configured")
+                    start_connector_thread()
+                except Exception as exc:
+                    self.logger.warning("MongoDB sharding setup failed: %s", exc)
+                finally:
+                    self._mongo_setup_thread = None
+
+            self._mongo_setup_thread = eventlet.spawn(setup_sharding)
+            return
+        else:
+            start_connector_thread()
+
+    def _mongo_connector_loop(self, uri: str):
+        while True:
+            client = None
+            db = None
+            try:
+                client = MongoClient(uri, serverSelectionTimeoutMS=2000)
+                db = client[self.mongo_config.database]
+                nodes = getattr(client, "nodes", None)
+                self._mongo_client = client
+                self._db = db
+                self.logger.info("MongoDB connection established to %s nodes=%s", uri, nodes)
+                while True:
+                    try:
+                        client.admin.command("ping")
+                        eventlet.sleep(10)
+                    except Exception as exc:
+                        self.logger.warning(f"Lost connection to {uri}: {exc}")
+                        break
+            except Exception as exc:
+                self.logger.warning(f"MongoDB connection attempt failed for {uri}: {exc}")
+            finally:
+                if client is not None:
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+                if self._mongo_client is client:
+                    self._mongo_client = None
+                if self._db is db:
+                    self._db = None
                 eventlet.sleep(5)

@@ -69,19 +69,25 @@ if [[ -f "$MONGO_ENV_FILE" ]]; then
   docker run -dit --name mongodb-n1 --network none \
     --env-file "$MONGO_ENV_FILE" \
     -v mongodb-data:/data/db \
-    ubuntu-mongodb
+    ubuntu-mongodb --shardsvr --replSet rs_net1
 else
   echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
   echo "MongoDB will start without authentication!"
   docker run -dit --name mongodb-n1 --network none \
     -v mongodb-data:/data/db \
-    ubuntu-mongodb
+    ubuntu-mongodb --shardsvr --replSet rs_net1
 fi
 
 if [[ $? -ne 0 ]]; then
     echo "Failed to start application containers. Aborting."
     exit 1
 fi
+
+# Bind mongodb IP address to mongodb-n1-host for easier access
+# docker network connect host mongodb-n1
+# sleep 2
+# # ==============================
+
 
 # Get process IDs (needed to move interfaces into namespaces)
 PID1=$(docker inspect -f '{{.State.Pid}}' container1)

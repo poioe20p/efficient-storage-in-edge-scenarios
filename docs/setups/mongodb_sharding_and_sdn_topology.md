@@ -1,25 +1,35 @@
 # MongoDB Sharding + Multi-LAN SDN Topology (Step-by-Step)
 
+## Network Topology (Two-Network Example)
+
+- Two isolated networks, each with its own OVS switch and MongoDB container.
+- Each MongoDB instance runs as a single-node replica set (for sharding).
+- The SDN controller (via `database.py`) does the following:
+  - Connects to both MongoDBs, initializing each as a replica set.
+  - Registers each replica set as a shard in the MongoDB router (mongos or a designated mongod).
+  - Enables sharding for the target database.
+  - Shards collections using the switch datapath (DPID) as the shard key, so all data for a switch stays together.
+
 ## 1. High-Level Goal
 
-- Three L2 segments (A, B, C) each with an OVS bridge managed by one OS-Ken controller.
+- Three L2 segments (A, B) each with an OVS bridge managed by one OS-Ken controller.
 - A router (Linux or VyOS) interconnects the LANs.
 - A MongoDB sharded cluster: one shard replica-set per segment; config servers + mongos on the controller node.
 - Each switch logs packet/flow events to the nearest shard. Local analytics build a NetworkX graph per LAN. Global topology fused in the primary database.
 
 ## 2. Lab Topology Bring-Up
 
-1. Provision VMs or containers: `ctrl` (OS-Ken + mongos + config server), `router`, `lan-a-hosts`, `lan-b-hosts`, `lan-c-hosts`.
-2. On `router`, create three VLAN or subinterfaces (e.g., `eth0.10`, `eth0.20`, `eth0.30`) toward the LAN bridges.
-3. Deploy an OVS bridge per LAN (`brA`, `brB`, `brC`). Attach hosts and router subinterfaces.
+1. Provision VMs or containers: `ctrl` (OS-Ken + mongos + config server), `router`, `lan-a-hosts`, `lan-b-hosts.`
+2. On `router`, use eth0 to connected LAN bridges to WAN.
+3. Deploy an OVS bridge per LAN (`brA`, `brB)`. Attach hosts and router subinterfaces.
 4. Start OS-Ken controller listening on management network; configure each OVS to use the controller (`ovs-vsctl set-controller brA tcp:ctrl:6653`, etc.).
 
 ## 3. MongoDB Sharded Cluster
 
-1. For each LAN, run a shard replica set inside that segment (e.g., `shardA1`, `shardA2`, `shardA3`). Bind to LAN subnet so hosts log locally.
-2. Deploy the config server replica set on the controller host (or mgmt network) because it must be reachable by all shards.
-3. Start a `mongos` router on the controller node; configure `/etc/mongos.conf` with config server addresses.
-4. Connect to `mongos` and run: `sh.addShard("shardA/hostA1:27017,hostA2:27017,hostA3:27017")`, repeat for shards B and C.
+1. For each LAN, run a shard replica set inside that segment (e.g., `shardA1`, `shardA2`, `shardA3`). Bind each MongoDB process to both the host-facing IP (e.g., 10.0.0.4 for LAN A) and loopback (127.0.0.1) to allow early controller calls via localhost and external connectivity for the cluster.
+2. Deploy the config server replica set on the controller host (or mgmt network) because it must be reachable by all shards. Bind to both 192.168.100.1 and 127.0.0.1.
+3. Start a `mongos` router on the controller node; configure `/etc/mongos.conf` with config server addresses. Bind to both 192.168.100.1 and 127.0.0.1.
+4. Connect to `mongos` and run: `sh.addShard("shardA/10.0.0.4:27017")`, repeat for shards B and C (e.g., `sh.addShard("shardB/10.0.1.4:27017")`).
 5. Enable sharding on the `sdn_logs` database, then shard the `events` collection on compound key `{lanId: 1, ts: 1}` to keep locality.
 
 ### 3.1 Replica Sets and Shard Internals
@@ -32,12 +42,31 @@ Each shard (and the config server) runs as a replica set: a named group of `mong
 {
   "_id": "shardA",
   "members": [
-    {"_id": 0, "host": "shardA1:27018"},
-    {"_id": 1, "host": "shardA2:27018"},
-    {"_id": 2, "host": "shardA3:27018"}
+    {"_id": 0, "host": "10.0.0.4:27017"}
   ]
 }
 ```
+
+For config servers, use port 27019 and add `"configsvr": true`:
+
+```json
+{
+  "_id": "configReplSet",
+  "configsvr": true,
+  "members": [
+    {"_id": 0, "host": "192.168.100.1:27019"}
+  ]
+}
+```
+
+### 3.2 Binding IP Addresses
+
+Letting each MongoDB process bind to both the host-facing IP and loopback solves a scoping mismatch:
+
+You start the config server, shards, and mongos with --network host. They listen only on the interfaces you pass in --bind_ip.
+Before the veth wiring finishes, those containers can still reach themselves only via loopback. Later, you still want your host to reach them on 192.168.100.1 (config) and 10.0.x.x (shards).
+Binding to the host IP and 127.0.0.1 covers both cases. Early controller calls like mongo --host 127.0.0.1 succeed inside the container, while the SDN controller and mongos keep using the host IP.
+It’s the union of both address scopes that makes it work once—no more “connection refused” when a tool defaults to localhost, and no loss of external connectivity for the cluster.
 
 The `_id` matches the `--replSet` flag given to each `mongod`. Member `_id` values are unique integers; `host` strings are reachable addresses. For config servers add `"configsvr": true` and use the dedicated port (27019 in examples).
 
@@ -69,35 +98,3 @@ All setup commands above can be invoked with PyMongo: `client.admin.command("rep
 1. For each LAN, run a worker (inside controller process or separate service) that reads `topology_nodes/edges` and builds a `networkx.Graph`.
 2. Nodes: switches, hosts, router interface on that LAN. Edges: port-level connections.
 3. Persist the serialized graph (e.g., `nx.node_link_data`) back into `topology_snapshots` with `{lanId, ts}`.
-
-## 6. Global View Aggregation
-
-1. On the controller host, schedule a job (e.g., every minute) connecting to `mongos`.
-2. Fetch the latest snapshot per `lanId`; merge them by stitching router interfaces (known mapping `lanId -> router port`).
-3. Build a global NetworkX `Graph` or `DiGraph` capturing cross-LAN paths.
-4. Store the merged topology into `global_topology_snapshots` with metadata (timestamp, hash of inputs).
-
-## 7. Router Awareness
-
-1. Configure the router to export interface stats (via SNMP, Netlink, or log to MongoDB) to detect inter-LAN traffic.
-2. Correlate router data with per-LAN logs to verify path completeness.
-3. Optionally use LLDP inside each LAN to auto-discover host ports and annotate `topology_edges`.
-
-## 8. Data Governance & TTL
-
-- Apply TTL indexes on `events` (24h) and on `topology_snapshots` (e.g., 7 days) per shard to avoid storage explosion.
-- Ensure `global_topology_snapshots` keeps longer history (30-60 days) for trend analysis.
-
-## 9. Testing Checklist
-
-1. Validate each LAN individually: host discovery, local NetworkX graph, shard writes.
-2. Disconnect one shard node to confirm replica-set tolerance; check logging continuity.
-3. Generate traffic across LANs; ensure router stats + cross-LAN edges appear in global view.
-4. Kill `mongos` or config server to test control-plane resilience (controller should queue writes until available).
-5. Run integration script that prints merged topology and verifies expected nodes/edges.
-
-## 10. Next Steps
-
-- Add Prometheus exporters per shard/lan for visibility.
-- Introduce decision engine that uses global topology to recommend reroutes or QoS tweaks.
-- Explore partitioning strategies when scaling beyond three LANs (e.g., shard tags, zone awareness).

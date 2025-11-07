@@ -167,6 +167,7 @@ declare -A CONTAINER_NAME_MAP=(
 	["container2"]="container2"
 	["nat-router"]="nat-router"
 	["mongodb"]="mongodb"
+	["mongodb-config-server"]="mongodb-config-server"
 )
 
 resolve_container_name() {
@@ -221,6 +222,7 @@ IMAGES=(
 	"ubuntu-host:ubuntu-host"
 	"ubuntu-mongodb:ubuntu-mongodb"
 	"os-ken:osken-controller"
+	"ubuntu-mongodb-configsvr:mongodb-config-server"
 )
 
 ### Build helper

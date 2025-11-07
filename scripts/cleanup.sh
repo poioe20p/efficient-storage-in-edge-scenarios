@@ -231,6 +231,8 @@ images_cleanup() {
 		ubuntu-host
 		ubuntu-mongodb
 		osken-controller
+		mongodb-config-server
+		mongodb-router
 	)
 	local removed=0
 	for img in "${images[@]}"; do
@@ -260,13 +262,13 @@ volumes_cleanup() {
 		warn "Docker not installed; skipping volume removal."
 		return 0
 	fi
-	local volumes=(mongodb mongodb-data)
+	local volumes=(mongodb mongodb-data mongodb-configdb)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
 			if ${DOCKER} volume rm "$vol" >/dev/null 2>&1; then
 				log "Removed volume: $vol"
-				((removed++))
+				((++removed))
 			else
 				warn "Failed to remove volume: $vol"
 			fi
@@ -300,15 +302,15 @@ reset_cleanup() {
 	fi
 
 	# Ensure named MongoDB containers are removed even if stopped
-	${DOCKER} container rm -f mongodb mongodb-data >/dev/null 2>&1 || true
+	${DOCKER} container rm -f mongodb mongodb-data mongodb-config-server >/dev/null 2>&1 || true
 
-	local volumes=(mongodb mongodb-data)
+	local volumes=(mongodb mongodb-data mongodb-configdb)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
 			if ${DOCKER} volume rm -f "$vol" >/dev/null 2>&1; then
 				log "Removed volume: $vol"
-				((removed++))
+				((++removed))
 			else
 				warn "Failed to remove volume: $vol"
 			fi

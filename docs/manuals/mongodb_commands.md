@@ -1,93 +1,354 @@
-# MongoDB debug commands
+# MongoDB Sharded Cluster: Verification and Troubleshooting (Docker-based)
 
-Quick commands to verify whether the MongoDB container is running with authentication, confirm credentials, and inspect runtime configuration.
+This guide assumes each MongoDB component runs in its own Docker container:
+- **Config Server Replica Set (CSRS)**: `mongodb-config-server` (replSet `configReplSet`, port 27019, IP 192.168.100.1)
+- **Shard Replica Sets**: `mongodb-n1` (replSet `rs_net1`, IP 10.0.0.4:27017), `mongodb-n2` (replSet `rs_net2`, IP 10.0.1.4:27017)
+- **Mongos Routers**: `mongodb-router` (port 27020, IP 192.168.100.1)
 
-## 1. Get a shell inside the MongoDB container
+Replace container names, ports, and replica set names with your actual setup.
 
+---
+
+## 0) Quick Health Checklist
+
+List containers:
 ```bash
-docker exec -it mongodb bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
 ```
 
-All commands below assume you are either running them from the host with `docker exec … mongosh`, or after attaching to the container shell.
-
-## 2. Check connectivity without credentials
-
+Check ports reachable:
 ```bash
-mongosh --quiet --eval "db.adminCommand('ping')"
+nc -zv 127.0.0.1 27017 27019 27020
 ```
 
-- Succeeds only if MongoDB is running without authentication or you are still within the localhost auth bypass window.
-- Fails with `Authentication failed` when auth is enforced.
-
-## 3. Check connectivity with application credentials
-
+Verify connectivity to components:
 ```bash
-mongosh "mongodb://appuser:app.04.app@127.0.0.1:27017/appdb?authSource=appdb" \
-  --quiet --eval "db.runCommand({ping:1})"
+docker exec -it mongodb-router nc -zv 10.0.0.4 27017  # mongodb-n1
+docker exec -it mongodb-router nc -zv 10.0.1.4 27017  # mongodb-n2
+docker exec -it mongodb-router nc -zv 192.168.100.1 27019  # config server
 ```
 
-- Replace `appuser`, `app.04.app`, and `appdb` with the values from `.env-mongo` (`MONGO_APP_USERNAME`, `MONGO_APP_PASSWORD`, `MONGO_DATABASE`).
-- If this fails, verify the user exists (next section) or that you reset the volume after changing passwords.
+---
 
-## 4. Check connectivity with the root user
+## 1) Validate mongos Router
 
+Full cluster summary:
 ```bash
-mongosh "mongodb://admin:se.cu.3e@127.0.0.1:27017/admin" \
-  --quiet --eval "db.adminCommand('ping')"
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.status()'
 ```
 
-- Replace credentials with your `MONGO_ADMIN_USERNAME` and `MONGO_ADMIN_PASSWORD`.
-- If this succeeds while the app user fails, the app account likely was never created.
-
-## 5. List users to confirm they exist
-
+Ping test:
 ```bash
-mongosh "mongodb://admin:se.cu.3e@127.0.0.1:27017/admin" --quiet <<'JS'
-use admin;
-print('Admin users:');
-printjson(db.getUsers());
-use appdb;
-print('App DB users:');
-printjson(db.getUsers());
-JS
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.adminCommand({ ping: 1 })'
 ```
 
-- Update database names to match your setup if you changed them.
-
-## 6. Inspect runtime flags (is auth enabled?)
-
+List shards:
 ```bash
-mongosh "mongodb://admin:se.cu.3e@127.0.0.1:27017/admin" --quiet --eval "
-  const opts = db.adminCommand({ getCmdLineOpts: 1 });
-  printjson(opts.parsed);"
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'db.adminCommand({ listShards: 1 })'
 ```
 
-Look for `security.authorization: "enabled"` or the presence of `--auth` under `argv`.
-
-## 7. Confirm process flags directly
-
+Balancer actions:
 ```bash
-ps -ef | grep [m]ongod
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.getBalancerState()'
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.isBalancerRunning()'
 ```
 
-- If you see `--auth` in the command line, MongoDB was launched with authentication enforced.
-
-## 8. Tail the entrypoint logs for initialization hints
-
+Config metadata:
 ```bash
-docker logs mongodb --tail 50
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.getSiblingDB("config").shards.find().pretty()'
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.getSiblingDB("config").databases.find().pretty()'
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.getSiblingDB("config").collections.find({ dropped:false }).pretty()'
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.getSiblingDB("config").chunks.find().limit(5).pretty()'
 ```
 
-- Lines such as `Created root user` and `Starting mongod with authorization enabled...` confirm that the entrypoint processed your init vars.
-- If you see `Database appears initialized and no root user provided; starting without auth.`, the data directory already existed when the container started and your env vars were ignored.
+---
 
-## 9. Reset the volume when credentials change
+## 2) Check Config Server Replica Set (CSRS)
 
-If you ever modify `.env-mongo`, reset the volume so the users are recreated with the new passwords:
-
+Status:
 ```bash
-./scripts/reset_mongodb.sh
-./scripts/build_setup.sh
+docker exec -it mongodb-config-server mongosh --quiet --port 27019 --eval 'rs.status()'
 ```
 
-This drops the `mongodb-data` volume and reprovisions the container with the updated credentials.
+Config:
+```bash
+docker exec -it mongodb-config-server mongosh --quiet --port 27019 --eval 'rs.conf()'
+```
+
+Role/hello:
+```bash
+docker exec -it mongodb-config-server mongosh --quiet --port 27019 --eval 'db.hello()'
+```
+
+Logs:
+```bash
+docker logs --tail 200 mongodb-config-server
+```
+
+---
+
+## 3) Check Each Shard Replica Set
+
+Status:
+```bash
+docker exec -it mongodb-n1 mongosh --quiet --eval 'rs.status()'
+docker exec -it mongodb-n2 mongosh --quiet --eval 'rs.status()'
+```
+
+Config:
+```bash
+docker exec -it mongodb-n1 mongosh --quiet --eval 'rs.conf()'
+docker exec -it mongodb-n2 mongosh --quiet --eval 'rs.conf()'
+```
+
+Hello info:
+```bash
+docker exec -it mongodb-n1 mongosh --quiet --eval 'db.hello()'
+docker exec -it mongodb-n2 mongosh --quiet --eval 'db.hello()'
+```
+
+Cluster-wide replica set status:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.adminCommand({ replSetGetStatus: 1 })'
+```
+
+Logs:
+```bash
+docker logs --tail 200 mongodb-n1
+docker logs --tail 200 mongodb-n2
+```
+
+---
+
+## 4) Verify Shards Are Added to Cluster
+
+List shards:
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'db.adminCommand({ listShards: 1 })'
+```
+
+Add shard:
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'sh.addShard("rs_net1/10.0.0.4:27017")'
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'sh.addShard("rs_net2/10.0.1.4:27017")'
+```
+
+Confirm:
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'db.getSiblingDB("config").shards.find().pretty()'
+```
+
+---
+
+## 5) Enable Sharding on a Database/Collection
+
+Enable sharding on a database:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.enableSharding("testdb")'
+```
+
+Shard a collection:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.shardCollection("testdb.coll", { _id: "hashed" })'
+```
+
+Confirm:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.getSiblingDB("config").collections.find({ _id: "testdb.coll" })'
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.getSiblingDB("config").chunks.find({ ns: "testdb.coll" }).limit(5).pretty()'
+```
+
+Test distribution:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval '
+db = db.getSiblingDB("testdb");
+for (let i=0;i<1000;i++) db.coll.insert({ _id: i, v: "x" });
+db.coll.getShardDistribution();
+'
+```
+
+---
+
+## 6) Balancer and Chunk Distribution
+
+Check balancer:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.getBalancerState()'
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.isBalancerRunning()'
+```
+
+Start/stop balancer:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.startBalancer()'
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.stopBalancer()'
+```
+
+Count chunks per shard:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval '
+db.getSiblingDB("config").chunks.aggregate([{ $group: { _id: "$shard", n: { $sum: 1 } } }])
+'
+```
+
+---
+
+## 7) Connectivity & Routing Sanity Checks
+
+Basic read/write test:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval '
+db = db.getSiblingDB("health");
+db.test.insertOne({ ts: new Date() });
+printjson(db.test.findOne());
+'
+```
+
+Check mongos logs:
+```bash
+docker logs --tail 200 mongodb-router
+```
+
+---
+
+## 8) Authentication and Roles (if enabled)
+
+Connection status:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.runCommand({ connectionStatus: 1 })'
+```
+
+List users:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.getSiblingDB("admin").system.users.find().pretty()'
+```
+
+Show roles info:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval '
+db = db.getSiblingDB("admin");
+db.runCommand({ rolesInfo: 1, showPrivileges: true })
+'
+```
+
+---
+
+## 9) Feature Compatibility and Versions
+
+Feature compatibility:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.adminCommand({ getParameter: 1, featureCompatibilityVersion: 1 })'
+```
+
+Version/role info:
+```bash
+docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.hello()'
+```
+
+---
+
+## 10) Troubleshooting Common Issues
+
+**Shard RS not healthy**
+```bash
+docker exec -it mongodb-n1 mongosh --quiet --eval 'rs.status()'
+docker exec -it mongodb-n2 mongosh --quiet --eval 'rs.status()'
+```
+Reconfirm hostnames in `rs.conf()` are reachable by all members. Ensure ports are open and using `--bind_ip_all`.
+
+**Config servers not a replica set**
+Ensure they're started with `--replSet configReplSet`.
+Run:
+```bash
+docker exec -it mongodb-config-server mongosh --quiet --host 192.168.100.1 --port 27019 --eval 'rs.status()'
+```
+
+**Shards missing in mongos**
+Re-add:
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'sh.addShard("rs_net1/10.0.0.4:27017")'
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'sh.addShard("rs_net2/10.0.1.4:27017")'
+```
+
+**Balancer stuck**
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'sh.getActiveMigrations()'
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'db.getSiblingDB("config").locks.find().pretty()'
+```
+
+**Uneven data distribution**
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'db.getSiblingDB("config").settings.find({ _id: "chunksize" })'
+```
+
+---
+
+## 11) Optional: Zone Sharding (by Region)
+
+Assign zones:
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval '
+sh.addShardToZone("rs_net1", "zoneA");
+sh.updateZoneKeyRange("testdb.coll", { region: "A" }, { region: "A" }, "zoneA");
+'
+```
+
+Verify zones:
+```bash
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'db.getSiblingDB("config").tags.find().pretty()'
+```
+
+---
+
+## 12) Programmatic Checks from Python
+
+```python
+from pymongo import MongoClient
+
+client = MongoClient("mongodb://localhost:27020/?appName=cluster-check")
+print(client.admin.command("ping"))
+
+# list shards
+print(client.admin.command({"listShards": 1}))
+
+# simple write/read test
+db = client["testdb"]
+db.test.insert_one({"x": 1})
+print(db.test.find_one({"x": 1}))
+```
+
+---
+
+## 13) Docker Runtime Checks
+
+Running commands in Docker:
+
+List container command/args:
+```bash
+docker inspect --format='{{.Config.Cmd}}' mongodb-router
+```
+
+Check ports inside container:
+```bash
+docker exec -it mongodb-n1 bash -lc 'ss -lntp | grep mongod'
+```
+
+Test connectivity between containers:
+```bash
+docker exec -it mongodb-n1 bash -lc 'nc -zv 192.168.100.1 27019'
+```
+
+---
+
+## 14) Summary
+
+**Success Criteria**
+- All containers active and ports reachable.
+- `rs.status()` shows healthy replica sets for config and shards.
+- `sh.status()` lists all shards connected to mongos.
+- Balancer runs as expected.
+- Reads and writes through mongos succeed.
+- Cluster metadata consistent (config DB).
+
+If all these checks pass, your sharded cluster is correctly configured and operational.
+
+## NOTAS

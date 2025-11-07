@@ -68,13 +68,13 @@ if [[ -f "$MONGO_ENV_FILE" ]]; then
   docker run -dit --name mongodb-n2 --network none \
     --env-file "$MONGO_ENV_FILE" \
     -v mongodb-n2-data:/data/db \
-    ubuntu-mongodb
+    ubuntu-mongodb --shardsvr --replSet rs_net2
 else
   echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
   echo "MongoDB will start without authentication!"
   docker run -dit --name mongodb-n2 --network none \
     -v mongodb-n2-data:/data/db \
-    ubuntu-mongodb
+    ubuntu-mongodb --shardsvr --replSet rs_net2
 fi
 
 if [[ $? -ne 0 ]]; then
@@ -123,7 +123,7 @@ sudo nsenter -t $PID4 -n ip route add default via 10.0.1.1
 
 # Configure mongodb container
 sudo nsenter -t $PID_MONGO -n ip link set veth13-peer name eth0
-sudo nsenter -t $PID_MONGO -n ip link set eth0 address 00:00:00:00:00:04   # static MAC
+sudo nsenter -t $PID_MONGO -n ip link set eth0 address 00:00:00:00:00:07   # static MAC
 sudo nsenter -t $PID_MONGO -n ip link set eth0 up
 sudo nsenter -t $PID_MONGO -n ip addr add 10.0.1.4/24 dev eth0
 sudo nsenter -t $PID_MONGO -n ip route add default via 10.0.1.1

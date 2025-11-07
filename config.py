@@ -1,17 +1,13 @@
 """Configuration helpers for MongoDB credentials."""
-
 import os
 from collections import namedtuple
 
 from dotenv import dotenv_values
-
-try:
-	from urllib.parse import quote_plus
-except ImportError:  # Python 2 fallback (osrg/ryu container)
-	from urllib import quote_plus
+from urllib.parse import quote_plus
 
 
 ENV_FILE_NAME = ".env-mongo"
+DEFAULT_MONGO_HOST_IP = os.getenv("MONGO_HOST_IP", "192.168.100.1")
 
 MongoConfigTuple = namedtuple(
 	"MongoConfigTuple",
@@ -23,6 +19,7 @@ MongoConfigTuple = namedtuple(
 		"app_password",
 	],
 )
+
 
 
 class MongoConfig(MongoConfigTuple):
@@ -47,36 +44,62 @@ class MongoConfig(MongoConfigTuple):
 		if missing:
 			raise ValueError("Missing MongoDB env vars: %s" % ", ".join(missing))
 
-		host = values.get("MONGO_APP_HOST") or values.get("MONGO_HOST")
-		if host:
-			os.environ.setdefault("MONGO_APP_HOST", host)
-		port = values.get("MONGO_APP_PORT") or values.get("MONGO_PORT")
-		if port:
-			os.environ.setdefault("MONGO_APP_PORT", str(port))
-
-		return cls(
+		config = cls(
 			values["MONGO_ADMIN_USERNAME"],
 			values["MONGO_ADMIN_PASSWORD"],
 			values["MONGO_DATABASE"],
 			values["MONGO_APP_USERNAME"],
 			values["MONGO_APP_PASSWORD"],
 		)
+		return config
+
+	@property
+	def hosts(self):
+		return ["10.0.0.4", "10.0.1.4"]
+
+	@property
+	def port(self):
+		return "27017"
+
+	@property
+	def router_host(self):
+		return os.getenv("MONGO_ROUTER_HOST", DEFAULT_MONGO_HOST_IP)
+
+	@property
+	def router_port(self):
+		return os.getenv("MONGO_ROUTER_PORT", "27020")
+
+	@property
+	def config_host(self):
+		return os.getenv("MONGO_CONFIG_HOST", os.getenv("MONGO_ROUTER_HOST", DEFAULT_MONGO_HOST_IP))
+
+	@property
+	def config_port(self):
+		return os.getenv("MONGO_CONFIG_PORT", "27019")
 
 	def app_uri(self, host=None, port=None, auth_db=None):
 		"""Build a connection string for the application MongoDB user."""
-
-		host = host or os.getenv("MONGO_APP_HOST") or os.getenv("MONGO_HOST") or "localhost"
-		port = port or os.getenv("MONGO_APP_PORT") or os.getenv("MONGO_PORT") or "27017"
-		if isinstance(port, int):
-			port = str(port)
+		host = host or self.router_host
+		port = port or self.port
 		username = quote_plus(self.app_username)
 		password = quote_plus(self.app_password)
 		database = quote_plus(auth_db or self.database)
 		return "mongodb://%s:%s@%s:%s/%s" % (username, password, host, port, database)
 
+	def all_app_uris(self, auth_db=None):
+		"""Return a list of URIs for all configured hosts."""
+		return [self.app_uri(host=h, port=self.port, auth_db=auth_db) for h in self.hosts]
+
+	def router_app_uri(self, auth_db=None):
+		"""Build an application URI that targets the mongos router."""
+		return self.app_uri(
+			host=self.router_host,
+			port=self.router_port,
+			auth_db=auth_db,
+		)
+
 	def admin_uri(self, host="localhost", port=27017):
 		"""Build a connection string for the admin MongoDB user."""
-
 		username = quote_plus(self.admin_username)
 		password = quote_plus(self.admin_password)
 		if isinstance(port, int):

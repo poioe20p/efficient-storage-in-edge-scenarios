@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+MONGO_HOST_IP=${MONGO_HOST_IP:-192.168.100.1}
+MONGO_ROUTER_PORT=${MONGO_ROUTER_PORT:-27020}
+MONGO_CONFIG_PORT=${MONGO_CONFIG_PORT:-27019}
+
 # ==============================
 # 0 - Cleanup old runs
 # ==============================
@@ -83,7 +87,43 @@ sleep 2
 
 
 # ==============================
-# 5 - Start SDN controller container
+# 5 - Start mongodb config server container
+# ==============================
+echo "Starting MongoDB config server container..."
+docker run -dit --name mongodb-config-server --network host \
+    -v mongodb-configdb:/data/configdb \
+    mongodb-config-server mongod \
+        --configsvr \
+        --bind_ip "${MONGO_HOST_IP},127.0.0.1" \
+    --replSet configReplSet \
+        --dbpath /data/configdb \
+    --port "${MONGO_CONFIG_PORT}"
+
+if [[ $? -ne 0 ]]; then
+    echo "Failed to start MongoDB config server container. Aborting."
+    exit 1
+fi
+sleep 2
+
+# ==============================
+# 6 - Start mongodb router container
+# ==============================
+echo "Starting MongoDB router container..."
+docker run -dit --name mongodb-router --network host \
+    mongodb-router:latest mongos \
+        --configdb "configReplSet/${MONGO_HOST_IP}:${MONGO_CONFIG_PORT}" \
+    --bind_ip "${MONGO_HOST_IP}" \
+        --port "${MONGO_ROUTER_PORT}"
+
+if [[ $? -ne 0 ]]; then
+    echo "Failed to start MongoDB router container. Aborting."
+    exit 1
+fi
+sleep 2
+
+
+# ==============================
+# 7 - Start SDN controller container
 # ==============================
 cd ..
 echo "Current directory for OS-Ken controller: $PWD"
@@ -92,7 +132,11 @@ echo "Starting os-ken SDN controller container..."
 docker rm -f osken 2>/dev/null
 
 docker run -dit --name osken --network host \
-  -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+    -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+    -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
+    -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
+    -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
+    -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
   osken-controller \
   --verbose sdn_controller.osken_learn_and_log
 
@@ -104,7 +148,7 @@ fi
 cd scripts
 
 # ==============================
-# 5.1 - Point both OVS switches to the SDN controller
+# 7.1 - Point both OVS switches to the SDN controller
 # ==============================
 echo "Pointing OVS switches to the SDN controller..."
 docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633
