@@ -1,4 +1,5 @@
 """Learning-switch style OS-Ken app that logs packet events to MongoDB."""
+import random
 import eventlet
 eventlet.monkey_patch()
 from datetime import datetime
@@ -15,7 +16,6 @@ from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
 from sdn_controller.models.mongodb_host import MongodbHost
 
-
 # This class defines a simple OS-Ken application that acts like a switch in an OpenFlow network and
 # logs packet events to a MongoDB database.
 class KenLearnAndLog(app_manager.OSKenApp):
@@ -25,7 +25,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        self.datapath_id_to_shard_range = {}
         mongodb_host_n1 = MongodbHost(
             host="10.0.0.4"
         )
@@ -44,8 +43,20 @@ class KenLearnAndLog(app_manager.OSKenApp):
             ),
             connect=False
         )
-        self.shard_range_interval_start = 1
-        self._shard_lock = eventlet.semaphore.Semaphore()
+        self._zone_size = 10000
+        self._zone_order = ["shard_zone_rs_net1", "shard_zone_rs_net2"]
+        self._zone_state = {}
+        start = 0
+        for zone in self._zone_order:
+            self._zone_state[zone] = {
+                "switch_dpid": None,
+                "next_offset": 0,
+                "range_start": start,
+                "lock": eventlet.semaphore.Semaphore(),
+            }
+            start += self._zone_size
+        self.datapath_zone_map = {}
+        self._connected_switches = 0
 
     def add_flow(self, datapath, in_port, dst, src, actions):
         # Get the OpenFlow protocol object for the given switch (datapath)
@@ -83,6 +94,27 @@ class KenLearnAndLog(app_manager.OSKenApp):
         # This installs the flow entry into the switch's flow table
         datapath.send_msg(mod)
         
+    def _assign_zone_to_switch(self, datapath_id: str) -> str:
+        for zone in self._zone_order:
+            if self._zone_state[zone]["switch_dpid"] is None:
+                self._zone_state[zone]["switch_dpid"] = datapath_id
+                self.datapath_zone_map[datapath_id] = zone
+                return zone
+        zone = random.choice(self._zone_order)
+        print(
+            "Warning: More than configured switches connected; reusing zone",
+            zone,
+        )
+        self.datapath_zone_map[datapath_id] = zone
+        return zone
+
+    def _zone_bounds(self, zone_name: str):
+        state = self._zone_state.get(zone_name)
+        if not state:
+            return (0, 0)
+        start = state["range_start"]
+        return (start, start + self._zone_size)
+
 
 
     # Event handler for switch features. This method is triggered when a switch connects to the controller.
@@ -124,9 +156,11 @@ class KenLearnAndLog(app_manager.OSKenApp):
         )
         datapath.send_msg(mod)
         
-        # Range interval is 100000, and for each new datapath, we assign a new range
-        self.datapath_id_to_shard_range[str(datapath.id)] = [self.shard_range_interval_start, self.shard_range_interval_start] # Assign the current start of the range and the next available value for dpid in that range
-        self.shard_range_interval_start += 100000 # Increment the start of the range for the next datapath
+        datapath_id_str = str(datapath.id)
+        assigned_zone = self._assign_zone_to_switch(datapath_id_str)
+        self._connected_switches += 1
+        print(f"Datapath {datapath_id_str} mapped to {assigned_zone}.")
+            
         
 
     # Packet In Handler
@@ -191,45 +225,39 @@ class KenLearnAndLog(app_manager.OSKenApp):
         datapath.send_msg(out)
         
         datapath_id = str(datapath.id)
-        dpid_int = self._reserve_next_dpid(datapath_id)
-        if dpid_int is None:
-            print(f"Failed to reserve shard id for datapath {datapath_id}")
+        zone_name = self.datapath_zone_map.get(datapath_id)
+        if zone_name is None:
+            print(f"No shard zone assignment for datapath {datapath_id}; skipping log")
             return
         event_payload = {
                 "type": "packet_in",
-                "dpid":dpid_int,
                 "src": src,
                 "dst": dst,
                 "in_port": in_port,
                 "out_port": out_port,
                 "ts": datetime.now().timestamp(),
             }
-        if dpid_int < 100001:
-            self.store_event_n1(event_payload, datapath_id, dpid_int)
+        self._queue_event_for_zone(zone_name, event_payload, datapath_id)
+
+
+    def _queue_event_for_zone(self, zone_name: str, event_payload: dict, datapath_key: str):
+        if zone_name == "shard_zone_rs_net1":
+            client = self.host_n1_conn
+            label = "N1"
+        elif zone_name == "shard_zone_rs_net2":
+            client = self.host_n2_conn
+            label = "N2"
         else:
-            self.store_event_n2(event_payload, datapath_id, dpid_int)
+            print(f"Unknown shard zone '{zone_name}' for datapath {datapath_key}; skipping log")
+            return
 
-
-    def store_event_n1(self, event_payload: dict, datapath_key: str, reserved_dpid: int):
-        """Store an event in the MongoDB shard for node 1 based on dpid range."""
         eventlet.spawn_n(
             self._insert_event,
-            self.host_n1_conn,
+            client,
             event_payload,
-            "N1",
+            label,
             datapath_key,
-            reserved_dpid,
-        )
-
-    def store_event_n2(self, event_payload: dict, datapath_key: str, reserved_dpid: int):
-        """Store an event in the MongoDB shard for node 2 based on dpid range."""
-        eventlet.spawn_n(
-            self._insert_event,
-            self.host_n2_conn,
-            event_payload,
-            "N2",
-            datapath_key,
-            reserved_dpid,
+            zone_name,
         )
 
     def _insert_event(
@@ -238,40 +266,43 @@ class KenLearnAndLog(app_manager.OSKenApp):
         event_payload: dict,
         label: str,
         datapath_key: str,
-        reserved_dpid: int,
+        zone_name: str,
     ):
-        with self._shard_lock:
-            if datapath_key not in self.datapath_id_to_shard_range:
+        zone_state = self._zone_state.get(zone_name)
+        if zone_state is None:
+            print(
+                f"Skipping Mongo insert {label}: shard zone {zone_name} not tracked"
+            )
+            return
+
+        database = client.get_default_database()
+        if database is None:
+            database = client["app_db"]
+
+        lock = zone_state["lock"]
+        with lock:
+            if zone_state["next_offset"] >= self._zone_size:
                 print(
-                    f"Skipping Mongo insert {label}: datapath {datapath_key} not tracked"
+                    f"Shard zone {zone_name} exhausted; cannot log datapath {datapath_key}"
                 )
                 return
-        try:
-            database = client.get_default_database()
-            if database is None:
-                database = client["app_db"]
-            database.events.insert_one(event_payload)
-        except Exception as exc:
-            print(f"Mongo insert {label} failed: {exc}")
-            self._release_reserved_dpid(datapath_key, reserved_dpid)
 
-    def _reserve_next_dpid(self, datapath_id: str):
-        with self._shard_lock:
-            if datapath_id not in self.datapath_id_to_shard_range:
-                return None
-            dpid_int = self.datapath_id_to_shard_range[datapath_id][1]
-            self.datapath_id_to_shard_range[datapath_id][1] += 1
-            return dpid_int
+            shard_key = zone_state["range_start"] + zone_state["next_offset"]
+            payload = dict(event_payload)
+            payload.update(
+                {
+                    "datapath_id": datapath_key,
+                    "shard_zone": zone_name,
+                    "dpid": shard_key,
+                }
+            )
 
-    def _release_reserved_dpid(self, datapath_id: str, reserved_dpid: int):
-        with self._shard_lock:
-            current_range = self.datapath_id_to_shard_range.get(datapath_id)
-            if not current_range:
-                return
-            if current_range[1] == reserved_dpid + 1:
-                current_range[1] -= 1
-            else:
+            try:
+                database.events.insert_one(payload)
+            except Exception as exc:
                 print(
-                    f"Cannot release dpid {reserved_dpid} for {datapath_id}: "
-                    f"expected {reserved_dpid + 1}, found {current_range[1]}"
+                    f"Mongo insert {label} failed for {zone_name} (datapath {datapath_key}): {exc}"
                 )
+                return
+
+            zone_state["next_offset"] += 1

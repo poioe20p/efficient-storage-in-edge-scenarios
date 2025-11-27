@@ -526,63 +526,63 @@ sleep 2
 # ===============================================
 # 8.3 Add shard zones and shard key ranges
 # ===============================================
-# echo "Adding shard zones and shard key ranges..."
-# ZONE_SIZE=10000
-# SHARD_ORDER=(rs_net1 rs_net2)
-# declare -A SHARD_ZONES=( [rs_net1]="shard_zone_rs_net1" [rs_net2]="shard_zone_rs_net2" )
+echo "Adding shard zones and shard key ranges..."
+ZONE_SIZE=10000
+SHARD_ORDER=(rs_net1 rs_net2)
+declare -A SHARD_ZONES=( [rs_net1]="shard_zone_rs_net1" [rs_net2]="shard_zone_rs_net2" )
 
-# for idx in "${!SHARD_ORDER[@]}"; do
-#     SHARD_NAME="${SHARD_ORDER[$idx]}"
-#     ZONE_NAME="${SHARD_ZONES[$SHARD_NAME]}"
-#     RANGE_START=$(( idx * ZONE_SIZE ))
-#     RANGE_END=$(( RANGE_START + ZONE_SIZE ))
+for idx in "${!SHARD_ORDER[@]}"; do
+    SHARD_NAME="${SHARD_ORDER[$idx]}"
+    ZONE_NAME="${SHARD_ZONES[$SHARD_NAME]}"
+    RANGE_START=$(( idx * ZONE_SIZE ))
+    RANGE_END=$(( RANGE_START + ZONE_SIZE ))
 
-#     if [[ -z "${ZONE_NAME}" ]]; then
-#         echo "No zone name configured for shard '${SHARD_NAME}'. Aborting."
-#         exit 1
-#     fi
+    if [[ -z "${ZONE_NAME}" ]]; then
+        echo "No zone name configured for shard '${SHARD_NAME}'. Aborting."
+        exit 1
+    fi
 
-#     echo "Assigning zone ${ZONE_NAME} to shard ${SHARD_NAME} for dpid [${RANGE_START}, ${RANGE_END})."
+    echo "Assigning zone ${ZONE_NAME} to shard ${SHARD_NAME} for dpid [${RANGE_START}, ${RANGE_END})."
 
-#     set +e
-#     ADD_ZONE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(sh.addShardToZone('${SHARD_NAME}', '${ZONE_NAME}'))")
-#     ADD_ZONE_STATUS=$?
-#     set -e
+    set +e
+    ADD_ZONE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(sh.addShardToZone('${SHARD_NAME}', '${ZONE_NAME}'))")
+    ADD_ZONE_STATUS=$?
+    set -e
 
-#     if [[ ${ADD_ZONE_STATUS} -ne 0 ]]; then
-#         echo "Failed to assign zone ${ZONE_NAME} to shard ${SHARD_NAME} (exit ${ADD_ZONE_STATUS}). Output:"
-#         echo "${ADD_ZONE_OUTPUT}"
-#         exit 1
-#     fi
+    if [[ ${ADD_ZONE_STATUS} -ne 0 ]]; then
+        echo "Failed to assign zone ${ZONE_NAME} to shard ${SHARD_NAME} (exit ${ADD_ZONE_STATUS}). Output:"
+        echo "${ADD_ZONE_OUTPUT}"
+        exit 1
+    fi
 
-#     check_mongo_ok "${ADD_ZONE_OUTPUT}" "Adding zone ${ZONE_NAME} to shard ${SHARD_NAME}"
+    check_mongo_ok "${ADD_ZONE_OUTPUT}" "Adding zone ${ZONE_NAME} to shard ${SHARD_NAME}"
 
-#     for COLLECTION in "app_db.events" "app_db.topology"; do
-#         echo "Tagging collection ${COLLECTION} range [${RANGE_START}, ${RANGE_END}) with zone ${ZONE_NAME}."
-#         set +e
-#         RANGE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
-# JSON.stringify(
-#     sh.updateZoneKeyRange(
-#         '${COLLECTION}',
-#         { dpid: NumberLong(${RANGE_START}) },
-#         { dpid: NumberLong(${RANGE_END}) },
-#         '${ZONE_NAME}'
-#     )
-# )")
-#         RANGE_STATUS=$?
-#         set -e
+    for COLLECTION in "app_db.events" "app_db.topology"; do
+        echo "Tagging collection ${COLLECTION} range [${RANGE_START}, ${RANGE_END}) with zone ${ZONE_NAME}."
+        set +e
+        RANGE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
+JSON.stringify(
+    sh.updateZoneKeyRange(
+        '${COLLECTION}',
+        { dpid: NumberLong(${RANGE_START}) },
+        { dpid: NumberLong(${RANGE_END}) },
+        '${ZONE_NAME}'
+    )
+)")
+        RANGE_STATUS=$?
+        set -e
 
-#         if [[ ${RANGE_STATUS} -ne 0 ]]; then
-#             echo "Failed to tag ${COLLECTION} zone range for ${ZONE_NAME} (exit ${RANGE_STATUS}). Output:"
-#             echo "${RANGE_OUTPUT}"
-#             exit 1
-#         fi
+        if [[ ${RANGE_STATUS} -ne 0 ]]; then
+            echo "Failed to tag ${COLLECTION} zone range for ${ZONE_NAME} (exit ${RANGE_STATUS}). Output:"
+            echo "${RANGE_OUTPUT}"
+            exit 1
+        fi
 
-#         check_mongo_ok "${RANGE_OUTPUT}" "Adding zone range for ${COLLECTION} (${ZONE_NAME})"
-#     done
-# done
+        check_mongo_ok "${RANGE_OUTPUT}" "Adding zone range for ${COLLECTION} (${ZONE_NAME})"
+    done
+done
 
-# echo "Shard zones and key ranges configured successfully."
+echo "Shard zones and key ranges configured successfully."
 
 # ==============================
 # 9 - Start SDN controller container
@@ -605,12 +605,12 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-        osken-controller
+        osken-controller --verbose sdn_controller.osken_learn_and_log
 else
     docker run -dit --name osken --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        osken-controller
+        osken-controller --verbose sdn_controller.osken_learn_and_log
 fi
 
 
