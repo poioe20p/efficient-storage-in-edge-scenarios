@@ -54,20 +54,6 @@ else
     echo "Assigned 192.168.100.4/24 to enp0s3."
 fi
 
-# if ip addr show dev enp0s3 | grep -q "192.168.100.5/24"; then
-#     echo "enp0s3 already has 192.168.100.5/24 assigned."
-# else
-#     sudo ip addr add 192.168.100.5/24 dev enp0s3
-#     echo "Assigned 192.168.100.5/24 to enp0s3."
-# fi
-
-# if ip addr show dev enp0s3 | grep -q "192.168.100.6/24"; then
-#     echo "enp0s3 already has 192.168.100.6/24 assigned."
-# else
-#     sudo ip addr add 192.168.100.6/24 dev enp0s3
-#     echo "Assigned 192.168.100.6/24 to enp0s3."
-# fi
-
 # ==============================
 # 1 - Start OVS container
 # ==============================
@@ -236,82 +222,6 @@ if [[ "${RS_READY}" != true ]]; then
 fi
 sleep 2
 
-# docker exec -i mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 <<'EOF'
-# cfg = rs.conf();
-# cfg.members[0].host = "192.168.100.4:27019";
-# rs.reconfig(cfg, {force: true});
-# EOF
-
-# ===============================================
-# 4.2 - Ensure config server replica set host IP
-# ===============================================
-DESIRED_CONFIG_MEMBER="${MONGO_HOST_IP}:${MONGO_CONFIG_PORT}"
-echo "Ensuring config server replica set advertises ${DESIRED_CONFIG_MEMBER}..."
-set +e
-CURRENT_CONFIG_MEMBER=$(docker exec mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 --eval "
-var cfg;
-try {
-    cfg = rs.conf();
-    if (cfg.members && cfg.members.length > 0) {
-        print(cfg.members[0].host);
-    } else {
-        print('NO_MEMBERS');
-    }
-} catch (e) {
-    print('ERROR:' + e);
-}
-")
-HOST_STATUS=$?
-set -e
-
-if [[ ${HOST_STATUS} -ne 0 ]]; then
-    echo "Failed to inspect config replica set members (exit ${HOST_STATUS}). Output:"
-    echo "${CURRENT_CONFIG_MEMBER}"
-    exit 1
-fi
-
-CLEAN_CONFIG_MEMBER=$(echo "${CURRENT_CONFIG_MEMBER}" | tr -d '\r\n"')
-
-if [[ "${CLEAN_CONFIG_MEMBER}" == ERROR:* ]]; then
-    echo "Unable to read config replica set configuration (${CLEAN_CONFIG_MEMBER})."
-    exit 1
-fi
-
-if [[ "${CLEAN_CONFIG_MEMBER}" == "NO_MEMBERS" ]]; then
-    echo "Config replica set reports no members despite initialization; aborting."
-    exit 1
-fi
-
-if [[ "${CLEAN_CONFIG_MEMBER}" != "${DESIRED_CONFIG_MEMBER}" ]]; then
-    echo "Config replica set member host '${CLEAN_CONFIG_MEMBER}' does not match desired '${DESIRED_CONFIG_MEMBER}'. Reconfiguring..."
-    set +e
-    RECONFIG_OUTPUT=$(docker exec -i mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 --eval "
-JSON.stringify(
-    rs.reconfig({
-        _id: 'configReplSet',
-        configsvr: true,
-        members: [
-            { _id: 0, host: '${MONGO_HOST_IP}:${MONGO_CONFIG_PORT}' }
-        ]
-    }, { force: true })
-)
-")
-    RECONFIG_STATUS=$?
-    set -e
-
-    if [[ ${RECONFIG_STATUS} -ne 0 ]]; then
-        echo "Failed to reconfigure config replica set host (exit ${RECONFIG_STATUS}). Output:"
-        echo "${RECONFIG_OUTPUT}"
-        exit 1
-    fi
-
-    check_mongo_ok "${RECONFIG_OUTPUT}" "Config replica set host reconfiguration"
-    echo "Config replica set host updated successfully."
-    sleep 2
-else
-    echo "Config replica set already advertises the desired host."
-fi
-
 # ==============================
 # 5 - Run build_network_1.sh to setup first network
 # ==============================
@@ -322,13 +232,6 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 sleep 2
-
-# docker run -dit --name mongodb-n1 --network host \
-#     --no-healthcheck \
-#     -v mongodb-n1-data:/data/db ubuntu-mongodb mongod \
-#     --shardsvr --replSet rs_net1 \
-#     --dbpath "/data/db" \
-#     --bind_ip 10.0.0.4 --port 27018
 
 # =============================
 # 5.1 - Initialize the mongodb-n1 replica set
@@ -389,13 +292,6 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 sleep 2
-
-# docker run -dit --name mongodb-n2 --network host \
-#     --no-healthcheck \
-#     -v mongodb-n2-data:/data/db ubuntu-mongodb mongod \
-#     --shardsvr --replSet rs_net2 \
-#     --dbpath "/data/db" \
-#     --bind_ip 10.0.1.4 --port 27018
 
 # =============================
 # 6.1 - Initialize the mongodb-n2 replica set
@@ -534,47 +430,6 @@ if [[ $? -ne 0 ]]; then
 fi
 sleep 2
 
-# Ensure mongos is fully connected to the config replica set before adding shards
-echo "Waiting for MongoDB router to become ready..."
-MAX_ROUTER_RETRIES=15
-ROUTER_RETRY_DELAY=4
-ROUTER_READY=false
-
-for attempt in $(seq 1 ${MAX_ROUTER_RETRIES}); do
-    echo "Router readiness check attempt ${attempt}/${MAX_ROUTER_RETRIES}..."
-    set +e
-    PING_RESULT=$(docker exec -i mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(db.adminCommand({ ping: 1 }))")
-    PING_STATUS=$?
-    GRID_RESULT=$(docker exec -i mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(db.adminCommand({ isdbgrid: 1 }))")
-    GRID_STATUS=$?
-    LIST_RESULT=$(docker exec -i mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(db.adminCommand({ listShards: 1 }))")
-    LIST_STATUS=$?
-    set -e
-
-     if [[ ${PING_STATUS} -eq 0 && ${GRID_STATUS} -eq 0 && ${LIST_STATUS} -eq 0 ]] && \
-         echo "${PING_RESULT}" | grep -Eq '"ok"\s*:\s*1' && \
-         echo "${GRID_RESULT}" | grep -Eq '"ok"\s*:\s*1' && \
-         echo "${LIST_RESULT}" | grep -Eq '"ok"\s*:\s*1'; then
-        echo "MongoDB router is ready."
-        ROUTER_READY=true
-        break
-    fi
-
-    echo "Router not ready yet. Ping output: ${PING_RESULT}" >&2
-     echo "isdbgrid output: ${GRID_RESULT}" >&2
-     echo "listShards output: ${LIST_RESULT}" >&2
-
-    if [[ ${attempt} -lt ${MAX_ROUTER_RETRIES} ]]; then
-        echo "Retrying in ${ROUTER_RETRY_DELAY}s..."
-        sleep ${ROUTER_RETRY_DELAY}
-    fi
-done
-
-if [[ "${ROUTER_READY}" != true ]]; then
-    echo "MongoDB router failed to become ready after ${MAX_ROUTER_RETRIES} attempts."
-    exit 1
-fi
-
 # ========================================
 # 8.1 - Add both shard replica sets to the router
 # ========================================
@@ -668,56 +523,116 @@ set -e
 sleep 2
 
 
-# # ==============================
-# # 9 - Start SDN controller container
-# # ==============================
-# cd ..
-# echo "Current directory for OS-Ken controller: $PWD"
+# ===============================================
+# 8.3 Add shard zones and shard key ranges
+# ===============================================
+# echo "Adding shard zones and shard key ranges..."
+# ZONE_SIZE=10000
+# SHARD_ORDER=(rs_net1 rs_net2)
+# declare -A SHARD_ZONES=( [rs_net1]="shard_zone_rs_net1" [rs_net2]="shard_zone_rs_net2" )
 
-# echo "Starting os-ken SDN controller container..."
-# docker rm -f osken 2>/dev/null
+# for idx in "${!SHARD_ORDER[@]}"; do
+#     SHARD_NAME="${SHARD_ORDER[$idx]}"
+#     ZONE_NAME="${SHARD_ZONES[$SHARD_NAME]}"
+#     RANGE_START=$(( idx * ZONE_SIZE ))
+#     RANGE_END=$(( RANGE_START + ZONE_SIZE ))
 
-# PWD=$(pwd)
-# MONGO_ENV_FILE="$PWD/../.env-mongo"
+#     if [[ -z "${ZONE_NAME}" ]]; then
+#         echo "No zone name configured for shard '${SHARD_NAME}'. Aborting."
+#         exit 1
+#     fi
 
-# if [[ ! -f "$MONGO_ENV_FILE" ]]; then
-#     echo "MongoDB environment file '$MONGO_ENV_FILE' not found. Aborting."
-#     echo "Using direct environment variables instead."
-#     docker run -dit --name osken --network host \
-#         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-#         -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
-#         -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
-#         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
-#         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-#         osken-controller \
-#         --verbose sdn_controller.osken_learn_and_log
-# fi
+#     echo "Assigning zone ${ZONE_NAME} to shard ${SHARD_NAME} for dpid [${RANGE_START}, ${RANGE_END})."
 
-# docker run -dit --name osken --network host \
-#     --env-file "$MONGO_ENV_FILE" \
-#     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-#     osken-controller \
-#     --verbose sdn_controller.osken_learn_and_log
+#     set +e
+#     ADD_ZONE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(sh.addShardToZone('${SHARD_NAME}', '${ZONE_NAME}'))")
+#     ADD_ZONE_STATUS=$?
+#     set -e
 
-# if [[ $? -ne 0 ]]; then
-#     echo "Failed to start SDN controller container. Aborting."
-#     exit 1
-# fi
+#     if [[ ${ADD_ZONE_STATUS} -ne 0 ]]; then
+#         echo "Failed to assign zone ${ZONE_NAME} to shard ${SHARD_NAME} (exit ${ADD_ZONE_STATUS}). Output:"
+#         echo "${ADD_ZONE_OUTPUT}"
+#         exit 1
+#     fi
 
-# cd scripts
+#     check_mongo_ok "${ADD_ZONE_OUTPUT}" "Adding zone ${ZONE_NAME} to shard ${SHARD_NAME}"
 
-# # ==============================
-# # 9.1 - Point both OVS switches to the SDN controller
-# # ==============================
-# echo "Pointing OVS switches to the SDN controller..."
-# docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633
-# docker exec ovs ovs-vsctl set-controller ovs-br1 tcp:127.0.0.1:6633
+#     for COLLECTION in "app_db.events" "app_db.topology"; do
+#         echo "Tagging collection ${COLLECTION} range [${RANGE_START}, ${RANGE_END}) with zone ${ZONE_NAME}."
+#         set +e
+#         RANGE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
+# JSON.stringify(
+#     sh.updateZoneKeyRange(
+#         '${COLLECTION}',
+#         { dpid: NumberLong(${RANGE_START}) },
+#         { dpid: NumberLong(${RANGE_END}) },
+#         '${ZONE_NAME}'
+#     )
+# )")
+#         RANGE_STATUS=$?
+#         set -e
 
-# docker exec ovs ovs-vsctl show
+#         if [[ ${RANGE_STATUS} -ne 0 ]]; then
+#             echo "Failed to tag ${COLLECTION} zone range for ${ZONE_NAME} (exit ${RANGE_STATUS}). Output:"
+#             echo "${RANGE_OUTPUT}"
+#             exit 1
+#         fi
 
-# if [[ $? -ne 0 ]]; then
-#     echo "Failed to point OVS switches to SDN controller. Aborting."
-#     exit 1
-# fi
+#         check_mongo_ok "${RANGE_OUTPUT}" "Adding zone range for ${COLLECTION} (${ZONE_NAME})"
+#     done
+# done
 
-# echo "Build and setup of networks completed successfully."
+# echo "Shard zones and key ranges configured successfully."
+
+# ==============================
+# 9 - Start SDN controller container
+# ==============================
+cd ..
+echo "Current directory for OS-Ken controller: $PWD"
+
+echo "Starting os-ken SDN controller container..."
+docker rm -f osken 2>/dev/null
+
+PWD=$(pwd)
+MONGO_ENV_FILE="$PWD/../.env-mongo"
+
+if [[ ! -f "$MONGO_ENV_FILE" ]]; then
+    echo "MongoDB environment file '$MONGO_ENV_FILE' not found. Aborting."
+    echo "Using direct environment variables instead."
+    docker run -dit --name osken --network host \
+        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+        -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
+        -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
+        -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
+        -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
+        osken-controller
+else
+    docker run -dit --name osken --network host \
+        --env-file "$MONGO_ENV_FILE" \
+        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+        osken-controller
+fi
+
+
+if [[ $? -ne 0 ]]; then
+    echo "Failed to start SDN controller container. Aborting."
+    exit 1
+fi
+
+cd scripts
+
+# ==============================
+# 9.1 - Point both OVS switches to the SDN controller
+# ==============================
+echo "Pointing OVS switches to the SDN controller..."
+docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633
+docker exec ovs ovs-vsctl set-controller ovs-br1 tcp:127.0.0.1:6633
+
+docker exec ovs ovs-vsctl show
+
+if [[ $? -ne 0 ]]; then
+    echo "Failed to point OVS switches to SDN controller. Aborting."
+    exit 1
+fi
+
+echo "Build and setup of networks completed successfully."

@@ -30,5 +30,5 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install os-ken && \
     pip install python-dotenv pymongo
 
-ENTRYPOINT ["osken-manager"]
+ENTRYPOINT ["python3", "-m", "os_ken.manager"]
 CMD ["--verbose", "sdn_controller.osken_learn_and_log"]
