@@ -6,7 +6,7 @@ RUN apt-get update && \
     apt-get install -y openvswitch-switch openvswitch-common iproute2 net-tools && \
     mkdir -p /var/run/openvswitch /etc/openvswitch
 
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh
 
-CMD ["/start.sh"]
+CMD ["./start.sh"]

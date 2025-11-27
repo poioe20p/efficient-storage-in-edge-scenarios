@@ -1,6 +1,7 @@
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+MONGO_VERSION=7.0
 
 # Install MongoDB (from MongoDB upstream APT repo)
 RUN apt-get update \
@@ -9,9 +10,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     # Add MongoDB GPG key and repo for Ubuntu 22.04 (jammy)
     && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://pgp.mongodb.com/server-7.0.asc | gpg --dearmor -o /etc/apt/keyrings/mongodb-server-7.0.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/mongodb-server-7.0.gpg arch=$(dpkg --print-architecture)] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
-         > /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    && curl -fsSL https://pgp.mongodb.com/server-${MONGO_VERSION}.asc | gpg --dearmor -o /etc/apt/keyrings/mongodb-server-${MONGO_VERSION}.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/mongodb-server-${MONGO_VERSION}.gpg arch=$(dpkg --print-architecture)] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/${MONGO_VERSION} multiverse" \
+         > /etc/apt/sources.list.d/mongodb-org-${MONGO_VERSION}.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends mongodb-org \
     && rm -rf /var/lib/apt/lists/*

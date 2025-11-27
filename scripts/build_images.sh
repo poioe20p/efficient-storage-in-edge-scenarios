@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 # Ensure we're running under bash even if invoked via sh
 if [ -z "${BASH_VERSION:-}" ]; then

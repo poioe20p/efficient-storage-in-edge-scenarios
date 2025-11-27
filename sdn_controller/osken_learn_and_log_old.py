@@ -13,8 +13,8 @@ from os_ken.controller.handler import (
 )
 from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
-from sdn_controller.models.mongodb_host import MongodbHost
-
+# from database_old import ConfigureMongoDBShardedCluster
+# from data
 
 # This class defines a simple OS-Ken application that acts like a switch in an OpenFlow network and
 # logs packet events to a MongoDB database.
@@ -25,27 +25,16 @@ class KenLearnAndLog(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        self.datapath_id_to_shard_range = {}
-        mongodb_host_n1 = MongodbHost(
-            host="10.0.0.4"
-        )
-        mongodb_host_n2 = MongodbHost(
-            host="10.0.1.4"
-        )
-        self.host_n1_conn = MongoClient(
-            mongodb_host_n1.get_simple_connection_string(
-                add_app=True
-            ),
-            connect=False
-        )
-        self.host_n2_conn = MongoClient(
-            mongodb_host_n2.get_simple_connection_string(
-                add_app=True
-            ),
-            connect=False
-        )
-        self.shard_range_interval_start = 1
-        self._shard_lock = eventlet.semaphore.Semaphore()
+        self.mongo_config = None
+        self._mongo_thread = None
+        self._mongo_setup_thread = None
+        self._mongo_client = None
+        self._db = None
+        self._mongo_uri = None
+        self._mongo_ready = False
+        self._db_helper = None
+        self._pending_zone_requests = {}
+        self.config_shard_cluster = None
 
     def add_flow(self, datapath, in_port, dst, src, actions):
         # Get the OpenFlow protocol object for the given switch (datapath)
@@ -82,7 +71,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
         # Send the flow modification message to the switch (datapath)
         # This installs the flow entry into the switch's flow table
         datapath.send_msg(mod)
-        
 
 
     # Event handler for switch features. This method is triggered when a switch connects to the controller.
@@ -96,6 +84,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         # Extract the datapath object, which represents in the controller enviroment the switch that is communicating with the controller.
         # The datapath contains information about the switch (datapath ID, methods to send messages, etc.)
         datapath = event.msg.datapath
+        dpid_int = int(datapath.id)
 
         # ofproto represents the OpenFlow protocol, which includes constants (like action types and message types).
         ofproto = datapath.ofproto
@@ -123,11 +112,9 @@ class KenLearnAndLog(app_manager.OSKenApp):
             flags=ofproto.OFPFF_SEND_FLOW_REM # flag that tells the switch to notify the controller when the flow is removed.
         )
         datapath.send_msg(mod)
-        
-        # Range interval is 100000, and for each new datapath, we assign a new range
-        self.datapath_id_to_shard_range[str(datapath.id)] = [self.shard_range_interval_start, self.shard_range_interval_start] # Assign the current start of the range and the next available value for dpid in that range
-        self.shard_range_interval_start += 100000 # Increment the start of the range for the next datapath
-        
+        # self._ensure_mongo_connector()
+        # self._enqueue_zone_assignment(dpid_int)
+
 
     # Packet In Handler
     # This method is triggered when a packet is received by the switch.
@@ -152,12 +139,14 @@ class KenLearnAndLog(app_manager.OSKenApp):
             return
         
         dpid_int = int(datapath.id)  # Datapath ID as integer for shard key routing
+        dpid_hex = f"{dpid_int:016x}"
         self.mac_to_port.setdefault(dpid_int, {})  # Initialize mapping for this switch if absent
+        self._enqueue_zone_assignment(dpid_int)
         
         # Learn a MAC address to avoid flooding next time
         if src not in self.mac_to_port[dpid_int]:  # If the source MAC is not already tracked for this switch
             self.mac_to_port[dpid_int][src] = in_port
-            print("mac_to_port[%s]: %s", dpid_int, self.mac_to_port[dpid_int])
+            self.logger.info("mac_to_port[%s/%s]: %s", dpid_int, dpid_hex, self.mac_to_port[dpid_int])
         
         # Determine the output port for the destination MAC address    
         if dst in self.mac_to_port[dpid_int]:
@@ -178,6 +167,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data
 
+
         # Create a packet-out message to send the packet out of the switch
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath,
@@ -189,89 +179,178 @@ class KenLearnAndLog(app_manager.OSKenApp):
         
         # Send the packet-out message to the switch
         datapath.send_msg(out)
-        
-        datapath_id = str(datapath.id)
-        dpid_int = self._reserve_next_dpid(datapath_id)
-        if dpid_int is None:
-            print(f"Failed to reserve shard id for datapath {datapath_id}")
+
+        db = self._db
+        if db is None:
+            self.logger.debug("MongoDB handle not ready; skipping event persistence")
             return
-        event_payload = {
-                "type": "packet_in",
-                "dpid":dpid_int,
-                "src": src,
-                "dst": dst,
-                "in_port": in_port,
-                "out_port": out_port,
-                "ts": datetime.now().timestamp(),
-            }
-        if dpid_int < 100001:
-            self.store_event_n1(event_payload, datapath_id, dpid_int)
-        else:
-            self.store_event_n2(event_payload, datapath_id, dpid_int)
 
-
-    def store_event_n1(self, event_payload: dict, datapath_key: str, reserved_dpid: int):
-        """Store an event in the MongoDB shard for node 1 based on dpid range."""
-        eventlet.spawn_n(
-            self._insert_event,
-            self.host_n1_conn,
-            event_payload,
-            "N1",
-            datapath_key,
-            reserved_dpid,
-        )
-
-    def store_event_n2(self, event_payload: dict, datapath_key: str, reserved_dpid: int):
-        """Store an event in the MongoDB shard for node 2 based on dpid range."""
-        eventlet.spawn_n(
-            self._insert_event,
-            self.host_n2_conn,
-            event_payload,
-            "N2",
-            datapath_key,
-            reserved_dpid,
-        )
-
-    def _insert_event(
-        self,
-        client: MongoClient,
-        event_payload: dict,
-        label: str,
-        datapath_key: str,
-        reserved_dpid: int,
-    ):
-        with self._shard_lock:
-            if datapath_key not in self.datapath_id_to_shard_range:
-                print(
-                    f"Skipping Mongo insert {label}: datapath {datapath_key} not tracked"
-                )
-                return
         try:
-            database = client.get_default_database()
-            if database is None:
-                database = client["app_db"]
-            database.events.insert_one(event_payload)
+            client_nodes = getattr(self._mongo_client, "nodes", None)
+            self.logger.debug(
+                "Attempting packet log insert into db=%s via uri=%s nodes=%s",
+                db.name,
+                self._mongo_uri or "<unavailable>",
+                client_nodes,
+            )
+            db.events.insert_one(
+                {
+                    "type": "packet_in",
+                    "dpid": dpid_int,
+                    "dpid_hex": dpid_hex,
+                    "src": src,
+                    "dst": dst,
+                    "in_port": in_port,
+                    "out_port": out_port,
+                    "ts": datetime.now().timestamp(),
+                }
+            )
+            self.logger.debug(
+                "Packet log insert succeeded for uri=%s",
+                self._mongo_uri or "<unavailable>",
+            )
         except Exception as exc:
-            print(f"Mongo insert {label} failed: {exc}")
-            self._release_reserved_dpid(datapath_key, reserved_dpid)
+            client_nodes = getattr(self._mongo_client, "nodes", None)
+            self.logger.warning(
+                "Mongo insert failed via uri=%s nodes=%s: %s",
+                self._mongo_uri or "<unavailable>",
+                client_nodes,
+                exc,
+            )
 
-    def _reserve_next_dpid(self, datapath_id: str):
-        with self._shard_lock:
-            if datapath_id not in self.datapath_id_to_shard_range:
-                return None
-            dpid_int = self.datapath_id_to_shard_range[datapath_id][1]
-            self.datapath_id_to_shard_range[datapath_id][1] += 1
-            return dpid_int
 
-    def _release_reserved_dpid(self, datapath_id: str, reserved_dpid: int):
-        with self._shard_lock:
-            current_range = self.datapath_id_to_shard_range.get(datapath_id)
-            if not current_range:
+    def setup_sharded_cluster(self):
+        if self.mongo_config is None:
+            self.mongo_config = MongoConfig.load()
+            print("MongoDB config loaded.")
+        
+        self.config_shard_cluster = ConfigureMongoDBShardedCluster(self.mongo_config, ["10.0.0.4", "10.0.1.4"])
+        self._mongo_thread = eventlet.spawn(
+            self.config_shard_cluster.setup_sharded_cluster()
+        )
+        self._mongo_ready = True
+        
+    
+    def _ensure_mongo_connector(self):
+        if self.mongo_config is None:
+            try:
+                self.mongo_config = MongoConfig.load()
+            except Exception as exc:
+                self.logger.warning("MongoDB config load failed: %s", exc)
                 return
-            if current_range[1] == reserved_dpid + 1:
-                current_range[1] -= 1
-            else:
-                print(
-                    f"Cannot release dpid {reserved_dpid} for {datapath_id}: "
-                    f"expected {reserved_dpid + 1}, found {current_range[1]}"
-                )
+            self.logger.info(
+                "MongoDB targets router=%s:%s config=%s:%s",
+                self.mongo_config.router_host,
+                self.mongo_config.router_port,
+                self.mongo_config.config_host,
+                self.mongo_config.config_port,
+            )
+
+        def start_connector_thread():
+            if self._mongo_thread and not self._mongo_thread.dead:
+                return
+            self._mongo_uri = self.mongo_config.router_app_uri()
+            self.logger.debug("Starting MongoDB connector targeting %s", self._mongo_uri)
+            self._mongo_thread = eventlet.spawn(
+                self._mongo_connector_loop,
+                self._mongo_uri,
+            )
+
+        def flush_pending_zones():
+            try:
+                self._flush_zone_requests()
+            except Exception as exc:
+                self.logger.warning("Deferred zone assignment flush failed: %s", exc)
+
+        if not self._mongo_ready:
+            if self._mongo_setup_thread and not self._mongo_setup_thread.dead:
+                return
+
+            def setup_sharding():
+                try:
+                    from sdn_controller.database import MongoDatabase
+
+                    db_helper = MongoDatabase(self.mongo_config)
+                    self._db_helper = db_helper
+                    db_helper.setup_sharded_cluster(self.mongo_config.database, self.mongo_config)
+                    self._mongo_ready = True
+                    self.logger.info("MongoDB sharded cluster configured")
+                    flush_pending_zones()
+                    start_connector_thread()
+                except Exception as exc:
+                    self.logger.warning("MongoDB sharding setup failed: %s", exc)
+                finally:
+                    self._mongo_setup_thread = None
+
+            self._mongo_setup_thread = eventlet.spawn(setup_sharding)
+            return
+        else:
+            start_connector_thread()
+            flush_pending_zones()
+
+    def _enqueue_zone_assignment(self, dpid_int: int):
+        if self.mongo_config is None:
+            return
+        try:
+            shard = self.mongo_config.resolve_shard_for_switch(dpid_int)
+        except Exception as exc:
+            self.logger.warning(
+                "Shard resolution failed for dpid=%s: %s",
+                dpid_int,
+                exc,
+            )
+            return
+        if not shard:
+            self.logger.debug("No shard mapping found for dpid=%s", dpid_int)
+            return
+        existing = self._pending_zone_requests.get(dpid_int)
+        if existing == shard:
+            return
+        self._pending_zone_requests[dpid_int] = shard
+        self._flush_zone_requests()
+
+    def _flush_zone_requests(self):
+        if not self._pending_zone_requests:
+            return
+        if not self._mongo_ready or not self._db_helper:
+            return
+        mapping = dict(self._pending_zone_requests)
+        try:
+            self._db_helper.ensure_zone_assignment(mapping)
+        except Exception as exc:
+            self.logger.warning("Zone assignment failed for %s: %s", mapping, exc)
+            return
+        for dpid in list(mapping.keys()):
+            self._pending_zone_requests.pop(dpid, None)
+
+    def _mongo_connector_loop(self, uri: str):
+        while True:
+            client = None
+            db = None
+            try:
+                client = MongoClient(uri, serverSelectionTimeoutMS=2000)
+                db = client[self.mongo_config.database]
+                nodes = getattr(client, "nodes", None)
+                self._mongo_client = client
+                self._db = db
+                self.logger.info("MongoDB connection established to %s nodes=%s", uri, nodes)
+                while True:
+                    try:
+                        client.admin.command("ping")
+                        eventlet.sleep(10)
+                    except Exception as exc:
+                        self.logger.warning(f"Lost connection to {uri}: {exc}")
+                        break
+            except Exception as exc:
+                self.logger.warning(f"MongoDB connection attempt failed for {uri}: {exc}")
+            finally:
+                if client is not None:
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+                if self._mongo_client is client:
+                    self._mongo_client = None
+                if self._db is db:
+                    self._db = None
+                eventlet.sleep(5)

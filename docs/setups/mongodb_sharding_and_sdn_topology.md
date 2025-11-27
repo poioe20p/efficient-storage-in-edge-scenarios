@@ -5,10 +5,8 @@
 - Two isolated networks, each with its own OVS switch and MongoDB container.
 - Each MongoDB instance runs as a single-node replica set (for sharding).
 - The SDN controller (via `database.py`) does the following:
-  - Connects to both MongoDBs, initializing each as a replica set.
-  - Registers each replica set as a shard in the MongoDB router (mongos or a designated mongod).
-  - Enables sharding for the target database.
-  - Shards collections using the switch datapath (DPID) as the shard key, so all data for a switch stays together.
+  - Connects only to the mongodb-router.
+  - Initiates 
 
 ## 1. High-Level Goal
 

@@ -11,11 +11,6 @@ Replace container names, ports, and replica set names with your actual setup.
 
 ## 0) Quick Health Checklist
 
-List containers:
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
-```
-
 Check ports reachable:
 ```bash
 nc -zv 127.0.0.1 27017 27019 27020
@@ -34,12 +29,12 @@ docker exec -it mongodb-router nc -zv 192.168.100.1 27019  # config server
 
 Full cluster summary:
 ```bash
-docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'sh.status()'
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'sh.status()'
 ```
 
 Ping test:
 ```bash
-docker exec -it mongodb-router mongosh --port 27020 --quiet --eval 'db.adminCommand({ ping: 1 })'
+docker exec -it mongodb-router mongosh --host 192.168.100.1 --port 27020 --quiet --eval 'db.adminCommand({ ping: 1 })'
 ```
 
 List shards:
@@ -116,6 +111,23 @@ Logs:
 ```bash
 docker logs --tail 200 mongodb-n1
 docker logs --tail 200 mongodb-n2
+```
+
+List documents in `events` and `topology` collections directly on each shard (requires authentication):
+```bash
+docker exec -it mongodb-n1 mongosh "mongodb://appuser:app.04.app@10.0.0.4:27017/appdb?authSource=appdb" --quiet --eval '
+db.events.find().limit(5).forEach(doc => printjson(doc));
+db.topology.find().limit(5).forEach(doc => printjson(doc));
+'
+docker exec -it mongodb-n1 mongosh --quiet --eval 'db = db.getSiblingDB("appdb"); db.events.find().limit(5).forEach(printjson); db.topology.find().limit(5).forEach(printjson);'
+
+
+
+docker exec -it mongodb-n2 mongosh "mongodb://appuser:app.04.app@10.0.1.4:27017/appdb?authSource=appdb" --quiet --eval '
+db.events.find().limit(5).forEach(doc => printjson(doc));
+db.topology.find().limit(5).forEach(doc => printjson(doc));
+'
+docker exec -it mongodb-n2 mongosh --quiet --eval 'db = db.getSiblingDB("appdb"); db.events.find().limit(5).forEach(printjson); db.topology.find().limit(5).forEach(printjson);
 ```
 
 ---
@@ -230,6 +242,9 @@ db.runCommand({ rolesInfo: 1, showPrivileges: true })
 '
 ```
 
+See if auth is enabled
+mongosh --quiet --host <addr> --port <port> --eval "db.adminCommand({getCmdLineOpts:1}).parsed.security.authorization"
+
 ---
 
 ## 9) Feature Compatibility and Versions
@@ -337,7 +352,19 @@ Test connectivity between containers:
 docker exec -it mongodb-n1 bash -lc 'nc -zv 192.168.100.1 27019'
 ```
 
----
+Check user types:
+```bash
+docker exec -it mongodb-n1 mongosh --quiet --eval 'db.runCommand({ connectionStatus: 1 })'
+```
+
+```bash
+docker exec -it mongodb-n2 mongosh --quiet --eval 'db.runCommand({ connectionStatus: 1 })'
+```
+
+Check how mongod was run:
+```bash
+docker exec -it mongodb-n2 bash -lc 'cat /proc/1/cmdline | tr "\0" " "'
+```
 
 ## 14) Summary
 

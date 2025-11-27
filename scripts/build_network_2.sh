@@ -64,6 +64,7 @@ if [[ -f "$MONGO_ENV_FILE" ]]; then
   docker run -dit --name mongodb-n2 --network none \
     --entrypoint bash \
     --env-file "$MONGO_ENV_FILE" \
+    --no-healthcheck \
     -v mongodb-n2-data:/data/db ubuntu-mongodb
     # ubuntu-mongodb --shardsvr --replSet rs_net2
 else
@@ -71,6 +72,7 @@ else
   echo "MongoDB will start without authentication!"
   docker run -dit --name mongodb-n2 --network none \
     --entrypoint bash \
+    --no-healthcheck \
     -v mongodb-n2-data:/data/db ubuntu-mongodb
     # ubuntu-mongodb --shardsvr --replSet rs_net2
 fi

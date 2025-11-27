@@ -1,7 +1,8 @@
 """Configuration helpers for MongoDB credentials."""
 import os
+import string
 from collections import namedtuple
-
+from typing import Optional
 from dotenv import dotenv_values
 from urllib.parse import quote_plus
 
@@ -19,7 +20,6 @@ MongoConfigTuple = namedtuple(
 		"app_password",
 	],
 )
-
 
 
 class MongoConfig(MongoConfigTuple):
@@ -76,6 +76,63 @@ class MongoConfig(MongoConfigTuple):
 	@property
 	def config_port(self):
 		return os.getenv("MONGO_CONFIG_PORT", "27019")
+
+	@property
+	def replica_sets(self):
+		return [f"rs_net{i + 1}" for i in range(len(self.hosts))]
+
+	@property
+	def dpid_to_shard_map(self):
+		mapping_env = os.getenv("MONGO_DPID_ZONE_MAP", "")
+		mapping = {}
+		if mapping_env:
+			for entry in mapping_env.split(","):
+				entry = entry.strip()
+				if not entry or "=" not in entry:
+					continue
+				dpid_raw, shard_raw = entry.split("=", 1)
+				dpid_value = self._parse_dpid_identifier(dpid_raw)
+				if dpid_value is None:
+					continue
+				mapping[dpid_value] = shard_raw.strip()
+		if not mapping:
+			for idx, shard in enumerate(self.replica_sets, start=1):
+				mapping[idx] = shard
+		return dict(mapping)
+
+	@staticmethod
+	def _parse_dpid_identifier(value: str) -> Optional[int]:
+		if value is None:
+			return None
+		token = value.strip().lower()
+		if not token:
+			return None
+		if ":" in token:
+			hex_token = token.replace(":", "")
+			if all(c in string.hexdigits for c in hex_token):
+				try:
+					return int(hex_token, 16)
+				except ValueError:
+					return None
+		try:
+			return int(token, 0)
+		except ValueError:
+			if all(c in string.hexdigits for c in token):
+				try:
+					return int(token, 16)
+				except ValueError:
+					return None
+			return None
+
+	def resolve_shard_for_switch(self, dpid: int) -> Optional[str]:
+		mapping = self.dpid_to_shard_map
+		if dpid in mapping:
+			return mapping[dpid]
+
+		replicas = self.replica_sets
+		if not replicas:
+			return None
+		return replicas[(dpid or 0) % len(replicas)]
 
 	def app_uri(self, host=None, port=None, auth_db=None):
 		"""Build a connection string for the application MongoDB user."""
