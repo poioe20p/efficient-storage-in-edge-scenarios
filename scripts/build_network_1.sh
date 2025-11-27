@@ -58,24 +58,21 @@ docker run -dit --name container2 --network none ubuntu-host
 # Load MongoDB env-file if present (to reuse init creds)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MONGO_ENV_FILE=${MONGO_ENV_FILE:-"${SCRIPT_DIR}/../.env-mongo"}
-echo "Using MongoDB env file: $MONGO_ENV_FILE"
+
 if [[ -f "$MONGO_ENV_FILE" ]]; then
   echo "Loading MongoDB environment from: $MONGO_ENV_FILE"
-  # Export all simple KEY=VALUE entries from the env file
-  set -a
-  source "$MONGO_ENV_FILE"
-  set +a
-  
   docker run -dit --name mongodb-n1 --network none \
+    --entrypoint bash \
     --env-file "$MONGO_ENV_FILE" \
-    -v mongodb-data:/data/db \
-    ubuntu-mongodb --shardsvr --replSet rs_net1
+    -v mongodb-n1-data:/data/db
+    # ubuntu-mongodb --shardsvr --replSet rs_net1
 else
   echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
   echo "MongoDB will start without authentication!"
   docker run -dit --name mongodb-n1 --network none \
-    -v mongodb-data:/data/db \
-    ubuntu-mongodb --shardsvr --replSet rs_net1
+    --entrypoint bash \
+    -v mongodb-n1-data:/data/db
+    # ubuntu-mongodb --shardsvr --replSet rs_net1
 fi
 
 if [[ $? -ne 0 ]]; then
@@ -135,6 +132,8 @@ sudo nsenter -t $PID_MONGO -n ip link set eth0 address 00:00:00:00:00:04   # sta
 sudo nsenter -t $PID_MONGO -n ip link set eth0 up
 sudo nsenter -t $PID_MONGO -n ip addr add 10.0.0.4/24 dev eth0
 sudo nsenter -t $PID_MONGO -n ip route add default via 10.0.0.1
+
+docker exec -d mongodb-n1 mongod --shardsvr --replSet rs_net1 --dbpath /data/db --bind_ip_all
 
 # ==============================
 # Step 7: Configure NAT router internal (LAN side)

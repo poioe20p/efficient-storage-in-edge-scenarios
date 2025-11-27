@@ -34,7 +34,7 @@ trap 'error "Command failed at line ${LINENO}: ${BASH_COMMAND}"' ERR
 trap cleanup_trap EXIT
 
 print_usage() {
-		cat <<EOF
+	cat <<EOF
 Usage: $SCRIPT_NAME [options]
 
 Options:
@@ -45,10 +45,6 @@ Options:
 	-v, --volumes    Remove MongoDB volumes (mongodb, mongodb-data)
 	-r, --reset      Remove all containers and prune MongoDB volumes (mongodb, mongodb-data)
 	-h, --help       Show this help
-
-Environment:
-	NAT_IFACE   Network interface for NAT rule (default: $NAT_IFACE)
-	NAT_SUBNET  Subnet for NAT rule deletion (default: $NAT_SUBNET)
 EOF
 }
 
@@ -262,7 +258,7 @@ volumes_cleanup() {
 		warn "Docker not installed; skipping volume removal."
 		return 0
 	fi
-	local volumes=(mongodb mongodb-data mongodb-configdb)
+	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-configdb mongodb-router)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
