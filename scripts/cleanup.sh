@@ -229,6 +229,8 @@ images_cleanup() {
 		osken-controller
 		mongodb-config-server
 		mongodb-router
+		ubuntu-mongodb-router
+		mongodb-router
 	)
 	local removed=0
 	for img in "${images[@]}"; do

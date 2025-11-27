@@ -168,6 +168,8 @@ declare -A CONTAINER_NAME_MAP=(
 	["nat-router"]="nat-router"
 	["mongodb"]="mongodb"
 	["mongodb-config-server"]="mongodb-config-server"
+	["mongodb-router"]="mongodb-router"
+	["ubuntu-mongodb-router"]="mongodb-router"
 )
 
 resolve_container_name() {
