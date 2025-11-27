@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 # Robust cleanup utility for network artifacts and Docker resources.
 #

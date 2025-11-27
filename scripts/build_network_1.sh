@@ -64,14 +64,14 @@ if [[ -f "$MONGO_ENV_FILE" ]]; then
   docker run -dit --name mongodb-n1 --network none \
     --entrypoint bash \
     --env-file "$MONGO_ENV_FILE" \
-    -v mongodb-n1-data:/data/db
+    -v mongodb-n1-data:/data/db ubuntu-mongodb
     # ubuntu-mongodb --shardsvr --replSet rs_net1
 else
   echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
   echo "MongoDB will start without authentication!"
   docker run -dit --name mongodb-n1 --network none \
     --entrypoint bash \
-    -v mongodb-n1-data:/data/db
+    -v mongodb-n1-data:/data/db ubuntu-mongodb
     # ubuntu-mongodb --shardsvr --replSet rs_net1
 fi
 
