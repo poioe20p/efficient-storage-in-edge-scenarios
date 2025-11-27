@@ -7,11 +7,17 @@ echo "Creating OVS bridge ovs-br0..."
 docker exec ovs ovs-vsctl add-br ovs-br0
 
 echo "Creating veth pairs..."
+for IFACE in veth1 veth2 veth3 veth4 veth5 veth6 veth1-peer veth2-peer veth3-peer veth4-peer veth5-peer veth6-peer; do
+  if ip link show "$IFACE" >/dev/null 2>&1; then
+    sudo ip link del "$IFACE" >/dev/null 2>&1 || true
+  fi
+done
 sudo ip link add veth1 type veth peer name veth1-peer # container1
 sudo ip link add veth2 type veth peer name veth2-peer # container2
 sudo ip link add veth3 type veth peer name veth3-peer # router LAN side
 sudo ip link add veth4 type veth peer name veth4-peer # router WAN side
 sudo ip link add veth5 type veth peer name veth5-peer # mongodb
+sudo ip link add veth6 type veth peer name veth6-peer # router internet uplink
 
 ip link list
 
@@ -62,30 +68,30 @@ MONGO_ENV_FILE=${MONGO_ENV_FILE:-"${SCRIPT_DIR}/../.env-mongo"}
 if [[ -f "$MONGO_ENV_FILE" ]]; then
   echo "Loading MongoDB environment from: $MONGO_ENV_FILE"
   docker run -dit --name mongodb-n1 --network none \
-    --entrypoint bash \
     --env-file "$MONGO_ENV_FILE" \
     --no-healthcheck \
-    -v mongodb-n1-data:/data/db ubuntu-mongodb
-    # ubuntu-mongodb --shardsvr --replSet rs_net1
+    -v mongodb-n1-data:/data/db ubuntu-mongodb mongod \
+    --shardsvr --replSet rs_net1 --bind_ip_all --port 27018
 else
   echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
   echo "MongoDB will start without authentication!"
   docker run -dit --name mongodb-n1 --network none \
-    --entrypoint bash \
     --no-healthcheck \
-    -v mongodb-n1-data:/data/db ubuntu-mongodb
-    # ubuntu-mongodb --shardsvr --replSet rs_net1
+    -v mongodb-n1-data:/data/db ubuntu-mongodb mongod \
+    --shardsvr --replSet rs_net1 --bind_ip_all --port 27018
 fi
 
+# If any docker run fails, abort early.
 if [[ $? -ne 0 ]]; then
-    echo "Failed to start application containers. Aborting."
-    exit 1
+  echo "Failed to start application containers. Aborting."
+  exit 1
 fi
 
-# Bind mongodb IP address to mongodb-n1-host for easier access
+# Bind mongodb IP address to mongodb-n1-host for easier access (disabled to keep
+# shard traffic on the custom network and routed through nat-router)
 # docker network connect host mongodb-n1
 # sleep 2
-# # ==============================
+# ==============================
 
 
 # Get process IDs (needed to move interfaces into namespaces)
@@ -103,6 +109,7 @@ sudo ip link set veth2-peer netns $PID2
 sudo ip link set veth3-peer netns $PID_ROUTER
 sudo ip link set veth4-peer netns $PID_ROUTER   # router WAN side
 sudo ip link set veth5-peer netns $PID_MONGO
+sudo ip link set veth6-peer netns $PID_ROUTER   # router dedicated uplink
 
 # ==============================
 # Step 6: Configure container1
@@ -135,7 +142,13 @@ sudo nsenter -t $PID_MONGO -n ip link set eth0 up
 sudo nsenter -t $PID_MONGO -n ip addr add 10.0.0.4/24 dev eth0
 sudo nsenter -t $PID_MONGO -n ip route add default via 10.0.0.1
 
-docker exec -d mongodb-n1 mongod --shardsvr --replSet rs_net1 --dbpath /data/db --bind_ip_all
+# sleep 5
+
+# docker exec -d mongodb-n1 mongod \
+#   --shardsvr \
+#   --replSet rs_net1 \
+#   --dbpath /data/db \
+#   --bind_ip_all --port 27018
 
 # ==============================
 # Step 7: Configure NAT router internal (LAN side)
@@ -146,10 +159,10 @@ sudo nsenter -t $PID_ROUTER -n ip link set eth1 address 00:00:00:00:00:AA  # rou
 sudo nsenter -t $PID_ROUTER -n ip link set eth1 up
 sudo nsenter -t $PID_ROUTER -n ip addr add 10.0.0.1/24 dev eth1  # default GW for LAN
 
-# Enable IP forwarding + NAT in the router
+# Enable IP forwarding inside the router namespace (no blanket MASQUERADE so we
+# can control how shard ports are exposed)
 sudo nsenter -t $PID_ROUTER -n bash -c "
   echo 1 > /proc/sys/net/ipv4/ip_forward
-  iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 "
 # ==============================
 # Step 8 - Configure NAT router external (WAN) side
@@ -162,14 +175,26 @@ sudo nsenter -t $PID_ROUTER -n ip link set eth0 up
 sudo nsenter -t $PID_ROUTER -n ip addr add 192.168.100.2/24 dev eth0  # router’s WAN IP
 sudo nsenter -t $PID_ROUTER -n ip route add default via 192.168.100.1  # host as gateway
 
-# Enable IP forwarding + NAT in the router
+# Ensure IP forwarding stays enabled after reconfiguring interfaces.
 sudo nsenter -t $PID_ROUTER -n bash -c "
   echo 1 > /proc/sys/net/ipv4/ip_forward
-  iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 "
 
 sudo ip link set veth4 up
 sudo ip addr add 192.168.100.1/24 dev veth4  # host acts as router’s gateway
+
+# Configure dedicated uplink between host and NAT router for Internet access.
+INTERNET_LINK_HOST_IP=${INTERNET_LINK_HOST_IP:-172.20.0.1/30}
+INTERNET_LINK_ROUTER_IP=${INTERNET_LINK_ROUTER_IP:-172.20.0.2/30}
+INTERNET_LINK_GW=${INTERNET_LINK_GW:-172.20.0.1}
+sudo ip link set veth6 up
+sudo ip addr replace ${INTERNET_LINK_HOST_IP} dev veth6
+sudo nsenter -t $PID_ROUTER -n ip link set veth6-peer name eth3
+sudo nsenter -t $PID_ROUTER -n ip link set eth3 address 00:00:00:00:00:DD
+sudo nsenter -t $PID_ROUTER -n ip link set eth3 up
+sudo nsenter -t $PID_ROUTER -n ip addr replace ${INTERNET_LINK_ROUTER_IP} dev eth3
+sudo nsenter -t $PID_ROUTER -n ip route replace default via ${INTERNET_LINK_GW} dev eth3
+sudo nsenter -t $PID_ROUTER -n ip route replace 192.168.100.0/24 via 192.168.100.1 dev eth0
 
 # Ensure the host can reach the lab subnet (10.0.0.0/24) for tools like MongoDB Compass
 echo "Ensuring host route to 10.0.0.0/24 via 192.168.100.2..."
@@ -179,10 +204,51 @@ else
   ip route show 10.0.0.0/24
 fi
 
-# Enable IP forwarding + NAT on host for Internet access
-# You need to adjust below enp0s3 to the network interface VM is using
+# Enable IP forwarding + NAT on host for Internet access (auto-detect uplink or
+# fall back to enp0s3 if detection fails).
 sudo sysctl -w net.ipv4.ip_forward=1
-sudo iptables -t nat -A POSTROUTING -s 192.168.100.0/24 -o enp0s3 -j MASQUERADE
+DEFAULT_UPLINK_IF=${DEFAULT_UPLINK_IF:-$(ip route get 8.8.8.8 2>/dev/null | awk '/dev/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')}
+if [[ -z "${DEFAULT_UPLINK_IF}" ]]; then
+  DEFAULT_UPLINK_IF="enp0s3"
+  echo "WARNING: Unable to auto-detect uplink interface, defaulting to ${DEFAULT_UPLINK_IF}." >&2
+else
+  echo "Using ${DEFAULT_UPLINK_IF} as host uplink interface for MASQUERADE."
+fi
+if ! sudo iptables -t nat -C POSTROUTING -s 192.168.100.0/24 -o "${DEFAULT_UPLINK_IF}" -j MASQUERADE 2>/dev/null; then
+  sudo iptables -t nat -A POSTROUTING -s 192.168.100.0/24 -o "${DEFAULT_UPLINK_IF}" -j MASQUERADE
+fi
+if ! sudo iptables -t nat -C POSTROUTING -s 172.20.0.0/30 -o "${DEFAULT_UPLINK_IF}" -j MASQUERADE 2>/dev/null; then
+  sudo iptables -t nat -A POSTROUTING -s 172.20.0.0/30 -o "${DEFAULT_UPLINK_IF}" -j MASQUERADE
+fi
+
+# MASQUERADE Internet-bound LAN1 traffic (skip host subnet so sharding flows
+# keep original 10.x source addresses).
+sudo nsenter -t $PID_ROUTER -n bash -c '
+  if ! iptables -t nat -C POSTROUTING -s 10.0.0.0/24 ! -d 192.168.100.0/24 -o eth0 -j MASQUERADE 2>/dev/null; then
+    iptables -t nat -A POSTROUTING -s 10.0.0.0/24 ! -d 192.168.100.0/24 -o eth0 -j MASQUERADE
+  fi
+'
+
+# Masquerade both LANs when traffic leaves through the dedicated Internet uplink (eth3).
+sudo nsenter -t $PID_ROUTER -n bash -c '
+  for SUBNET in 10.0.0.0/24 10.0.1.0/24; do
+    if ! iptables -t nat -C POSTROUTING -s ${SUBNET} -o eth3 -j MASQUERADE 2>/dev/null; then
+      iptables -t nat -A POSTROUTING -s ${SUBNET} -o eth3 -j MASQUERADE
+    fi
+  done
+'
+
+# Forward shard traffic between the WAN (eth0) and LAN (eth1) sides.
+sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth0 -o eth1 -j ACCEPT
+sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT
+
+# Expose mongodb-n1 via 192.168.100.2:27018 using DNAT/SNAT so mongos can
+# reference the router address while traffic still lands on 10.0.0.4.
+sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
+  -d 192.168.100.2 --dport 27018 -j DNAT --to-destination 10.0.0.4:27018
+sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth1 -p tcp \
+  -s 10.0.0.4 --sport 27018 -j SNAT --to-source 192.168.100.2:27018
+
 
 # Show OVS status
 docker exec ovs ovs-vsctl show

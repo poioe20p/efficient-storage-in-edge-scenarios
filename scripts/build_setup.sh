@@ -24,7 +24,7 @@ check_mongo_ok() {
 # 0 - Cleanup old runs
 # ==============================
 echo "Cleaning up network and Docker resources..."
-./cleanup.sh
+./cleanup.sh -v
 
 if [[ $? -ne 0 ]]; then
     echo "Cleanup failed. Aborting build_setup.sh."
@@ -53,6 +53,20 @@ else
     sudo ip addr add 192.168.100.4/24 dev enp0s3
     echo "Assigned 192.168.100.4/24 to enp0s3."
 fi
+
+# if ip addr show dev enp0s3 | grep -q "192.168.100.5/24"; then
+#     echo "enp0s3 already has 192.168.100.5/24 assigned."
+# else
+#     sudo ip addr add 192.168.100.5/24 dev enp0s3
+#     echo "Assigned 192.168.100.5/24 to enp0s3."
+# fi
+
+# if ip addr show dev enp0s3 | grep -q "192.168.100.6/24"; then
+#     echo "enp0s3 already has 192.168.100.6/24 assigned."
+# else
+#     sudo ip addr add 192.168.100.6/24 dev enp0s3
+#     echo "Assigned 192.168.100.6/24 to enp0s3."
+# fi
 
 # ==============================
 # 1 - Start OVS container
@@ -96,11 +110,12 @@ echo "Starting MongoDB config server container..."
 docker run -di --name mongodb-config-server --network host \
     -v mongodb-configdb:/data/configdb \
     mongodb-config-server mongod \
-        --configsvr \
-        --bind_ip 192.168.100.4 \
+    --configsvr \
     --replSet configReplSet \
-        --dbpath /data/configdb \
-    --port 27019
+    --port 27019 \
+    --dbpath "/data/configdb" \
+    --bind_ip 192.168.100.4
+
 if [[ $? -ne 0 ]]; then
     echo "Failed to start MongoDB config server container. Aborting."
     exit 1
@@ -221,75 +236,81 @@ if [[ "${RS_READY}" != true ]]; then
 fi
 sleep 2
 
+# docker exec -i mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 <<'EOF'
+# cfg = rs.conf();
+# cfg.members[0].host = "192.168.100.4:27019";
+# rs.reconfig(cfg, {force: true});
+# EOF
+
 # ===============================================
 # 4.2 - Ensure config server replica set host IP
 # ===============================================
-# DESIRED_CONFIG_MEMBER="${MONGO_HOST_IP}:${MONGO_CONFIG_PORT}"
-# echo "Ensuring config server replica set advertises ${DESIRED_CONFIG_MEMBER}..."
-# set +e
-# CURRENT_CONFIG_MEMBER=$(docker exec mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 --eval "
-# var cfg;
-# try {
-#     cfg = rs.conf();
-#     if (cfg.members && cfg.members.length > 0) {
-#         print(cfg.members[0].host);
-#     } else {
-#         print('NO_MEMBERS');
-#     }
-# } catch (e) {
-#     print('ERROR:' + e);
-# }
-# ")
-# HOST_STATUS=$?
-# set -e
+DESIRED_CONFIG_MEMBER="${MONGO_HOST_IP}:${MONGO_CONFIG_PORT}"
+echo "Ensuring config server replica set advertises ${DESIRED_CONFIG_MEMBER}..."
+set +e
+CURRENT_CONFIG_MEMBER=$(docker exec mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 --eval "
+var cfg;
+try {
+    cfg = rs.conf();
+    if (cfg.members && cfg.members.length > 0) {
+        print(cfg.members[0].host);
+    } else {
+        print('NO_MEMBERS');
+    }
+} catch (e) {
+    print('ERROR:' + e);
+}
+")
+HOST_STATUS=$?
+set -e
 
-# if [[ ${HOST_STATUS} -ne 0 ]]; then
-#     echo "Failed to inspect config replica set members (exit ${HOST_STATUS}). Output:"
-#     echo "${CURRENT_CONFIG_MEMBER}"
-#     exit 1
-# fi
+if [[ ${HOST_STATUS} -ne 0 ]]; then
+    echo "Failed to inspect config replica set members (exit ${HOST_STATUS}). Output:"
+    echo "${CURRENT_CONFIG_MEMBER}"
+    exit 1
+fi
 
-# CLEAN_CONFIG_MEMBER=$(echo "${CURRENT_CONFIG_MEMBER}" | tr -d '\r\n"')
+CLEAN_CONFIG_MEMBER=$(echo "${CURRENT_CONFIG_MEMBER}" | tr -d '\r\n"')
 
-# if [[ "${CLEAN_CONFIG_MEMBER}" == ERROR:* ]]; then
-#     echo "Unable to read config replica set configuration (${CLEAN_CONFIG_MEMBER})."
-#     exit 1
-# fi
+if [[ "${CLEAN_CONFIG_MEMBER}" == ERROR:* ]]; then
+    echo "Unable to read config replica set configuration (${CLEAN_CONFIG_MEMBER})."
+    exit 1
+fi
 
-# if [[ "${CLEAN_CONFIG_MEMBER}" == "NO_MEMBERS" ]]; then
-#     echo "Config replica set reports no members despite initialization; aborting."
-#     exit 1
-# fi
+if [[ "${CLEAN_CONFIG_MEMBER}" == "NO_MEMBERS" ]]; then
+    echo "Config replica set reports no members despite initialization; aborting."
+    exit 1
+fi
 
-# if [[ "${CLEAN_CONFIG_MEMBER}" != "${DESIRED_CONFIG_MEMBER}" ]]; then
-#     echo "Config replica set member host '${CLEAN_CONFIG_MEMBER}' does not match desired '${DESIRED_CONFIG_MEMBER}'. Reconfiguring..."
-#     set +e
-#     RECONFIG_OUTPUT=$(docker exec -i mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 --eval "
-# JSON.stringify(
-#     rs.reconfig({
-#         _id: 'configReplSet',
-#         configsvr: true,
-#         members: [
-#             { _id: 0, host: '${MONGO_HOST_IP}:${MONGO_CONFIG_PORT}' }
-#         ]
-#     }, { force: true })
-# )
-# ")
-#     RECONFIG_STATUS=$?
-#     set -e
+if [[ "${CLEAN_CONFIG_MEMBER}" != "${DESIRED_CONFIG_MEMBER}" ]]; then
+    echo "Config replica set member host '${CLEAN_CONFIG_MEMBER}' does not match desired '${DESIRED_CONFIG_MEMBER}'. Reconfiguring..."
+    set +e
+    RECONFIG_OUTPUT=$(docker exec -i mongodb-config-server mongosh --quiet --host 192.168.100.4 --port 27019 --eval "
+JSON.stringify(
+    rs.reconfig({
+        _id: 'configReplSet',
+        configsvr: true,
+        members: [
+            { _id: 0, host: '${MONGO_HOST_IP}:${MONGO_CONFIG_PORT}' }
+        ]
+    }, { force: true })
+)
+")
+    RECONFIG_STATUS=$?
+    set -e
 
-#     if [[ ${RECONFIG_STATUS} -ne 0 ]]; then
-#         echo "Failed to reconfigure config replica set host (exit ${RECONFIG_STATUS}). Output:"
-#         echo "${RECONFIG_OUTPUT}"
-#         exit 1
-#     fi
+    if [[ ${RECONFIG_STATUS} -ne 0 ]]; then
+        echo "Failed to reconfigure config replica set host (exit ${RECONFIG_STATUS}). Output:"
+        echo "${RECONFIG_OUTPUT}"
+        exit 1
+    fi
 
-#     check_mongo_ok "${RECONFIG_OUTPUT}" "Config replica set host reconfiguration"
-#     echo "Config replica set host updated successfully."
-#     sleep 2
-# else
-#     echo "Config replica set already advertises the desired host."
-# fi
+    check_mongo_ok "${RECONFIG_OUTPUT}" "Config replica set host reconfiguration"
+    echo "Config replica set host updated successfully."
+    sleep 2
+else
+    echo "Config replica set already advertises the desired host."
+fi
 
 # ==============================
 # 5 - Run build_network_1.sh to setup first network
@@ -302,12 +323,19 @@ if [[ $? -ne 0 ]]; then
 fi
 sleep 2
 
+# docker run -dit --name mongodb-n1 --network host \
+#     --no-healthcheck \
+#     -v mongodb-n1-data:/data/db ubuntu-mongodb mongod \
+#     --shardsvr --replSet rs_net1 \
+#     --dbpath "/data/db" \
+#     --bind_ip 10.0.0.4 --port 27018
+
 # =============================
 # 5.1 - Initialize the mongodb-n1 replica set
 # =============================
 echo "Initializing MongoDB replica set for mongodb-n1..."
 set +e
-RS_STATUS_CHECK=$(docker exec -i mongodb-n1 mongosh --host 10.0.0.4 --port 27017 --quiet --eval "
+RS_STATUS_CHECK=$(docker exec -i mongodb-n1 mongosh --host 10.0.0.4 --port 27018 --quiet --eval "
 var status;
 try {
     status = rs.status();
@@ -334,12 +362,12 @@ if [[ ${RS_STATUS_CODE} -eq 0 && "${CLEAN_RS_STATUS}" == "ALREADY_INITIALIZED" ]
 else
     echo "Replica set not initialized yet. Running rs.initiate..."
     set +e
-    INIT_OUTPUT=$(docker exec -i mongodb-n1 mongosh --host 10.0.0.4 --port 27017 --quiet --eval "
+    INIT_OUTPUT=$(docker exec -i mongodb-n1 mongosh --host 10.0.0.4 --port 27018 --quiet --eval "
     JSON.stringify(
     rs.initiate({
         _id: 'rs_net1',
         members: [
-        { _id: 0, host: '10.0.0.4:27017' }
+        { _id: 0, host: '10.0.0.4:27018' }
         ]
     })
     )
@@ -348,6 +376,7 @@ else
     check_mongo_ok "${INIT_OUTPUT}" "Replica set 'rs_net1' initialization"
     echo "Initialization returned ok with value -> ${INIT_OUTPUT}."
     sleep 2
+
 fi
 
 # ==============================
@@ -361,12 +390,19 @@ if [[ $? -ne 0 ]]; then
 fi
 sleep 2
 
+# docker run -dit --name mongodb-n2 --network host \
+#     --no-healthcheck \
+#     -v mongodb-n2-data:/data/db ubuntu-mongodb mongod \
+#     --shardsvr --replSet rs_net2 \
+#     --dbpath "/data/db" \
+#     --bind_ip 10.0.1.4 --port 27018
+
 # =============================
 # 6.1 - Initialize the mongodb-n2 replica set
 # =============================
 echo "Initializing MongoDB replica set for mongodb-n2..."
 set +e
-RS_STATUS_CHECK=$(docker exec -i mongodb-n2 mongosh --quiet --host 10.0.1.4 --port 27017 --quiet --eval "
+RS_STATUS_CHECK=$(docker exec -i mongodb-n2 mongosh --quiet --host 10.0.1.4 --port 27018 --quiet --eval "
 var status;
 try {
     status = rs.status();
@@ -392,12 +428,12 @@ if [[ ${RS_STATUS_CODE} -eq 0 && "${CLEAN_RS_STATUS}" == "ALREADY_INITIALIZED" ]
     echo "Config server replica set already initialized. Skipping rs.initiate."
 else
     set +e
-    INIT_OUTPUT=$(docker exec -i mongodb-n2 mongosh --quiet --host 10.0.1.4 --port 27017 --quiet --eval "
+    INIT_OUTPUT=$(docker exec -i mongodb-n2 mongosh --quiet --host 10.0.1.4 --port 27018 --quiet --eval "
     JSON.stringify(
     rs.initiate({
         _id: 'rs_net2',
         members: [
-        { _id: 0, host: '10.0.1.4:27017' }
+        { _id: 0, host: '10.0.1.4:27018' }
         ]
     })
     )
@@ -406,6 +442,7 @@ else
     check_mongo_ok "${INIT_OUTPUT}" "Replica set 'rs_net2' initialization"
     echo "Initialization returned ok with value -> ${INIT_OUTPUT}."
     sleep 2
+
 fi
 
 # ==============================================
@@ -431,7 +468,7 @@ for REPLSET in rs_net1 rs_net2; do
     for attempt in $(seq 1 ${MAX_RS_RETRIES}); do
         echo "Replica set '${REPLSET}' status check attempt ${attempt}/${MAX_RS_RETRIES}..."
         set +e
-        STATUS_JSON=$(docker exec -i "${CONTAINER}" mongosh --quiet --host "${HOST_IP}" --port 27017 --quiet --eval "
+        STATUS_JSON=$(docker exec -i "${CONTAINER}" mongosh --quiet --host "${HOST_IP}" --port 27018 --quiet --eval "
 var status;
 try {
     status = rs.status();
@@ -484,12 +521,9 @@ done
 # ==============================
 # 8 - Start mongodb router container
 # ==============================
-echo "Sleep for 30 seconds"
-sleep 30
-
 echo "Starting MongoDB router container..."
 docker run -dit --name mongodb-router --network host \
-    mongodb-router:latest \
+    mongodb-router:latest mongos \
     --configdb configReplSet/192.168.100.4:27019 \
     --bind_ip 192.168.100.4 \
     --port 27020
@@ -500,11 +534,52 @@ if [[ $? -ne 0 ]]; then
 fi
 sleep 2
 
+# Ensure mongos is fully connected to the config replica set before adding shards
+echo "Waiting for MongoDB router to become ready..."
+MAX_ROUTER_RETRIES=15
+ROUTER_RETRY_DELAY=4
+ROUTER_READY=false
+
+for attempt in $(seq 1 ${MAX_ROUTER_RETRIES}); do
+    echo "Router readiness check attempt ${attempt}/${MAX_ROUTER_RETRIES}..."
+    set +e
+    PING_RESULT=$(docker exec -i mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(db.adminCommand({ ping: 1 }))")
+    PING_STATUS=$?
+    GRID_RESULT=$(docker exec -i mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(db.adminCommand({ isdbgrid: 1 }))")
+    GRID_STATUS=$?
+    LIST_RESULT=$(docker exec -i mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(db.adminCommand({ listShards: 1 }))")
+    LIST_STATUS=$?
+    set -e
+
+     if [[ ${PING_STATUS} -eq 0 && ${GRID_STATUS} -eq 0 && ${LIST_STATUS} -eq 0 ]] && \
+         echo "${PING_RESULT}" | grep -Eq '"ok"\s*:\s*1' && \
+         echo "${GRID_RESULT}" | grep -Eq '"ok"\s*:\s*1' && \
+         echo "${LIST_RESULT}" | grep -Eq '"ok"\s*:\s*1'; then
+        echo "MongoDB router is ready."
+        ROUTER_READY=true
+        break
+    fi
+
+    echo "Router not ready yet. Ping output: ${PING_RESULT}" >&2
+     echo "isdbgrid output: ${GRID_RESULT}" >&2
+     echo "listShards output: ${LIST_RESULT}" >&2
+
+    if [[ ${attempt} -lt ${MAX_ROUTER_RETRIES} ]]; then
+        echo "Retrying in ${ROUTER_RETRY_DELAY}s..."
+        sleep ${ROUTER_RETRY_DELAY}
+    fi
+done
+
+if [[ "${ROUTER_READY}" != true ]]; then
+    echo "MongoDB router failed to become ready after ${MAX_ROUTER_RETRIES} attempts."
+    exit 1
+fi
+
 # ========================================
 # 8.1 - Add both shard replica sets to the router
 # ========================================
 echo "Adding shard replica sets to the MongoDB router with retries..."
-declare -A SHARD_CONNECTIONS=( ["rs_net1"]="rs_net1/10.0.0.4:27017" ["rs_net2"]="rs_net2/10.0.1.4:27017" )
+declare -A SHARD_CONNECTIONS=( ["rs_net1"]="rs_net1/10.0.0.4:27018" ["rs_net2"]="rs_net2/10.0.1.4:27018" )
 MAX_SHARD_RETRIES=5
 SHARD_RETRY_DELAY=2
 

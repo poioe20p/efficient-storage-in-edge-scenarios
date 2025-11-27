@@ -26,15 +26,15 @@ VOLUME ["/data/db"]
 # Expose default MongoDB port (documentational, networking is handled externally)
 EXPOSE 27017
 
-# Healthcheck script that works with or without auth (uses env if provided)
-COPY healthcheck-mongo.sh /usr/local/bin/healthcheck-mongo.sh
-RUN chmod +x /usr/local/bin/healthcheck-mongo.sh
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 CMD /usr/local/bin/healthcheck-mongo.sh || exit 1
+# # Healthcheck script that works with or without auth (uses env if provided)
+# COPY healthcheck-mongo.sh /usr/local/bin/healthcheck-mongo.sh
+# RUN chmod +x /usr/local/bin/healthcheck-mongo.sh
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 CMD /usr/local/bin/healthcheck-mongo.sh || exit 1
 
-# Add entrypoint for initialization and auth enablement
-COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# # Add entrypoint for initialization and auth enablement
+# COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["mongod"]
+# ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# CMD ["mongod"]
 

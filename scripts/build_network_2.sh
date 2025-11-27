@@ -7,6 +7,11 @@ echo "Creating OVS bridge ovs-br1..."
 docker exec ovs ovs-vsctl add-br ovs-br1
 
 echo "Creating veth pairs..."
+for IFACE in veth10 veth11 veth12 veth13 veth10-peer veth11-peer veth12-peer veth13-peer; do
+  if ip link show "$IFACE" >/dev/null 2>&1; then
+    sudo ip link del "$IFACE" >/dev/null 2>&1 || true
+  fi
+done
 sudo ip link add veth10 type veth peer name veth10-peer # container3
 sudo ip link add veth11 type veth peer name veth11-peer # container4
 sudo ip link add veth12 type veth peer name veth12-peer # router LAN side
@@ -62,19 +67,17 @@ echo "Using MongoDB env file: $MONGO_ENV_FILE"
 if [[ -f "$MONGO_ENV_FILE" ]]; then
   echo "Loading MongoDB environment from: $MONGO_ENV_FILE"
   docker run -dit --name mongodb-n2 --network none \
-    --entrypoint bash \
     --env-file "$MONGO_ENV_FILE" \
     --no-healthcheck \
-    -v mongodb-n2-data:/data/db ubuntu-mongodb
-    # ubuntu-mongodb --shardsvr --replSet rs_net2
+    -v mongodb-n2-data:/data/db ubuntu-mongodb mongod \
+    --shardsvr --replSet rs_net2 --bind_ip_all --port 27018
 else
   echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
   echo "MongoDB will start without authentication!"
   docker run -dit --name mongodb-n2 --network none \
-    --entrypoint bash \
     --no-healthcheck \
-    -v mongodb-n2-data:/data/db ubuntu-mongodb
-    # ubuntu-mongodb --shardsvr --replSet rs_net2
+    -v mongodb-n2-data:/data/db ubuntu-mongodb mongod \
+    --shardsvr --replSet rs_net2 --bind_ip_all --port 27018
 fi
 
 if [[ $? -ne 0 ]]; then
@@ -128,7 +131,13 @@ sudo nsenter -t $PID_MONGO -n ip link set eth0 up
 sudo nsenter -t $PID_MONGO -n ip addr add 10.0.1.4/24 dev eth0
 sudo nsenter -t $PID_MONGO -n ip route add default via 10.0.1.1
 
-docker exec -d mongodb-n2 mongod --shardsvr --replSet rs_net2 --dbpath /data/db --bind_ip_all
+# sleep 5
+
+# docker exec -d mongodb-n2 mongod \
+#   --shardsvr \
+#   --replSet rs_net2 \
+#   --dbpath /data/db \
+#   --bind_ip_all --port 27018
 
 # ==============================
 # Step 7: Configure NAT router internal (LAN side)
@@ -138,6 +147,12 @@ sudo nsenter -t $PID_ROUTER -n ip link set veth12-peer name eth2
 sudo nsenter -t $PID_ROUTER -n ip link set eth2 address 00:00:00:00:00:CC  # router LAN MAC
 sudo nsenter -t $PID_ROUTER -n ip link set eth2 up
 sudo nsenter -t $PID_ROUTER -n ip addr add 10.0.1.1/24 dev eth2  # default GW for LAN
+
+# Ensure IP forwarding is enabled inside the router namespace (shared with
+# network 1 but safe to set again).
+sudo nsenter -t $PID_ROUTER -n bash -c "
+  echo 1 > /proc/sys/net/ipv4/ip_forward
+"
 
 
 # ==============================
@@ -151,6 +166,24 @@ if ! sudo ip route replace 10.0.1.0/24 via 192.168.100.2 dev veth4 >/dev/null 2>
 else
   ip route show 10.0.1.0/24
 fi
+
+# MASQUERADE only LAN2 traffic heading outside the host subnet so direct
+# management via 10.0.1.0/24 keeps original addresses intact.
+sudo nsenter -t $PID_ROUTER -n bash -c '
+  if ! iptables -t nat -C POSTROUTING -s 10.0.1.0/24 ! -d 192.168.100.0/24 -o eth0 -j MASQUERADE 2>/dev/null; then
+    iptables -t nat -A POSTROUTING -s 10.0.1.0/24 ! -d 192.168.100.0/24 -o eth0 -j MASQUERADE
+  fi
+'
+
+sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth0 -o eth2 -j ACCEPT
+sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth2 -o eth0 -j ACCEPT
+
+# Expose mongodb-n2 via 192.168.100.2:27118 so mongos can reach it through the
+# router address while traffic is forwarded to 10.0.1.4.
+sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
+  -d 192.168.100.2 --dport 27118 -j DNAT --to-destination 10.0.1.4:27018
+sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth2 -p tcp \
+  -s 10.0.1.4 --sport 27018 -j SNAT --to-source 192.168.100.2:27118
 
 # Show OVS status
 docker exec ovs ovs-vsctl show

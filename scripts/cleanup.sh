@@ -260,7 +260,7 @@ volumes_cleanup() {
 		warn "Docker not installed; skipping volume removal."
 		return 0
 	fi
-	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-configdb mongodb-router)
+	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-configdb mongodb-router mongodb-config-server)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then

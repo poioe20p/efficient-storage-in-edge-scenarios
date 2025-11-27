@@ -225,6 +225,7 @@ IMAGES=(
 	"ubuntu-mongodb:ubuntu-mongodb"
 	"os-ken:osken-controller"
 	"ubuntu-mongodb-configsvr:mongodb-config-server"
+	"ubuntu-mongodb-router:mongodb-router"
 )
 
 ### Build helper
