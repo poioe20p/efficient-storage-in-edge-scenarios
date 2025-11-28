@@ -6,7 +6,6 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
-        git \
         libxml2-dev \
         libxslt1-dev \
         libffi-dev \
@@ -27,12 +26,16 @@ RUN wget -qO /tmp/mongodb-server-7.0.asc https://www.mongodb.org/static/pgp/serv
 
 WORKDIR /workspace
 
+# 3. Install Python Dependencies
+# We pin eventlet to 0.33.3 to avoid SSL crashes common in newer versions
 RUN pip install --upgrade pip setuptools wheel && \
-    pip install "git+https://github.com/openstack/os-ken.git" && \
-    pip install eventlet==0.33.3 python-dotenv pymongo
+    pip install os-ken==3.1.1 && \
+    pip install eventlet python-dotenv pymongo
 
-# Use python module execution instead of binary shim to avoid PATH issues
+# 4. Define the Entrypoint
+# We use 'python -m' to bypass potential PATH issues with the binary script.
 ENTRYPOINT ["python3", "-m", "os_ken.cmd.manager"]
 
-# Default Arguments
-CMD ["--verbose", "sdn_controller.osken_learn_and_log"]
+# 5. Default Command (Can be overridden by docker run)
+# By default, show help if no script is provided
+CMD ["--help"]

@@ -1,7 +1,7 @@
 from typing import Optional
 from pymongo import MongoClient
 
-VALID_IP_SET =("127.0.0.1", "10.0.0.4", "10.0.1.4", "192.168.100.1")
+VALID_IP_SET =("127.0.0.1", "10.0.0.4", "10.0.1.4", "192.168.100.4")
 
 class MongodbHost:
     """Represents a MongoDB host configuration."""
@@ -9,7 +9,7 @@ class MongodbHost:
     def __init__(
         self,
         host: str = "10.0.1.4",
-        port: int = 27017,
+        port: int = 27018,
         name: str = "app_db",
         replica_set_name: str = "",
         admin_username: Optional[str] = None,

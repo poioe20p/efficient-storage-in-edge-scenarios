@@ -605,14 +605,13 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-        osken-controller --verbose sdn_controller.osken_learn_and_log
+        osken-controller --verbose ./sdn_controller/osken_learn_and_log.py
 else
     docker run -dit --name osken --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        osken-controller --verbose sdn_controller.osken_learn_and_log
+        osken-controller --verbose ./sdn_controller/osken_learn_and_log.py
 fi
-
 
 if [[ $? -ne 0 ]]; then
     echo "Failed to start SDN controller container. Aborting."

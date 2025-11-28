@@ -3,7 +3,6 @@ import random
 import eventlet
 eventlet.monkey_patch()
 from datetime import datetime
-from config import MongoConfig
 from pymongo import MongoClient
 from os_ken.base import app_manager
 from os_ken.controller import ofp_event
@@ -26,10 +25,12 @@ class KenLearnAndLog(app_manager.OSKenApp):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         mongodb_host_n1 = MongodbHost(
-            host="10.0.0.4"
+            host="10.0.0.4",
+            port=27018,
         )
         mongodb_host_n2 = MongodbHost(
-            host="10.0.1.4"
+            host="10.0.1.4",
+            port=27018,
         )
         self.host_n1_conn = MongoClient(
             mongodb_host_n1.get_simple_connection_string(
