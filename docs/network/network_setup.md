@@ -21,7 +21,7 @@ This note explains, step by step, how the automation scripts wire each shard net
 
 ### 4. Configure the NAT router LAN sides
 1. `sudo nsenter -t $PID_ROUTER -n ip link set veth3-peer name eth1` (network 1) and `veth12-peer name eth2` (network 2) – rename each LAN interface inside the router.
-2. `ip addr add 10.0.0.1/24 dev eth1` and `ip addr add 10.0.1.1/24 dev eth2` – give the router gateway IPs for both shards.
+2. `ip addr add 10.0.0.1/24 dev eth1` and `ip addr add 10.0.1.1/24 dev eth2` – give the router gateway IPs for both networks/lans.
 3. `echo 1 > /proc/sys/net/ipv4/ip_forward` – enable forwarding so the router passes packets between LANs and WAN.
 
 ### 5. Wire the router WAN side and host attachment
