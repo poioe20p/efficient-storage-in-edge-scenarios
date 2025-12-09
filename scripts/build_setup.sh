@@ -527,7 +527,7 @@ sleep 2
 # 8.3 Add shard zones and shard key ranges
 # ===============================================
 echo "Adding shard zones and shard key ranges..."
-ZONE_SIZE=10000
+ZONE_SIZE=1000000000
 SHARD_ORDER=(rs_net1 rs_net2)
 declare -A SHARD_ZONES=( [rs_net1]="shard_zone_rs_net1" [rs_net2]="shard_zone_rs_net2" )
 
@@ -605,12 +605,16 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-        osken-controller --verbose ./sdn_controller/osken_learn_and_log.py
+        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
+        # osken-controller ./sdn_controller/usecases/topology.py
+        # osken-controller --verbose ./sdn_controller/usecases/topology.py
 else
     docker run -dit --name osken --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        osken-controller --verbose ./sdn_controller/osken_learn_and_log.py
+        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
+        # osken-controller ./sdn_controller/usecases/topology.py
+        # osken-controller --verbose ./sdn_controller/usecases/topology.py
 fi
 
 if [[ $? -ne 0 ]]; then

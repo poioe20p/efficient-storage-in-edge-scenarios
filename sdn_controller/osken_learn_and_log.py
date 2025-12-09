@@ -1,9 +1,10 @@
 """Learning-switch style OS-Ken app that logs packet events to MongoDB."""
-import random
 import eventlet
+
 eventlet.monkey_patch()
+
+import random
 from datetime import datetime
-from pymongo import MongoClient
 from os_ken.base import app_manager
 from os_ken.controller import ofp_event
 from os_ken.controller.handler import (
@@ -14,9 +15,10 @@ from os_ken.controller.handler import (
 from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
 from sdn_controller.models.mongodb_host import MongodbHost
+from sdn_controller.repositories.repositories.event import EventRepository
+from sdn_controller.repositories.models.event import Event
 
-# This class defines a simple OS-Ken application that acts like a switch in an OpenFlow network and
-# logs packet events to a MongoDB database.
+
 class KenLearnAndLog(app_manager.OSKenApp):
     """Simple layer-2 learning switch with optional MongoDB logging."""
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -24,27 +26,18 @@ class KenLearnAndLog(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        mongodb_host_n1 = MongodbHost(
-            host="10.0.0.4",
-            port=27018,
-        )
-        mongodb_host_n2 = MongodbHost(
-            host="10.0.1.4",
-            port=27018,
-        )
-        self.host_n1_conn = MongoClient(
-            mongodb_host_n1.get_simple_connection_string(
+        self.host_n1_event_repository = EventRepository(
+            MongodbHost(host="10.0.0.4", port=27018, database_name="app_db").get_simple_connection_string(
                 add_app=True
-            ),
-            connect=False
+            )
         )
-        self.host_n2_conn = MongoClient(
-            mongodb_host_n2.get_simple_connection_string(
+        self.host_n2_event_repository = EventRepository(
+            MongodbHost(host="10.0.1.4", port=27018, database_name="app_db").get_simple_connection_string(
                 add_app=True
-            ),
-            connect=False
+            )
         )
-        self._zone_size = 10000
+
+        self._zone_size = 1000000000
         self._zone_order = ["shard_zone_rs_net1", "shard_zone_rs_net2"]
         self._zone_state = {}
         start = 0
@@ -58,42 +51,49 @@ class KenLearnAndLog(app_manager.OSKenApp):
             start += self._zone_size
         self.datapath_zone_map = {}
         self._connected_switches = 0
+        self.enable_reactive_learning = True
 
-    def add_flow(self, datapath, in_port, dst, src, actions):
-        # Get the OpenFlow protocol object for the given switch (datapath)
+    def _install_flow(self, datapath, priority, match, actions, *,
+                      idle_timeout=0, hard_timeout=0, cookie=0, flags=None):
+        """Shared helper so subclasses can install arbitrary matches."""
         ofproto = datapath.ofproto
-
-        # Create a match objectE based on the input port, source MAC address (src), and destination MAC address (dst)
-        match = datapath.ofproto_parser.OFPMatch(
-            in_port=in_port,                      # Match the input port
-            eth_dst=dst,                          # Match the destination MAC address (eth_dst = layer-2 destination)
-            eth_src=src)                          # Match the source MAC address (eth_src = layer-2 source)
-
-        # Create a flow modification message to add a new flow entry to the switch
-        # The OFPFlowMod message includes match criteria, priority, timeout, and actions
+        if flags is None:
+            flags = ofproto.OFPFF_SEND_FLOW_REM
+                
         instructions = [
             datapath.ofproto_parser.OFPInstructionActions(
                 ofproto.OFPIT_APPLY_ACTIONS,
                 actions,
             )
         ]
-        
-        # Potencialmente guardar na db os flows adicionadas
         mod = datapath.ofproto_parser.OFPFlowMod(
-            datapath=datapath,                    # The switch (datapath) to apply the flow modification
-            match=match,                          # The match criteria defined above (in_port, src, dst)
-            cookie=0,                             # Cookie identifier for tracking the flow (set to 0 in this case)
-            command=ofproto.OFPFC_ADD,            # Command to add a new flow entry (OFPFC_ADD)
-            idle_timeout=0,                       # No idle timeout (the flow will not expire due to inactivity)
-            hard_timeout=0,                       # No hard timeout (the flow will not expire over time)
-            priority=10,                          # Priority of the flow (higher values mean higher priority)
-            flags=ofproto.OFPFF_SEND_FLOW_REM,    # Flag to send a Flow Removed message when the flow is deleted
-            instructions=instructions             # Apply the actions via the instruction set (OpenFlow 1.3 requirement)
+            datapath=datapath,
+            priority=priority,
+            match=match,
+            instructions=instructions,
+            idle_timeout=idle_timeout,
+            hard_timeout=hard_timeout,
+            cookie=cookie,
+            flags=flags,
+            command=ofproto.OFPFC_ADD,
         )
-
-        # Send the flow modification message to the switch (datapath)
-        # This installs the flow entry into the switch's flow table
         datapath.send_msg(mod)
+
+    def add_flow(self, datapath, in_port, dst, src, actions):
+        """Default reactive learning-switch rule installer."""
+        parser = datapath.ofproto_parser
+        match = parser.OFPMatch(
+            in_port=in_port,
+            eth_dst=dst,
+            eth_src=src,
+        )
+        self._install_flow(
+            datapath,
+            priority=10,
+            match=match,
+            actions=actions,
+            flags=datapath.ofproto.OFPFF_SEND_FLOW_REM,
+        )
         
     def _assign_zone_to_switch(self, datapath_id: str) -> str:
         for zone in self._zone_order:
@@ -192,7 +192,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         # Learn a MAC address to avoid flooding next time
         if src not in self.mac_to_port[dpid_int]:  # If the source MAC is not already tracked for this switch
             self.mac_to_port[dpid_int][src] = in_port
-            print("mac_to_port[%s]: %s", dpid_int, self.mac_to_port[dpid_int])
+            # print("mac_to_port[%s]: %s", dpid_int, self.mac_to_port[dpid_int])
         
         # Determine the output port for the destination MAC address    
         if dst in self.mac_to_port[dpid_int]:
@@ -205,7 +205,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         actions = [parser.OFPActionOutput(out_port)]
 
         # Install a flow entry to avoid future packet_in events for this flow
-        if out_port != ofproto.OFPP_FLOOD:
+        if self.enable_reactive_learning and out_port != ofproto.OFPP_FLOOD:
             self.add_flow(datapath, in_port, dst, src, actions)
         
         data = None
@@ -231,22 +231,23 @@ class KenLearnAndLog(app_manager.OSKenApp):
             print(f"No shard zone assignment for datapath {datapath_id}; skipping log")
             return
         event_payload = {
-                "type": "packet_in",
-                "src": src,
-                "dst": dst,
-                "in_port": in_port,
-                "out_port": out_port,
-                "ts": datetime.now().timestamp(),
-            }
+            "type": "packet_in",
+            "src": src,
+            "dst": dst,
+            "in_port": in_port,
+            "out_port": out_port,
+            "created_ts": datetime.now().timestamp(),
+            "ttl": datetime.now().timestamp() + (3 * 60),
+        }
         self._queue_event_for_zone(zone_name, event_payload, datapath_id)
 
 
     def _queue_event_for_zone(self, zone_name: str, event_payload: dict, datapath_key: str):
         if zone_name == "shard_zone_rs_net1":
-            client = self.host_n1_conn
+            event_repository = self.host_n1_event_repository
             label = "N1"
         elif zone_name == "shard_zone_rs_net2":
-            client = self.host_n2_conn
+            event_repository = self.host_n2_event_repository
             label = "N2"
         else:
             print(f"Unknown shard zone '{zone_name}' for datapath {datapath_key}; skipping log")
@@ -254,7 +255,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
 
         eventlet.spawn_n(
             self._insert_event,
-            client,
+            event_repository,
             event_payload,
             label,
             datapath_key,
@@ -263,7 +264,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
 
     def _insert_event(
         self,
-        client: MongoClient,
+        event_repository: EventRepository,
         event_payload: dict,
         label: str,
         datapath_key: str,
@@ -275,10 +276,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 f"Skipping Mongo insert {label}: shard zone {zone_name} not tracked"
             )
             return
-
-        database = client.get_default_database()
-        if database is None:
-            database = client["app_db"]
 
         lock = zone_state["lock"]
         with lock:
@@ -299,7 +296,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
             )
 
             try:
-                database.events.insert_one(payload)
+                event_payload = Event(**payload)
+                event_repository.insert_event(event_payload)
             except Exception as exc:
                 print(
                     f"Mongo insert {label} failed for {zone_name} (datapath {datapath_key}): {exc}"

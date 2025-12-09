@@ -8,9 +8,9 @@ class MongodbHost:
 
     def __init__(
         self,
-        host: str = "10.0.1.4",
+        host: str,
         port: int = 27018,
-        name: str = "app_db",
+        database_name: str = "app_db",
         replica_set_name: str = "",
         admin_username: Optional[str] = None,
         admin_password: Optional[str] = None,
@@ -19,7 +19,7 @@ class MongodbHost:
     ):
         self.host = host
         self.port = port
-        self.app_name = name
+        self.app_name = database_name
         self.username = username
         self.password = password
         self.admin_username = admin_username

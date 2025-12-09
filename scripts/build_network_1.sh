@@ -12,14 +12,13 @@ for IFACE in veth1 veth2 veth3 veth4 veth5 veth6 veth1-peer veth2-peer veth3-pee
     sudo ip link del "$IFACE" >/dev/null 2>&1 || true
   fi
 done
+
 sudo ip link add veth1 type veth peer name veth1-peer # container1
 sudo ip link add veth2 type veth peer name veth2-peer # container2
 sudo ip link add veth3 type veth peer name veth3-peer # router LAN side
 sudo ip link add veth4 type veth peer name veth4-peer # router WAN side
 sudo ip link add veth5 type veth peer name veth5-peer # mongodb
 sudo ip link add veth6 type veth peer name veth6-peer # router internet uplink
-
-ip link list
 
 # ==============================
 # 3 - Attach veth peers to OVS bridge
@@ -87,10 +86,7 @@ if [[ $? -ne 0 ]]; then
   exit 1
 fi
 
-# Bind mongodb IP address to mongodb-n1-host for easier access (disabled to keep
-# shard traffic on the custom network and routed through nat-router)
-# docker network connect host mongodb-n1
-# sleep 2
+
 # ==============================
 
 
@@ -141,14 +137,6 @@ sudo nsenter -t $PID_MONGO -n ip link set eth0 address 00:00:00:00:00:04   # sta
 sudo nsenter -t $PID_MONGO -n ip link set eth0 up
 sudo nsenter -t $PID_MONGO -n ip addr add 10.0.0.4/24 dev eth0
 sudo nsenter -t $PID_MONGO -n ip route add default via 10.0.0.1
-
-# sleep 5
-
-# docker exec -d mongodb-n1 mongod \
-#   --shardsvr \
-#   --replSet rs_net1 \
-#   --dbpath /data/db \
-#   --bind_ip_all --port 27018
 
 # ==============================
 # Step 7: Configure NAT router internal (LAN side)

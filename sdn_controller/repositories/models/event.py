@@ -11,10 +11,13 @@ class EventType(Enum):
 
 @dataclass
 class Event:
-    type: EventType
     dpid: float
     src: str
     dst: str
     in_port: int
-    createdAt: float
-    ttl: int
+    out_port: int
+    created_ts: float
+    ttl: float
+    type: str
+    datapath_id: str | None = None
+    shard_zone: str | None = None

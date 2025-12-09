@@ -238,14 +238,6 @@ build_image() {
 	[[ -d "$ctx" ]] || { error "Build directory not found: $ctx"; return 2; }
 	[[ -f "$dockerfile" ]] || { error "Dockerfile not found: $dockerfile"; return 2; }
 
-	case "$dir" in
-		"os-ken")
-			log "Using repository root as build context for $dir so application sources are available."
-			ctx="$REPO_ROOT"
-			dockerfile="$DOCKER_DIR/$dir/Dockerfile"
-			;;
-		esac
-
 	log "Building image '$tag' from '$dir'..."
 	# You can add build args here if needed, e.g., --pull or --no-cache via env flags
 	${DOCKER} build -t "$tag" -f "$dockerfile" "$ctx"

@@ -25,12 +25,13 @@ RUN wget -qO /tmp/mongodb-server-7.0.asc https://www.mongodb.org/static/pgp/serv
     rm -rf /var/lib/apt/lists/* /tmp/mongodb-server-7.0.asc
 
 WORKDIR /workspace
+COPY logging.conf /etc/osken/logging.conf
 
 # 3. Install Python Dependencies
 # We pin eventlet to 0.33.3 to avoid SSL crashes common in newer versions
 RUN pip install --upgrade pip setuptools wheel && \
     pip install os-ken==3.1.1 && \
-    pip install eventlet python-dotenv pymongo
+    pip install eventlet python-dotenv pymongo networkx mininet
 
 # 4. Define the Entrypoint
 # We use 'python -m' to bypass potential PATH issues with the binary script.

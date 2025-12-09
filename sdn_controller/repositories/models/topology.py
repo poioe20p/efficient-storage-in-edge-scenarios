@@ -28,5 +28,3 @@ class Topology:
     switches: List[Switch]
     links: List[Link]
     hosts: List[Host]
-    
-    
