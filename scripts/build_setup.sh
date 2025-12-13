@@ -492,9 +492,9 @@ SHARD_DB_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.
 SHARD_EVENTS_COLL_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
     JSON.stringify(sh.shardCollection('app_db.events', { dpid: 1 }))")
     SHARD_COLL_STATUS=$?
-SHARD_TOPOLOGY_COLL_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
-    JSON.stringify(sh.shardCollection('app_db.topology', { dpid: 1 }))")
-    SHARD_TOPOLOGY_STATUS=$?
+# SHARD_TOPOLOGY_COLL_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
+#     JSON.stringify(sh.shardCollection('app_db.topology', { dpid: 1 }))")
+#     SHARD_TOPOLOGY_STATUS=$?
 set -e
 
     if [[ ${SHARD_DB_STATUS} -ne 0 ]]; then
@@ -513,13 +513,13 @@ set -e
 
     check_mongo_ok "${SHARD_EVENTS_COLL_OUTPUT}" "Sharding collection 'app_db.events'"
 
-    if [[ ${SHARD_TOPOLOGY_STATUS} -ne 0 ]]; then
-        echo "Failed to shard collection 'app_db.topology' (exit ${SHARD_TOPOLOGY_STATUS}). Output:"
-        echo "${SHARD_TOPOLOGY_COLL_OUTPUT}"
-        exit 1
-    fi
+    # if [[ ${SHARD_TOPOLOGY_STATUS} -ne 0 ]]; then
+    #     echo "Failed to shard collection 'app_db.topology' (exit ${SHARD_TOPOLOGY_STATUS}). Output:"
+    #     echo "${SHARD_TOPOLOGY_COLL_OUTPUT}"
+    #     exit 1
+    # fi
 
-    check_mongo_ok "${SHARD_TOPOLOGY_COLL_OUTPUT}" "Sharding collection 'app_db.topology'"
+    # check_mongo_ok "${SHARD_TOPOLOGY_COLL_OUTPUT}" "Sharding collection 'app_db.topology'"
 sleep 2
 
 
@@ -557,7 +557,8 @@ for idx in "${!SHARD_ORDER[@]}"; do
 
     check_mongo_ok "${ADD_ZONE_OUTPUT}" "Adding zone ${ZONE_NAME} to shard ${SHARD_NAME}"
 
-    for COLLECTION in "app_db.events" "app_db.topology"; do
+    # for COLLECTION in "app_db.events" "app_db.topology"; do
+    for COLLECTION in "app_db.events"; do
         echo "Tagging collection ${COLLECTION} range [${RANGE_START}, ${RANGE_END}) with zone ${ZONE_NAME}."
         set +e
         RANGE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "

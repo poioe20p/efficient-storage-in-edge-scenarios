@@ -7,7 +7,12 @@ from os_ken.controller.handler import MAIN_DISPATCHER, DEAD_DISPATCHER
 from os_ken.controller.handler import set_ev_cls
 from os_ken.controller import ofp_event
 from os_ken.lib import hub
+from sdn_controller.repositories.repositories.topology import TopologyRepository
+from sdn_controller.repositories.models.topology import Topology, Host
+from sdn_controller.models.mongodb_host import MongodbHost
 import networkx as nx
+import eventlet
+from datetime import datetime
 
 class Topology_proactive(KenLearnAndLog):
     REQUIRED_APP = ['os_ken.topology.switches']
@@ -29,7 +34,29 @@ class Topology_proactive(KenLearnAndLog):
         self._arp_rules_installed = set()
         self._topology_api_app = None
         self._topology_api_lookup_warned = False
-        self.enable_reactive_learning = False
+        self.enable_reactive_learning = True
+        self._router_mac_blocklist = {
+            "00:00:00:00:00:aa",  # nat-router LAN (network 1)
+            "00:00:00:00:00:bb",  # nat-router WAN (to host)
+            "00:00:00:00:00:cc",  # nat-router LAN (network 2)
+            "00:00:00:00:00:dd",  # dedicated internet uplink
+            "00:00:00:00:00:AA",  # nat-router LAN (network 1)
+            "00:00:00:00:00:BB",  # nat-router WAN (to host)
+            "00:00:00:00:00:CC",  # nat-router LAN (network 2)
+            "00:00:00:00:00:DD",  # dedicated internet uplink
+        }
+        self.topology_has_been_stored = False
+        self.topology_repo_n1 = TopologyRepository(
+            MongodbHost(host="10.0.0.4", port=27018, database_name="app_db").get_simple_connection_string(
+                add_app=True
+            )
+        )
+        self.topology_repo_n2 = TopologyRepository(
+            MongodbHost(host="10.0.1.4", port=27018, database_name="app_db").get_simple_connection_string(
+                add_app=True
+            )
+        )
+        
         hub.spawn(self._topology_worker)
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -95,6 +122,7 @@ class Topology_proactive(KenLearnAndLog):
             (host.mac, host.port.dpid, host.port.port_no)
             for host in host_list
             if getattr(host, "port", None) is not None
+            and host.mac not in self._router_mac_blocklist
         ]
 
         # update networkx topology with the hosts links
@@ -137,6 +165,13 @@ class Topology_proactive(KenLearnAndLog):
                 print(f"[{ts}] Switches:  {self.sws}")  # Print current switches in the network
                 print(f"[{ts}] Network links:  {self.links}")  # Print current links in the network
                 print(f"[{ts}] Hosts:  {self.hosts}")  # Print current hosts in the network
+                
+                # Store the topology in the database only once at the beginning
+                if not self.topology_has_been_stored:
+                    eventlet.spawn_n(
+                        self.store_topology_in_db
+                    )
+                    self.topology_has_been_stored = True
 
                 # Detect changes on topology / hosts
                 change_flow_rules = (
@@ -155,6 +190,9 @@ class Topology_proactive(KenLearnAndLog):
                     self._arp_rules_installed.clear()
                     self.mac_to_port.clear()
                     self.send_all_flow_rules_proactively()
+                    eventlet.spawn_n(
+                        self.store_topology_in_db
+                    )
 
             # Increment the iteration counter (used for the % 5 check)
             self.cnt = self.cnt + 1
@@ -255,3 +293,21 @@ class Topology_proactive(KenLearnAndLog):
           sw = self._datapath_by_id.get(node)
           if sw:
               self.proactive_flow_rule_install(sw, path)
+
+    def store_topology_in_db(self):
+        hosts_model = [
+            Host(mac=host[0], switch_dpid=host[1], port_no=host[2])
+            for host in self.hosts
+        ]
+
+        topology_model = Topology(
+            hosts=hosts_model,
+            links=self.links,
+            switchs=[sw[1] for sw in self.sws],
+            timestamp=datetime.now().isoformat(timespec="seconds"),
+            ttl=(datetime.now().timestamp() + 3 * 3600)
+        )
+        
+        self.topology_repo_n1.insert_topology(topology_model, topology_id="current")
+        self.topology_repo_n2.insert_topology(topology_model, topology_id="current")
+        print("Topology stored in database successfully.")
