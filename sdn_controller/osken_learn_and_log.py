@@ -95,17 +95,24 @@ class KenLearnAndLog(app_manager.OSKenApp):
             flags=datapath.ofproto.OFPFF_SEND_FLOW_REM,
         )
         
-    def _assign_zone_to_switch(self, datapath_id: str) -> str:
+    def _assign_zone_to_switch(self, datapath_id: str, connection_index: int) -> str:
         for zone in self._zone_order:
             if self._zone_state[zone]["switch_dpid"] is None:
                 self._zone_state[zone]["switch_dpid"] = datapath_id
                 self.datapath_zone_map[datapath_id] = zone
                 return zone
-        zone = random.choice(self._zone_order)
-        print(
-            "Warning: More than configured switches connected; reusing zone",
-            zone,
-        )
+        if connection_index == 3:
+            zone = self._zone_order[0]
+            print(
+                "Info: Third datapath connected; explicitly reusing",
+                zone,
+            )
+        else:
+            zone = random.choice(self._zone_order)
+            print(
+                "Warning: More than configured switches connected; reusing zone",
+                zone,
+            )
         self.datapath_zone_map[datapath_id] = zone
         return zone
 
@@ -158,7 +165,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
         datapath.send_msg(mod)
         
         datapath_id_str = str(datapath.id)
-        assigned_zone = self._assign_zone_to_switch(datapath_id_str)
+        connection_index = self._connected_switches + 1
+        assigned_zone = self._assign_zone_to_switch(datapath_id_str, connection_index)
         self._connected_switches += 1
         print(f"Datapath {datapath_id_str} mapped to {assigned_zone}.")
             

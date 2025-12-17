@@ -6,14 +6,14 @@ PING_TIMEOUT=${PING_TIMEOUT:-2}
 DEFAULT_TARGETS=(8.8.8.8 google.com)
 IFS=' ' read -r -a INTERNET_TARGETS <<< "${INTERNET_TARGETS:-${DEFAULT_TARGETS[*]}}"
 
-LAN1_CONTAINERS=(container1 container2)
+LAN1_CONTAINERS=(container1 container2 container5)
 LAN2_CONTAINERS=(container3 container4)
 
 print_usage() {
     cat <<'EOF'
 Usage: ./test_conectivity.sh [lan1|lan2|cross|all]
 
-  lan1   -> Ping between LAN1 hosts (container1, container2) and out to the Internet.
+    lan1   -> Ping between LAN1 hosts (container1, container2, container5) and out to the Internet.
   lan2   -> Ping between LAN2 hosts (container3, container4) and out to the Internet.
   cross  -> Ping between LAN1 and LAN2 hosts as well as shard nodes.
   all    -> Run lan1, lan2, and cross suites sequentially.
@@ -57,9 +57,13 @@ ping_internet_targets() {
 run_lan1_tests() {
     echo "=== LAN1 connectivity ==="
     ping_from_container container1 10.0.0.3 "container2"
+    ping_from_container container1 10.0.0.5 "container5"
     ping_from_container container2 10.0.0.4 "mongodb-n1"
+    ping_from_container container5 10.0.0.2 "container1"
+    ping_from_container container5 10.0.0.4 "mongodb-n1"
     ping_internet_targets container1
     ping_internet_targets container2
+    ping_internet_targets container5
 }
 
 run_lan2_tests() {

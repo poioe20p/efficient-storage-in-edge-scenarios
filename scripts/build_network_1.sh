@@ -5,9 +5,11 @@
 # =============================
 echo "Creating OVS bridge ovs-br0..."
 docker exec ovs ovs-vsctl add-br ovs-br0
+docker exec ovs ovs-vsctl add-br ovs-br2
 
 echo "Creating veth pairs..."
-for IFACE in veth1 veth2 veth3 veth4 veth5 veth6 veth1-peer veth2-peer veth3-peer veth4-peer veth5-peer veth6-peer; do
+for IFACE in veth1 veth2 veth3 veth4 veth5 veth6 veth7 veth8 \
+             veth1-peer veth2-peer veth3-peer veth4-peer veth5-peer veth6-peer veth7-peer veth8-peer; do
   if ip link show "$IFACE" >/dev/null 2>&1; then
     sudo ip link del "$IFACE" >/dev/null 2>&1 || true
   fi
@@ -19,6 +21,8 @@ sudo ip link add veth3 type veth peer name veth3-peer # router LAN side
 sudo ip link add veth4 type veth peer name veth4-peer # router WAN side
 sudo ip link add veth5 type veth peer name veth5-peer # mongodb
 sudo ip link add veth6 type veth peer name veth6-peer # router internet uplink
+sudo ip link add veth7 type veth peer name veth7-peer # container5
+sudo ip link add veth8 type veth peer name veth8-peer # ovs-br0 <-> ovs-br2 patch
 
 # ==============================
 # 3 - Attach veth peers to OVS bridge
@@ -28,6 +32,9 @@ docker exec ovs ip link set veth1 up # bring up interface connected to container
 docker exec ovs ip link set veth2 up # bring up interface connected to container2
 docker exec ovs ip link set veth3 up # bring up interface connected to router LAN side
 docker exec ovs ip link set veth5 up # bring up interface connected to mongodb
+docker exec ovs ip link set veth7 up # bring up interface connected to container5
+docker exec ovs ip link set veth8 up # bring up patch link on ovs-br0 side
+docker exec ovs ip link set veth8-peer up # bring up patch link on ovs-br2 side
 
 # ==============================
 # Step 3.1: Move veth interfaces into OVS container's namespace
@@ -40,6 +47,9 @@ sudo ip link set veth1 netns ovs
 sudo ip link set veth2 netns ovs
 sudo ip link set veth3 netns ovs
 sudo ip link set veth5 netns ovs
+sudo ip link set veth7 netns ovs
+sudo ip link set veth8 netns ovs
+sudo ip link set veth8-peer netns ovs
 
 # ==============================
 # Step 3.2: Attach veth interfaces to OVS bridge inside container
@@ -49,6 +59,9 @@ docker exec ovs ovs-vsctl add-port ovs-br0 veth1
 docker exec ovs ovs-vsctl add-port ovs-br0 veth2
 docker exec ovs ovs-vsctl add-port ovs-br0 veth3
 docker exec ovs ovs-vsctl add-port ovs-br0 veth5
+docker exec ovs ovs-vsctl add-port ovs-br2 veth7
+docker exec ovs ovs-vsctl add-port ovs-br0 veth8 # ovs-br0 side of patch link
+docker exec ovs ovs-vsctl add-port ovs-br2 veth8-peer # ovs-br2 side of patch link
 
 # ==============================
 # Step 4: Launch containers
@@ -58,6 +71,7 @@ echo "Launching application containers..."
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name container1 --network none ubuntu-host
 docker run -dit --name container2 --network none ubuntu-host
+docker run -dit --name container5 --network none ubuntu-host
 
 # Review as each network will have its own mongodb shard
 # Load MongoDB env-file if present (to reuse init creds)
@@ -88,11 +102,10 @@ fi
 
 
 # ==============================
-
-
 # Get process IDs (needed to move interfaces into namespaces)
 PID1=$(docker inspect -f '{{.State.Pid}}' container1)
 PID2=$(docker inspect -f '{{.State.Pid}}' container2)
+PID5=$(docker inspect -f '{{.State.Pid}}' container5)
 PID_ROUTER=$(docker inspect -f '{{.State.Pid}}' nat-router)
 PID_MONGO=$(docker inspect -f '{{.State.Pid}}' mongodb-n1)
 
@@ -102,6 +115,7 @@ echo "Moving veth peer interfaces into application containers..."
 # ==============================
 sudo ip link set veth1-peer netns $PID1
 sudo ip link set veth2-peer netns $PID2
+sudo ip link set veth7-peer netns $PID5
 sudo ip link set veth3-peer netns $PID_ROUTER
 sudo ip link set veth4-peer netns $PID_ROUTER   # router WAN side
 sudo ip link set veth5-peer netns $PID_MONGO
@@ -130,6 +144,13 @@ sudo nsenter -t $PID2 -n ip link set eth0 address 00:00:00:00:00:03   # static M
 sudo nsenter -t $PID2 -n ip link set eth0 up
 sudo nsenter -t $PID2 -n ip addr add 10.0.0.3/24 dev eth0
 sudo nsenter -t $PID2 -n ip route add default via 10.0.0.1
+
+# Configure container5
+sudo nsenter -t $PID5 -n ip link set veth7-peer name eth0
+sudo nsenter -t $PID5 -n ip link set eth0 address 00:00:00:00:00:08   # static MAC
+sudo nsenter -t $PID5 -n ip link set eth0 up
+sudo nsenter -t $PID5 -n ip addr add 10.0.0.5/24 dev eth0
+sudo nsenter -t $PID5 -n ip route add default via 10.0.0.1
 
 # Configure mongodb container
 sudo nsenter -t $PID_MONGO -n ip link set veth5-peer name eth0

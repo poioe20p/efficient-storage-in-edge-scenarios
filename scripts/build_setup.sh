@@ -607,15 +607,25 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
         osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
-        # osken-controller ./sdn_controller/usecases/topology.py
-        # osken-controller --verbose ./sdn_controller/usecases/topology.py
+
+    docker run -dit --name osken_2 --network host \
+        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+        -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
+        -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
+        -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
+        -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
+        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
+
 else
     docker run -dit --name osken --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
         osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
-        # osken-controller ./sdn_controller/usecases/topology.py
-        # osken-controller --verbose ./sdn_controller/usecases/topology.py
+
+    docker run -dit --name osken_2 --network host \
+        --env-file "$MONGO_ENV_FILE" \
+        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
 fi
 
 if [[ $? -ne 0 ]]; then
@@ -631,6 +641,7 @@ cd scripts
 echo "Pointing OVS switches to the SDN controller..."
 docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633
 docker exec ovs ovs-vsctl set-controller ovs-br1 tcp:127.0.0.1:6633
+docker exec ovs ovs-vsctl set-controller ovs-br2 tcp:127.0.0.1:6633
 
 docker exec ovs ovs-vsctl show
 
