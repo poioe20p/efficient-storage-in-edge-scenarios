@@ -2,9 +2,7 @@
 
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
-
 from pymongo import MongoClient
-
 from sdn_controller.repositories.models.topology import Host, Topology
 
 
@@ -77,6 +75,7 @@ class TopologyRepository:
 			"switchs": topology.switchs,
 			"ttl": topology.ttl,
 			"timestamp": topology.timestamp,
+			"controller_name": topology.controller_name
 		}
 
 	@staticmethod
@@ -89,4 +88,5 @@ class TopologyRepository:
 			switchs=doc.get("switchs", []),
 			ttl=doc.get("ttl", 0.0),
 			timestamp=doc.get("timestamp", ""),
+			controller_name=doc.get("controller_name", "")
 		)

@@ -14,3 +14,4 @@ class Topology:
     switchs: List[Any]
     ttl: float
     timestamp: str
+    controller_name: str

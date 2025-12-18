@@ -9,6 +9,8 @@ MONGO_RS_1_HOST_IP=10.0.0.4
 MONGO_RS_2_HOST_IP=10.0.1.4
 ADMIN_USER=admin
 ADMIN_PASS=admin-password
+OSKEN1_PORT=${OSKEN1_PORT:-6653}
+OSKEN2_PORT=${OSKEN2_PORT:-6654}
 
 check_mongo_ok() {
     local output="$1"
@@ -606,7 +608,8 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
+        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
+            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n1.py
 
     docker run -dit --name osken_2 --network host \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
@@ -614,18 +617,21 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
+        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
+            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n2.py
 
 else
     docker run -dit --name osken --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
+        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
+            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n1.py
 
     docker run -dit --name osken_2 --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        osken-controller --observe-links --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
+        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
+            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n2.py
 fi
 
 if [[ $? -ne 0 ]]; then
@@ -638,10 +644,10 @@ cd scripts
 # ==============================
 # 9.1 - Point both OVS switches to the SDN controller
 # ==============================
-echo "Pointing OVS switches to the SDN controller..."
-docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:6633
-docker exec ovs ovs-vsctl set-controller ovs-br1 tcp:127.0.0.1:6633
-docker exec ovs ovs-vsctl set-controller ovs-br2 tcp:127.0.0.1:6633
+echo "Pointing OVS switches to the SDN controllers..."
+docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:${OSKEN1_PORT}
+docker exec ovs ovs-vsctl set-controller ovs-br2 tcp:127.0.0.1:${OSKEN1_PORT}
+docker exec ovs ovs-vsctl set-controller ovs-br1 tcp:127.0.0.1:${OSKEN2_PORT}
 
 docker exec ovs ovs-vsctl show
 
