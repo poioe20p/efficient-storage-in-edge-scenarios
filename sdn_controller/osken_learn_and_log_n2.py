@@ -13,9 +13,9 @@ from os_ken.controller.handler import (
 )
 from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
-from sdn_controller.models.mongodb_host import MongodbHost
-from sdn_controller.repositories.repositories.event import EventRepository
+from sdn_controller.models.mongodb_host import MongodbRouter
 from sdn_controller.repositories.models.event import Event
+from sdn_controller.repositories.repositories.event import EventRepository
 
 
 class KenLearnAndLog(app_manager.OSKenApp):
@@ -25,24 +25,21 @@ class KenLearnAndLog(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        self.host_n2_event_repository = EventRepository(
-            MongodbHost(host="10.0.1.4", port=27018, database_name="app_db").get_simple_connection_string(
+        self.router_event_repository = EventRepository(
+            MongodbRouter().get_simple_connection_string(
                 add_app=True
             )
         )
-
         self._zone_size = 1000000000
         self._zone_order = ["shard_zone_rs_net2"]
         self._zone_state = {}
-        start = 0
-        for zone in self._zone_order:
-            self._zone_state[zone] = {
-                "switch_dpid": None,
-                "next_offset": 0,
-                "range_start": start,
-                "lock": eventlet.semaphore.Semaphore(),
-            }
-            start += self._zone_size
+        start = 1000000000
+        self._zone_state["shard_zone_rs_net2"] = {
+            "switch_dpid": None,
+            "next_offset": 0,
+            "range_start": start,
+            "lock": eventlet.semaphore.Semaphore(),
+        }
         self.datapath_zone_map = {}
         self._connected_switches = 0
         self.enable_reactive_learning = True
@@ -222,8 +219,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
             "src": src,
             "dst": dst,
             "in_port": in_port,
-            "out_port": out_port,
-            "created_ts": datetime.now().timestamp(),
+            "out_port": out_port if out_port != ofproto.OFPP_FLOOD else "FLOOD",
+            "created_ts": datetime.now().isoformat(timespec="seconds"),
             "ttl": datetime.now().timestamp() + (3 * 60),
         }
         self._queue_event_for_zone(zone_name, event_payload, datapath_id)
@@ -234,7 +231,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
             print(f"Unknown shard zone '{zone_name}' for datapath {datapath_key}; skipping log")
             return
 
-        event_repository = self.host_n2_event_repository
+        event_repository = self.router_event_repository
         label = "N2"
 
         eventlet.spawn_n(
@@ -289,3 +286,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 return
 
             zone_state["next_offset"] += 1
+            print(
+                f"Mongo insert {label} succeeded for {zone_name} (datapath {datapath_key}, shard key {shard_key})"
+            )

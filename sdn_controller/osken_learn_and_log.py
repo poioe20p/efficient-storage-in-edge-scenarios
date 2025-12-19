@@ -14,7 +14,7 @@ from os_ken.controller.handler import (
 )
 from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
-from sdn_controller.models.mongodb_host import MongodbHost
+from sdn_controller.models.mongodb_host import MongodbRouter
 from sdn_controller.repositories.repositories.event import EventRepository
 from sdn_controller.repositories.models.event import Event
 
@@ -26,17 +26,11 @@ class KenLearnAndLog(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        self.host_n1_event_repository = EventRepository(
-            MongodbHost(host="10.0.0.4", port=27018, database_name="app_db").get_simple_connection_string(
+        self.router_event_repository = EventRepository(
+            MongodbRouter().get_simple_connection_string(
                 add_app=True
             )
         )
-        self.host_n2_event_repository = EventRepository(
-            MongodbHost(host="10.0.1.4", port=27018, database_name="app_db").get_simple_connection_string(
-                add_app=True
-            )
-        )
-
         self._zone_size = 1000000000
         self._zone_order = ["shard_zone_rs_net1", "shard_zone_rs_net2"]
         self._zone_state = {}
@@ -79,6 +73,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         )
         datapath.send_msg(mod)
 
+
     def add_flow(self, datapath, in_port, dst, src, actions):
         """Default reactive learning-switch rule installer."""
         parser = datapath.ofproto_parser
@@ -95,6 +90,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
             flags=datapath.ofproto.OFPFF_SEND_FLOW_REM,
         )
         
+
     def _assign_zone_to_switch(self, datapath_id: str, connection_index: int) -> str:
         for zone in self._zone_order:
             if self._zone_state[zone]["switch_dpid"] is None:
@@ -122,7 +118,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
             return (0, 0)
         start = state["range_start"]
         return (start, start + self._zone_size)
-
 
 
     # Event handler for switch features. This method is triggered when a switch connects to the controller.
@@ -170,7 +165,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
         self._connected_switches += 1
         print(f"Datapath {datapath_id_str} mapped to {assigned_zone}.")
             
-        
 
     # Packet In Handler
     # This method is triggered when a packet is received by the switch.
@@ -243,45 +237,35 @@ class KenLearnAndLog(app_manager.OSKenApp):
             "src": src,
             "dst": dst,
             "in_port": in_port,
-            "out_port": out_port,
-            "created_ts": datetime.now().timestamp(),
+            "out_port": out_port if out_port != ofproto.OFPP_FLOOD else "FLOOD",
+            "created_ts": datetime.now().isoformat(timespec="seconds"),
             "ttl": datetime.now().timestamp() + (3 * 60),
         }
         self._queue_event_for_zone(zone_name, event_payload, datapath_id)
 
 
     def _queue_event_for_zone(self, zone_name: str, event_payload: dict, datapath_key: str):
-        if zone_name == "shard_zone_rs_net1":
-            event_repository = self.host_n1_event_repository
-            label = "N1"
-        elif zone_name == "shard_zone_rs_net2":
-            event_repository = self.host_n2_event_repository
-            label = "N2"
-        else:
-            print(f"Unknown shard zone '{zone_name}' for datapath {datapath_key}; skipping log")
-            return
-
+        event_repository = self.router_event_repository
         eventlet.spawn_n(
             self._insert_event,
             event_repository,
             event_payload,
-            label,
             datapath_key,
             zone_name,
         )
+
 
     def _insert_event(
         self,
         event_repository: EventRepository,
         event_payload: dict,
-        label: str,
         datapath_key: str,
         zone_name: str,
     ):
         zone_state = self._zone_state.get(zone_name)
         if zone_state is None:
             print(
-                f"Skipping Mongo insert {label}: shard zone {zone_name} not tracked"
+                f"Skipping Mongo insert: shard zone {zone_name} not tracked"
             )
             return
 
@@ -308,7 +292,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 event_repository.insert_event(event_payload)
             except Exception as exc:
                 print(
-                    f"Mongo insert {label} failed for {zone_name} (datapath {datapath_key}): {exc}"
+                    f"Mongo insert failed for {zone_name} (datapath {datapath_key}): {exc}"
                 )
                 return
 

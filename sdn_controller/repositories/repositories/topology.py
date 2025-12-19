@@ -34,19 +34,19 @@ class TopologyRepository:
 	# ------------------------------------------------------------------
 	# CRUD helpers
 	# ------------------------------------------------------------------
-	def insert_topology(self, topology: Topology, topology_id: str = "current") -> str:
+	def insert_topology(self, topology: Topology) -> str:
 		"""Insert a topology snapshot (overwrites any document with same id)."""
 		self.connect()
 		doc = self._topology_to_doc(topology)
-		doc["_id"] = topology_id
-		self._collection.replace_one({"_id": topology_id}, doc, upsert=True)
-		return topology_id
+		doc["_id"] = topology.id
+		self._collection.replace_one({"_id": topology.id}, doc, upsert=True)
+		return topology.id
 
-	def update_topology(self, topology_id: str, topology: Topology) -> bool:
+	def update_topology(self, topology: Topology) -> bool:
 		"""Update fields of an existing topology document."""
 		self.connect()
 		doc = self._topology_to_doc(topology)
-		result = self._collection.update_one({"_id": topology_id}, {"$set": doc})
+		result = self._collection.update_one({"_id": topology.id}, {"$set": doc})
 		return result.matched_count > 0
 
 	def delete_topology(self, topology_id: str) -> bool:
@@ -70,6 +70,7 @@ class TopologyRepository:
 	@staticmethod
 	def _topology_to_doc(topology: Topology) -> Dict[str, Any]:
 		return {
+			"_id": topology.id,
 			"hosts": [asdict(host) for host in topology.hosts],
 			"links": topology.links,
 			"switchs": topology.switchs,
@@ -83,6 +84,7 @@ class TopologyRepository:
 		hosts_payload: List[Dict[str, Any]] = doc.get("hosts", [])
 		hosts = [Host(**host_doc) for host_doc in hosts_payload]
 		return Topology(
+			id=doc.get("_id"),
 			hosts=hosts,
 			links=doc.get("links", []),
 			switchs=doc.get("switchs", []),

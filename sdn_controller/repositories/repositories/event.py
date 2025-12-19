@@ -29,7 +29,8 @@ class EventRepository:
         self.connect()
         doc = asdict(event)
         doc["_id"] = event.dpid
-        self._collection.replace_one({"_id": event.dpid}, doc, upsert=True)
+        # Include the shard key (dpid) in the replace filter so mongos can target the write
+        self._collection.replace_one({"_id": event.dpid, "dpid": event.dpid}, doc, upsert=True)
         return str(event.dpid)
 
     def get_event(self, dpid: float) -> Optional[Event]:

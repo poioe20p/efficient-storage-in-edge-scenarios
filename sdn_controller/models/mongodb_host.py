@@ -73,7 +73,7 @@ class MongodbRouter(MongodbHost):
     """Represents a MongoDB router configuration."""
 
     def __init__(self,
-                 host: str = "192.168.100.1",
+                 host: str = "192.168.100.4",
                  port: int = 27020,
                  name: str = "app_db",
                  replica_set_name: str = "configReplSet",

@@ -9,10 +9,11 @@ from os_ken.controller import ofp_event
 from os_ken.lib import hub
 from sdn_controller.repositories.repositories.topology import TopologyRepository
 from sdn_controller.repositories.models.topology import Topology, Host
-from sdn_controller.models.mongodb_host import MongodbHost
+from sdn_controller.models.mongodb_host import MongodbRouter
 import networkx as nx
 import eventlet
 from datetime import datetime
+from uuid import uuid4
 
 class Topology_proactive(KenLearnAndLog):
     REQUIRED_APP = ['os_ken.topology.switches']
@@ -46,17 +47,12 @@ class Topology_proactive(KenLearnAndLog):
             "00:00:00:00:00:DD",  # dedicated internet uplink
         }
         self.topology_has_been_stored = False
-        self.topology_repo_n1 = TopologyRepository(
-            MongodbHost(host="10.0.0.4", port=27018, database_name="app_db").get_simple_connection_string(
+        self.topology_repo = TopologyRepository(
+            MongodbRouter().get_simple_connection_string(
                 add_app=True
             )
         )
-        self.topology_repo_n2 = TopologyRepository(
-            MongodbHost(host="10.0.1.4", port=27018, database_name="app_db").get_simple_connection_string(
-                add_app=True
-            )
-        )
-        
+        self.topology = str(uuid4())
         hub.spawn(self._topology_worker)
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -301,13 +297,14 @@ class Topology_proactive(KenLearnAndLog):
         ]
 
         topology_model = Topology(
+            id=self.topology,
             hosts=hosts_model,
             links=self.links,
             switchs=[sw[1] for sw in self.sws],
             timestamp=datetime.now().isoformat(timespec="seconds"),
-            ttl=(datetime.now().timestamp() + 3 * 3600)
+            ttl=(datetime.now().timestamp() + 3 * 3600),
+            controller_name="osken_proactive"
         )
         
-        self.topology_repo_n1.insert_topology(topology_model, topology_id="current")
-        self.topology_repo_n2.insert_topology(topology_model, topology_id="current")
+        self.topology_repo.insert_topology(topology_model)
         print("Topology stored in database successfully.")

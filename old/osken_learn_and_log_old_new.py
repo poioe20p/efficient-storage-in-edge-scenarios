@@ -182,7 +182,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
                     "src": src,
                     "dst": dst,
                     "in_port": in_port,
-                    "out_port": out_port,
+                    "out_port": out_port if out_port != ofproto.OFPP_FLOOD else "FLOOD",
                     "ts": datetime.now().timestamp(),
                 }
             )

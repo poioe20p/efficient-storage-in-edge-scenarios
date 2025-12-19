@@ -16,7 +16,7 @@ class Event:
     dst: str
     in_port: int
     out_port: int
-    created_ts: float
+    created_ts: str
     ttl: float
     type: str
     datapath_id: str | None = None

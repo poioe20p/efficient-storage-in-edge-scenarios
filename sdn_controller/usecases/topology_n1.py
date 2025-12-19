@@ -9,10 +9,11 @@ from os_ken.controller import ofp_event
 from os_ken.lib import hub
 from sdn_controller.repositories.repositories.topology import TopologyRepository
 from sdn_controller.repositories.models.topology import Topology, Host
-from sdn_controller.models.mongodb_host import MongodbHost
+from sdn_controller.models.mongodb_host import MongodbRouter
 import networkx as nx
 import eventlet
 from datetime import datetime
+from uuid import uuid4
 
 class Topology_proactive(KenLearnAndLog):
     REQUIRED_APP = ['os_ken.topology.switches']
@@ -46,14 +47,13 @@ class Topology_proactive(KenLearnAndLog):
             "00:00:00:00:00:DD",  # dedicated internet uplink
         }
         self.topology_has_been_stored = False
-        self.topology_repo_n1 = TopologyRepository(
-            MongodbHost(host="10.0.0.4", port=27018, database_name="app_db").get_simple_connection_string(
+        self.topology_repo = TopologyRepository(
+            MongodbRouter().get_simple_connection_string(
                 add_app=True
             )
         )
         self.last_topology_store_time = None
-        
-        
+        self.topology = str(uuid4())
         hub.spawn(self._topology_worker)
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -165,8 +165,14 @@ class Topology_proactive(KenLearnAndLog):
                 
                 # Store the topology in the database only once at the beginning
                 if not self.topology_has_been_stored:
+                    hosts_snapshot = self.hosts.copy()
+                    links_snapshot = self.links.copy()
+                    sws_snapshot = self.sws.copy()
                     eventlet.spawn_n(
-                        self.store_topology_in_db
+                        self.store_topology_in_db,
+                        hosts_snapshot,
+                        links_snapshot,
+                        sws_snapshot
                     )
                     self.topology_has_been_stored = True
                     self.last_topology_store_time = datetime.now()
@@ -188,15 +194,27 @@ class Topology_proactive(KenLearnAndLog):
                     self._arp_rules_installed.clear()
                     self.mac_to_port.clear()
                     self.send_all_flow_rules_proactively()
+                    hosts_snapshot = self.hosts.copy()
+                    links_snapshot = self.links.copy()
+                    sws_snapshot = self.sws.copy()
                     eventlet.spawn_n(
-                        self.store_topology_in_db
+                        self.store_topology_in_db,
+                        hosts_snapshot,
+                        links_snapshot,
+                        sws_snapshot
                     )
                     self.last_topology_store_time = datetime.now()
                 else:
                     time_since_last_store = (datetime.now() - self.last_topology_store_time).total_seconds()
                     if time_since_last_store >= 200:
+                        hosts_snapshot = self.hosts.copy()
+                        links_snapshot = self.links.copy()
+                        sws_snapshot = self.sws.copy()
                         eventlet.spawn_n(
-                            self.store_topology_in_db
+                            self.store_topology_in_db,
+                            hosts_snapshot,
+                            links_snapshot,
+                            sws_snapshot
                         )
                         self.last_topology_store_time = datetime.now()
 
@@ -300,20 +318,25 @@ class Topology_proactive(KenLearnAndLog):
           if sw:
               self.proactive_flow_rule_install(sw, path)
 
-    def store_topology_in_db(self):
+    def store_topology_in_db(self, hosts_snapshot=None, links_snapshot=None, switches_snapshot=None):
+        hosts_payload = hosts_snapshot if hosts_snapshot is not None else self.hosts.copy()
+        links_payload = links_snapshot if links_snapshot is not None else self.links.copy()
+        sws_payload = switches_snapshot if switches_snapshot is not None else self.sws.copy()
+
         hosts_model = [
             Host(mac=host[0], switch_dpid=host[1], port_no=host[2])
-            for host in self.hosts
+            for host in hosts_payload
         ]
 
         topology_model = Topology(
+            id=self.topology,
             hosts=hosts_model,
-            links=self.links,
-            switchs=[sw[1] for sw in self.sws],
+            links=links_payload,
+            switchs=[sw[1] for sw in sws_payload],
             timestamp=datetime.now().isoformat(timespec="seconds"),
             ttl=(datetime.now().timestamp() + 3 * 3600),
-            controller_name="osken_n1"
+            controller_name="controller_lan1"
         )
         
-        self.topology_repo_n1.insert_topology(topology_model, topology_id="current")
+        self.topology_repo.insert_topology(topology_model)
         print("Topology stored in database successfully.")

@@ -9,9 +9,10 @@ class Host:
 
 @dataclass
 class Topology:
+    id: str
     hosts: List[Host]
     links: List[Any]
     switchs: List[Any]
     ttl: float
     timestamp: str
-    controller_name: str
+    controller_name: str = None
