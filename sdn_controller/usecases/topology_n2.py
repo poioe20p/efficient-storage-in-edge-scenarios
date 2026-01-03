@@ -8,12 +8,11 @@ from os_ken.controller.handler import set_ev_cls
 from os_ken.controller import ofp_event
 from os_ken.lib import hub
 from sdn_controller.repositories.repositories.topology import TopologyRepository
-from sdn_controller.repositories.models.topology import Topology, Host
+from sdn_controller.repositories.models.topology import Topology, Host, Link
 from sdn_controller.models.mongodb_host import MongodbRouter
 import networkx as nx
 import eventlet
 from datetime import datetime
-from uuid import uuid4
 
 class Topology_proactive(KenLearnAndLog):
     REQUIRED_APP = ['os_ken.topology.switches']
@@ -53,7 +52,7 @@ class Topology_proactive(KenLearnAndLog):
             )
         )
         self.last_topology_store_time = None
-        self.topology = str(uuid4())
+        self.topology = "topology_lan2"
         hub.spawn(self._topology_worker)
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -329,11 +328,21 @@ class Topology_proactive(KenLearnAndLog):
             Host(mac=host[0], switch_dpid=host[1], port_no=host[2])
             for host in hosts_payload
         ]
+        
+        links_model = [
+            Link(
+                src_dpid=link[0],
+                dst_dpid=link[1],
+                src_port_no=link[2],
+                dst_port_no=None  # You can set this if you have the information
+            )
+            for link in links_payload
+        ]
 
         topology_model = Topology(
             id=self.topology,
             hosts=hosts_model,
-            links=links_payload,
+            links=links_model,
             switchs=[sw[1] for sw in sws_payload],
             timestamp=datetime.now().isoformat(timespec="seconds"),
             ttl=(datetime.now().timestamp() + 3 * 3600),

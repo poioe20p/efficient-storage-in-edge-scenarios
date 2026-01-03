@@ -8,10 +8,16 @@ class Host:
     port_no: int
 
 @dataclass
+class Link:
+    src_dpid: str
+    src_port_no: int
+    dst_dpid: str
+
+@dataclass
 class Topology:
     id: str
     hosts: List[Host]
-    links: List[Any]
+    links: List[Link]
     switchs: List[Any]
     ttl: float
     timestamp: str

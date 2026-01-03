@@ -8,7 +8,7 @@ from os_ken.controller.handler import set_ev_cls
 from os_ken.controller import ofp_event
 from os_ken.lib import hub
 from sdn_controller.repositories.repositories.topology import TopologyRepository
-from sdn_controller.repositories.models.topology import Topology, Host
+from sdn_controller.repositories.models.topology import Topology, Host, Link
 from sdn_controller.models.mongodb_host import MongodbRouter
 import networkx as nx
 import eventlet
@@ -118,7 +118,7 @@ class Topology_proactive(KenLearnAndLog):
             (host.mac, host.port.dpid, host.port.port_no)
             for host in host_list
             if getattr(host, "port", None) is not None
-            and host.mac not in self._router_mac_blocklist
+            # and host.mac not in self._router_mac_blocklist
         ]
 
         # update networkx topology with the hosts links
@@ -182,13 +182,19 @@ class Topology_proactive(KenLearnAndLog):
                 self.sws_prev = self.sws.copy()
 
                 if (self.sws and self.links and self.hosts) and change_flow_rules:
-                    self._installed_flow_keys.clear()
-                    self._arp_rules_installed.clear()
-                    self.mac_to_port.clear()
-                    self.send_all_flow_rules_proactively()
+                    # get global topology and install proactively flow rules for all switches
+                    # need to wait to ensure that the topology is stored
                     eventlet.spawn_n(
                         self.store_topology_in_db
                     )
+                    
+                    #after storing the topology, install proactively flow rules
+                    self._installed_flow_keys.clear()
+                    self._arp_rules_installed.clear()
+                    self.mac_to_port.clear()
+                    
+                    
+                    self.send_all_flow_rules_proactively()
 
             # Increment the iteration counter (used for the % 5 check)
             self.cnt = self.cnt + 1
@@ -295,11 +301,21 @@ class Topology_proactive(KenLearnAndLog):
             Host(mac=host[0], switch_dpid=host[1], port_no=host[2])
             for host in self.hosts
         ]
+        
+        links_model = [
+            Link(
+                src_dpid=link[0],
+                dst_dpid=link[1],
+                src_port_no=link[2],
+                dst_port_no=None  # You can set this if you have the information
+            )
+            for link in self.links
+        ]
 
         topology_model = Topology(
             id=self.topology,
             hosts=hosts_model,
-            links=self.links,
+            links=links_model,
             switchs=[sw[1] for sw in self.sws],
             timestamp=datetime.now().isoformat(timespec="seconds"),
             ttl=(datetime.now().timestamp() + 3 * 3600),
