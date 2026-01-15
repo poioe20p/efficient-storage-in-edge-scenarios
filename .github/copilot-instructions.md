@@ -5,13 +5,17 @@
 - The SDN controller lives in [sdn_controller](sdn_controller); it hosts OS-Ken apps that learn L2 paths and log events into MongoDB.
 - Network and procedure references live under [docs/network](docs/network) and [docs/setups](docs/setups); keep scripts consistent with those diagrams and notes.
 
+## Runtime Environment (Ubuntu VM)
+- Treat the Ubuntu virtual machine as the execution environment for this project: Docker containers, bash automation scripts, the SDN controller (Python/OS-Ken), and the overall network lab are designed to run (and do run) inside the Ubuntu VM.
+- Windows is used primarily for authoring/editing; avoid changes that assume native Windows networking/iptables semantics.
+
 ## OS & Line Endings
 - Authoring happens on Windows, but bash scripts and controller code run inside an Ubuntu VM; keep all repo files (especially scripts/*.sh and docker/*) saved with LF to avoid bash syntax errors and broken shebangs.
 - In VS Code force `LF` in the status bar before saving; avoid editors that auto-convert to CRLF.
 - If Git warns about CRLF, set `core.autocrlf=input` (or add a `.gitattributes` entry for `*.sh text eol=lf`) so line endings stay Unix-style when committed.
 
 ## Required Config
-- Populate `.env-mongo` using the template in [docs/setups/mongodb.md](docs/setups/mongodb.md); the loader in [config.py](config.py) fails fast if any of the five vars are missing.
+- The loader in [config.py](config.py) fails fast if any of the five vars are missing.
 - `MongoConfig.dpid_to_shard_map` accepts `MONGO_DPID_ZONE_MAP="1=rs_net1,2=rs_net2"`; omit it to auto round-robin dpids across `rs_net{n}`.
 - OS-Ken containers expect LAN reachability to MongoDB (`10.0.0.4/10.0.1.4`); keep host routes (`10.0.x.0/24 via 192.168.100.2`) aligned with [docs/network/network_setup.md](docs/network/network_setup.md).
 

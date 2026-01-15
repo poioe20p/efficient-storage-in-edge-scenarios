@@ -72,35 +72,7 @@ A minimal set of everyday Docker commands with brief notes.
 - `docker stats` — live CPU/mem/IO usage
 - `docker events` — real-time events stream
 - `docker port CONTAINER` — port mappings
-- `docker diff CONTAINER` — file changes vs. original image
-
-## Compose (v2 plugin)
-
-- `docker compose up` — start services
-- `docker compose up -d` — start in background
-- `docker compose down` — stop and remove resources
-- `docker compose ps` — list compose containers
-- `docker compose logs -f` — follow logs
-- `docker compose build` — build services
-- `docker compose pull` — pull images
 
 ## Registries and Cleanup
 
-- `docker login ghcr.io` — login to a specific registry
-- `docker pull registry/image:tag` — pull from registry
-- `docker logout registry` — logout from registry
 - `docker image prune -a` — remove all unused images
-- `docker builder prune` — clean build cache
-
-## Useful Options (mix and match)
-
-- `-e KEY=VALUE` — set environment variable
-- `--env-file FILE` — load env vars from file
-- `--restart unless-stopped` — restart policy
-- `--name NAME` — set container name
-- `--rm` — remove when container exits
-- `-w /work` — set working directory
-- `-u UID:GID` — run as user/group
-- `--entrypoint CMD` — override entrypoint
-
-Tip: Pipe inspect output through jq for readability: `docker inspect ... | jq`

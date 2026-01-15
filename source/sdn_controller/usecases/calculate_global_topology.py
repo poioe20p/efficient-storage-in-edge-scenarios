@@ -1,19 +1,14 @@
 from typing import Any, Dict, List, Optional, Tuple
-
 import networkx as nx
-
 from sdn_controller.repositories.repositories.topology import TopologyRepository
 from sdn_controller.repositories.models.topology import Host, Topology
 from sdn_controller.models.mongodb_host import MongodbRouter
-
+from eventlet import spawn_n
 
 class CalculateGlobalTopology:
     def __init__(self):
-        self.topology_repository = TopologyRepository(
-            MongodbRouter().get_simple_connection_string(
-                add_app=True
-            )
-        )
+        self._mongo_uri = MongodbRouter().get_simple_connection_string(add_app=True)
+        self.topology_repository = TopologyRepository(self._mongo_uri)
         self.switchs: List[Any] = []
         self.links: List[Any] = []
         self.hosts: List[Host] = []
@@ -22,14 +17,30 @@ class CalculateGlobalTopology:
         self.last_topology_lan2_store_time: Optional[str] = None
         self.net = nx.DiGraph()
         self._cached_snapshot: Optional[Dict[str, Any]] = None
+
+    def _persist_topology_snapshot(self, topology: Topology) -> None:
+        repo = TopologyRepository(self._mongo_uri)
+        try:
+            repo.insert_topology(topology)
+        finally:
+            repo.close()
         
-    def run(self):
+    def run(self, local_topology_n1: Optional[Topology] = None, local_topology_n2: Optional[Topology] = None) -> Optional[Dict[str, Any]]:
         topology_n1 = self.topology_repository.get_topology("topology_lan1")
         topology_n2 = self.topology_repository.get_topology("topology_lan2")
         
         if topology_n1 is None or topology_n2 is None:
             print("At least one of the topology is missing can't create global topology now.")
             return None
+        
+        if local_topology_n1 and topology_n1.timestamp != local_topology_n1.timestamp:
+            topology_n1 = local_topology_n1
+            spawn_n(self._persist_topology_snapshot, local_topology_n1)
+            
+        
+        if local_topology_n2 and topology_n2.timestamp != local_topology_n2.timestamp:
+            topology_n2 = local_topology_n2
+            spawn_n(self._persist_topology_snapshot, local_topology_n2)
 
         lan1_changed = self.last_topology_lan1_store_time != topology_n1.timestamp
         lan2_changed = self.last_topology_lan2_store_time != topology_n2.timestamp

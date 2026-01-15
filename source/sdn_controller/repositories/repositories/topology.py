@@ -62,7 +62,6 @@ class TopologyRepository:
 		doc = self._collection.find_one({"_id": topology_id})
 		if not doc:
 			return None
-		doc.pop("_id", None)
 		return self._doc_to_topology(doc)
 
 	# ------------------------------------------------------------------
@@ -73,7 +72,7 @@ class TopologyRepository:
 		return {
 			"_id": topology.id,
 			"hosts": [asdict(host) for host in topology.hosts],
-			"links": topology.links,
+			"links": [asdict(link) for link in topology.links],
 			"switchs": topology.switchs,
 			"ttl": topology.ttl,
 			"timestamp": topology.timestamp,
@@ -85,7 +84,7 @@ class TopologyRepository:
 		hosts = [Host(**host_doc) for host_doc in doc.get("hosts", [])]
 		links = [Link(**link_doc) for link_doc in doc.get("links", [])]
 		return Topology(
-			id=doc.get("_id"),
+			id=doc.get("_id") or doc.get("id"),
 			hosts=hosts,
 			links=links,
 			switchs=doc.get("switchs", []),
