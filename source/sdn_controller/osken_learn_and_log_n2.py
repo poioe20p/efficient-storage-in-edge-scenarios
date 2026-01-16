@@ -101,7 +101,6 @@ class KenLearnAndLog(app_manager.OSKenApp):
         return (start, start + self._zone_size)
 
 
-
     # Event handler for switch features. This method is triggered when a switch connects to the controller.
     # @set_ev_cls decorator tells OS-Ken that the method "switch_features_handler" should be invoked when an EventOFPSwitchFeatures event is received.
     # CONFIG_DISPATCHER means this event is handled after the switch enters the configuration phase (after the initial handshake between switch and controller).

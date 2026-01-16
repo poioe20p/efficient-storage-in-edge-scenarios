@@ -10,6 +10,7 @@ from os_ken.lib import hub
 from sdn_controller.repositories.repositories.topology import TopologyRepository
 from sdn_controller.repositories.models.topology import Topology, Host, Link
 from sdn_controller.models.mongodb_host import MongodbRouter
+from sdn_controller.usecases.calculate_global_topology import CalculateGlobalTopology
 import networkx as nx
 import eventlet
 
@@ -46,13 +47,10 @@ class Topology_proactive(KenLearnAndLog):
             "00:00:00:00:00:DD",  # dedicated internet uplink
         }
         self.topology_has_been_stored = False
-        self.topology_repo = TopologyRepository(
-            MongodbRouter().get_simple_connection_string(
-                add_app=True
-            )
-        )
         self.last_topology_store_time = None
         self.topology = "topology_lan2"
+        self.remote_topology_id = "topology_lan1"
+        self.calculate_global_topology = CalculateGlobalTopology()
         hub.spawn(self._topology_worker)
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -174,6 +172,10 @@ class Topology_proactive(KenLearnAndLog):
                         self.last_topology_store_time = datetime.now()
                         self._install_local_topology_flows()
 
+                        global_topology = self.calculate_global_topology.run()
+                        if global_topology:
+                            self._print_global_topology_summary(global_topology)
+
                     # Detect changes on topology / hosts
                     change_flow_rules = (
                         self.hosts != self.hosts_prev
@@ -204,25 +206,33 @@ class Topology_proactive(KenLearnAndLog):
                             timestamp,
                         )
                         self.last_topology_store_time = datetime.now()
+
+                        global_topology = self.calculate_global_topology.run()
+                        if global_topology:
+                            self._print_global_topology_summary(global_topology)
                     else:
-                        if self.last_topology_store_time is None:
-                            self.last_topology_store_time = datetime.now()
-                        time_since_last_store = (
-                            datetime.now() - self.last_topology_store_time
-                        ).total_seconds()
-                        if time_since_last_store >= 200:
-                            hosts_snapshot = self.hosts.copy()
-                            links_snapshot = self.links.copy()
-                            sws_snapshot = self.sws.copy()
-                            timestamp = datetime.now().isoformat(timespec="seconds")
-                            eventlet.spawn_n(
-                                self.store_topology_in_db,
-                                hosts_snapshot,
-                                links_snapshot,
-                                sws_snapshot,
-                                timestamp,
-                            )
-                            self.last_topology_store_time = datetime.now()
+                        global_topology = self.calculate_global_topology.run()
+                        if global_topology and global_topology.get("changed"):
+                            self._print_global_topology_summary(global_topology)
+                        else:
+                            if self.last_topology_store_time is None:
+                                self.last_topology_store_time = datetime.now()
+                            time_since_last_store = (
+                                datetime.now() - self.last_topology_store_time
+                            ).total_seconds()
+                            if time_since_last_store >= 200:
+                                hosts_snapshot = self.hosts.copy()
+                                links_snapshot = self.links.copy()
+                                sws_snapshot = self.sws.copy()
+                                timestamp = datetime.now().isoformat(timespec="seconds")
+                                eventlet.spawn_n(
+                                    self.store_topology_in_db,
+                                    hosts_snapshot,
+                                    links_snapshot,
+                                    sws_snapshot,
+                                    timestamp,
+                                )
+                                self.last_topology_store_time = datetime.now()
 
                 self.cnt = self.cnt + 1
 
@@ -307,6 +317,29 @@ class Topology_proactive(KenLearnAndLog):
       self.mac_to_port[dpid][src_mac] = in_port
       self.mac_to_port[dpid][dst_mac] = out_port
 
+    def _print_global_topology_summary(self, global_snapshot):
+        graph = global_snapshot.get("graph")
+        if graph is None:
+            return
+
+        hosts = global_snapshot.get("hosts") or []
+        links = global_snapshot.get("links") or []
+        switchs = global_snapshot.get("switchs") or []
+
+        try:
+            components = nx.number_weakly_connected_components(graph)
+        except Exception:
+            components = None
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changed = global_snapshot.get("changed")
+        print(f"[{ts}] Global topology snapshot (changed={changed})")
+        print(
+            f"[{ts}] Global: nodes={graph.number_of_nodes()} edges={graph.number_of_edges()} "
+            f"switches={len(switchs)} hosts={len(hosts)} links={len(links)} "
+            f"weak_components={components}"
+        )
+
 
     def send_all_flow_rules_proactively(self):
       """
@@ -361,6 +394,12 @@ class Topology_proactive(KenLearnAndLog):
             ttl=(datetime.now().timestamp() + 3 * 3600),
             controller_name="controller_lan2"
         )
-        
-        self.topology_repo.insert_topology(topology_model)
-        print("Topology stored in database successfully.")
+
+        topology_repo = TopologyRepository(
+            MongodbRouter().get_simple_connection_string(add_app=True)
+        )
+        try:
+            topology_repo.insert_topology(topology_model)
+            print("Topology n2 stored in database successfully.")
+        finally:
+            topology_repo.close()
