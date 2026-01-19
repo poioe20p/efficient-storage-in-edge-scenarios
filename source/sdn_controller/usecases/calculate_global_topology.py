@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import networkx as nx
 from sdn_controller.repositories.repositories.topology import TopologyRepository
@@ -82,5 +83,52 @@ class CalculateGlobalTopology:
             "links": list(self.links),
             "switchs": list(self.switchs),
         }
+
+    def print_global_topology(self, global_snapshot: Dict[str, Any]) -> None:
+        """Print a global topology snapshot with the same format as local topology logs."""
+        if not global_snapshot:
+            return
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{ts}] ************************************")
+
+        changed = global_snapshot.get("changed")
+        if changed is None:
+            print(f"[{ts}] Global topology")
+        else:
+            print(f"[{ts}] Global topology (changed={changed})")
+
+        switchs = global_snapshot.get("switchs") or []
+        hosts = global_snapshot.get("hosts") or []
+        links = global_snapshot.get("links") or []
+
+        # Normalize link objects to the same tuple format used in local printing
+        links_as_tuples: List[Any] = []
+        for link in links:
+            src_dpid = getattr(link, "src_dpid", None)
+            dst_dpid = getattr(link, "dst_dpid", None)
+            src_port_no = getattr(link, "src_port_no", None)
+            if src_dpid is None or dst_dpid is None or src_port_no is None:
+                links_as_tuples.append(link)
+            else:
+                links_as_tuples.append((src_dpid, dst_dpid, src_port_no))
+
+        print(f"[{ts}] Switches:  {switchs}")
+        print(f"[{ts}] Network links:  {links_as_tuples}")
+        print(f"[{ts}] Hosts:  {hosts}")
+
+        graph = global_snapshot.get("graph")
+        if graph is None:
+            return
+
+        try:
+            components = nx.number_weakly_connected_components(graph)
+        except Exception:
+            components = None
+
+        print(
+            f"[{ts}] Global summary: nodes={graph.number_of_nodes()} edges={graph.number_of_edges()} "
+            f"weak_components={components}"
+        )
 
 

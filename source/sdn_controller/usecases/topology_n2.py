@@ -174,7 +174,7 @@ class Topology_proactive(KenLearnAndLog):
 
                         global_topology = self.calculate_global_topology.run()
                         if global_topology:
-                            self._print_global_topology_summary(global_topology)
+                            self.calculate_global_topology.print_global_topology(global_topology)
 
                     # Detect changes on topology / hosts
                     change_flow_rules = (
@@ -209,11 +209,11 @@ class Topology_proactive(KenLearnAndLog):
 
                         global_topology = self.calculate_global_topology.run()
                         if global_topology:
-                            self._print_global_topology_summary(global_topology)
+                            self.calculate_global_topology.print_global_topology(global_topology)
                     else:
                         global_topology = self.calculate_global_topology.run()
                         if global_topology and global_topology.get("changed"):
-                            self._print_global_topology_summary(global_topology)
+                            self.calculate_global_topology.print_global_topology(global_topology)
                         else:
                             if self.last_topology_store_time is None:
                                 self.last_topology_store_time = datetime.now()
@@ -316,30 +316,6 @@ class Topology_proactive(KenLearnAndLog):
       # It avoids relying on Packet-In events since the flow rules are installed proactively.
       self.mac_to_port[dpid][src_mac] = in_port
       self.mac_to_port[dpid][dst_mac] = out_port
-
-    def _print_global_topology_summary(self, global_snapshot):
-        graph = global_snapshot.get("graph")
-        if graph is None:
-            return
-
-        hosts = global_snapshot.get("hosts") or []
-        links = global_snapshot.get("links") or []
-        switchs = global_snapshot.get("switchs") or []
-
-        try:
-            components = nx.number_weakly_connected_components(graph)
-        except Exception:
-            components = None
-
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        changed = global_snapshot.get("changed")
-        print(f"[{ts}] Global topology snapshot (changed={changed})")
-        print(
-            f"[{ts}] Global: nodes={graph.number_of_nodes()} edges={graph.number_of_edges()} "
-            f"switches={len(switchs)} hosts={len(hosts)} links={len(links)} "
-            f"weak_components={components}"
-        )
-
 
     def send_all_flow_rules_proactively(self):
       """
