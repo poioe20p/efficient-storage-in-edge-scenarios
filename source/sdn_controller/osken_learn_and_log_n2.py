@@ -1,9 +1,9 @@
 """Learning-switch style OS-Ken app that logs packet events to MongoDB."""
 import eventlet
+
 eventlet.monkey_patch()
+
 from datetime import datetime
-from config import MongoConfig
-from pymongo import MongoClient
 from os_ken.base import app_manager
 from os_ken.controller import ofp_event
 from os_ken.controller.handler import (
@@ -13,10 +13,11 @@ from os_ken.controller.handler import (
 )
 from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
-from sdn_controller.database import ConfigureMongoDBShardedCluster
+from sdn_controller.models.mongodb_host import MongodbRouter
+from sdn_controller.repositories.models.event import Event
+from sdn_controller.repositories.repositories.event import EventRepository
 
-# This class defines a simple OS-Ken application that acts like a switch in an OpenFlow network and
-# logs packet events to a MongoDB database.
+
 class KenLearnAndLog(app_manager.OSKenApp):
     """Simple layer-2 learning switch with optional MongoDB logging."""
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -24,44 +25,80 @@ class KenLearnAndLog(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        self.datapath_id_to_shard_range = {}
-        self.mongo_config = None
+        self.router_event_repository = EventRepository(
+            MongodbRouter().get_simple_connection_string(
+                add_app=True
+            )
+        )
+        self._zone_size = 1000000000
+        self._zone_order = ["shard_zone_rs_net2"]
+        self._zone_state = {}
+        start = 1000000000
+        self._zone_state["shard_zone_rs_net2"] = {
+            "switch_dpid": None,
+            "next_offset": 0,
+            "range_start": start,
+            "lock": eventlet.semaphore.Semaphore(),
+        }
+        self.datapath_zone_map = {}
+        self._connected_switches = 0
+        self.enable_reactive_learning = True
 
-    def add_flow(self, datapath, in_port, dst, src, actions):
-        # Get the OpenFlow protocol object for the given switch (datapath)
+    def _install_flow(self, datapath, priority, match, actions, *,
+                      idle_timeout=0, hard_timeout=0, cookie=0, flags=None):
+        """Shared helper so subclasses can install arbitrary matches."""
         ofproto = datapath.ofproto
-
-        # Create a match objectE based on the input port, source MAC address (src), and destination MAC address (dst)
-        match = datapath.ofproto_parser.OFPMatch(
-            in_port=in_port,                      # Match the input port
-            eth_dst=dst,                          # Match the destination MAC address (eth_dst = layer-2 destination)
-            eth_src=src)                          # Match the source MAC address (eth_src = layer-2 source)
-
-        # Create a flow modification message to add a new flow entry to the switch
-        # The OFPFlowMod message includes match criteria, priority, timeout, and actions
+        if flags is None:
+            flags = ofproto.OFPFF_SEND_FLOW_REM
+                
         instructions = [
             datapath.ofproto_parser.OFPInstructionActions(
                 ofproto.OFPIT_APPLY_ACTIONS,
                 actions,
             )
         ]
-        
-        # Potencialmente guardar na db os flows adicionadas
         mod = datapath.ofproto_parser.OFPFlowMod(
-            datapath=datapath,                    # The switch (datapath) to apply the flow modification
-            match=match,                          # The match criteria defined above (in_port, src, dst)
-            cookie=0,                             # Cookie identifier for tracking the flow (set to 0 in this case)
-            command=ofproto.OFPFC_ADD,            # Command to add a new flow entry (OFPFC_ADD)
-            idle_timeout=0,                       # No idle timeout (the flow will not expire due to inactivity)
-            hard_timeout=0,                       # No hard timeout (the flow will not expire over time)
-            priority=10,                          # Priority of the flow (higher values mean higher priority)
-            flags=ofproto.OFPFF_SEND_FLOW_REM,    # Flag to send a Flow Removed message when the flow is deleted
-            instructions=instructions             # Apply the actions via the instruction set (OpenFlow 1.3 requirement)
+            datapath=datapath,
+            priority=priority,
+            match=match,
+            instructions=instructions,
+            idle_timeout=idle_timeout,
+            hard_timeout=hard_timeout,
+            cookie=cookie,
+            flags=flags,
+            command=ofproto.OFPFC_ADD,
         )
-
-        # Send the flow modification message to the switch (datapath)
-        # This installs the flow entry into the switch's flow table
         datapath.send_msg(mod)
+
+    def add_flow(self, datapath, in_port, dst, src, actions):
+        """Default reactive learning-switch rule installer."""
+        parser = datapath.ofproto_parser
+        match = parser.OFPMatch(
+            in_port=in_port,
+            eth_dst=dst,
+            eth_src=src,
+        )
+        self._install_flow(
+            datapath,
+            priority=10,
+            match=match,
+            actions=actions,
+            flags=datapath.ofproto.OFPFF_SEND_FLOW_REM,
+        )
+        
+    def _assign_zone_to_switch(self, datapath_id: str) -> str:
+        zone = self._zone_order[0]
+        if self._zone_state[zone]["switch_dpid"] is None:
+            self._zone_state[zone]["switch_dpid"] = datapath_id
+        self.datapath_zone_map[datapath_id] = zone
+        return zone
+
+    def _zone_bounds(self, zone_name: str):
+        state = self._zone_state.get(zone_name)
+        if not state:
+            return (0, 0)
+        start = state["range_start"]
+        return (start, start + self._zone_size)
 
 
     # Event handler for switch features. This method is triggered when a switch connects to the controller.
@@ -102,10 +139,13 @@ class KenLearnAndLog(app_manager.OSKenApp):
             flags=ofproto.OFPFF_SEND_FLOW_REM # flag that tells the switch to notify the controller when the flow is removed.
         )
         datapath.send_msg(mod)
-        # self._ensure_mongo_connector()
-        # self._enqueue_zone_assignment(dpid_int)
-        self.build_cluster()
-
+        
+        datapath_id_str = str(datapath.id)
+        assigned_zone = self._assign_zone_to_switch(datapath_id_str)
+        self._connected_switches += 1
+        print(f"Datapath {datapath_id_str} mapped to {assigned_zone}.")
+            
+        
 
     # Packet In Handler
     # This method is triggered when a packet is received by the switch.
@@ -135,7 +175,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         # Learn a MAC address to avoid flooding next time
         if src not in self.mac_to_port[dpid_int]:  # If the source MAC is not already tracked for this switch
             self.mac_to_port[dpid_int][src] = in_port
-            print("mac_to_port[%s]: %s", dpid_int, self.mac_to_port[dpid_int])
+            # print("mac_to_port[%s]: %s", dpid_int, self.mac_to_port[dpid_int])
         
         # Determine the output port for the destination MAC address    
         if dst in self.mac_to_port[dpid_int]:
@@ -148,7 +188,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         actions = [parser.OFPActionOutput(out_port)]
 
         # Install a flow entry to avoid future packet_in events for this flow
-        if out_port != ofproto.OFPP_FLOOD:
+        if self.enable_reactive_learning and out_port != ofproto.OFPP_FLOOD:
             self.add_flow(datapath, in_port, dst, src, actions)
         
         data = None
@@ -167,101 +207,84 @@ class KenLearnAndLog(app_manager.OSKenApp):
         
         # Send the packet-out message to the switch
         datapath.send_msg(out)
+        
+        datapath_id = str(datapath.id)
+        zone_name = self.datapath_zone_map.get(datapath_id)
+        if zone_name is None:
+            print(f"No shard zone assignment for datapath {datapath_id}; skipping log")
+            return
+        event_payload = {
+            "type": "packet_in",
+            "src": src,
+            "dst": dst,
+            "in_port": in_port,
+            "out_port": out_port if out_port != ofproto.OFPP_FLOOD else "FLOOD",
+            "created_ts": datetime.now().isoformat(timespec="seconds"),
+            "ttl": datetime.now().timestamp() + (3 * 60),
+        }
+        self._queue_event_for_zone(zone_name, event_payload, datapath_id)
 
-        db = self._db
-        if db is None:
-            print("MongoDB handle not ready; skipping event persistence")
+
+    def _queue_event_for_zone(self, zone_name: str, event_payload: dict, datapath_key: str):
+        if zone_name != "shard_zone_rs_net2":
+            print(f"Unknown shard zone '{zone_name}' for datapath {datapath_key}; skipping log")
             return
 
-        try:
-            client_nodes = getattr(self._mongo_client, "nodes", None)
-            db.events.insert_one(
+        event_repository = self.router_event_repository
+        label = "N2"
+
+        eventlet.spawn_n(
+            self._insert_event,
+            event_repository,
+            event_payload,
+            label,
+            datapath_key,
+            zone_name,
+        )
+
+    def _insert_event(
+        self,
+        event_repository: EventRepository,
+        event_payload: dict,
+        label: str,
+        datapath_key: str,
+        zone_name: str,
+    ):
+        zone_state = self._zone_state.get(zone_name)
+        if zone_state is None:
+            print(
+                f"Skipping Mongo insert {label}: shard zone {zone_name} not tracked"
+            )
+            return
+
+        lock = zone_state["lock"]
+        with lock:
+            if zone_state["next_offset"] >= self._zone_size:
+                print(
+                    f"Shard zone {zone_name} exhausted; cannot log datapath {datapath_key}"
+                )
+                return
+
+            shard_key = zone_state["range_start"] + zone_state["next_offset"]
+            payload = dict(event_payload)
+            payload.update(
                 {
-                    "type": "packet_in",
-                    "dpid": 2 if src in self.lan_1_macs else 1000002,
-                    "src": src,
-                    "dst": dst,
-                    "in_port": in_port,
-                    "out_port": out_port if out_port != ofproto.OFPP_FLOOD else "FLOOD",
-                    "ts": datetime.now().timestamp(),
+                    "datapath_id": datapath_key,
+                    "shard_zone": zone_name,
+                    "dpid": shard_key,
                 }
             )
-        except Exception as exc:
-            client_nodes = getattr(self._mongo_client, "nodes", None)
-            print(
-                "Mongo insert failed via uri=%s nodes=%s: %s",
-                self.config_shard_cluster.router_host.get_auth_connection_string(add_app=True),
-                client_nodes,
-                exc,
-            )
 
-    def build_cluster(self):
-        if self.mongo_config is None:
-            self.mongo_config = MongoConfig.load()
-            print("MongoDB config loaded.")
-
-        self.config_shard_cluster = ConfigureMongoDBShardedCluster(self.mongo_config, ["10.0.0.4", "10.0.1.4"])
-        if not self._mongo_ready:
-            if self._mongo_setup_thread and not self._mongo_setup_thread.dead:
-                print("MongoDB setup already in progress.")
-                return               
-            self._mongo_setup_thread = eventlet.spawn(self.setup_sharded_cluster)
-        else:
-            print("MongoDB sharded cluster already set up.")
-            eventlet.spawn(self.mongo_router_connection)
-
-
-    def setup_sharded_cluster(self):
-        try:
-            self.config_shard_cluster.setup_sharded_cluster()
-            print("MongoDB sharded cluster setup completed.")
-            self._mongo_ready = True
-            eventlet.spawn(self.mongo_router_connection)
-        except Exception as e:
-            self.logger.error("Error setting up sharded cluster: %s", e)
-            self._mongo_ready = False
-        finally:
-            self._mongo_setup_thread = None
-        return
-    
-    
-    def mongo_router_connection(self):
-        while True:
-            client = None
-            db = None
             try:
-                if not self._mongo_ready:
-                    print("MongoDB not ready; cannot connect to router.")
-                    eventlet.sleep(5)
-                    continue
-                
-                auth_uri = self.config_shard_cluster.router_host.get_auth_connection_string(add_app=True)
-                client = MongoClient(
-                    auth_uri,
-                    serverSelectionTimeoutMS=3000,
+                event_payload = Event(**payload)
+                event_repository.insert_event(event_payload)
+            except Exception as exc:
+                print(
+                    f"Mongo insert {label} failed for {zone_name} (datapath {datapath_key}): {exc}"
                 )
-                db = client[self.mongo_config.database]
-                nodes = getattr(client, "nodes", None)
-                self._mongo_client = client
-                self._db = db
-                while True:
-                    try:
-                        client.admin.command("ping")
-                        print("Connected to MongoDB router at nodes:", nodes)
-                        eventlet.sleep(10)
-                    except Exception as ping_exc:
-                        print("Lost connection to MongoDB router at nodes:", nodes, "Error:", ping_exc)
-                        break
-            except Exception as conn_exc:
-                print("Error connecting to MongoDB router:", conn_exc)
-            finally:
-                if client is not None:
-                    try:
-                        client.close()
-                    except Exception:
-                        pass
-                if self._mongo_client is client:
-                    self._mongo_client = None
-                if self._db is db:
-                    self._db = None
-            eventlet.sleep(5)
+                return
+
+            zone_state["next_offset"] += 1
+            print(
+                f"Mongo insert {label} succeeded for {zone_name} (datapath {datapath_key}, shard key {shard_key})"
+            )

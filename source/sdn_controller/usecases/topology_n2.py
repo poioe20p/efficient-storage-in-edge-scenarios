@@ -2,18 +2,18 @@ from datetime import datetime
 from os_ken import cfg
 from os_ken.base import app_manager
 from os_ken.topology.api import get_all_link, get_host
-from sdn_controller.osken_learn_and_log import KenLearnAndLog
+from sdn_controller.osken_learn_and_log_n2 import KenLearnAndLog
 from os_ken.controller.handler import MAIN_DISPATCHER, DEAD_DISPATCHER
 from os_ken.controller.handler import set_ev_cls
 from os_ken.controller import ofp_event
 from os_ken.lib import hub
 from sdn_controller.repositories.repositories.topology import TopologyRepository
-from sdn_controller.repositories.models.topology import Topology, Host
+from sdn_controller.repositories.models.topology import Topology, Host, Link
 from sdn_controller.models.mongodb_host import MongodbRouter
+from sdn_controller.usecases.calculate_global_topology import CalculateGlobalTopology
 import networkx as nx
 import eventlet
-from datetime import datetime
-from uuid import uuid4
+
 
 class Topology_proactive(KenLearnAndLog):
     REQUIRED_APP = ['os_ken.topology.switches']
@@ -47,12 +47,10 @@ class Topology_proactive(KenLearnAndLog):
             "00:00:00:00:00:DD",  # dedicated internet uplink
         }
         self.topology_has_been_stored = False
-        self.topology_repo = TopologyRepository(
-            MongodbRouter().get_simple_connection_string(
-                add_app=True
-            )
-        )
-        self.topology = str(uuid4())
+        self.last_topology_store_time = None
+        self.topology = "topology_lan2"
+        self.remote_topology_id = "topology_lan1"
+        self.calculate_global_topology = CalculateGlobalTopology()
         hub.spawn(self._topology_worker)
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -140,66 +138,118 @@ class Topology_proactive(KenLearnAndLog):
             self.net.add_edge(link[0], link[1], weight=1, port=link[2])
 
     def _topology_worker(self):
-       """
-       This function runs in an infinite loop and periodically checks the network topology (switches, links, and hosts).
-       It refreshes the topology and compares the current state with the previous state.
-       If any changes are detected in the topology, flow rules are installed proactively for all switches.
-       """
-       while True:
-         try:
-            # Sleep for a specified interval (self.INTERVAL) before executing the next iteration
-            hub.sleep(self.INTERVAL)
+        """Periodically refresh topology, install local flows, and persist snapshots."""
+        while True:
+            try:
+                hub.sleep(self.INTERVAL)
 
-            # Controller refreshes the network topology, getting current switches, links, and hosts
-            self.get_sws_links_hosts()
+                # Refresh topology (switches, links, hosts)
+                self.get_sws_links_hosts()
 
-            # Every 5th iteration, perform additional actions like printing the current network state
-            if self.cnt % 5 == 0:
-                self.cnt = 0  # Reset the counter
-                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"[{ts}] ************************************")
-                print(f"[{ts}] Switches:  {self.sws}")  # Print current switches in the network
-                print(f"[{ts}] Network links:  {self.links}")  # Print current links in the network
-                print(f"[{ts}] Hosts:  {self.hosts}")  # Print current hosts in the network
-                
-                # Store the topology in the database only once at the beginning
-                if not self.topology_has_been_stored:
-                    eventlet.spawn_n(
-                        self.store_topology_in_db
-                    )
-                    self.topology_has_been_stored = True
+                # Every 5th iteration, print + persist + update flows
+                if self.cnt % 5 == 0:
+                    self.cnt = 0
+                    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"[{ts}] ************************************")
+                    print(f"[{ts}] Switches:  {self.sws}")
+                    print(f"[{ts}] Network links:  {self.links}")
+                    print(f"[{ts}] Hosts:  {self.hosts}")
 
-                # Detect changes on topology / hosts
-                change_flow_rules = (
-                    self.hosts != self.hosts_prev or
-                    self.links != self.links_prev or
-                    self.sws != self.sws_prev
-                )
+                    # Store the topology in the database only once at the beginning
+                    if not self.topology_has_been_stored:
+                        hosts_snapshot = self.hosts.copy()
+                        links_snapshot = self.links.copy()
+                        sws_snapshot = self.sws.copy()
+                        timestamp = datetime.now().isoformat(timespec="seconds")
+                        eventlet.spawn_n(
+                            self.store_topology_in_db,
+                            hosts_snapshot,
+                            links_snapshot,
+                            sws_snapshot,
+                            timestamp,
+                        )
+                        self.topology_has_been_stored = True
+                        self.last_topology_store_time = datetime.now()
+                        self._install_local_topology_flows()
 
-                # Atualiza cópias para próxima comparação
-                self.hosts_prev = self.hosts.copy()
-                self.links_prev = self.links.copy()
-                self.sws_prev = self.sws.copy()
+                        global_topology = self.calculate_global_topology.run()
+                        if global_topology:
+                            self.calculate_global_topology.print_global_topology(global_topology)
 
-                if (self.sws and self.links and self.hosts) and change_flow_rules:
-                    self._installed_flow_keys.clear()
-                    self._arp_rules_installed.clear()
-                    self.mac_to_port.clear()
-                    self.send_all_flow_rules_proactively()
-                    eventlet.spawn_n(
-                        self.store_topology_in_db
+                    # Detect changes on topology / hosts
+                    change_flow_rules = (
+                        self.hosts != self.hosts_prev
+                        or self.links != self.links_prev
+                        or self.sws != self.sws_prev
                     )
 
-            # Increment the iteration counter (used for the % 5 check)
-            self.cnt = self.cnt + 1
+                    # Update copies for next comparison
+                    self.hosts_prev = self.hosts.copy()
+                    self.links_prev = self.links.copy()
+                    self.sws_prev = self.sws.copy()
 
-         except Exception as e:
-            self.logger.error(f"Error in topology thread: {e}")
+                    if (self.sws and self.links and self.hosts) and change_flow_rules:
+                        self._installed_flow_keys.clear()
+                        self._arp_rules_installed.clear()
+                        self.mac_to_port.clear()
+                        self._install_local_topology_flows()
 
-         except KeyboardInterrupt:
-            # Handle user interruption (Ctrl+C) and print a closing message before stopping the loop
-            print("Closing ....")
-            pass
+                        hosts_snapshot = self.hosts.copy()
+                        links_snapshot = self.links.copy()
+                        sws_snapshot = self.sws.copy()
+                        timestamp = datetime.now().isoformat(timespec="seconds")
+                        eventlet.spawn_n(
+                            self.store_topology_in_db,
+                            hosts_snapshot,
+                            links_snapshot,
+                            sws_snapshot,
+                            timestamp,
+                        )
+                        self.last_topology_store_time = datetime.now()
+
+                        global_topology = self.calculate_global_topology.run()
+                        if global_topology:
+                            self.calculate_global_topology.print_global_topology(global_topology)
+                    else:
+                        global_topology = self.calculate_global_topology.run()
+                        if global_topology and global_topology.get("changed"):
+                            self.calculate_global_topology.print_global_topology(global_topology)
+                        else:
+                            if self.last_topology_store_time is None:
+                                self.last_topology_store_time = datetime.now()
+                            time_since_last_store = (
+                                datetime.now() - self.last_topology_store_time
+                            ).total_seconds()
+                            if time_since_last_store >= 200:
+                                hosts_snapshot = self.hosts.copy()
+                                links_snapshot = self.links.copy()
+                                sws_snapshot = self.sws.copy()
+                                timestamp = datetime.now().isoformat(timespec="seconds")
+                                eventlet.spawn_n(
+                                    self.store_topology_in_db,
+                                    hosts_snapshot,
+                                    links_snapshot,
+                                    sws_snapshot,
+                                    timestamp,
+                                )
+                                self.last_topology_store_time = datetime.now()
+
+                self.cnt = self.cnt + 1
+
+            except KeyboardInterrupt:
+                print("Closing ....")
+                break
+            except Exception as e:
+                self.logger.error(f"Error in topology thread: {e}")
+
+    def _install_local_topology_flows(self):
+        if not (self.sws and self.links and self.hosts):
+            return
+
+        self._installed_flow_keys.clear()
+        self._arp_rules_installed.clear()
+        self.mac_to_port.clear()
+        self.send_all_flow_rules_proactively()
 
     def proactive_flow_rule_install(self, sw, p):
       """
@@ -267,7 +317,6 @@ class Topology_proactive(KenLearnAndLog):
       self.mac_to_port[dpid][src_mac] = in_port
       self.mac_to_port[dpid][dst_mac] = out_port
 
-
     def send_all_flow_rules_proactively(self):
       """
       This method installs proactive flow rules for all possible host-to-host communication paths.
@@ -290,21 +339,43 @@ class Topology_proactive(KenLearnAndLog):
           if sw:
               self.proactive_flow_rule_install(sw, path)
 
-    def store_topology_in_db(self):
+    def store_topology_in_db(self, hosts_snapshot=None, links_snapshot=None, switches_snapshot=None, timestamp: str = None):
+        hosts_payload = hosts_snapshot if hosts_snapshot is not None else self.hosts.copy()
+        links_payload = links_snapshot if links_snapshot is not None else self.links.copy()
+        sws_payload = switches_snapshot if switches_snapshot is not None else self.sws.copy()
+
+        if timestamp is None:
+            timestamp = datetime.now().isoformat(timespec="seconds")
+
         hosts_model = [
             Host(mac=host[0], switch_dpid=host[1], port_no=host[2])
-            for host in self.hosts
+            for host in hosts_payload
+        ]
+        
+        links_model = [
+            Link(
+                src_dpid=link[0],
+                src_port_no=link[2],
+                dst_dpid=link[1],
+            )
+            for link in links_payload
         ]
 
         topology_model = Topology(
             id=self.topology,
             hosts=hosts_model,
-            links=self.links,
-            switchs=[sw[1] for sw in self.sws],
-            timestamp=datetime.now().isoformat(timespec="seconds"),
+            links=links_model,
+            switchs=[sw[1] for sw in sws_payload],
+            timestamp=timestamp,
             ttl=(datetime.now().timestamp() + 3 * 3600),
-            controller_name="osken_proactive"
+            controller_name="controller_lan2"
         )
-        
-        self.topology_repo.insert_topology(topology_model)
-        print("Topology stored in database successfully.")
+
+        topology_repo = TopologyRepository(
+            MongodbRouter().get_simple_connection_string(add_app=True)
+        )
+        try:
+            topology_repo.insert_topology(topology_model)
+            print("Topology n2 stored in database successfully.")
+        finally:
+            topology_repo.close()

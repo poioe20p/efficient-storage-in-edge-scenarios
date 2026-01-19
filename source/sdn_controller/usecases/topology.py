@@ -2,13 +2,13 @@ from datetime import datetime
 from os_ken import cfg
 from os_ken.base import app_manager
 from os_ken.topology.api import get_all_link, get_host
-from sdn_controller.osken_learn_and_log_n1 import KenLearnAndLog
+from sdn_controller.osken_learn_and_log import KenLearnAndLog
 from os_ken.controller.handler import MAIN_DISPATCHER, DEAD_DISPATCHER
 from os_ken.controller.handler import set_ev_cls
 from os_ken.controller import ofp_event
 from os_ken.lib import hub
 from sdn_controller.repositories.repositories.topology import TopologyRepository
-from sdn_controller.repositories.models.topology import Topology, Host
+from sdn_controller.repositories.models.topology import Topology, Host, Link
 from sdn_controller.models.mongodb_host import MongodbRouter
 import networkx as nx
 import eventlet
@@ -52,7 +52,6 @@ class Topology_proactive(KenLearnAndLog):
                 add_app=True
             )
         )
-        self.last_topology_store_time = None
         self.topology = str(uuid4())
         hub.spawn(self._topology_worker)
 
@@ -119,7 +118,7 @@ class Topology_proactive(KenLearnAndLog):
             (host.mac, host.port.dpid, host.port.port_no)
             for host in host_list
             if getattr(host, "port", None) is not None
-            and host.mac not in self._router_mac_blocklist
+            # and host.mac not in self._router_mac_blocklist
         ]
 
         # update networkx topology with the hosts links
@@ -165,17 +164,10 @@ class Topology_proactive(KenLearnAndLog):
                 
                 # Store the topology in the database only once at the beginning
                 if not self.topology_has_been_stored:
-                    hosts_snapshot = self.hosts.copy()
-                    links_snapshot = self.links.copy()
-                    sws_snapshot = self.sws.copy()
                     eventlet.spawn_n(
-                        self.store_topology_in_db,
-                        hosts_snapshot,
-                        links_snapshot,
-                        sws_snapshot
+                        self.store_topology_in_db
                     )
                     self.topology_has_been_stored = True
-                    self.last_topology_store_time = datetime.now()
 
                 # Detect changes on topology / hosts
                 change_flow_rules = (
@@ -190,33 +182,19 @@ class Topology_proactive(KenLearnAndLog):
                 self.sws_prev = self.sws.copy()
 
                 if (self.sws and self.links and self.hosts) and change_flow_rules:
+                    # get global topology and install proactively flow rules for all switches
+                    # need to wait to ensure that the topology is stored
+                    eventlet.spawn_n(
+                        self.store_topology_in_db
+                    )
+                    
+                    #after storing the topology, install proactively flow rules
                     self._installed_flow_keys.clear()
                     self._arp_rules_installed.clear()
                     self.mac_to_port.clear()
+                    
+                    
                     self.send_all_flow_rules_proactively()
-                    hosts_snapshot = self.hosts.copy()
-                    links_snapshot = self.links.copy()
-                    sws_snapshot = self.sws.copy()
-                    eventlet.spawn_n(
-                        self.store_topology_in_db,
-                        hosts_snapshot,
-                        links_snapshot,
-                        sws_snapshot
-                    )
-                    self.last_topology_store_time = datetime.now()
-                else:
-                    time_since_last_store = (datetime.now() - self.last_topology_store_time).total_seconds()
-                    if time_since_last_store >= 200:
-                        hosts_snapshot = self.hosts.copy()
-                        links_snapshot = self.links.copy()
-                        sws_snapshot = self.sws.copy()
-                        eventlet.spawn_n(
-                            self.store_topology_in_db,
-                            hosts_snapshot,
-                            links_snapshot,
-                            sws_snapshot
-                        )
-                        self.last_topology_store_time = datetime.now()
 
             # Increment the iteration counter (used for the % 5 check)
             self.cnt = self.cnt + 1
@@ -318,24 +296,30 @@ class Topology_proactive(KenLearnAndLog):
           if sw:
               self.proactive_flow_rule_install(sw, path)
 
-    def store_topology_in_db(self, hosts_snapshot=None, links_snapshot=None, switches_snapshot=None):
-        hosts_payload = hosts_snapshot if hosts_snapshot is not None else self.hosts.copy()
-        links_payload = links_snapshot if links_snapshot is not None else self.links.copy()
-        sws_payload = switches_snapshot if switches_snapshot is not None else self.sws.copy()
-
+    def store_topology_in_db(self):
         hosts_model = [
             Host(mac=host[0], switch_dpid=host[1], port_no=host[2])
-            for host in hosts_payload
+            for host in self.hosts
+        ]
+        
+        links_model = [
+            Link(
+                src_dpid=link[0],
+                dst_dpid=link[1],
+                src_port_no=link[2],
+                dst_port_no=None  # You can set this if you have the information
+            )
+            for link in self.links
         ]
 
         topology_model = Topology(
             id=self.topology,
             hosts=hosts_model,
-            links=links_payload,
-            switchs=[sw[1] for sw in sws_payload],
+            links=links_model,
+            switchs=[sw[1] for sw in self.sws],
             timestamp=datetime.now().isoformat(timespec="seconds"),
             ttl=(datetime.now().timestamp() + 3 * 3600),
-            controller_name="controller_lan1"
+            controller_name="osken_proactive"
         )
         
         self.topology_repo.insert_topology(topology_model)

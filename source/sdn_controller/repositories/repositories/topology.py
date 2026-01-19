@@ -1,9 +1,10 @@
 """MongoDB persistence helpers for Topology snapshots."""
 
 from dataclasses import asdict
+from pydoc import doc
 from typing import Any, Dict, List, Optional
 from pymongo import MongoClient
-from sdn_controller.repositories.models.topology import Host, Topology
+from sdn_controller.repositories.models.topology import Host, Topology, Link
 
 
 class TopologyRepository:
@@ -61,7 +62,6 @@ class TopologyRepository:
 		doc = self._collection.find_one({"_id": topology_id})
 		if not doc:
 			return None
-		doc.pop("_id", None)
 		return self._doc_to_topology(doc)
 
 	# ------------------------------------------------------------------
@@ -72,7 +72,7 @@ class TopologyRepository:
 		return {
 			"_id": topology.id,
 			"hosts": [asdict(host) for host in topology.hosts],
-			"links": topology.links,
+			"links": [asdict(link) for link in topology.links],
 			"switchs": topology.switchs,
 			"ttl": topology.ttl,
 			"timestamp": topology.timestamp,
@@ -81,12 +81,12 @@ class TopologyRepository:
 
 	@staticmethod
 	def _doc_to_topology(doc: Dict[str, Any]) -> Topology:
-		hosts_payload: List[Dict[str, Any]] = doc.get("hosts", [])
-		hosts = [Host(**host_doc) for host_doc in hosts_payload]
+		hosts = [Host(**host_doc) for host_doc in doc.get("hosts", [])]
+		links = [Link(**link_doc) for link_doc in doc.get("links", [])]
 		return Topology(
-			id=doc.get("_id"),
+			id=doc.get("_id") or doc.get("id"),
 			hosts=hosts,
-			links=doc.get("links", []),
+			links=links,
 			switchs=doc.get("switchs", []),
 			ttl=doc.get("ttl", 0.0),
 			timestamp=doc.get("timestamp", ""),
