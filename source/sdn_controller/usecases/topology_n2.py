@@ -2,13 +2,13 @@ from datetime import datetime
 from os_ken import cfg
 from os_ken.base import app_manager
 from os_ken.topology.api import get_all_link, get_host
-from sdn_controller.osken_learn_and_log_n2 import KenLearnAndLog
+from sdn_controller.osken_learn_and_log import KenLearnAndLog
 from os_ken.controller.handler import MAIN_DISPATCHER, DEAD_DISPATCHER
 from os_ken.controller.handler import set_ev_cls
 from os_ken.controller import ofp_event
 from os_ken.lib import hub
-from sdn_controller.repositories.repositories.topology import TopologyRepository
-from sdn_controller.repositories.models.topology import Topology, Host, Link
+from sdn_controller.library.repositories.topology import TopologyRepository
+from sdn_controller.library.models.topology import Topology, Host, Link
 from sdn_controller.models.mongodb_host import MongodbRouter
 from sdn_controller.usecases.calculate_global_topology import CalculateGlobalTopology
 import networkx as nx
@@ -29,7 +29,7 @@ class Topology_proactive(KenLearnAndLog):
         self.sws_prev = []
         self.links_prev = []
         self.hosts_prev = []
-        self.INTERVAL = 2
+        self.INTERVAL = 1
         self._datapath_by_id = {}
         self._installed_flow_keys = set()
         self._arp_rules_installed = set()
@@ -49,7 +49,6 @@ class Topology_proactive(KenLearnAndLog):
         self.topology_has_been_stored = False
         self.last_topology_store_time = None
         self.topology = "topology_lan2"
-        self.remote_topology_id = "topology_lan1"
         self.calculate_global_topology = CalculateGlobalTopology()
         hub.spawn(self._topology_worker)
 
@@ -146,8 +145,8 @@ class Topology_proactive(KenLearnAndLog):
                 # Refresh topology (switches, links, hosts)
                 self.get_sws_links_hosts()
 
-                # Every 5th iteration, print + persist + update flows
-                if self.cnt % 5 == 0:
+                # Every 10th iteration, print + persist + update flows
+                if self.cnt % 10 == 0:
                     self.cnt = 0
                     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     print(f"[{ts}] ************************************")

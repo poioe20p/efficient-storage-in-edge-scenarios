@@ -1,7 +1,7 @@
 from dataclasses import asdict
 from typing import Optional
 from pymongo import MongoClient
-from sdn_controller.repositories.models.event import Event
+from sdn_controller.library.models.event import Event
 
 
 class EventRepository:

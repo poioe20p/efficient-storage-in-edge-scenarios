@@ -602,15 +602,6 @@ MONGO_ENV_FILE="$PWD/../.env-mongo"
 if [[ ! -f "$MONGO_ENV_FILE" ]]; then
     echo "MongoDB environment file '$MONGO_ENV_FILE' not found. Aborting."
     echo "Using direct environment variables instead."
-    # docker run -dit --name osken --network host \
-    #     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-    #     -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
-    #     -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
-    #     -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
-    #     -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-    #     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
-    #         --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
-
     docker run -dit --name osken --network host \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
         -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
@@ -618,7 +609,8 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
         osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
-            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n1.py
+            --log-config-file /etc/osken/logging.conf \
+            os_ken.topology.switches sdn_controller.calculate_stats_n1
 
     docker run -dit --name osken_2 --network host \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
@@ -627,26 +619,23 @@ if [[ ! -f "$MONGO_ENV_FILE" ]]; then
         -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
         -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
         osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
-            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n2.py
+            --log-config-file /etc/osken/logging.conf \
+            os_ken.topology.switches sdn_controller.calculate_stats_n2
 
 else
-    # docker run -dit --name osken --network host \
-    #     --env-file "$MONGO_ENV_FILE" \
-    #     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-    #     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
-    #         --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology.py
-
     docker run -dit --name osken --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
         osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
-            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n1.py
+            --log-config-file /etc/osken/logging.conf \
+            os_ken.topology.switches sdn_controller.calculate_stats_n1
 
     docker run -dit --name osken_2 --network host \
         --env-file "$MONGO_ENV_FILE" \
         -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
         osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
-            --log-config-file /etc/osken/logging.conf ./sdn_controller/usecases/topology_n2.py
+            --log-config-file /etc/osken/logging.conf \
+            os_ken.topology.switches sdn_controller.calculate_stats_n2
 fi
 
 if [[ $? -ne 0 ]]; then

@@ -2,13 +2,13 @@ from datetime import datetime
 from os_ken import cfg
 from os_ken.base import app_manager
 from os_ken.topology.api import get_all_link, get_host
-from sdn_controller.osken_learn_and_log_n1 import KenLearnAndLog
+from sdn_controller.osken_learn_and_log import KenLearnAndLog
 from os_ken.controller.handler import MAIN_DISPATCHER, DEAD_DISPATCHER
 from os_ken.controller.handler import set_ev_cls
 from os_ken.controller import ofp_event
 from os_ken.lib import hub
-from sdn_controller.repositories.repositories.topology import TopologyRepository
-from sdn_controller.repositories.models.topology import Topology, Host, Link
+from sdn_controller.library.repositories.topology import TopologyRepository
+from sdn_controller.library.models.topology import Topology, Host, Link
 from sdn_controller.models.mongodb_host import MongodbRouter
 from sdn_controller.usecases.calculate_global_topology import CalculateGlobalTopology
 import networkx as nx
@@ -30,7 +30,7 @@ class Topology_proactive(KenLearnAndLog):
         self.sws_prev = []
         self.links_prev = []
         self.hosts_prev = []
-        self.INTERVAL = 2
+        self.INTERVAL = 1
         self._datapath_by_id = {}
         self._installed_flow_keys = set()
         self._arp_rules_installed = set()
@@ -50,7 +50,6 @@ class Topology_proactive(KenLearnAndLog):
         self.topology_has_been_stored = False
         self.last_topology_store_time = None
         self.topology = "topology_lan1"
-        self.remote_topology_id = "topology_lan2"
         self.calculate_global_topology = CalculateGlobalTopology()
         hub.spawn(self._topology_worker)
 
@@ -65,14 +64,13 @@ class Topology_proactive(KenLearnAndLog):
         datapath = ev.datapath
         if ev.state == MAIN_DISPATCHER:
             if datapath not in self.sws:
-                #self.logger.debug('%s:register datapath: %016x', time.time() - self.s_time, datapath.id)
                 self.sws.append((datapath, datapath.id))
                 self._datapath_by_id[datapath.id] = (datapath, datapath.id)
         elif ev.state == DEAD_DISPATCHER:
             if datapath in self.sws:
-                #self.logger.debug('%s:unregister datapath: %016x', time.time() - self.s_time, datapath.id)
                 self.sws.remove((datapath, datapath.id))
             self._datapath_by_id.pop(datapath.id, None)
+
 
     def check_link(self, link_in, links_list):
         """
@@ -84,6 +82,7 @@ class Topology_proactive(KenLearnAndLog):
             if link[0] == link_in[0] and link[2] == link_in[2]:
                 return False
         return True
+
 
     def _get_topology_api_app(self):
         """
@@ -100,6 +99,7 @@ class Topology_proactive(KenLearnAndLog):
                 self._topology_api_lookup_warned = False
         return self._topology_api_app
 
+
     def get_sws_links_hosts (self):
         
         # Before update the topology, clean the previous one!
@@ -113,7 +113,7 @@ class Topology_proactive(KenLearnAndLog):
 
         # get list of hosts
         host_list = get_host(topo_api_app, None) or []
-        # host_list = get_host(self, None) or []
+
         self.hosts = [
             (host.mac, host.port.dpid, host.port.port_no)
             for host in host_list
@@ -154,7 +154,7 @@ class Topology_proactive(KenLearnAndLog):
             self.get_sws_links_hosts()
 
             # Every 5th iteration, perform additional actions like printing the current network state
-            if self.cnt % 5 == 0:
+            if self.cnt % 10 == 0:
                 self.cnt = 0  # Reset the counter
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"[{ts}] ************************************")

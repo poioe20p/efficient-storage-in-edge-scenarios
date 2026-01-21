@@ -4,7 +4,7 @@ from dataclasses import asdict
 from pydoc import doc
 from typing import Any, Dict, List, Optional
 from pymongo import MongoClient
-from sdn_controller.repositories.models.topology import Host, Topology, Link
+from sdn_controller.library.models.topology import Host, Topology, Link
 
 
 class TopologyRepository:

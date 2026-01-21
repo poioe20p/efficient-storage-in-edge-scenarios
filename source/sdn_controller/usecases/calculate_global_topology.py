@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import networkx as nx
-from sdn_controller.repositories.repositories.topology import TopologyRepository
-from sdn_controller.repositories.models.topology import Host, Topology
+from sdn_controller.library.repositories.topology import TopologyRepository
+from sdn_controller.library.models.topology import Host, Topology
 from sdn_controller.models.mongodb_host import MongodbRouter
 from eventlet import spawn_n
 

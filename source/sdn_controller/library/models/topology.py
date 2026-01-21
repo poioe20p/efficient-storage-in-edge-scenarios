@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Any
+# from pydantic import BaseModel
 
 @dataclass    
 class Host:
@@ -22,3 +23,8 @@ class Topology:
     ttl: float
     timestamp: str
     controller_name: str = None
+
+# class TopologyNet(BaseModel):
+#     switches: list
+#     links: list
+#     hosts: list
