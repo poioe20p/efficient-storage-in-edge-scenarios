@@ -1,8 +1,7 @@
 """MongoDB persistence helpers for Topology snapshots."""
 
 from dataclasses import asdict
-from pydoc import doc
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from pymongo import MongoClient
 from sdn_controller.library.models.topology import Host, Topology, Link
 
@@ -39,15 +38,15 @@ class TopologyRepository:
 		"""Insert a topology snapshot (overwrites any document with same id)."""
 		self.connect()
 		doc = self._topology_to_doc(topology)
-		doc["_id"] = topology.id
-		self._collection.replace_one({"_id": topology.id}, doc, upsert=True)
-		return topology.id
+		self._collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+		return doc["_id"]
 
 	def update_topology(self, topology: Topology) -> bool:
 		"""Update fields of an existing topology document."""
 		self.connect()
 		doc = self._topology_to_doc(topology)
-		result = self._collection.update_one({"_id": topology.id}, {"$set": doc})
+		topology_id = doc.pop("_id", topology.id)
+		result = self._collection.update_one({"_id": topology_id}, {"$set": doc})
 		return result.matched_count > 0
 
 	def delete_topology(self, topology_id: str) -> bool:
@@ -69,15 +68,9 @@ class TopologyRepository:
 	# ------------------------------------------------------------------
 	@staticmethod
 	def _topology_to_doc(topology: Topology) -> Dict[str, Any]:
-		return {
-			"_id": topology.id,
-			"hosts": [asdict(host) for host in topology.hosts],
-			"links": [asdict(link) for link in topology.links],
-			"switchs": topology.switchs,
-			"ttl": topology.ttl,
-			"timestamp": topology.timestamp,
-			"controller_name": topology.controller_name
-		}
+		doc = asdict(topology)
+		doc["_id"] = doc.pop("id")
+		return doc
 
 	@staticmethod
 	def _doc_to_topology(doc: Dict[str, Any]) -> Topology:

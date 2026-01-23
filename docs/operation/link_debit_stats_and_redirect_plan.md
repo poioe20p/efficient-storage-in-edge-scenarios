@@ -255,6 +255,100 @@ Decide whether you want:
 
 ---
 
+## Test Scenario: Overload Detection + Partial Redirect (100M vs 25M)
+
+This section defines a reproducible lab test to validate that:
+1) the controller detects sustained overload on the **Mongo-facing port**, and
+2) installs redirect rules that shift approximately **50%** of *new* Mongo traffic to the alternate MongoDB server.
+
+### Test intent
+- Drive asymmetric offered load:
+   - **Server A (primary)** receives ~**100 Mbit/s** of Mongo-directed traffic.
+   - **Server B (alternate)** receives ~**25 Mbit/s** baseline.
+- Configure an overload threshold of **90 Mbit/s** on the primary’s Mongo-facing port.
+- Require overload to persist for a configurable window before redirect triggers.
+
+### Signals used for detection
+- Primary signal (Milestone 1): `OFPPortStats` computed `total_bps` on the **Mongo-facing port**.
+- Optional refinement (later milestone): `OFPFlowStats` filtered to Mongo TCP ports to isolate “Mongo traffic” from other link utilization.
+
+### Suggested control-loop timing
+These values aim to avoid flapping while keeping reaction time reasonable.
+
+- Poll interval: **5 seconds** (already used in `calculate_stats_n1.py` / `calculate_stats_n2.py`).
+- Trigger condition: **N consecutive samples** above threshold.
+   - Recommended: `N = 3` → trigger after ~**15 seconds** above threshold.
+   - More conservative: `N = 4` → ~**20 seconds**.
+- Clear condition (hysteresis): require the port to stay below a lower threshold for M samples.
+   - Example: `clear_threshold = 70 Mbit/s`, `M = 4` (~20 seconds).
+- Cooldown: once redirect is enabled/disabled, wait **30–60 seconds** before changing state again.
+
+Rationale:
+- Port-rate samples can spike (queueing / bursty replies), and short spikes should not trigger redirects.
+- A small hysteresis band prevents oscillation around the threshold.
+
+### Redirect behavior (what “50%” means)
+OpenFlow cannot reliably “split a single TCP flow 50/50” without breaking the connection. The practical goal is:
+- Redirect ~50% of **new flows** (or new 5-tuples) to the alternate server.
+
+Recommended mechanisms (ordered by practicality):
+
+1) **Group table (type=SELECT) with weighted buckets**
+    - Create a `SELECT` group with two buckets:
+       - Bucket A → forward to primary Mongo
+       - Bucket B → forward to alternate Mongo
+    - Set equal weights (50/50). The selection is typically per-flow hash-based, which is what we want.
+    - Apply to traffic matched as “Mongo-bound” (L2 MAC match or L3/L4 match).
+
+2) **Controller-chosen per-flow rules**
+    - For each new connection (first packet/PacketIn), decide destination (primary vs alternate) using a deterministic hash.
+    - Install a flow entry for that 5-tuple to keep the connection stable.
+    - This is more work but makes behavior explicit.
+
+Important: if you do IP/port redirection (L3/L4), ensure return-path symmetry (or use a proper L4 proxy). L2-only redirection (matching `eth_dst=<mongo_mac>` and rewriting `eth_dst`) is simpler if MACs are stable.
+
+### Concrete load-generation procedure
+
+Prerequisites:
+- The iperf generator is available and containers include `iperf3`.
+- The controller can resolve “Mongo-facing port” (e.g., by learning `mongo_mac` and mapping `mac_to_port`).
+
+Generate asymmetric load (example using UDP because it gives a controllable send rate):
+
+1) Start background baseline to the alternate server (25 Mbit/s):
+    - `iperf3 -u -b 25M -t 300 -c <ALT_MONGO_IP>` from a client host
+
+2) Start higher load to the primary server (100 Mbit/s):
+    - `iperf3 -u -b 100M -t 300 -c <PRIMARY_MONGO_IP>` from a client host
+
+Notes:
+- If you want to use the provided script, either run two separate invocations (one targeting each server) or extend the script to accept per-LAN bandwidth values (e.g., `--lan1-bandwidth` / `--lan2-bandwidth`).
+
+### Expected controller behavior and observable outputs
+
+During the first ~15–20 seconds:
+- The primary controller prints `PORT_RATE ...` for the Mongo-facing port at ~100 Mbit/s.
+- The overload counter increments each poll.
+
+Once triggered:
+- The controller logs something like:
+   - `OVERLOAD_DETECTED dpid=<...> port=<mongo_port> bps=<...> threshold_bps=90000000 samples=3`
+- The controller installs (or updates) redirect rules:
+   - Either a `SELECT` group with ~50/50 weights, or
+   - per-flow rules for new Mongo connections.
+
+After redirect is active:
+- The observed `total_bps` on the primary Mongo-facing port should drop (often not exactly 50/50 due to iperf timing and hashing).
+- The alternate Mongo-facing port should increase.
+
+Validation checklist:
+- Confirm redirect rule is present in the switch:
+   - `ovs-ofctl -O OpenFlow13 dump-flows <bridge>` and/or group dump if using groups.
+- Confirm both servers receive traffic (iperf output on clients + port stats).
+- Confirm the redirect state does not flap rapidly (hysteresis + cooldown working).
+
+---
+
 ## Validation Plan
 
 ### Milestone 1 validation (required)

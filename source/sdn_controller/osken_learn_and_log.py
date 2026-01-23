@@ -20,6 +20,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
         self.mac_to_port = {}
         self.enable_reactive_learning = True
         self.datapaths = []
+        self.servers_mac = ["00:00:00:00:00:04", "00:00:00:00:00:07"]
+        self.threashold_server_bps = 1000000  # 1 Mbps
 
     def _install_flow(self, datapath, priority, match, actions, *,
                       idle_timeout=0, hard_timeout=0, cookie=0, flags=None):
