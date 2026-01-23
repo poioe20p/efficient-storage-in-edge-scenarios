@@ -13,6 +13,11 @@ SERVER_PORT=5201
 USE_UDP=0
 UDP_BANDWIDTH=10M
 
+# Track host-side background processes for `docker exec ... iperf3 -s`.
+# This avoids relying on `iperf3 -D`, `nohup`, `setsid`, `pgrep`, etc. inside containers.
+LAN1_SERVER_PID=""
+LAN2_SERVER_PID=""
+
 LAN1_CLIENT_CONTAINER=container1
 LAN2_CLIENT_CONTAINER=container3
 
@@ -177,17 +182,37 @@ ensure_iperf3_in_container() {
 start_iperf3_server() {
   local name=$1
   local port=$2
+  local pid_var=$3
 
-  # Kill previous iperf3 servers (best-effort).
-  docker exec "$name" sh -lc "pkill -f 'iperf3 -s' >/dev/null 2>&1 || true"
+  local old_pid
+  old_pid="${!pid_var}"
+  if [[ -n "$old_pid" ]]; then
+    kill "$old_pid" >/dev/null 2>&1 || true
+  fi
 
-  # -D daemonizes; -p selects a fixed port.
-  docker exec "$name" sh -lc "iperf3 -s -D -p $port"
+  # Start a host-side background `docker exec` that keeps `iperf3 -s` alive.
+  # This avoids relying on container backgrounding tools.
+  docker exec "$name" sh -lc "iperf3 -s -p $port" >/dev/null 2>&1 &
+  local pid=$!
+  printf -v "$pid_var" '%s' "$pid"
+
+  # Give it a moment and verify the process is still alive.
+  sleep 0.2
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    printf -v "$pid_var" '%s' ""
+    die "failed to start iperf3 server in container: $name (docker exec process exited)"
+  fi
 }
 
 stop_iperf3_server() {
-  local name=$1
-  docker exec "$name" sh -lc "pkill -f 'iperf3 -s' >/dev/null 2>&1 || true"
+  local pid_var=$1
+
+  local pid
+  pid="${!pid_var}"
+  if [[ -n "$pid" ]]; then
+    kill "$pid" >/dev/null 2>&1 || true
+    printf -v "$pid_var" '%s' ""
+  fi
 }
 
 run_iperf3_client() {
@@ -222,12 +247,12 @@ main() {
   ensure_iperf3_in_container "$LAN2_CLIENT_CONTAINER"
 
   echo "Starting iperf3 servers on MongoDB containers..." >&2
-  start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
-  start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
+  start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT" LAN1_SERVER_PID
+  start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT" LAN2_SERVER_PID
 
   cleanup() {
-    stop_iperf3_server "$LAN1_MONGO_CONTAINER" || true
-    stop_iperf3_server "$LAN2_MONGO_CONTAINER" || true
+    stop_iperf3_server LAN1_SERVER_PID || true
+    stop_iperf3_server LAN2_SERVER_PID || true
   }
   trap cleanup EXIT INT TERM
 

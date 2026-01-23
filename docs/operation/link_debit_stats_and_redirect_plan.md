@@ -221,7 +221,11 @@ Given per-port total bps:
    - Only Mongo-facing ports across all switches, depending on your intent.
 2. Compute average $avg\_bps = \frac{1}{|S|}\sum_{p\in S} total\_bps(p)$.
 3. Overload test (example):
-   - overload if `mongo_port_total_bps > avg_bps * THRESHOLD_MULTIPLIER`.
+   - instantaneous overload if `mongo_port_total_bps > avg_bps * THRESHOLD_MULTIPLIER`.
+   - sustained overload (recommended to avoid fluctuations):
+     - overload only if the instantaneous condition is true for **N measurements in a row**.
+     - example: with `poll_interval_sec = 5` and `N = 3`, you trigger after ~15 seconds.
+     - example absolute threshold variant (no network-average): overload if `mongo_port_total_bps > 100_000_000` (100 Mbit/s) for 3 measurements in a row.
 
 Config knobs (env vars or `config.py`):
 - `STATS_POLL_INTERVAL_SEC`
