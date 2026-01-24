@@ -2,6 +2,8 @@
 
 This document explains how to use Docker Compose to manage the efficient-storage-in-edge-scenarios lab environment as an alternative to the existing shell scripts.
 
+> **Quick Reference**: For a concise command reference, see [DOCKER_COMPOSE_QUICKREF.md](DOCKER_COMPOSE_QUICKREF.md)
+
 ## Overview
 
 The Docker Compose setup provides a declarative way to manage container lifecycle while still relying on companion scripts for complex network setup. This approach offers:
@@ -43,6 +45,22 @@ efficient-storage-in-edge-scenarios/
 ```
 
 ## Quick Start
+
+### 0. Validate Your Environment (Optional but Recommended)
+
+Before starting, run the validation script to check if your environment is properly configured:
+
+```bash
+./docker-compose-validate.sh
+```
+
+This script checks for:
+- Docker and Docker Compose installation
+- Required command-line tools (ip, iptables, nsenter)
+- Environment configuration files
+- Project files and scripts
+- Network interfaces
+- Existing containers that might conflict
 
 ### 1. Prepare MongoDB Credentials
 
