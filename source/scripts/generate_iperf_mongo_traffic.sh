@@ -10,13 +10,9 @@ set -euo pipefail
 DURATION_SEC=10
 PARALLEL_STREAMS=1
 SERVER_PORT=5201
+AUTO_PORT=1
 USE_UDP=0
 UDP_BANDWIDTH=10M
-
-# Track host-side background processes for `docker exec ... iperf3 -s`.
-# This avoids relying on `iperf3 -D`, `nohup`, `setsid`, `pgrep`, etc. inside containers.
-LAN1_SERVER_PID=""
-LAN2_SERVER_PID=""
 
 LAN1_CLIENT_CONTAINER=container1
 LAN2_CLIENT_CONTAINER=container3
@@ -36,6 +32,7 @@ Options:
   --duration <sec>           Seconds per iperf run (default: 10)
   --streams <n>              iperf3 -P value for TCP (default: 1)
   --port <port>              iperf3 server port (default: 5201)
+  --no-auto-port              Do not auto-pick a free port (default: auto)
   --udp                       Use UDP (-u). If set, --streams is ignored.
   --bandwidth <rate>         UDP target bandwidth (-b) (default: 10M)
 
@@ -85,6 +82,10 @@ parse_args() {
         [[ $# -ge 2 ]] || die "--port requires a value"
         SERVER_PORT="$2"
         shift 2
+        ;;
+      --no-auto-port)
+        AUTO_PORT=0
+        shift
         ;;
       --udp)
         USE_UDP=1
@@ -179,39 +180,79 @@ ensure_iperf3_in_container() {
   exit 1
 }
 
+stop_iperf3_server() {
+  local name=$1
+  local port=$2
+
+  docker exec "$name" sh -lc '
+    port="$1"
+    pidfile="/tmp/iperf3_server_${port}.pid"
+    if [ -f "$pidfile" ]; then
+      pid="$(cat "$pidfile" 2>/dev/null || true)"
+      if [ -n "$pid" ]; then
+        kill "$pid" >/dev/null 2>&1 || true
+      fi
+      rm -f "$pidfile" >/dev/null 2>&1 || true
+    fi
+  ' -- "$port" >/dev/null 2>&1 || true
+}
+
+try_start_iperf3_server() {
+  local name=$1
+  local port=$2
+
+  local pidfile="/tmp/iperf3_server_${port}.pid"
+  local logfile="/tmp/iperf3_server_${port}.log"
+
+  docker exec "$name" sh -lc "
+    rm -f '$pidfile' '$logfile';
+    iperf3 -s -p '$port' -D -1 --pidfile '$pidfile' --logfile '$logfile'
+  " >/dev/null 2>&1 || return 1
+
+  docker exec "$name" sh -lc "
+    [ -f '$pidfile' ] && kill -0 \"\$(cat '$pidfile')\" >/dev/null 2>&1
+  " >/dev/null 2>&1
+}
+
+pick_port_and_start_servers() {
+  local base_port=$1
+  local max_tries=20
+  local try=0
+  local port
+
+  while [[ "$try" -lt "$max_tries" ]]; do
+    port=$((base_port + try))
+
+    stop_iperf3_server "$LAN1_MONGO_CONTAINER" "$port" || true
+    stop_iperf3_server "$LAN2_MONGO_CONTAINER" "$port" || true
+
+    if try_start_iperf3_server "$LAN1_MONGO_CONTAINER" "$port" && try_start_iperf3_server "$LAN2_MONGO_CONTAINER" "$port"; then
+      SERVER_PORT="$port"
+      return 0
+    fi
+
+    stop_iperf3_server "$LAN1_MONGO_CONTAINER" "$port" || true
+    stop_iperf3_server "$LAN2_MONGO_CONTAINER" "$port" || true
+    try=$((try + 1))
+  done
+
+  echo "---- iperf3 server log ($LAN1_MONGO_CONTAINER) ----" >&2
+  docker exec "$LAN1_MONGO_CONTAINER" sh -lc "tail -n 80 /tmp/iperf3_server_${base_port}.log 2>/dev/null || true" >&2 || true
+  die "could not start iperf3 servers after ${max_tries} attempts (base port: ${base_port})"
+}
+
 start_iperf3_server() {
   local name=$1
   local port=$2
-  local pid_var=$3
 
-  local old_pid
-  old_pid="${!pid_var}"
-  if [[ -n "$old_pid" ]]; then
-    kill "$old_pid" >/dev/null 2>&1 || true
-  fi
+  local pidfile="/tmp/iperf3_server_${port}.pid"
+  local logfile="/tmp/iperf3_server_${port}.log"
 
-  # Start a host-side background `docker exec` that keeps `iperf3 -s` alive.
-  # This avoids relying on container backgrounding tools.
-  docker exec "$name" sh -lc "iperf3 -s -p $port" >/dev/null 2>&1 &
-  local pid=$!
-  printf -v "$pid_var" '%s' "$pid"
-
-  # Give it a moment and verify the process is still alive.
-  sleep 0.2
-  if ! kill -0 "$pid" >/dev/null 2>&1; then
-    printf -v "$pid_var" '%s' ""
-    die "failed to start iperf3 server in container: $name (docker exec process exited)"
-  fi
-}
-
-stop_iperf3_server() {
-  local pid_var=$1
-
-  local pid
-  pid="${!pid_var}"
-  if [[ -n "$pid" ]]; then
-    kill "$pid" >/dev/null 2>&1 || true
-    printf -v "$pid_var" '%s' ""
+  stop_iperf3_server "$name" "$port" || true
+  if ! try_start_iperf3_server "$name" "$port"; then
+    echo "---- iperf3 server log ($name) ----" >&2
+    docker exec "$name" sh -lc "test -f '$logfile' && tail -n 80 '$logfile' || true" >&2 || true
+    die "failed to start iperf3 server in container: $name"
   fi
 }
 
@@ -247,18 +288,23 @@ main() {
   ensure_iperf3_in_container "$LAN2_CLIENT_CONTAINER"
 
   echo "Starting iperf3 servers on MongoDB containers..." >&2
-  start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT" LAN1_SERVER_PID
-  start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT" LAN2_SERVER_PID
+  if [[ "$AUTO_PORT" == "1" ]]; then
+    pick_port_and_start_servers "$SERVER_PORT"
+  else
+    start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
+    start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
+  fi
 
   cleanup() {
-    stop_iperf3_server LAN1_SERVER_PID || true
-    stop_iperf3_server LAN2_SERVER_PID || true
+    stop_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT" || true
+    stop_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT" || true
   }
   trap cleanup EXIT INT TERM
 
   echo "Running iperf3 clients:" >&2
   echo "  LAN1: $LAN1_CLIENT_CONTAINER -> $LAN1_MONGO_IP (mongodb MAC 00:00:00:00:00:04)" >&2
   echo "  LAN2: $LAN2_CLIENT_CONTAINER -> $LAN2_MONGO_IP (mongodb MAC 00:00:00:00:00:07)" >&2
+  echo "  port: $SERVER_PORT" >&2
 
   # Run both at the same time to generate concurrent load.
   run_iperf3_client "$LAN1_CLIENT_CONTAINER" "$LAN1_MONGO_IP" "$SERVER_PORT" &

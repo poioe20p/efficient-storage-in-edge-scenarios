@@ -145,8 +145,8 @@ class Topology_proactive(KenLearnAndLog):
                 # Refresh topology (switches, links, hosts)
                 self.get_sws_links_hosts()
 
-                # Every 10th iteration, print + persist + update flows
-                if self.cnt % 10 == 0:
+                # Every 40th iteration, print + persist + update flows
+                if self.cnt % 40 == 0:
                     self.cnt = 0
                     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     print(f"[{ts}] ************************************")

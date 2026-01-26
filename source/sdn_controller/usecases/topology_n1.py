@@ -154,7 +154,7 @@ class Topology_proactive(KenLearnAndLog):
             self.get_sws_links_hosts()
 
             # Every 5th iteration, perform additional actions like printing the current network state
-            if self.cnt % 10 == 0:
+            if self.cnt % 40 == 0:
                 self.cnt = 0  # Reset the counter
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"[{ts}] ************************************")
