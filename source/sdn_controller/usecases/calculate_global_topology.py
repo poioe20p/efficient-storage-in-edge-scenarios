@@ -101,6 +101,22 @@ class CalculateGlobalTopology:
         switchs = global_snapshot.get("switchs") or []
         hosts = global_snapshot.get("hosts") or []
         links = global_snapshot.get("links") or []
+        graph = global_snapshot.get("graph")
+        hops = {}
+
+        if graph is not None and hosts:
+            host_macs = [host[0] for host in hosts]
+            for src_mac in host_macs:
+                per_host = {}
+                for dst_mac in host_macs:
+                    if src_mac == dst_mac:
+                        continue
+                    try:
+                        path = nx.shortest_path(graph, src_mac, dst_mac)
+                        per_host[dst_mac] = max(len(path) - 1, 0)
+                    except (nx.NetworkXNoPath, nx.NodeNotFound):
+                        per_host[dst_mac] = None
+                hops[src_mac] = per_host
 
         # Normalize link objects to the same tuple format used in local printing
         links_as_tuples: List[Any] = []
@@ -116,8 +132,8 @@ class CalculateGlobalTopology:
         print(f"[{ts}] Switches:  {switchs}")
         print(f"[{ts}] Network links:  {links_as_tuples}")
         print(f"[{ts}] Hosts:  {hosts}")
+        print(f"[{ts}] Hops:  {hops}")
 
-        graph = global_snapshot.get("graph")
         if graph is None:
             return
 

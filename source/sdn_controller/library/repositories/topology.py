@@ -83,5 +83,6 @@ class TopologyRepository:
 			switchs=doc.get("switchs", []),
 			ttl=doc.get("ttl", 0.0),
 			timestamp=doc.get("timestamp", ""),
-			controller_name=doc.get("controller_name", "")
+			controller_name=doc.get("controller_name", ""),
+			hops=doc.get("hops")
 		)

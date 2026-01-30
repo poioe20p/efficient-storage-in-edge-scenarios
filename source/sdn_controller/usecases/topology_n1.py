@@ -52,6 +52,61 @@ class Topology_proactive(KenLearnAndLog):
         self.topology = "topology_lan1"
         self.calculate_global_topology = CalculateGlobalTopology()
         hub.spawn(self._topology_worker)
+        self.vip_ip = "10.0.0.100"
+        self.vip_mac = "aa:bb:cc:dd:ee:ff"
+
+        # Step C: host attachment map + hop cache (link-hops) to each server.
+        # These structures are rebuilt only when topology changes.
+        # host_attachment[host_mac] = (switch_dpid, port_no)
+        self.host_attachment = {}
+        # hop_cache[src_host_mac][server_mac] = hop_count (int) or None
+        self.hop_cache = {}
+        self._hop_cache_max = 1
+
+    def get_edge_switch(self, host_mac):
+        """Return (switch_dpid, port_no) where the host is attached, if known."""
+        return self.host_attachment.get(host_mac)
+
+    def get_hops(self, host_mac, server_mac):
+        """Return cached link-hop count from host_mac to server_mac, if known."""
+        return self.hop_cache.get(host_mac, {}).get(server_mac)
+
+    def get_next_hop_port(self, edge_dpid, client_mac, server_mac):
+        """Return the egress port on edge_dpid toward server_mac via shortest path."""
+        try:
+            path = nx.shortest_path(self.net, client_mac, server_mac)
+            idx = path.index(edge_dpid)
+            next_node = path[idx + 1]
+            return self.net[edge_dpid][next_node]["port"]
+        except (nx.NetworkXNoPath, nx.NodeNotFound, ValueError, IndexError, KeyError):
+            return None
+
+    def _rebuild_hop_cache(self):
+        """Recompute hop counts from each host to each server based on the current graph."""
+        self.hop_cache = {}
+        self._hop_cache_max = 1
+
+        if not self.net or not self.host_attachment:
+            return
+
+        servers_present = [mac for mac in getattr(self, "servers_mac", []) if mac in self.host_attachment]
+        if not servers_present:
+            return
+
+        for host_mac in list(self.host_attachment.keys()):
+            per_host = {}
+            for server_mac in servers_present:
+                if host_mac == server_mac:
+                    continue
+                try:
+                    path = nx.shortest_path(self.net, host_mac, server_mac)
+                    hops = max(len(path) - 1, 0)
+                except (nx.NetworkXNoPath, nx.NodeNotFound):
+                    hops = None
+                per_host[server_mac] = hops
+                if isinstance(hops, int) and hops > self._hop_cache_max:
+                    self._hop_cache_max = hops
+            self.hop_cache[host_mac] = per_host
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
     def _state_change_handler(self, ev):
@@ -106,6 +161,7 @@ class Topology_proactive(KenLearnAndLog):
         self.links = []
         self.hosts = []
         self.net.clear()
+        self.host_attachment = {}
 
         topo_api_app = self._get_topology_api_app()
         if topo_api_app is None:
@@ -120,6 +176,10 @@ class Topology_proactive(KenLearnAndLog):
             if getattr(host, "port", None) is not None
             and host.mac not in self._router_mac_blocklist
         ]
+
+        # Track host attachments: host MAC -> (switch_dpid, port_no)
+        for mac, dpid, port_no in self.hosts:
+            self.host_attachment[mac] = (dpid, port_no)
 
         # update networkx topology with the hosts links
         for host in self.hosts:
@@ -153,6 +213,9 @@ class Topology_proactive(KenLearnAndLog):
             # Controller refreshes the network topology, getting current switches, links, and hosts
             self.get_sws_links_hosts()
 
+            # Keep hop cache refreshed even if topology change detection misses updates.
+            self._rebuild_hop_cache()
+
             # Every 5th iteration, perform additional actions like printing the current network state
             if self.cnt % 40 == 0:
                 self.cnt = 0  # Reset the counter
@@ -161,6 +224,7 @@ class Topology_proactive(KenLearnAndLog):
                 print(f"[{ts}] Switches:  {self.sws}")  # Print current switches in the network
                 print(f"[{ts}] Network links:  {self.links}")  # Print current links in the network
                 print(f"[{ts}] Hosts:  {self.hosts}")  # Print current hosts in the network
+                print(f"[{ts}] Hops:  {self.hop_cache}")  # Print cached host->server hops
                 
                 # Store the topology in the database only once at the beginning
                 if not self.topology_has_been_stored:
@@ -176,6 +240,8 @@ class Topology_proactive(KenLearnAndLog):
                         timestamp = self.last_topology_store_time
                     )
                     self.topology_has_been_stored = True
+                    # Build hop cache once initial topology exists.
+                    self._rebuild_hop_cache()
                     self._install_local_topology_flows()
 
                     global_topology = self.calculate_global_topology.run()
@@ -199,6 +265,9 @@ class Topology_proactive(KenLearnAndLog):
                     self._installed_flow_keys.clear()
                     self._arp_rules_installed.clear()
                     self.mac_to_port.clear()
+
+                    # Rebuild hop cache only when topology changed.
+                    self._rebuild_hop_cache()
                     
                     hosts_snapshot = self.hosts.copy()
                     links_snapshot = self.links.copy()
@@ -365,7 +434,8 @@ class Topology_proactive(KenLearnAndLog):
             switchs=[sw[1] for sw in sws_payload],
             timestamp=timestamp,
             ttl=(datetime.now().timestamp() + 3 * 3600),
-            controller_name="controller_lan1"
+            controller_name="controller_lan1",
+            hops=self.hop_cache
         )
         
         topology_repo = TopologyRepository(

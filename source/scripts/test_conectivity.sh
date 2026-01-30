@@ -8,6 +8,8 @@ IFS=' ' read -r -a INTERNET_TARGETS <<< "${INTERNET_TARGETS:-${DEFAULT_TARGETS[*
 
 LAN1_CONTAINERS=(container1 container2 container5)
 LAN2_CONTAINERS=(container3 container4)
+LAN1_VIP=10.0.0.100
+LAN2_VIP=10.0.1.100
 
 print_usage() {
     cat <<'EOF'
@@ -61,6 +63,10 @@ run_lan1_tests() {
     ping_from_container container2 10.0.0.4 "mongodb-n1"
     ping_from_container container5 10.0.0.2 "container1"
     ping_from_container container5 10.0.0.4 "mongodb-n1"
+    echo "=== LAN1 VIP connectivity ==="
+    ping_from_container container1 ${LAN1_VIP} "LAN1 VIP"
+    ping_from_container container2 ${LAN1_VIP} "LAN1 VIP"
+    ping_from_container container5 ${LAN1_VIP} "LAN1 VIP"
     ping_internet_targets container1
     ping_internet_targets container2
     ping_internet_targets container5
@@ -70,6 +76,9 @@ run_lan2_tests() {
     echo "=== LAN2 connectivity ==="
     ping_from_container container3 10.0.1.3 "container4"
     ping_from_container container4 10.0.1.4 "mongodb-n2"
+    echo "=== LAN2 VIP connectivity ==="
+    ping_from_container container3 ${LAN2_VIP} "LAN2 VIP"
+    ping_from_container container4 ${LAN2_VIP} "LAN2 VIP"
     ping_internet_targets container3
     ping_internet_targets container4
 }
@@ -80,6 +89,12 @@ run_cross_tests() {
     ping_from_container container1 10.0.1.4 "LAN2 mongodb-n2"
     ping_from_container container3 10.0.0.2 "LAN1 container1"
     ping_from_container container3 10.0.0.4 "LAN1 mongodb-n1"
+    echo "=== VIP connectivity (per-container) ==="
+    ping_from_container container1 ${LAN1_VIP} "LAN1 VIP"
+    ping_from_container container2 ${LAN1_VIP} "LAN1 VIP"
+    ping_from_container container5 ${LAN1_VIP} "LAN1 VIP"
+    ping_from_container container3 ${LAN2_VIP} "LAN2 VIP"
+    ping_from_container container4 ${LAN2_VIP} "LAN2 VIP"
 }
 
 main() {

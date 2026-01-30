@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Any
+from typing import Any, Dict, List, Optional
 # from pydantic import BaseModel
 
 @dataclass    
@@ -23,8 +23,5 @@ class Topology:
     ttl: float
     timestamp: str
     controller_name: str = None
-
-# class TopologyNet(BaseModel):
-#     switches: list
-#     links: list
-#     hosts: list
+    # hop_map[host_mac][server_mac] = hop_count (int) or None
+    hops: Optional[Dict[str, Dict[str, Optional[int]]]] = None

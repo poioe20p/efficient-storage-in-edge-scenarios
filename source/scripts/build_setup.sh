@@ -661,4 +661,28 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
+# ==============================
+# 9.2 - Install VIP ARP reply flows (Anycast service IPs)
+# ==============================
+VIP_IP_LAN1=10.0.0.100
+VIP_IP_LAN2=10.0.1.100
+VIP_MAC=aa:bb:cc:dd:ee:ff
+
+install_vip_arp_reply_flow() {
+    local bridge="$1"
+    local vip_ip="$2"
+    local vip_mac="$3"
+
+    local match="priority=200,arp,arp_op=1,arp_tpa=${vip_ip}"
+    local flow="${match},actions=move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],set_field:${vip_mac}->eth_src,set_field:2->arp_op,move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],set_field:${vip_mac}->arp_sha,move:NXM_OF_ARP_SPA[]->NXM_OF_ARP_TPA[],set_field:${vip_ip}->arp_spa,IN_PORT"
+
+    echo "Installing VIP ARP reply flow on ${bridge} for ${vip_ip} (${vip_mac})"
+    docker exec ovs ovs-ofctl -O OpenFlow13 --strict del-flows "${bridge}" "${match}" >/dev/null 2>&1 || true
+    docker exec ovs ovs-ofctl -O OpenFlow13 add-flow "${bridge}" "${flow}" || true
+}
+
+install_vip_arp_reply_flow ovs-br0 "${VIP_IP_LAN1}" "${VIP_MAC}"
+install_vip_arp_reply_flow ovs-br2 "${VIP_IP_LAN1}" "${VIP_MAC}"
+install_vip_arp_reply_flow ovs-br1 "${VIP_IP_LAN2}" "${VIP_MAC}"
+
 echo "Build and setup of networks completed successfully."

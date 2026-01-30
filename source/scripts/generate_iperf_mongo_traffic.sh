@@ -4,8 +4,8 @@ set -euo pipefail
 # Generates traffic to the MongoDB shard containers using iperf3.
 # Note: iperf3 generates throughput traffic (TCP/UDP), not ICMP ping.
 # Defaults target:
-#   LAN1 MongoDB (mongodb-n1): MAC 00:00:00:00:00:04, IP 10.0.0.4
-#   LAN2 MongoDB (mongodb-n2): MAC 00:00:00:00:00:07, IP 10.0.1.4
+#   LAN1 VIP: 10.0.0.100
+#   LAN2 VIP: 10.0.1.100
 
 DURATION_SEC=10
 PARALLEL_STREAMS=1
@@ -14,14 +14,14 @@ AUTO_PORT=1
 USE_UDP=0
 UDP_BANDWIDTH=10M
 
-LAN1_CLIENT_CONTAINER=container1
-LAN2_CLIENT_CONTAINER=container3
+LAN1_CLIENTS=(container1)
+LAN2_CLIENTS=(container3)
 
 LAN1_MONGO_CONTAINER=mongodb-n1
 LAN2_MONGO_CONTAINER=mongodb-n2
 
-LAN1_MONGO_IP=10.0.0.4
-LAN2_MONGO_IP=10.0.1.4
+LAN1_MONGO_IP=10.0.0.100
+LAN2_MONGO_IP=10.0.1.100
 
 usage() {
   cat <<'EOF'
@@ -35,20 +35,24 @@ Options:
   --no-auto-port              Do not auto-pick a free port (default: auto)
   --udp                       Use UDP (-u). If set, --streams is ignored.
   --bandwidth <rate>         UDP target bandwidth (-b) (default: 10M)
+  --tcp-rate <rate>          TCP pacing rate (iperf3 --fq-rate, optional)
 
-  --lan1-client <container>  Client container in LAN1 (default: container1)
-  --lan2-client <container>  Client container in LAN2 (default: container3)
+  --lan1-clients <list>      Comma-separated LAN1 clients (default: container1)
+  --lan2-clients <list>      Comma-separated LAN2 clients (default: container3)
+  --lan1-only                Run only LAN1 clients
+  --lan2-only                Run only LAN2 clients
 
   --lan1-mongo <container>   MongoDB container in LAN1 (default: mongodb-n1)
   --lan2-mongo <container>   MongoDB container in LAN2 (default: mongodb-n2)
-  --lan1-ip <ip>             MongoDB IP in LAN1 (default: 10.0.0.4)
-  --lan2-ip <ip>             MongoDB IP in LAN2 (default: 10.0.1.4)
+  --lan1-ip <ip>             Target IP in LAN1 (default: 10.0.0.100 VIP)
+  --lan2-ip <ip>             Target IP in LAN2 (default: 10.0.1.100 VIP)
 
   -h, --help                 Show help
 
 Examples:
   ./source/scripts/generate_iperf_mongo_traffic.sh --duration 30 --streams 4
   ./source/scripts/generate_iperf_mongo_traffic.sh --udp --bandwidth 50M
+  ./source/scripts/generate_iperf_mongo_traffic.sh --lan1-clients container1,container2 --tcp-rate 7M
 EOF
 }
 
@@ -96,15 +100,28 @@ parse_args() {
         UDP_BANDWIDTH="$2"
         shift 2
         ;;
-      --lan1-client)
-        [[ $# -ge 2 ]] || die "--lan1-client requires a value"
-        LAN1_CLIENT_CONTAINER="$2"
+      --tcp-rate)
+        [[ $# -ge 2 ]] || die "--tcp-rate requires a value"
+        TCP_RATE="$2"
         shift 2
         ;;
-      --lan2-client)
-        [[ $# -ge 2 ]] || die "--lan2-client requires a value"
-        LAN2_CLIENT_CONTAINER="$2"
+      --lan1-clients)
+        [[ $# -ge 2 ]] || die "--lan1-clients requires a value"
+        LAN1_CLIENTS_RAW="$2"
         shift 2
+        ;;
+      --lan2-clients)
+        [[ $# -ge 2 ]] || die "--lan2-clients requires a value"
+        LAN2_CLIENTS_RAW="$2"
+        shift 2
+        ;;
+      --lan1-only)
+        LAN2_CLIENTS_RAW=""
+        shift
+        ;;
+      --lan2-only)
+        LAN1_CLIENTS_RAW=""
+        shift
         ;;
       --lan1-mongo)
         [[ $# -ge 2 ]] || die "--lan1-mongo requires a value"
@@ -139,6 +156,18 @@ parse_args() {
     [[ "$PARALLEL_STREAMS" -ge 1 ]] || die "--streams must be >= 1"
   fi
   [[ "$DURATION_SEC" -ge 1 ]] || die "--duration must be >= 1"
+}
+
+parse_clients() {
+  local raw=$1
+  local -n out=$2
+  out=()
+
+  if [[ -z "$raw" ]]; then
+    return 0
+  fi
+
+  IFS=',' read -r -a out <<< "$raw"
 }
 
 require_cmd() {
@@ -241,6 +270,31 @@ pick_port_and_start_servers() {
   die "could not start iperf3 servers after ${max_tries} attempts (base port: ${base_port})"
 }
 
+pick_port_and_start_server_single() {
+  local name=$1
+  local base_port=$2
+  local max_tries=20
+  local try=0
+  local port
+
+  while [[ "$try" -lt "$max_tries" ]]; do
+    port=$((base_port + try))
+
+    stop_iperf3_server "$name" "$port" || true
+    if try_start_iperf3_server "$name" "$port"; then
+      SERVER_PORT="$port"
+      return 0
+    fi
+
+    stop_iperf3_server "$name" "$port" || true
+    try=$((try + 1))
+  done
+
+  echo "---- iperf3 server log ($name) ----" >&2
+  docker exec "$name" sh -lc "tail -n 80 /tmp/iperf3_server_${base_port}.log 2>/dev/null || true" >&2 || true
+  die "could not start iperf3 server after ${max_tries} attempts (base port: ${base_port})"
+}
+
 start_iperf3_server() {
   local name=$1
   local port=$2
@@ -267,6 +321,9 @@ run_iperf3_client() {
     args+=("-u" "-b" "$UDP_BANDWIDTH")
   else
     args+=("-P" "$PARALLEL_STREAMS")
+    if [[ -n "${TCP_RATE:-}" ]]; then
+      args+=("--fq-rate" "$TCP_RATE")
+    fi
   fi
 
   docker exec "$client_container" iperf3 "${args[@]}"
@@ -275,24 +332,53 @@ run_iperf3_client() {
 main() {
   parse_args "$@"
 
+  parse_clients "${LAN1_CLIENTS_RAW:-}" LAN1_CLIENTS
+  parse_clients "${LAN2_CLIENTS_RAW:-}" LAN2_CLIENTS
+
+  if [[ ${#LAN1_CLIENTS[@]} -eq 0 && ${#LAN2_CLIENTS[@]} -eq 0 ]]; then
+    die "no clients selected (use --lan1-clients/--lan2-clients)"
+  fi
+
   require_cmd docker
 
-  ensure_container_running "$LAN1_MONGO_CONTAINER"
-  ensure_container_running "$LAN2_MONGO_CONTAINER"
-  ensure_container_running "$LAN1_CLIENT_CONTAINER"
-  ensure_container_running "$LAN2_CLIENT_CONTAINER"
+  if [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
+    ensure_container_running "$LAN1_MONGO_CONTAINER"
+    ensure_iperf3_in_container "$LAN1_MONGO_CONTAINER"
+    for client in "${LAN1_CLIENTS[@]}"; do
+      ensure_container_running "$client"
+      ensure_iperf3_in_container "$client"
+    done
+  fi
 
-  ensure_iperf3_in_container "$LAN1_MONGO_CONTAINER"
-  ensure_iperf3_in_container "$LAN2_MONGO_CONTAINER"
-  ensure_iperf3_in_container "$LAN1_CLIENT_CONTAINER"
-  ensure_iperf3_in_container "$LAN2_CLIENT_CONTAINER"
+  if [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
+    ensure_container_running "$LAN2_MONGO_CONTAINER"
+    ensure_iperf3_in_container "$LAN2_MONGO_CONTAINER"
+    for client in "${LAN2_CLIENTS[@]}"; do
+      ensure_container_running "$client"
+      ensure_iperf3_in_container "$client"
+    done
+  fi
 
   echo "Starting iperf3 servers on MongoDB containers..." >&2
-  if [[ "$AUTO_PORT" == "1" ]]; then
-    pick_port_and_start_servers "$SERVER_PORT"
-  else
-    start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
-    start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
+  if [[ ${#LAN1_CLIENTS[@]} -gt 0 && ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
+    if [[ "$AUTO_PORT" == "1" ]]; then
+      pick_port_and_start_servers "$SERVER_PORT"
+    else
+      start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
+      start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
+    fi
+  elif [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
+    if [[ "$AUTO_PORT" == "1" ]]; then
+      pick_port_and_start_server_single "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
+    else
+      start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
+    fi
+  elif [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
+    if [[ "$AUTO_PORT" == "1" ]]; then
+      pick_port_and_start_server_single "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
+    else
+      start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
+    fi
   fi
 
   cleanup() {
@@ -302,18 +388,30 @@ main() {
   trap cleanup EXIT INT TERM
 
   echo "Running iperf3 clients:" >&2
-  echo "  LAN1: $LAN1_CLIENT_CONTAINER -> $LAN1_MONGO_IP (mongodb MAC 00:00:00:00:00:04)" >&2
-  echo "  LAN2: $LAN2_CLIENT_CONTAINER -> $LAN2_MONGO_IP (mongodb MAC 00:00:00:00:00:07)" >&2
+  if [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
+    echo "  LAN1: ${LAN1_CLIENTS[*]} -> $LAN1_MONGO_IP (VIP)" >&2
+  fi
+  if [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
+    echo "  LAN2: ${LAN2_CLIENTS[*]} -> $LAN2_MONGO_IP (VIP)" >&2
+  fi
   echo "  port: $SERVER_PORT" >&2
 
-  # Run both at the same time to generate concurrent load.
-  run_iperf3_client "$LAN1_CLIENT_CONTAINER" "$LAN1_MONGO_IP" "$SERVER_PORT" &
-  pid1=$!
-  run_iperf3_client "$LAN2_CLIENT_CONTAINER" "$LAN2_MONGO_IP" "$SERVER_PORT" &
-  pid2=$!
+  # Run clients at the same time to generate concurrent load.
+  pids=()
 
-  wait "$pid1"
-  wait "$pid2"
+  for client in "${LAN1_CLIENTS[@]}"; do
+    run_iperf3_client "$client" "$LAN1_MONGO_IP" "$SERVER_PORT" &
+    pids+=("$!")
+  done
+
+  for client in "${LAN2_CLIENTS[@]}"; do
+    run_iperf3_client "$client" "$LAN2_MONGO_IP" "$SERVER_PORT" &
+    pids+=("$!")
+  done
+
+  for pid in "${pids[@]}"; do
+    wait "$pid"
+  done
 
   echo "Done." >&2
 }

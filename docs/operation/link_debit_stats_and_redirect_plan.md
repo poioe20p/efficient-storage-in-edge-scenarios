@@ -236,137 +236,183 @@ Config knobs (env vars or `config.py`):
 
 ## Milestone 5: Redirect Mongo traffic to alternate server
 
-### Redirect model (high-level)
-When overload is detected on the Mongo-facing port, redirect new flows destined to Mongo to a different Mongo server.
+### Concrete model: Virtual IP (VIP) + Controller-selected backend (NAT in the switch)
+Instead of “redirecting to an alternate server after overload”, introduce a **service IP** (virtual IP / VIP) that all clients target.
+The controller then chooses the best backend **per new flow** using the cost signal:
 
-In OpenFlow 1.3 terms, redirection can be done by:
-- Matching traffic for Mongo (L2 or L3 match):
-  - `eth_type=0x0800`, `ip_proto=TCP`, `tcp_dst=27017/27018`, `ipv4_dst=<mongo_ip>`
-  - or if you’re operating at L2 only: match `eth_dst=<mongo_mac>`
-- Rewriting destination (and possibly source) fields:
-  - `OFPActionSetField(ipv4_dst=<alt_mongo_ip>)`
-  - `OFPActionSetField(eth_dst=<alt_mongo_mac>)`
-- Output to the port leading to the alternate Mongo server.
+- **Distance**: hop count (link-hops) from client host MAC to backend server MAC, computed from the topology graph.
+- **Load**: backend server-facing port debit (bps), measured via `OFPPortStats` and already persisted by the stats apps.
 
-### Important design choice
-Decide whether you want:
-- **Controller-only L2 behavior** (simpler, but requires known MACs), or
-- **L3/L4-aware policy** (cleaner targeting Mongo traffic, but requires parsing/flow matches for IP/TCP).
+This design matches the idea:
+"Cliente contactar o serviço da server farm através dum IP virtual" and "router NAT implementado localmente no switch".
 
-### Safety / correctness constraints
-- Ensure symmetry (return traffic) if you do L3 rewriting; otherwise connections may break.
-- Prefer redirecting only **new** flows; avoid mid-connection rewrite.
+#### VIP example
+- VIP: `10.0.0.100` (LAN1 example)
+- VIP MAC: `aa:bb:cc:dd:ee:ff` (a stable virtual MAC)
+
+Note: if you want one VIP per LAN, use e.g. `10.0.0.100` (LAN1) and `10.0.1.100` (LAN2). A single global VIP across both LANs requires a connected “cost graph” that includes the router/interconnect.
 
 ---
 
-## Test Scenario: Overload Detection + Partial Redirect (100M vs 25M)
+### Step 1 — Proactive ARP reply inside the switch (no controller involvement)
+Install a high-priority ARP flow so the switch replies to ARP requests for the VIP directly.
 
-This section defines a reproducible lab test to validate that:
-1) the controller detects sustained overload on the **Mongo-facing port**, and
-2) installs redirect rules that shift approximately **50%** of *new* Mongo traffic to the alternate MongoDB server.
+Proactive ARP Reply Flow Rule (OpenFlow 1.3 with OVS/Nicira extensions):
 
-### Test intent
-- Drive asymmetric offered load:
-   - **Server A (primary)** receives ~**100 Mbit/s** of Mongo-directed traffic.
-   - **Server B (alternate)** receives ~**25 Mbit/s** baseline.
-- Configure an overload threshold of **90 Mbit/s** on the primary’s Mongo-facing port.
-- Require overload to persist for a configurable window before redirect triggers.
+```bash
+ovs-ofctl -O OpenFlow13 add-flow s1 \
+"priority=200,arp,arp_op=1,arp_tpa=10.0.0.100,actions=\\
+move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],\\
+set_field:aa:bb:cc:dd:ee:ff->eth_src,\\
+set_field:2->arp_op,\\
+move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],\\
+set_field:aa:bb:cc:dd:ee:ff->arp_sha,\\
+move:NXM_OF_ARP_SPA[]->NXM_OF_ARP_TPA[],\\
+set_field:10.0.0.100->arp_spa,\\
+IN_PORT"
+```
 
-### Signals used for detection
-- Primary signal (Milestone 1): `OFPPortStats` computed `total_bps` on the **Mongo-facing port**.
-- Optional refinement (later milestone): `OFPFlowStats` filtered to Mongo TCP ports to isolate “Mongo traffic” from other link utilization.
+Result: clients learn `10.0.0.100` → `aa:bb:cc:dd:ee:ff` and will send IPv4 packets to the VIP MAC.
 
-### Suggested control-loop timing
-These values aim to avoid flapping while keeping reaction time reasonable.
+Implementation note:
+- This rule is easiest to inject from the setup scripts using `ovs-ofctl`.
+- Installing this exact rule from OS-Ken may require Nicira action support; treat script injection as the reference approach.
 
-- Poll interval: **5 seconds** (already used in `calculate_stats_n1.py` / `calculate_stats_n2.py`).
-- Trigger condition: **N consecutive samples** above threshold.
-   - Recommended: `N = 3` → trigger after ~**15 seconds** above threshold.
-   - More conservative: `N = 4` → ~**20 seconds**.
-- Clear condition (hysteresis): require the port to stay below a lower threshold for M samples.
-   - Example: `clear_threshold = 70 Mbit/s`, `M = 4` (~20 seconds).
-- Cooldown: once redirect is enabled/disabled, wait **30–60 seconds** before changing state again.
+---
 
-Rationale:
-- Port-rate samples can spike (queueing / bursty replies), and short spikes should not trigger redirects.
-- A small hysteresis band prevents oscillation around the threshold.
+### Step 2 — Send only “new service flows” to the controller
+When the client sends the first packet to the VIP (ICMP echo now; TCP SYN later), ensure it generates a `PacketIn`.
 
-### Redirect behavior (what “50%” means)
-OpenFlow cannot reliably “split a single TCP flow 50/50” without breaking the connection. The practical goal is:
-- Redirect ~50% of **new flows** (or new 5-tuples) to the alternate server.
+Two practical ways:
+1) Keep the table-miss to controller (already typical), but ensure packets to VIP are not matched by other higher-priority rules.
+2) Add an explicit “punt VIP traffic” rule at higher priority than generic forwarding rules.
 
-Recommended mechanisms (ordered by practicality):
+Example punt rules (LAN1 VIP):
 
-1) **Group table (type=SELECT) with weighted buckets**
-    - Create a `SELECT` group with two buckets:
-       - Bucket A → forward to primary Mongo
-       - Bucket B → forward to alternate Mongo
-    - Set equal weights (50/50). The selection is typically per-flow hash-based, which is what we want.
-    - Apply to traffic matched as “Mongo-bound” (L2 MAC match or L3/L4 match).
+- For ICMP to VIP:
+   - Match: `ip,nw_dst=10.0.0.100,nw_proto=1`
+- For TCP SYN to VIP (future):
+   - Match: `tcp,nw_dst=10.0.0.100,tp_dst=27017`
 
-2) **Controller-chosen per-flow rules**
-    - For each new connection (first packet/PacketIn), decide destination (primary vs alternate) using a deterministic hash.
-    - Install a flow entry for that 5-tuple to keep the connection stable.
-    - This is more work but makes behavior explicit.
+Once a backend is chosen, the controller installs specific forward+reverse rules so subsequent packets do not go to the controller.
 
-Important: if you do IP/port redirection (L3/L4), ensure return-path symmetry (or use a proper L4 proxy). L2-only redirection (matching `eth_dst=<mongo_mac>` and rewriting `eth_dst`) is simpler if MACs are stable.
+---
 
-### Concrete load-generation procedure
+### Step 3 — Backend selection based on cost = hop + debit
+When the controller receives the `PacketIn` for VIP traffic, it chooses the backend server that minimizes a score.
 
-Prerequisites:
-- The iperf generator is available and containers include `iperf3`.
-- The controller can resolve “Mongo-facing port” (e.g., by learning `mongo_mac` and mapping `mac_to_port`).
+#### Inputs
+1) Hop count (link-hops)
+- Use the current `networkx` graph in the topology apps (`topology_n1.py` / `topology_n2.py`).
+- `hops = len(nx.shortest_path(G, host_mac, server_mac)) - 1`
 
-Generate asymmetric load (example using UDP because it gives a controllable send rate):
+2) Server-facing port debit (bps)
+- Read the most recent snapshot persisted by the stats app (`calculate_stats_n1.py` / `calculate_stats_n2.py`) via `DebitRepository.get_debit_by_lan_id(lan_id)`.
+- The per-server debit you want is the entry where:
+   - `neighbor_switch_id is None` (host-facing)
+   - `peer_mac == server_mac`
+   - `switch_id == server_access_switch_dpid` and `port_no == server_access_port_no` (from topology host attachment)
 
-1) Start background baseline to the alternate server (25 Mbit/s):
-    - `iperf3 -u -b 25M -t 300 -c <ALT_MONGO_IP>` from a client host
+#### Score (example)
+Start with a simple weighted sum:
 
-2) Start higher load to the primary server (100 Mbit/s):
-    - `iperf3 -u -b 100M -t 300 -c <PRIMARY_MONGO_IP>` from a client host
+- `score = hops + beta * debit_bps`
 
-Notes:
-- If you want to use the provided script, either run two separate invocations (one targeting each server) or extend the script to accept per-LAN bandwidth values (e.g., `--lan1-bandwidth` / `--lan2-bandwidth`).
+Later, normalize debit by a capacity or threshold:
 
-### Expected controller behavior and observable outputs
+- `score = hops + beta * (debit_bps / capacity_bps)`
 
-During the first ~15–20 seconds:
-- The primary controller prints `PORT_RATE ...` for the Mongo-facing port at ~100 Mbit/s.
-- The overload counter increments each poll.
+Selection should be made per-flow (per ICMP “session” or per TCP 5-tuple) to keep session affinity.
 
-Once triggered:
-- The controller logs something like:
-   - `OVERLOAD_DETECTED dpid=<...> port=<mongo_port> bps=<...> threshold_bps=90000000 samples=3`
-- The controller installs (or updates) redirect rules:
-   - Either a `SELECT` group with ~50/50 weights, or
-   - per-flow rules for new Mongo connections.
+---
 
-After redirect is active:
-- The observed `total_bps` on the primary Mongo-facing port should drop (often not exactly 50/50 due to iperf timing and hashing).
-- The alternate Mongo-facing port should increase.
+### Step 4 — NAT-like rewrite rules (both directions)
+After selecting a backend, the controller installs two rules:
 
-Validation checklist:
-- Confirm redirect rule is present in the switch:
-   - `ovs-ofctl -O OpenFlow13 dump-flows <bridge>` and/or group dump if using groups.
-- Confirm both servers receive traffic (iperf output on clients + port stats).
-- Confirm the redirect state does not flap rapidly (hysteresis + cooldown working).
+#### 4.1 Forward rule (client → VIP) = DNAT
+Goal: client sends to VIP, switch rewrites destination to the chosen backend.
+
+Match (minimum for ICMP ping):
+- `eth_type=0x0800` (IPv4)
+- `ipv4_dst=VIP`
+- `ip_proto=ICMP`
+- `icmpv4_type=8` (echo request)
+
+Actions:
+- `set_field:backend_ip -> ipv4_dst`
+- `set_field:backend_mac -> eth_dst`
+- Forward along existing L2 path rules (or output toward the next hop).
+
+#### 4.2 Reverse rule (backend → client) = SNAT
+Goal: backend replies, switch rewrites source to VIP so the client thinks it is talking to the VIP.
+
+Match (minimum for ICMP reply):
+- `eth_type=0x0800`
+- `ipv4_src=backend_ip`
+- `ip_proto=ICMP`
+- `icmpv4_type=0` (echo reply)
+
+Actions:
+- `set_field:VIP -> ipv4_src`
+- `set_field:VIP_MAC -> eth_src`
+- Forward to the client (existing L2 path rules).
+
+Timeouts:
+- Use `idle_timeout` so that new requests can be re-evaluated and potentially mapped to a different backend as debit changes.
+
+TCP extension (future):
+- Use per-5tuple matching (src/dst IP, src/dst port, proto) to keep a connection pinned to a backend.
+
+---
+
+### Step 5 — Observability
+Log backend selection decisions in a greppable format (controller stdout):
+
+- `VIP_SELECT lan_id=<lan_1> vip=10.0.0.100 client_mac=<...> backend_ip=<...> backend_mac=<...> hops=<n> debit_bps=<x> score=<y>`
+
+Optional: persist these selections as a separate collection (append-only) so experiments can correlate routing decisions with observed debits.
+
+---
+
+## Test Scenario: VIP selection changes with debit
+
+This scenario validates that:
+1) clients use a single VIP (`10.0.0.100`) and get an ARP reply from the switch,
+2) the controller chooses a backend using hop+debit,
+3) the installed rewrite rules make the backend appear as the VIP.
+
+### Preconditions
+- Proactive ARP reply rule for VIP is installed on the client-facing switch.
+- Port debit stats are being persisted (`debits` collection, `_id==lan_1` / `_id==lan_2`).
+- At least 2 backend servers are available and included in the controller’s server list.
+
+### Procedure (LAN1 example)
+1) From a LAN1 client host, run `ping 10.0.0.100`.
+2) Verify ARP resolution (should map to `aa:bb:cc:dd:ee:ff`).
+3) Observe controller logs for `VIP_SELECT ...` showing chosen backend.
+4) Generate load on one backend’s server-facing link (e.g., with iperf toward that backend IP).
+5) After debit increases, start *new* VIP flows (new ping bursts or new TCP connections) and verify the controller selects the less-loaded / closer backend.
+
+Expected outcomes:
+- Pings to VIP succeed.
+- Backend selection correlates with increasing debit (all else equal).
+- Reply packets appear to come from VIP (source IP rewritten to VIP).
 
 ---
 
 ## Validation Plan
 
-### Milestone 1 validation (required)
-- Bring the lab up.
-- Verify that controller logs show port stats for each connected datapath at the chosen interval.
-- Confirm that stats change when generating traffic (e.g., ping/iperf between hosts).
+### Milestone 1–4 validation
+- Verify port debit printing/persistence works (already covered by prior milestones).
+- Verify topology graph includes the backend server MAC nodes and can compute paths.
 
-### Later milestones (future)
-- Generate load toward Mongo.
-- Confirm overload detection triggers only when intended.
-- Confirm traffic is redirected and Mongo remains reachable.
+### Milestone 5 validation (VIP anycast)
+- Confirm ARP reply is handled in the switch:
+   - `ovs-ofctl -O OpenFlow13 dump-flows <bridge>` shows the ARP reply rule.
+- Confirm VIP traffic triggers controller selection only for the first packet:
+   - first packet → `PacketIn`
+   - subsequent packets → hit installed rewrite rules
+- Confirm installed OpenFlow rules exist for both directions:
+   - forward DNAT (VIP → backend)
+   - reverse SNAT (backend → VIP)
 
----
-
-## Next action to implement after this plan
-Implement Milestone 1 in the OS-Ken app(s) you run:
-- Add datapath tracking, periodic `OFPPortStatsRequest`, and a stats-reply handler that prints computed bps per port.
