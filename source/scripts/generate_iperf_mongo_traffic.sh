@@ -20,8 +20,16 @@ LAN2_CLIENTS=(container3)
 LAN1_MONGO_CONTAINER=mongodb-n1
 LAN2_MONGO_CONTAINER=mongodb-n2
 
+LAN1_MONGO_SECONDARY_CONTAINER=mongodb-n3
+LAN2_MONGO_SECONDARY_CONTAINER=mongodb-n4
+
 LAN1_MONGO_IP=10.0.0.100
 LAN2_MONGO_IP=10.0.1.100
+
+LAN1_MONGO_SECONDARY_IP=10.0.0.6
+LAN2_MONGO_SECONDARY_IP=10.0.1.5
+
+INCLUDE_SECONDARIES=0
 
 usage() {
   cat <<'EOF'
@@ -37,6 +45,8 @@ Options:
   --bandwidth <rate>         UDP target bandwidth (-b) (default: 10M)
   --tcp-rate <rate>          TCP pacing rate (iperf3 --fq-rate, optional)
 
+  --include-secondaries       Also target second replica-set members (mongodb-n3/mongodb-n4)
+
   --lan1-clients <list>      Comma-separated LAN1 clients (default: container1)
   --lan2-clients <list>      Comma-separated LAN2 clients (default: container3)
   --lan1-only                Run only LAN1 clients
@@ -44,8 +54,12 @@ Options:
 
   --lan1-mongo <container>   MongoDB container in LAN1 (default: mongodb-n1)
   --lan2-mongo <container>   MongoDB container in LAN2 (default: mongodb-n2)
+  --lan1-mongo-secondary <c> Secondary MongoDB container in LAN1 (default: mongodb-n3)
+  --lan2-mongo-secondary <c> Secondary MongoDB container in LAN2 (default: mongodb-n4)
   --lan1-ip <ip>             Target IP in LAN1 (default: 10.0.0.100 VIP)
   --lan2-ip <ip>             Target IP in LAN2 (default: 10.0.1.100 VIP)
+  --lan1-secondary-ip <ip>   Secondary target IP in LAN1 (default: 10.0.0.6)
+  --lan2-secondary-ip <ip>   Secondary target IP in LAN2 (default: 10.0.1.5)
 
   -h, --help                 Show help
 
@@ -105,6 +119,10 @@ parse_args() {
         TCP_RATE="$2"
         shift 2
         ;;
+      --include-secondaries)
+        INCLUDE_SECONDARIES=1
+        shift
+        ;;
       --lan1-clients)
         [[ $# -ge 2 ]] || die "--lan1-clients requires a value"
         LAN1_CLIENTS_RAW="$2"
@@ -133,6 +151,16 @@ parse_args() {
         LAN2_MONGO_CONTAINER="$2"
         shift 2
         ;;
+      --lan1-mongo-secondary)
+        [[ $# -ge 2 ]] || die "--lan1-mongo-secondary requires a value"
+        LAN1_MONGO_SECONDARY_CONTAINER="$2"
+        shift 2
+        ;;
+      --lan2-mongo-secondary)
+        [[ $# -ge 2 ]] || die "--lan2-mongo-secondary requires a value"
+        LAN2_MONGO_SECONDARY_CONTAINER="$2"
+        shift 2
+        ;;
       --lan1-ip)
         [[ $# -ge 2 ]] || die "--lan1-ip requires a value"
         LAN1_MONGO_IP="$2"
@@ -141,6 +169,16 @@ parse_args() {
       --lan2-ip)
         [[ $# -ge 2 ]] || die "--lan2-ip requires a value"
         LAN2_MONGO_IP="$2"
+        shift 2
+        ;;
+      --lan1-secondary-ip)
+        [[ $# -ge 2 ]] || die "--lan1-secondary-ip requires a value"
+        LAN1_MONGO_SECONDARY_IP="$2"
+        shift 2
+        ;;
+      --lan2-secondary-ip)
+        [[ $# -ge 2 ]] || die "--lan2-secondary-ip requires a value"
+        LAN2_MONGO_SECONDARY_IP="$2"
         shift 2
         ;;
       *)
@@ -243,6 +281,65 @@ try_start_iperf3_server() {
   " >/dev/null 2>&1
 }
 
+pick_port_and_start_servers_multi() {
+  local base_port=$1
+  shift
+  local -a containers=("$@");
+
+  local max_tries=20
+  local try=0
+  local port
+
+  if [[ ${#containers[@]} -eq 0 ]]; then
+    die "no iperf3 server containers selected"
+  fi
+
+  while [[ "$try" -lt "$max_tries" ]]; do
+    port=$((base_port + try))
+
+    for c in "${containers[@]}"; do
+      stop_iperf3_server "$c" "$port" || true
+    done
+
+    local ok=1
+    for c in "${containers[@]}"; do
+      if ! try_start_iperf3_server "$c" "$port"; then
+        ok=0
+        break
+      fi
+    done
+
+    if [[ "$ok" -eq 1 ]]; then
+      SERVER_PORT="$port"
+      return 0
+    fi
+
+    for c in "${containers[@]}"; do
+      stop_iperf3_server "$c" "$port" || true
+    done
+
+    try=$((try + 1))
+  done
+
+  echo "---- iperf3 server log (${containers[0]}) ----" >&2
+  docker exec "${containers[0]}" sh -lc "tail -n 80 /tmp/iperf3_server_${base_port}.log 2>/dev/null || true" >&2 || true
+  die "could not start iperf3 servers after ${max_tries} attempts (base port: ${base_port})"
+}
+
+start_iperf3_servers_fixed_multi() {
+  local port=$1
+  shift
+  local -a containers=("$@");
+
+  if [[ ${#containers[@]} -eq 0 ]]; then
+    die "no iperf3 server containers selected"
+  fi
+
+  for c in "${containers[@]}"; do
+    start_iperf3_server "$c" "$port"
+  done
+}
+
 pick_port_and_start_servers() {
   local base_port=$1
   local max_tries=20
@@ -341,9 +438,27 @@ main() {
 
   require_cmd docker
 
+  server_containers=()
+  if [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
+    server_containers+=("$LAN1_MONGO_CONTAINER")
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      server_containers+=("$LAN1_MONGO_SECONDARY_CONTAINER")
+    fi
+  fi
+  if [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
+    server_containers+=("$LAN2_MONGO_CONTAINER")
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      server_containers+=("$LAN2_MONGO_SECONDARY_CONTAINER")
+    fi
+  fi
+
   if [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
     ensure_container_running "$LAN1_MONGO_CONTAINER"
     ensure_iperf3_in_container "$LAN1_MONGO_CONTAINER"
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      ensure_container_running "$LAN1_MONGO_SECONDARY_CONTAINER"
+      ensure_iperf3_in_container "$LAN1_MONGO_SECONDARY_CONTAINER"
+    fi
     for client in "${LAN1_CLIENTS[@]}"; do
       ensure_container_running "$client"
       ensure_iperf3_in_container "$client"
@@ -353,6 +468,10 @@ main() {
   if [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
     ensure_container_running "$LAN2_MONGO_CONTAINER"
     ensure_iperf3_in_container "$LAN2_MONGO_CONTAINER"
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      ensure_container_running "$LAN2_MONGO_SECONDARY_CONTAINER"
+      ensure_iperf3_in_container "$LAN2_MONGO_SECONDARY_CONTAINER"
+    fi
     for client in "${LAN2_CLIENTS[@]}"; do
       ensure_container_running "$client"
       ensure_iperf3_in_container "$client"
@@ -360,39 +479,31 @@ main() {
   fi
 
   echo "Starting iperf3 servers on MongoDB containers..." >&2
-  if [[ ${#LAN1_CLIENTS[@]} -gt 0 && ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
-    if [[ "$AUTO_PORT" == "1" ]]; then
-      pick_port_and_start_servers "$SERVER_PORT"
-    else
-      start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
-      start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
-    fi
-  elif [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
-    if [[ "$AUTO_PORT" == "1" ]]; then
-      pick_port_and_start_server_single "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
-    else
-      start_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT"
-    fi
-  elif [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
-    if [[ "$AUTO_PORT" == "1" ]]; then
-      pick_port_and_start_server_single "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
-    else
-      start_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT"
-    fi
+  if [[ "$AUTO_PORT" == "1" ]]; then
+    pick_port_and_start_servers_multi "$SERVER_PORT" "${server_containers[@]}"
+  else
+    start_iperf3_servers_fixed_multi "$SERVER_PORT" "${server_containers[@]}"
   fi
 
   cleanup() {
-    stop_iperf3_server "$LAN1_MONGO_CONTAINER" "$SERVER_PORT" || true
-    stop_iperf3_server "$LAN2_MONGO_CONTAINER" "$SERVER_PORT" || true
+    for c in "${server_containers[@]}"; do
+      stop_iperf3_server "$c" "$SERVER_PORT" || true
+    done
   }
   trap cleanup EXIT INT TERM
 
   echo "Running iperf3 clients:" >&2
   if [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
     echo "  LAN1: ${LAN1_CLIENTS[*]} -> $LAN1_MONGO_IP (VIP)" >&2
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      echo "  LAN1 (secondary): ${LAN1_CLIENTS[*]} -> $LAN1_MONGO_SECONDARY_IP" >&2
+    fi
   fi
   if [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
     echo "  LAN2: ${LAN2_CLIENTS[*]} -> $LAN2_MONGO_IP (VIP)" >&2
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      echo "  LAN2 (secondary): ${LAN2_CLIENTS[*]} -> $LAN2_MONGO_SECONDARY_IP" >&2
+    fi
   fi
   echo "  port: $SERVER_PORT" >&2
 
@@ -402,11 +513,21 @@ main() {
   for client in "${LAN1_CLIENTS[@]}"; do
     run_iperf3_client "$client" "$LAN1_MONGO_IP" "$SERVER_PORT" &
     pids+=("$!")
+
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      run_iperf3_client "$client" "$LAN1_MONGO_SECONDARY_IP" "$SERVER_PORT" &
+      pids+=("$!")
+    fi
   done
 
   for client in "${LAN2_CLIENTS[@]}"; do
     run_iperf3_client "$client" "$LAN2_MONGO_IP" "$SERVER_PORT" &
     pids+=("$!")
+
+    if [[ "$INCLUDE_SECONDARIES" == "1" ]]; then
+      run_iperf3_client "$client" "$LAN2_MONGO_SECONDARY_IP" "$SERVER_PORT" &
+      pids+=("$!")
+    fi
   done
 
   for pid in "${pids[@]}"; do

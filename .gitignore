@@ -202,3 +202,31 @@ sdn_controller/examples/myswitch.py
 sdn_controller/examples/myswitch_cont.py
 sdn_controller/examples/myhub.py
 sdn_controller/examples/myhub_cont.py
+tese/out/
+
+# LaTeX build artifacts (keep the sources tracked)
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.run.xml
+*.synctex.gz
+*.synctex(busy)
+*.toc
+_minted*
+*.pyg
+*.minted
+*.data.minted
+*.pydata.minted
+
+# Thesis: ignore all generated main.* files except the source and the committed PDF
+tese/main.*
+!tese/main.tex
+!tese/main.pdf
+.vscode/settings.json
