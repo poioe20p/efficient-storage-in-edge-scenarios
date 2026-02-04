@@ -268,6 +268,10 @@
 
 \newcommand{\dedication}[1]{\gdef\thededication{#1}}
 
+% Optional Portuguese resumo: allow documents to compile even if \resumo is not used.
+\providecommand{\theabstractpt}{}
+\providecommand{\thekeywordspt}{}
+
 \newcommand{\resumo}[2]{
     \gdef\theabstractpt{#1}
     \gdef\thekeywordspt{#2}
@@ -284,6 +288,11 @@
 \definecolor{ISCTEDarkBlue}{rgb}{0,0.08,0.45}
 
 \renewenvironment{document}{\olddocument
+
+% Avoid duplicate hyperref page destinations: the cover pages are unnumbered
+% but still create page anchors (page.1, page.2, ...). We disable page anchors
+% until the roman-numbered frontmatter starts.
+\hypersetup{pageanchor=false}
 
 \sffamily
 \frontFont
@@ -376,6 +385,7 @@
 
 \setcounter{page}{1}
 \pagenumbering{roman} %
+\hypersetup{pageanchor=true}
 \ifdef\theacknowledgements
 {
     \chapter*{Acknowledgments}
