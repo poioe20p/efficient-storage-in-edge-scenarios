@@ -10,6 +10,10 @@ LAN1_CONTAINERS=(container1 container2 container5)
 LAN2_CONTAINERS=(container3 container4)
 LAN1_VIP=10.0.0.100
 LAN2_VIP=10.0.1.100
+LAN1_MONGO_PRIMARY_IP=10.0.0.4
+LAN1_MONGO_SECONDARY_IP=10.0.0.6
+LAN2_MONGO_PRIMARY_IP=10.0.1.4
+LAN2_MONGO_SECONDARY_IP=10.0.1.5
 
 print_usage() {
     cat <<'EOF'
@@ -60,9 +64,11 @@ run_lan1_tests() {
     echo "=== LAN1 connectivity ==="
     ping_from_container container1 10.0.0.3 "container2"
     ping_from_container container1 10.0.0.5 "container5"
-    ping_from_container container2 10.0.0.4 "mongodb-n1"
+    ping_from_container container2 ${LAN1_MONGO_PRIMARY_IP} "mongodb-n1"
+    ping_from_container container2 ${LAN1_MONGO_SECONDARY_IP} "mongodb-n3"
     ping_from_container container5 10.0.0.2 "container1"
-    ping_from_container container5 10.0.0.4 "mongodb-n1"
+    ping_from_container container5 ${LAN1_MONGO_PRIMARY_IP} "mongodb-n1"
+    ping_from_container container5 ${LAN1_MONGO_SECONDARY_IP} "mongodb-n3"
     echo "=== LAN1 VIP connectivity ==="
     ping_from_container container1 ${LAN1_VIP} "LAN1 VIP"
     ping_from_container container2 ${LAN1_VIP} "LAN1 VIP"
@@ -75,7 +81,8 @@ run_lan1_tests() {
 run_lan2_tests() {
     echo "=== LAN2 connectivity ==="
     ping_from_container container3 10.0.1.3 "container4"
-    ping_from_container container4 10.0.1.4 "mongodb-n2"
+    ping_from_container container4 ${LAN2_MONGO_PRIMARY_IP} "mongodb-n2"
+    ping_from_container container4 ${LAN2_MONGO_SECONDARY_IP} "mongodb-n4"
     echo "=== LAN2 VIP connectivity ==="
     ping_from_container container3 ${LAN2_VIP} "LAN2 VIP"
     ping_from_container container4 ${LAN2_VIP} "LAN2 VIP"
@@ -86,9 +93,11 @@ run_lan2_tests() {
 run_cross_tests() {
     echo "=== Cross-LAN connectivity ==="
     ping_from_container container1 10.0.1.2 "LAN2 container3"
-    ping_from_container container1 10.0.1.4 "LAN2 mongodb-n2"
+    ping_from_container container1 ${LAN2_MONGO_PRIMARY_IP} "LAN2 mongodb-n2"
+    ping_from_container container1 ${LAN2_MONGO_SECONDARY_IP} "LAN2 mongodb-n4"
     ping_from_container container3 10.0.0.2 "LAN1 container1"
-    ping_from_container container3 10.0.0.4 "LAN1 mongodb-n1"
+    ping_from_container container3 ${LAN1_MONGO_PRIMARY_IP} "LAN1 mongodb-n1"
+    ping_from_container container3 ${LAN1_MONGO_SECONDARY_IP} "LAN1 mongodb-n3"
     echo "=== VIP connectivity (per-container) ==="
     ping_from_container container1 ${LAN1_VIP} "LAN1 VIP"
     ping_from_container container2 ${LAN1_VIP} "LAN1 VIP"

@@ -7,6 +7,10 @@ MONGO_CONFIG_PORT=27019
 MONGO_ROUTER_BIND_IPS=192.168.100.4,127.0.0.1,0.0.0.0
 MONGO_RS_1_HOST_IP=10.0.0.4
 MONGO_RS_2_HOST_IP=10.0.1.4
+MONGO_RS_3_HOST_IP=10.0.0.6
+MONGO_RS_4_HOST_IP=10.0.1.5
+MONGO_RS_1_MEMBER2_IP=10.0.0.6
+MONGO_RS_2_MEMBER2_IP=10.0.1.5
 ADMIN_USER=admin
 ADMIN_PASS=admin-password
 OSKEN1_PORT=${OSKEN1_PORT:-6653}
@@ -20,6 +24,253 @@ check_mongo_ok() {
         printf '%s\n' "$output"
         exit 1
     fi
+}
+
+ensure_rs_member() {
+    local container="$1"
+    local host_ip="$2"
+    local member_host="$3"
+
+    set +e
+    local has_member
+    has_member=$(docker exec -i "$container" mongosh --quiet --host "$host_ip" --port 27018 --eval "
+var conf = rs.conf();
+var target = '${member_host}';
+var present = conf.members && conf.members.some(m => m.host === target);
+print(present ? 'YES' : 'NO');
+")
+    local status=$?
+    set -e
+
+    if [[ $status -ne 0 ]]; then
+        echo "Failed to query replica set config for ${container} (${host_ip})."
+        exit 1
+    fi
+
+    local cleaned
+    cleaned=$(echo "$has_member" | tr -d '\r\n' | tail -n 1)
+    if [[ "$cleaned" == "YES" ]]; then
+        echo "Replica set member ${member_host} already present."
+        return 0
+    fi
+
+    echo "Adding replica set member ${member_host}..."
+    set +e
+    local add_output
+    add_output=$(docker exec -i "$container" mongosh --quiet --host "$host_ip" --port 27018 --eval "JSON.stringify(rs.add('${member_host}'))")
+    local add_status=$?
+    set -e
+
+    if [[ $add_status -ne 0 ]]; then
+        echo "Failed to add replica set member ${member_host} (exit ${add_status}). Output:"
+        echo "$add_output"
+        exit 1
+    fi
+
+    check_mongo_ok "$add_output" "Adding replica set member ${member_host}"
+}
+
+ensure_rs_primary() {
+    local replset_name="$1"
+    local container="$2"
+    local host_ip="$3"
+    local port="${4:-27018}"
+    local max_retries="${5:-3}"
+    local retry_delay="${6:-2}"
+
+    echo "Verifying replica set '${replset_name}' reports PRIMARY..."
+
+    local attempt
+    for attempt in $(seq 1 "${max_retries}"); do
+        echo "Replica set '${replset_name}' status check attempt ${attempt}/${max_retries}..."
+        set +e
+        local status_json
+        status_json=$(docker exec -i "${container}" mongosh --quiet --host "${host_ip}" --port "${port}" --eval "
+var status;
+try {
+    status = rs.status();
+    if (status.members && status.members.some(member => member.stateStr === 'PRIMARY')) {
+        print('PRIMARY');
+    } else if (status.members && status.members.length > 0) {
+        print(status.members[0].stateStr);
+    } else {
+        print('UNKNOWN');
+    }
+} catch (e) {
+    print('ERROR:' + e);
+}
+")
+        local status_code=$?
+        set -e
+
+        if [[ ${status_code} -ne 0 ]]; then
+            echo "Failed to run rs.status() for '${replset_name}' (exit ${status_code}). Output:"
+            echo "${status_json}"
+        else
+            local cleaned_output
+            cleaned_output=$(echo "${status_json}" | tr -d '\r\n')
+
+            if [[ "${cleaned_output}" == ERROR:* ]]; then
+                echo "Replica set '${replset_name}' not ready yet (${cleaned_output})."
+            elif [[ "${cleaned_output}" == "PRIMARY" ]] || echo "${cleaned_output}" | grep -Eq '"stateStr"\s*:\s*"PRIMARY"'; then
+                echo "Replica set '${replset_name}' reports PRIMARY state."
+                return 0
+            else
+                echo "Replica set '${replset_name}' status is not PRIMARY yet. Output:"
+                echo "${status_json}"
+            fi
+        fi
+
+        if [[ ${attempt} -lt ${max_retries} ]]; then
+            echo "Retrying in ${retry_delay}s..."
+            sleep "${retry_delay}"
+        fi
+    done
+
+    echo "Replica set '${replset_name}' failed to become PRIMARY after ${max_retries} attempts."
+    exit 1
+}
+
+ensure_shard_added() {
+    local router_container="$1"
+    local mongos_host="$2"
+    local mongos_port="$3"
+    local shard_name="$4"
+    local shard_connection_string="$5"
+    local max_retries="${6:-5}"
+    local retry_delay="${7:-2}"
+
+    echo "Adding shard ${shard_name} to mongos with retries (target ${shard_connection_string})..."
+
+    local attempt
+    local last_status_json=""
+
+    for attempt in $(seq 1 "${max_retries}"); do
+        echo "Attempt ${attempt}/${max_retries}..."
+        set +e
+        last_status_json=$(docker exec -i "${router_container}" mongosh --quiet --host "${mongos_host}" --port "${mongos_port}" --eval "JSON.stringify(sh.addShard('${shard_connection_string}'))")
+        local status_code=$?
+        set -e
+
+        if [[ ${status_code} -eq 0 ]] && echo "${last_status_json}" | grep -Eq '"ok"\s*:\s*1'; then
+            check_mongo_ok "${last_status_json}" "Adding shard ${shard_name}"
+            echo "Shard ${shard_name} added successfully."
+            return 0
+        fi
+
+        echo "Shard ${shard_name} add attempt ${attempt} failed (exit ${status_code}). Output:"
+        echo "${last_status_json}"
+
+        if [[ ${attempt} -lt ${max_retries} ]]; then
+            echo "Retrying in ${retry_delay}s..."
+            sleep "${retry_delay}"
+        fi
+    done
+
+    echo "Failed to add shard ${shard_name} after ${max_retries} attempts."
+    exit 1
+}
+
+ensure_db_and_collection_sharded() {
+    local router_container="$1"
+    local mongos_host="$2"
+    local mongos_port="$3"
+    local db_name="$4"
+    local collection_fqdn="$5"   # e.g. app_db.events
+    local shard_key_js="$6"      # e.g. "{ dpid: 1 }"
+
+    echo "Enabling sharding for database '${db_name}' and sharding collection '${collection_fqdn}'..."
+
+    set +e
+    local shard_db_output
+    shard_db_output=$(docker exec -i "${router_container}" mongosh --quiet --host "${mongos_host}" --port "${mongos_port}" --eval "JSON.stringify(sh.enableSharding('${db_name}'))")
+    local shard_db_status=$?
+
+    local shard_coll_output
+    shard_coll_output=$(docker exec -i "${router_container}" mongosh --quiet --host "${mongos_host}" --port "${mongos_port}" --eval "JSON.stringify(sh.shardCollection('${collection_fqdn}', ${shard_key_js}))")
+    local shard_coll_status=$?
+    set -e
+
+    if [[ ${shard_db_status} -ne 0 ]]; then
+        echo "Failed to enable sharding for database '${db_name}' (exit ${shard_db_status}). Output:"
+        echo "${shard_db_output}"
+        exit 1
+    fi
+    check_mongo_ok "${shard_db_output}" "Enabling sharding for database '${db_name}'"
+
+    if [[ ${shard_coll_status} -ne 0 ]]; then
+        echo "Failed to shard collection '${collection_fqdn}' (exit ${shard_coll_status}). Output:"
+        echo "${shard_coll_output}"
+        exit 1
+    fi
+    check_mongo_ok "${shard_coll_output}" "Sharding collection '${collection_fqdn}'"
+}
+
+configure_shard_zones_and_ranges() {
+    local router_container="$1"
+    local mongos_host="$2"
+    local mongos_port="$3"
+    local zone_size="$4"
+    local collection_fqdn="$5"  # e.g. app_db.events
+    shift 5
+
+    if [[ $# -lt 2 || $(( $# % 2 )) -ne 0 ]]; then
+        echo "configure_shard_zones_and_ranges expects shard/zone pairs: <shard1> <zone1> [<shard2> <zone2> ...]" >&2
+        exit 1
+    fi
+
+    echo "Adding shard zones and zone key ranges (zone_size=${zone_size})..."
+
+    local idx=0
+    while [[ $# -gt 0 ]]; do
+        local shard_name="$1"
+        local zone_name="$2"
+        shift 2
+
+        local range_start=$(( idx * zone_size ))
+        local range_end=$(( range_start + zone_size ))
+
+        echo "Assigning zone ${zone_name} to shard ${shard_name} for dpid [${range_start}, ${range_end})."
+
+        set +e
+        local add_zone_output
+        add_zone_output=$(docker exec -i "${router_container}" mongosh --quiet --host "${mongos_host}" --port "${mongos_port}" --eval "JSON.stringify(sh.addShardToZone('${shard_name}', '${zone_name}'))")
+        local add_zone_status=$?
+        set -e
+
+        if [[ ${add_zone_status} -ne 0 ]]; then
+            echo "Failed to assign zone ${zone_name} to shard ${shard_name} (exit ${add_zone_status}). Output:"
+            echo "${add_zone_output}"
+            exit 1
+        fi
+        check_mongo_ok "${add_zone_output}" "Adding zone ${zone_name} to shard ${shard_name}"
+
+        echo "Tagging collection ${collection_fqdn} range [${range_start}, ${range_end}) with zone ${zone_name}."
+        set +e
+        local range_output
+        range_output=$(docker exec -i "${router_container}" mongosh --quiet --host "${mongos_host}" --port "${mongos_port}" --eval "
+JSON.stringify(
+    sh.updateZoneKeyRange(
+        '${collection_fqdn}',
+        { dpid: NumberLong(${range_start}) },
+        { dpid: NumberLong(${range_end}) },
+        '${zone_name}'
+    )
+)")
+        local range_status=$?
+        set -e
+
+        if [[ ${range_status} -ne 0 ]]; then
+            echo "Failed to tag ${collection_fqdn} zone range for ${zone_name} (exit ${range_status}). Output:"
+            echo "${range_output}"
+            exit 1
+        fi
+        check_mongo_ok "${range_output}" "Adding zone range for ${collection_fqdn} (${zone_name})"
+
+        idx=$((idx + 1))
+    done
+
+    echo "Shard zones and key ranges configured successfully."
 }
 
 # ==============================
@@ -284,6 +535,53 @@ else
 
 fi
 
+# =============================
+# 5.2 - Initialize the mongodb-n3 replica set (separate shard)
+# =============================
+echo "Initializing MongoDB replica set for mongodb-n3..."
+set +e
+RS_STATUS_CHECK=$(docker exec -i mongodb-n3 mongosh --host "${MONGO_RS_3_HOST_IP}" --port 27018 --quiet --eval "
+var status;
+try {
+    status = rs.status();
+    if (status.members && status.members.length > 0) {
+        print('ALREADY_INITIALIZED');
+    } else {
+        print('NOT_INITIALIZED');
+    }
+} catch (e) {
+    if (e.codeName === 'NotYetInitialized') {
+        print('NOT_INITIALIZED');
+    } else {
+        print('STATUS_ERROR:' + e);
+    }
+}
+")
+RS_STATUS_CODE=$?
+set -e
+
+CLEAN_RS_STATUS=$(echo "${RS_STATUS_CHECK}" | tr -d '\r\n"')
+if [[ ${RS_STATUS_CODE} -eq 0 && "${CLEAN_RS_STATUS}" == "ALREADY_INITIALIZED" ]]; then
+    echo "Replica set for mongodb-n3 already initialized. Skipping rs.initiate."
+else
+    echo "Replica set for mongodb-n3 not initialized yet. Running rs.initiate..."
+    set +e
+    INIT_OUTPUT=$(docker exec -i mongodb-n3 mongosh --host "${MONGO_RS_3_HOST_IP}" --port 27018 --quiet --eval "
+    JSON.stringify(
+    rs.initiate({
+        _id: 'rs_net3',
+        members: [
+        { _id: 0, host: '${MONGO_RS_3_HOST_IP}:27018' }
+        ]
+    })
+    )
+    ")
+    set -e
+    check_mongo_ok "${INIT_OUTPUT}" "Replica set 'rs_net3' initialization"
+    echo "Initialization returned ok with value -> ${INIT_OUTPUT}."
+    sleep 2
+fi
+
 # ==============================
 # 6 - Run build_network_2.sh to setup second network
 # ==============================
@@ -343,78 +641,62 @@ else
 
 fi
 
+# =============================
+# 6.2 - Initialize the mongodb-n4 replica set (separate shard)
+# =============================
+echo "Initializing MongoDB replica set for mongodb-n4..."
+set +e
+RS_STATUS_CHECK=$(docker exec -i mongodb-n4 mongosh --quiet --host "${MONGO_RS_4_HOST_IP}" --port 27018 --quiet --eval "
+var status;
+try {
+    status = rs.status();
+    if (status.members && status.members.length > 0) {
+        print('ALREADY_INITIALIZED');
+    } else {
+        print('NOT_INITIALIZED');
+    }
+} catch (e) {
+    if (e.codeName === 'NotYetInitialized') {
+        print('NOT_INITIALIZED');
+    } else {
+        print('STATUS_ERROR:' + e);
+    }
+}
+")
+RS_STATUS_CODE=$?
+set -e
+
+CLEAN_RS_STATUS=$(echo "${RS_STATUS_CHECK}" | tr -d '\r\n"')
+if [[ ${RS_STATUS_CODE} -eq 0 && "${CLEAN_RS_STATUS}" == "ALREADY_INITIALIZED" ]]; then
+    echo "Replica set for mongodb-n4 already initialized. Skipping rs.initiate."
+else
+    set +e
+    INIT_OUTPUT=$(docker exec -i mongodb-n4 mongosh --quiet --host "${MONGO_RS_4_HOST_IP}" --port 27018 --quiet --eval "
+    JSON.stringify(
+    rs.initiate({
+        _id: 'rs_net4',
+        members: [
+        { _id: 0, host: '${MONGO_RS_4_HOST_IP}:27018' }
+        ]
+    })
+    )
+    ")
+    set -e
+    check_mongo_ok "${INIT_OUTPUT}" "Replica set 'rs_net4' initialization"
+    echo "Initialization returned ok with value -> ${INIT_OUTPUT}."
+    sleep 2
+fi
+
 # ==============================================
 # 7 - Check if both replica sets are initialized as primary
 # ==============================================
 echo "Verifying MongoDB shard replica set statuses..."
-declare -A RS_CONTAINER=( ["rs_net1"]="mongodb-n1" ["rs_net2"]="mongodb-n2" )
-declare -A RS_HOST=( ["rs_net1"]="10.0.0.4" ["rs_net2"]="10.0.1.4" )
+ensure_rs_primary "rs_net1" "mongodb-n1" "10.0.0.4" "27018" "3" "2"
+ensure_rs_primary "rs_net2" "mongodb-n2" "10.0.1.4" "27018" "3" "2"
+ensure_rs_primary "rs_net3" "mongodb-n3" "${MONGO_RS_3_HOST_IP}" "27018" "3" "2"
+ensure_rs_primary "rs_net4" "mongodb-n4" "${MONGO_RS_4_HOST_IP}" "27018" "3" "2"
 
-for REPLSET in rs_net1 rs_net2; do
-    MAX_RS_RETRIES=3
-    RS_RETRY_DELAY=2
-    RS_READY=false
-
-    CONTAINER="${RS_CONTAINER[$REPLSET]}"
-    HOST_IP="${RS_HOST[$REPLSET]}"
-
-    if [[ -z "${CONTAINER}" || -z "${HOST_IP}" ]]; then
-        echo "Replica set '${REPLSET}' has no container/IP mapping; aborting."
-        exit 1
-    fi
-
-    for attempt in $(seq 1 ${MAX_RS_RETRIES}); do
-        echo "Replica set '${REPLSET}' status check attempt ${attempt}/${MAX_RS_RETRIES}..."
-        set +e
-        STATUS_JSON=$(docker exec -i "${CONTAINER}" mongosh --quiet --host "${HOST_IP}" --port 27018 --quiet --eval "
-var status;
-try {
-    status = rs.status();
-    if (status.members && status.members.some(member => member.stateStr === 'PRIMARY')) {
-        print('PRIMARY');
-    } else if (status.members && status.members.length > 0) {
-        print(status.members[0].stateStr);
-    } else {
-        print('UNKNOWN');
-    }
-} catch (e) {
-    print('ERROR:' + e);
-}
-")
-        STATUS_CODE=$?
-        set -e
-
-        if [[ ${STATUS_CODE} -ne 0 ]]; then
-            echo "Failed to run rs.status() for '${REPLSET}' (exit ${STATUS_CODE}). Output:"
-            echo "${STATUS_JSON}"
-        else
-            CLEAN_OUTPUT=$(echo "${STATUS_JSON}" | tr -d '\r\n')
-
-            if [[ "${CLEAN_OUTPUT}" == ERROR:* ]]; then
-                echo "Replica set '${REPLSET}' not ready yet (${CLEAN_OUTPUT})."
-            elif [[ "${CLEAN_OUTPUT}" == "PRIMARY" ]] || echo "${CLEAN_OUTPUT}" | grep -Eq '"stateStr"\s*:\s*"PRIMARY"'; then
-                echo "Replica set '${REPLSET}' reports PRIMARY state."
-                RS_READY=true
-                break
-            else
-                echo "Replica set '${REPLSET}' status is not PRIMARY or ok:1 yet. Output:"
-                echo "${STATUS_JSON}"
-            fi
-        fi
-
-        if [[ ${attempt} -lt ${MAX_RS_RETRIES} ]]; then
-            echo "Retrying in ${RS_RETRY_DELAY}s..."
-            sleep ${RS_RETRY_DELAY}
-        fi
-    done
-
-    if [[ "${RS_READY}" != true ]]; then
-        echo "Replica set '${REPLSET}' failed to become PRIMARY after ${MAX_RS_RETRIES} attempts."
-        exit 1
-    fi
-
-    sleep 2
-done
+sleep 2
 
 # ==============================
 # 8 - Start mongodb router container
@@ -447,145 +729,24 @@ for SHARD in rs_net1 rs_net2; do
         exit 1
     fi
 
-    echo "Adding shard ${SHARD} (target ${TARGET})..."
-    SHARD_SUCCESS=false
-    LAST_STATUS_JSON=""
-
-    for attempt in $(seq 1 ${MAX_SHARD_RETRIES}); do
-        echo "Attempt ${attempt}/${MAX_SHARD_RETRIES}..."
-        set +e
-        LAST_STATUS_JSON=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
-            JSON.stringify(sh.addShard('${TARGET}'))")
-        STATUS_CODE=$?
-        set -e
-
-        if [[ ${STATUS_CODE} -eq 0 ]] && echo "${LAST_STATUS_JSON}" | grep -Eq '"ok"\s*:\s*1'; then
-            SHARD_SUCCESS=true
-            break
-        fi
-
-        echo "Shard ${SHARD} add attempt ${attempt} failed (exit ${STATUS_CODE}). Output:"
-        echo "${LAST_STATUS_JSON}"
-
-        if [[ ${attempt} -lt ${MAX_SHARD_RETRIES} ]]; then
-            echo "Retrying in ${SHARD_RETRY_DELAY}s..."
-            sleep ${SHARD_RETRY_DELAY}
-        fi
-    done
-
-    if [[ "${SHARD_SUCCESS}" != true ]]; then
-        echo "Failed to add shard ${SHARD} after ${MAX_SHARD_RETRIES} attempts."
-        exit 1
-    fi
-
-    check_mongo_ok "${LAST_STATUS_JSON}" "Adding shard ${SHARD}"
-    echo "Shard ${SHARD} added successfully."
-    sleep ${SHARD_RETRY_DELAY}
+    ensure_shard_added "mongodb-router" "${MONGO_HOST_IP}" "${MONGO_ROUTER_PORT}" "${SHARD}" "${TARGET}" "${MAX_SHARD_RETRIES}" "${SHARD_RETRY_DELAY}"
+    sleep "${SHARD_RETRY_DELAY}"
 done
 
 # ========================================================
 # 8.2 - Enable sharding for the database and collection
 # =======================================================
-echo "Enabling sharding for the database and collection..."
-set +e
-SHARD_DB_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
-    JSON.stringify(sh.enableSharding('app_db'))")
-    SHARD_DB_STATUS=$?
-SHARD_EVENTS_COLL_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
-    JSON.stringify(sh.shardCollection('app_db.events', { dpid: 1 }))")
-    SHARD_COLL_STATUS=$?
-# SHARD_TOPOLOGY_COLL_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
-#     JSON.stringify(sh.shardCollection('app_db.topology', { dpid: 1 }))")
-#     SHARD_TOPOLOGY_STATUS=$?
-set -e
-
-    if [[ ${SHARD_DB_STATUS} -ne 0 ]]; then
-        echo "Failed to enable sharding for database 'app_db' (exit ${SHARD_DB_STATUS}). Output:"
-        echo "${SHARD_DB_OUTPUT}"
-        exit 1
-    fi
-
-    check_mongo_ok "${SHARD_DB_OUTPUT}" "Enabling sharding for database 'app_db'"
-
-    if [[ ${SHARD_COLL_STATUS} -ne 0 ]]; then
-        echo "Failed to shard collection 'app_db.events' (exit ${SHARD_COLL_STATUS}). Output:"
-        echo "${SHARD_EVENTS_COLL_OUTPUT}"
-        exit 1
-    fi
-
-    check_mongo_ok "${SHARD_EVENTS_COLL_OUTPUT}" "Sharding collection 'app_db.events'"
-
-    # if [[ ${SHARD_TOPOLOGY_STATUS} -ne 0 ]]; then
-    #     echo "Failed to shard collection 'app_db.topology' (exit ${SHARD_TOPOLOGY_STATUS}). Output:"
-    #     echo "${SHARD_TOPOLOGY_COLL_OUTPUT}"
-    #     exit 1
-    # fi
-
-    # check_mongo_ok "${SHARD_TOPOLOGY_COLL_OUTPUT}" "Sharding collection 'app_db.topology'"
+ensure_db_and_collection_sharded "mongodb-router" "${MONGO_HOST_IP}" "${MONGO_ROUTER_PORT}" "app_db" "app_db.events" "{ dpid: 1 }"
 sleep 2
 
 
 # ===============================================
 # 8.3 Add shard zones and shard key ranges
 # ===============================================
-echo "Adding shard zones and shard key ranges..."
 ZONE_SIZE=1000000000
-SHARD_ORDER=(rs_net1 rs_net2)
-declare -A SHARD_ZONES=( [rs_net1]="shard_zone_rs_net1" [rs_net2]="shard_zone_rs_net2" )
-
-for idx in "${!SHARD_ORDER[@]}"; do
-    SHARD_NAME="${SHARD_ORDER[$idx]}"
-    ZONE_NAME="${SHARD_ZONES[$SHARD_NAME]}"
-    RANGE_START=$(( idx * ZONE_SIZE ))
-    RANGE_END=$(( RANGE_START + ZONE_SIZE ))
-
-    if [[ -z "${ZONE_NAME}" ]]; then
-        echo "No zone name configured for shard '${SHARD_NAME}'. Aborting."
-        exit 1
-    fi
-
-    echo "Assigning zone ${ZONE_NAME} to shard ${SHARD_NAME} for dpid [${RANGE_START}, ${RANGE_END})."
-
-    set +e
-    ADD_ZONE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "JSON.stringify(sh.addShardToZone('${SHARD_NAME}', '${ZONE_NAME}'))")
-    ADD_ZONE_STATUS=$?
-    set -e
-
-    if [[ ${ADD_ZONE_STATUS} -ne 0 ]]; then
-        echo "Failed to assign zone ${ZONE_NAME} to shard ${SHARD_NAME} (exit ${ADD_ZONE_STATUS}). Output:"
-        echo "${ADD_ZONE_OUTPUT}"
-        exit 1
-    fi
-
-    check_mongo_ok "${ADD_ZONE_OUTPUT}" "Adding zone ${ZONE_NAME} to shard ${SHARD_NAME}"
-
-    # for COLLECTION in "app_db.events" "app_db.topology"; do
-    for COLLECTION in "app_db.events"; do
-        echo "Tagging collection ${COLLECTION} range [${RANGE_START}, ${RANGE_END}) with zone ${ZONE_NAME}."
-        set +e
-        RANGE_OUTPUT=$(docker exec -it mongodb-router mongosh --quiet --host 192.168.100.4 --port 27020 --eval "
-JSON.stringify(
-    sh.updateZoneKeyRange(
-        '${COLLECTION}',
-        { dpid: NumberLong(${RANGE_START}) },
-        { dpid: NumberLong(${RANGE_END}) },
-        '${ZONE_NAME}'
-    )
-)")
-        RANGE_STATUS=$?
-        set -e
-
-        if [[ ${RANGE_STATUS} -ne 0 ]]; then
-            echo "Failed to tag ${COLLECTION} zone range for ${ZONE_NAME} (exit ${RANGE_STATUS}). Output:"
-            echo "${RANGE_OUTPUT}"
-            exit 1
-        fi
-
-        check_mongo_ok "${RANGE_OUTPUT}" "Adding zone range for ${COLLECTION} (${ZONE_NAME})"
-    done
-done
-
-echo "Shard zones and key ranges configured successfully."
+configure_shard_zones_and_ranges "mongodb-router" "${MONGO_HOST_IP}" "${MONGO_ROUTER_PORT}" "${ZONE_SIZE}" "app_db.events" \
+    "rs_net1" "shard_zone_rs_net1" \
+    "rs_net2" "shard_zone_rs_net2"
 
 # ==============================
 # 9 - Start SDN controller container
@@ -652,7 +813,6 @@ echo "Pointing OVS switches to the SDN controllers..."
 docker exec ovs ovs-vsctl set-controller ovs-br0 tcp:127.0.0.1:${OSKEN1_PORT}
 docker exec ovs ovs-vsctl set-controller ovs-br2 tcp:127.0.0.1:${OSKEN1_PORT}
 docker exec ovs ovs-vsctl set-controller ovs-br1 tcp:127.0.0.1:${OSKEN2_PORT}
-# docker exec ovs ovs-vsctl set-controller ovs-br1 tcp:127.0.0.1:${OSKEN1_PORT}
 
 docker exec ovs ovs-vsctl show
 

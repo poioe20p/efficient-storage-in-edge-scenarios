@@ -260,7 +260,7 @@ volumes_cleanup() {
 		warn "Docker not installed; skipping volume removal."
 		return 0
 	fi
-	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-configdb mongodb-router mongodb-config-server)
+	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-n3-data mongodb-n4-data mongodb-configdb mongodb-router mongodb-config-server)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
@@ -302,7 +302,7 @@ reset_cleanup() {
 	# Ensure named MongoDB containers are removed even if stopped
 	${DOCKER} container rm -f mongodb mongodb-data mongodb-config-server >/dev/null 2>&1 || true
 
-	local volumes=(mongodb mongodb-data mongodb-configdb)
+	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-n3-data mongodb-n4-data mongodb-configdb mongodb-router mongodb-config-server)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then

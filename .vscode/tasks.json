@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "BibTeX: add from DOI",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": [
+        "tools/add_bib_from_doi.py",
+        "${input:doi}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "BibTeX: dry-run from DOI",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": [
+        "tools/add_bib_from_doi.py",
+        "--dry-run",
+        "${input:doi}"
+      ],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "doi",
+      "type": "promptString",
+      "description": "Paste a DOI, DOI URL, or any text containing a DOI",
+      "default": "10.1109/TNET.2022.3152150"
+    }
+  ]
+}

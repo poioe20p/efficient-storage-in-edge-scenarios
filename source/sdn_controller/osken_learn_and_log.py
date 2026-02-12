@@ -1,5 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
+import hashlib
+import math
 import os
 import time
 from os_ken.base import app_manager
@@ -9,7 +11,7 @@ from os_ken.controller.handler import (
     MAIN_DISPATCHER,
     set_ev_cls,
 )
-from os_ken.lib.packet import arp, ethernet, ether_types, icmp, ipv4, packet
+from os_ken.lib.packet import ethernet, ether_types, icmp, ipv4, packet, tcp, udp
 from os_ken.ofproto import ofproto_v1_3
 
 from sdn_controller.library.repositories.debit import DebitRepository
@@ -25,8 +27,13 @@ class KenLearnAndLog(app_manager.OSKenApp):
         self.mac_to_port = {}
         self.enable_reactive_learning = True
         self.datapaths = []
-        self.servers_mac = ["00:00:00:00:00:04", "00:00:00:00:00:07"]
-        self.threashold_server_bps = 1000000  # 1 Mbps
+        self.servers_mac = [
+            "00:00:00:00:00:04",
+            "00:00:00:00:00:07",
+            "00:00:00:00:00:09",
+            "00:00:00:00:00:10",
+        ]
+        self.threashold_server_bps = 10000000  # 10 Mbps
 
         # Step D: debit snapshot cache (Mongo-backed).
         # Keep this lightweight and lazy so apps not using cost selection
@@ -47,6 +54,17 @@ class KenLearnAndLog(app_manager.OSKenApp):
         self.vip_debit_norm_bps = float(
             os.getenv("VIP_DEBIT_NORM_BPS", str(self.threashold_server_bps))
         )
+        # VIP flow key strategy for rendezvous hashing.
+        # - pinned_dport: (client_ip, vip_ip, dport)
+        #   Keeps TCP control + UDP data (iperf3 -u) on the same backend.
+        #   Side-effect: all TCP connections from the same client to the same VIP port
+        #   will stick to one backend (even with -P).
+        # - five_tuple: (client_ip, vip_ip, proto, sport, dport)
+        #   Distributes per-connection (TCP ephemeral source ports differ), but can
+        #   break iperf3 UDP runs because TCP control and UDP data may pick different backends.
+        # pinned_dport
+        # five_tuple
+        self.vip_flow_key_mode = str(os.getenv("VIP_FLOW_KEY_MODE", "five_tuple") or "five_tuple").strip().lower()
         self.vip_flow_idle_timeout_sec = int(os.getenv("VIP_FLOW_IDLE_TIMEOUT_SEC", "15"))
 
         # Step E: server MAC -> IP mapping (override with VIP_SERVER_MAC_IP_MAP).
@@ -57,6 +75,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
             self.server_ip_by_mac = {
                 "00:00:00:00:00:04": "10.0.0.4",
                 "00:00:00:00:00:07": "10.0.1.4",
+                "00:00:00:00:00:09": "10.0.0.6",
+                "00:00:00:00:00:10": "10.0.1.5",
             }
 
     def _get_lan_id_for_debit(self) -> str:
@@ -173,7 +193,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         norm_hops = float(hops) / float(max(max_hops, 1))
         norm_bps = 0.0
         if self.vip_debit_norm_bps and self.vip_debit_norm_bps > 0:
-            norm_bps = min(1.0, float(debit_bps) / float(self.vip_debit_norm_bps))
+            norm_bps = min(1.0, float(debit_bps) / float(self.vip_debit_norm_bps)) # The closer to the threshold the more costly the server is considered.
         return (self.vip_w_hops * norm_hops) + (self.vip_w_debit * norm_bps)
 
     def _select_backend_for_client(self, client_mac: str):
@@ -201,6 +221,89 @@ class KenLearnAndLog(app_manager.OSKenApp):
             candidate = (server_mac, server_ip, hops, debit_bps, score, max_hops)
             if best is None or score < best[4]:
                 best = candidate
+
+        return best
+
+    def _stable_hash_unit(self, text: str) -> float:
+        """Return a stable pseudo-random float in (0, 1) for the given text."""
+        if text is None:
+            text = ""
+        digest = hashlib.sha256(text.encode("utf-8", errors="ignore")).digest()
+        value = int.from_bytes(digest[:8], byteorder="big", signed=False)
+        return (value + 1) / float(2**64 + 1)
+
+    def _select_backend_for_vip_flow(
+        self,
+        *,
+        client_mac: str,
+        client_ip: str,
+        vip_ip: str,
+        ip_proto: int,
+        l4_sport: int | None,
+        l4_dport: int | None,
+    ):
+        """Select backend for a VIP flow.
+
+                Selection uses cost-aware rendezvous hashing, with a configurable flow key
+                strategy via env var `VIP_FLOW_KEY_MODE`:
+
+                - pinned_dport (default): per (client_ip, vip_ip, dport)
+                    Keeps iperf3 UDP's TCP control and UDP data (same dport) on the same backend.
+                - five_tuple: per (client_ip, vip_ip, proto, sport, dport)
+                    Distributes per-connection, but may break iperf3 UDP tests.
+
+                For ICMP (no ports), falls back to per-client selection.
+
+        Returns tuple (server_mac, server_ip, hops, debit_bps, score, max_hops) or None.
+        """
+
+        if not client_mac:
+            return None
+
+        # ICMP or missing dport: keep stable per-client selection.
+        # (For TCP/UDP we expect a destination port; source port may vary.)
+        if ip_proto == 1 or not l4_dport:
+            return self._select_backend_for_client(client_mac)
+
+        max_hops = self._get_max_hops_cached()
+        candidates = []
+        for server_mac in getattr(self, "servers_mac", []) or []:
+            hops = self._get_hops_cached(client_mac, server_mac)
+            if hops is None:
+                continue
+            server_ip = self._get_server_ip(server_mac)
+            if not server_ip:
+                continue
+            debit_bps = self.get_server_debit_bps(server_mac)
+            cost = self._compute_vip_cost(hops=hops, debit_bps=debit_bps, max_hops=max_hops)
+            candidates.append((server_mac, server_ip, hops, debit_bps, float(cost), max_hops))
+
+        if not candidates:
+            return None
+
+        # Cost-aware rendezvous hashing: each flow key ranks servers differently,
+        # but lower-cost servers are favored.
+        mode = str(getattr(self, "vip_flow_key_mode", "pinned_dport") or "pinned_dport").strip().lower()
+        if mode == "five_tuple":
+            if l4_sport is None:
+                # Without a source port, five-tuple can't distribute per-connection.
+                # Fall back to the pinned_dport behavior.
+                flow_key = f"{client_ip}|{vip_ip}|{int(l4_dport)}"
+            else:
+                flow_key = f"{client_ip}|{vip_ip}|{int(ip_proto)}|{int(l4_sport)}|{int(l4_dport)}"
+        else:
+            # pinned_dport (default)
+            flow_key = f"{client_ip}|{vip_ip}|{int(l4_dport)}"
+        best = None
+        best_rank = None
+        eps = 1e-6
+        for server_mac, server_ip, hops, debit_bps, cost, max_hops in candidates:
+            weight = 1.0 / max(cost + eps, eps) # The lower the cost, the higher the weight (with epsilon to avoid division by zero).
+            u = self._stable_hash_unit(flow_key + "|" + str(server_mac).lower()) # Stable pseudo-random unit in (0, 1) for this flow-server pair. Always the same for the same inputs
+            rank = weight / max(-math.log(u), eps) # 
+            if best is None or rank > float(best_rank):
+                best = (server_mac, server_ip, hops, debit_bps, cost, max_hops)
+                best_rank = rank
 
         return best
 
@@ -356,15 +459,57 @@ class KenLearnAndLog(app_manager.OSKenApp):
         # (Selection + DNAT/SNAT rules are added in later steps.)
         ipv4_hdr = pkt.get_protocol(ipv4.ipv4)
         icmp_hdr = pkt.get_protocol(icmp.icmp)
+        tcp_hdr = pkt.get_protocol(tcp.tcp)
+        udp_hdr = pkt.get_protocol(udp.udp)
 
         # Until VIP DNAT/SNAT is implemented, avoid flooding VIP frames (dst MAC is VIP_MAC)
         # which can create noisy broadcasts with no receiver.
         if ipv4_hdr is not None and str(getattr(ipv4_hdr, "dst", "")) == self.vip_ip:
             ip_proto = getattr(ipv4_hdr, "proto", None)
+            # Only process ICMP, TCP, UDP for VIP selection; ignore other L4 protocols.
             if ip_proto not in (1, 6, 17):
                 return
 
-            selection = self._select_backend_for_client(src)
+            # Implement per-(src_ip, dst_ip, ip_proto, src_port, dst_port) load balancing.
+            # For ICMP there are no ports; we keep the existing ICMP type-based matching.
+            fwd_l4_match = {}
+            rev_l4_match = {}
+            if ip_proto == 6:
+                if tcp_hdr is None:
+                    return
+                tcp_src = int(getattr(tcp_hdr, "src_port", 0) or 0)
+                tcp_dst = int(getattr(tcp_hdr, "dst_port", 0) or 0)
+                if tcp_src <= 0 or tcp_dst <= 0:
+                    return
+                fwd_l4_match = {"tcp_src": tcp_src, "tcp_dst": tcp_dst}
+                rev_l4_match = {"tcp_src": tcp_dst, "tcp_dst": tcp_src}
+
+            if ip_proto == 17:
+                if udp_hdr is None:
+                    return
+                udp_src = int(getattr(udp_hdr, "src_port", 0) or 0)
+                udp_dst = int(getattr(udp_hdr, "dst_port", 0) or 0)
+                if udp_src <= 0 or udp_dst <= 0:
+                    return
+                fwd_l4_match = {"udp_src": udp_src, "udp_dst": udp_dst}
+                rev_l4_match = {"udp_src": udp_dst, "udp_dst": udp_src}
+
+            client_ip = str(getattr(ipv4_hdr, "src", ""))
+            l4_sport = None
+            l4_dport = None
+            if ip_proto == 6:
+                l4_sport, l4_dport = tcp_src, tcp_dst
+            elif ip_proto == 17:
+                l4_sport, l4_dport = udp_src, udp_dst
+
+            selection = self._select_backend_for_vip_flow(
+                client_mac=src,
+                client_ip=client_ip,
+                vip_ip=self.vip_ip,
+                ip_proto=int(ip_proto or 0),
+                l4_sport=l4_sport,
+                l4_dport=l4_dport,
+            )
             if selection is None:
                 return
 
@@ -382,13 +527,25 @@ class KenLearnAndLog(app_manager.OSKenApp):
             if next_hop_port is None:
                 return
 
-            client_ip = str(getattr(ipv4_hdr, "src", ""))
             lan_id = self._get_lan_id_for_debit()
 
+            l4_sport = "-"
+            l4_dport = "-"
+            if ip_proto == 6:
+                l4_sport = str(tcp_src)
+                l4_dport = str(tcp_dst)
+            elif ip_proto == 17:
+                l4_sport = str(udp_src)
+                l4_dport = str(udp_dst)
+
             print(
-                "VIP_SELECT lan_id={} vip={} client_mac={} backend_ip={} backend_mac={} hops={} max_hops={} debit_bps={:.2f} score={:.4f}".format(
+                "VIP_SELECT lan_id={} vip={} proto={} sport={} dport={} client_ip={} client_mac={} backend_ip={} backend_mac={} hops={} max_hops={} debit_bps={:.2f} score={:.4f}".format(
                     lan_id,
                     self.vip_ip,
+                    ip_proto,
+                    l4_sport,
+                    l4_dport,
+                    client_ip,
                     src,
                     server_ip,
                     server_mac,
@@ -409,6 +566,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 ipv4_src=client_ip,
                 ipv4_dst=self.vip_ip,
                 ip_proto=ip_proto,
+                **fwd_l4_match,
             )
             snat_match_kwargs = dict(
                 eth_type=ether_types.ETH_TYPE_IP,
@@ -417,6 +575,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 ipv4_src=server_ip,
                 ipv4_dst=client_ip,
                 ip_proto=ip_proto,
+                **rev_l4_match,
             )
 
             if ip_proto == 1 and icmp_hdr is not None:

@@ -7,7 +7,7 @@ echo "Creating OVS bridge ovs-br1..."
 docker exec ovs ovs-vsctl add-br ovs-br1
 
 echo "Creating veth pairs..."
-for IFACE in veth10 veth11 veth12 veth13 veth10-peer veth11-peer veth12-peer veth13-peer; do
+for IFACE in veth10 veth11 veth12 veth13 veth14 veth10-peer veth11-peer veth12-peer veth13-peer veth14-peer; do
   if ip link show "$IFACE" >/dev/null 2>&1; then
     sudo ip link del "$IFACE" >/dev/null 2>&1 || true
   fi
@@ -16,6 +16,7 @@ sudo ip link add veth10 type veth peer name veth10-peer # container3
 sudo ip link add veth11 type veth peer name veth11-peer # container4
 sudo ip link add veth12 type veth peer name veth12-peer # router LAN side
 sudo ip link add veth13 type veth peer name veth13-peer # mongodb
+sudo ip link add veth14 type veth peer name veth14-peer # mongodb-n4
 
 # ==============================
 # 3 - Attach veth peers to OVS bridge
@@ -25,6 +26,7 @@ docker exec ovs ip link set veth10 up # bring up interface connected to containe
 docker exec ovs ip link set veth11 up # bring up interface connected to container4
 docker exec ovs ip link set veth12 up # bring up interface connected to router LAN side
 docker exec ovs ip link set veth13 up # bring up interface connected to mongodb
+docker exec ovs ip link set veth14 up # bring up interface connected to mongodb-n4
 
 # ==============================
 # Step 3.1: Move veth interfaces into OVS container's namespace
@@ -37,6 +39,7 @@ sudo ip link set veth10 netns ovs
 sudo ip link set veth11 netns ovs
 sudo ip link set veth12 netns ovs
 sudo ip link set veth13 netns ovs
+sudo ip link set veth14 netns ovs
 
 # ==============================
 # Step 3.2: Attach veth interfaces to OVS bridge inside container
@@ -46,6 +49,7 @@ docker exec ovs ovs-vsctl add-port ovs-br1 veth10
 docker exec ovs ovs-vsctl add-port ovs-br1 veth11
 docker exec ovs ovs-vsctl add-port ovs-br1 veth12
 docker exec ovs ovs-vsctl add-port ovs-br1 veth13
+docker exec ovs ovs-vsctl add-port ovs-br1 veth14
 
 # ==============================
 # Step 4: Launch containers
@@ -69,6 +73,12 @@ if [[ -f "$MONGO_ENV_FILE" ]]; then
     --no-healthcheck \
     -v mongodb-n2-data:/data/db ubuntu-mongodb mongod \
     --shardsvr --replSet rs_net2 --bind_ip_all --port 27018
+  
+  docker run -dit --name mongodb-n4 --network none \
+    --env-file "$MONGO_ENV_FILE" \
+    --no-healthcheck \
+    -v mongodb-n4-data:/data/db ubuntu-mongodb mongod \
+    --shardsvr --replSet rs_net4 --bind_ip_all --port 27018
 else
   echo "WARNING: MongoDB env file not found at $MONGO_ENV_FILE"
   echo "MongoDB will start without authentication!"
@@ -76,6 +86,11 @@ else
     --no-healthcheck \
     -v mongodb-n2-data:/data/db ubuntu-mongodb mongod \
     --shardsvr --replSet rs_net2 --bind_ip_all --port 27018
+  
+  docker run -dit --name mongodb-n4 --network none \
+    --no-healthcheck \
+    -v mongodb-n4-data:/data/db ubuntu-mongodb mongod \
+    --shardsvr --replSet rs_net4 --bind_ip_all --port 27018
 fi
 
 if [[ $? -ne 0 ]]; then
@@ -88,6 +103,7 @@ PID3=$(docker inspect -f '{{.State.Pid}}' container3)
 PID4=$(docker inspect -f '{{.State.Pid}}' container4)
 PID_ROUTER=$(docker inspect -f '{{.State.Pid}}' nat-router)
 PID_MONGO=$(docker inspect -f '{{.State.Pid}}' mongodb-n2)
+PID_MONGO2=$(docker inspect -f '{{.State.Pid}}' mongodb-n4)
 
 # ==============================
 # Step 5: Move peer interfaces into the containers
@@ -97,6 +113,7 @@ sudo ip link set veth10-peer netns $PID3
 sudo ip link set veth11-peer netns $PID4
 sudo ip link set veth12-peer netns $PID_ROUTER
 sudo ip link set veth13-peer netns $PID_MONGO
+sudo ip link set veth14-peer netns $PID_MONGO2
 
 # ==============================
 # Step 6: Configure container3
@@ -129,6 +146,13 @@ sudo nsenter -t $PID_MONGO -n ip link set eth0 up
 sudo nsenter -t $PID_MONGO -n ip addr add 10.0.1.4/24 dev eth0
 sudo nsenter -t $PID_MONGO -n ip route add default via 10.0.1.1
 
+# Configure mongodb-n4 container
+sudo nsenter -t $PID_MONGO2 -n ip link set veth14-peer name eth0
+sudo nsenter -t $PID_MONGO2 -n ip link set eth0 address 00:00:00:00:00:10   # static MAC
+sudo nsenter -t $PID_MONGO2 -n ip link set eth0 up
+sudo nsenter -t $PID_MONGO2 -n ip addr add 10.0.1.5/24 dev eth0
+sudo nsenter -t $PID_MONGO2 -n ip route add default via 10.0.1.1
+
 # ==============================
 # Step 7: Configure NAT router internal (LAN side)
 echo "Configuring NAT router interfaces..."
@@ -143,7 +167,6 @@ sudo nsenter -t $PID_ROUTER -n ip addr add 10.0.1.1/24 dev eth2  # default GW fo
 sudo nsenter -t $PID_ROUTER -n bash -c "
   echo 1 > /proc/sys/net/ipv4/ip_forward
 "
-
 
 # ==============================
 # Step 8: Ensure host routing for Network 2
@@ -168,12 +191,24 @@ sudo nsenter -t $PID_ROUTER -n bash -c '
 sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth0 -o eth2 -j ACCEPT
 sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth2 -o eth0 -j ACCEPT
 
-# Expose mongodb-n2 via 192.168.100.2:27118 so mongos can reach it through the
-# router address while traffic is forwarded to 10.0.1.4.
+# Expose MongoDB shard members via 192.168.100.2:<port> using DNAT/SNAT so
+# mongos/configsvr can reference the router address while traffic still lands
+# on the 10.0.1.0/24 LAN.
+#
+# NOTE: Both shard containers listen on 27018 internally; we expose a unique
+# WAN-side port per member to avoid collisions.
+
+# mongodb-n2 (10.0.1.4:27018) exposed as 192.168.100.2:27118
 sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
   -d 192.168.100.2 --dport 27118 -j DNAT --to-destination 10.0.1.4:27018
 sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth2 -p tcp \
   -s 10.0.1.4 --sport 27018 -j SNAT --to-source 192.168.100.2:27118
+
+# mongodb-n4 (10.0.1.5:27018) exposed as 192.168.100.2:27218
+sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
+  -d 192.168.100.2 --dport 27218 -j DNAT --to-destination 10.0.1.5:27018
+sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth2 -p tcp \
+  -s 10.0.1.5 --sport 27018 -j SNAT --to-source 192.168.100.2:27218
 
 
 # Show OVS status
