@@ -8,6 +8,7 @@ from sdn_controller.library.models.debit import DebitStats
 class DebitRepository:
     def __init__(
         self,
+        
         mongo_uri: str,
         database: str = "app_db",
         collection: str = "debits",

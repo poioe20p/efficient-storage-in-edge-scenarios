@@ -1,5 +1,6 @@
 import eventlet
 eventlet.monkey_patch()
+from datetime import datetime, timezone
 import hashlib
 import math
 import os
@@ -16,7 +17,9 @@ from os_ken.ofproto import ofproto_v1_3
 
 from sdn_controller.library.repositories.debit import DebitRepository
 from sdn_controller.models.mongodb_host import MongodbRouter
+from sdn_controller.utils import env_bool, env_float, env_int, stable_hash_unit
 
+EPS = 1e-6
 
 class KenLearnAndLog(app_manager.OSKenApp):
     """Simple layer-2 learning switch with optional MongoDB logging."""
@@ -26,79 +29,63 @@ class KenLearnAndLog(app_manager.OSKenApp):
         super(KenLearnAndLog, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         self.enable_reactive_learning = True
+        # Keep a best-effort list for backwards compatibility, but treat
+        # `_datapath_by_id` as the canonical datapath registry.
         self.datapaths = []
+        self._datapath_by_id = {}
         self.servers_mac = [
             "00:00:00:00:00:04",
             "00:00:00:00:00:07",
             "00:00:00:00:00:09",
             "00:00:00:00:00:10",
         ]
-        self.threashold_server_bps = 10000000  # 10 Mbps
 
-        # Step D: debit snapshot cache (Mongo-backed).
-        # Keep this lightweight and lazy so apps not using cost selection
-        # don't pay connection overhead.
-        self._vip_debit_refresh_sec = float(os.getenv("VIP_DEBIT_REFRESH_SEC", "5"))
+        # Static lab topology: keep reactive L2 learned flows permanent (no idle_timeout).
+
+        self._vip_debit_refresh_sec = env_float("VIP_DEBIT_REFRESH_SEC", 5.0)
         self._vip_debit_cache_ts = 0.0
         self._vip_debit_bps_by_server_mac = {}
         self._vip_debit_repo = None
 
-        # VIP (Anycast service IP) configuration.
-        # LAN-specific apps can override these, but defaults keep behavior explicit.
         self.vip_ip = os.getenv("VIP_IP", "10.0.0.100")
         self.vip_mac = os.getenv("VIP_MAC", "aa:bb:cc:dd:ee:ff")
+        self.lan_id = os.getenv("LAN_ID", "lan_1")
 
-        # Step E: selection weights + normalization.
-        self.vip_w_hops = float(os.getenv("VIP_SCORE_HOPS_WEIGHT", "0.3"))
-        self.vip_w_debit = float(os.getenv("VIP_SCORE_DEBIT_WEIGHT", "0.7"))
-        self.vip_debit_norm_bps = float(
-            os.getenv("VIP_DEBIT_NORM_BPS", str(self.threashold_server_bps))
-        )
+        self.vip_w_hops = env_float("VIP_SCORE_HOPS_WEIGHT", 0.3)
+        self.vip_w_debit = env_float("VIP_SCORE_DEBIT_WEIGHT", 0.7)
+        self.vip_debit_norm_bps = env_float("VIP_DEBIT_NORM_BPS", 10_000_000.0)
+    
         # VIP flow key strategy for rendezvous hashing.
         # - pinned_dport: (client_ip, vip_ip, dport)
         #   Keeps TCP control + UDP data (iperf3 -u) on the same backend.
         #   Side-effect: all TCP connections from the same client to the same VIP port
-        #   will stick to one backend (even with -P).
         # - five_tuple: (client_ip, vip_ip, proto, sport, dport)
-        #   Distributes per-connection (TCP ephemeral source ports differ), but can
-        #   break iperf3 UDP runs because TCP control and UDP data may pick different backends.
-        # pinned_dport
-        # five_tuple
-        self.vip_flow_key_mode = str(os.getenv("VIP_FLOW_KEY_MODE", "five_tuple") or "five_tuple").strip().lower()
-        self.vip_flow_idle_timeout_sec = int(os.getenv("VIP_FLOW_IDLE_TIMEOUT_SEC", "15"))
+        #   Distributes per-connection (TCP ephemeral source ports differ)
+        self.vip_flow_key_mode = os.getenv("VIP_FLOW_KEY_MODE", "five_tuple")
+        self.vip_flow_idle_timeout_sec = env_int("VIP_FLOW_IDLE_TIMEOUT_SEC", 120)
+
+        # VIP selection logging behavior.
+        # By default, log only once per VIP flow key (reduces noise from retransmits/PacketIn bursts).
+        self.vip_log_once_per_flow = env_bool("VIP_LOG_ONCE_PER_FLOW", True)
+        self.vip_log_cache_max = env_int("VIP_LOG_CACHE_MAX", 5000)
+        self.vip_log_cache_ttl_sec = env_float("VIP_LOG_CACHE_TTL_SEC", float(self.vip_flow_idle_timeout_sec))
+        self._vip_logged_flow_keys = {}
 
         # Step E: server MAC -> IP mapping (override with VIP_SERVER_MAC_IP_MAP).
-        self.server_ip_by_mac = self._parse_server_mac_ip_map(
-            os.getenv("VIP_SERVER_MAC_IP_MAP")
-        )
-        if not self.server_ip_by_mac:
-            self.server_ip_by_mac = {
-                "00:00:00:00:00:04": "10.0.0.4",
-                "00:00:00:00:00:07": "10.0.1.4",
-                "00:00:00:00:00:09": "10.0.0.6",
-                "00:00:00:00:00:10": "10.0.1.5",
-            }
+        self.server_ip_by_mac = {
+            "00:00:00:00:00:04": "10.0.0.4",
+            "00:00:00:00:00:07": "10.0.1.4",
+            "00:00:00:00:00:09": "10.0.0.6",
+            "00:00:00:00:00:10": "10.0.1.5",
+        }
 
-    def _get_lan_id_for_debit(self) -> str:
-        """Resolve LAN id used by DebitRepository snapshots.
-
-        Convention in this repo is `_lan_id` on LAN-specific apps (e.g. "lan_1").
-        Falls back to `LAN_ID` env var and finally "lan_1".
-        """
-
-        lan_id = getattr(self, "_lan_id", None)
-        if isinstance(lan_id, str) and lan_id:
-            return lan_id
-        env_lan_id = os.getenv("LAN_ID")
-        if isinstance(env_lan_id, str) and env_lan_id:
-            return env_lan_id
-        return "lan_1"
 
     def _get_vip_debit_repo(self) -> DebitRepository:
         if self._vip_debit_repo is None:
             mongo_uri = MongodbRouter().get_simple_connection_string(add_app=True)
             self._vip_debit_repo = DebitRepository(mongo_uri)
         return self._vip_debit_repo
+
 
     def _refresh_vip_debit_cache_if_needed(self) -> None:
         """Refresh cached per-server bps from MongoDB (latest debit snapshot).
@@ -108,93 +95,137 @@ class KenLearnAndLog(app_manager.OSKenApp):
         """
 
         now = time.time()
-        if (now - float(self._vip_debit_cache_ts or 0.0)) < self._vip_debit_refresh_sec:
+        if (now - self._vip_debit_cache_ts) < self._vip_debit_refresh_sec:
             return
 
-        lan_id = self._get_lan_id_for_debit()
         try:
-            debit_stats = self._get_vip_debit_repo().get_debit_by_lan_id(lan_id)
+            debit_stats = self._get_vip_debit_repo().get_debit_by_lan_id(self.lan_id)
         except Exception:
             # Keep previous cached values if Mongo is temporarily unavailable.
             self._vip_debit_cache_ts = now
             return
 
         bps_by_server_mac = {}
-        for p in getattr(debit_stats, "port", []) or []:
+        for p in debit_stats.switch_ports:
             try:
                 # Only use server-facing ports.
-                peer_mac = str(getattr(p, "peer_mac", "") or "").lower()
-                if not peer_mac or peer_mac not in getattr(self, "servers_mac", []):
+                peer_mac = p.peer_mac.lower()
+                if peer_mac not in getattr(self, "servers_mac", []):
                     continue
 
                 # Ignore switch-link entries, keep host/server edges only.
-                if getattr(p, "neighbor_switch_id", None) is not None:
+                if p.neighbor_switch_id is not None:
                     continue
 
-                flow_rate = float(getattr(p, "flow_rate", 0.0) or 0.0)
-                prev = float(bps_by_server_mac.get(peer_mac, 0.0) or 0.0)
-                if flow_rate > prev:
-                    bps_by_server_mac[peer_mac] = flow_rate
+                prev = bps_by_server_mac.get(peer_mac, 0.0)
+                if p.flow_rate > prev:
+                    bps_by_server_mac[peer_mac] = p.flow_rate
             except Exception:
                 continue
 
         self._vip_debit_bps_by_server_mac = bps_by_server_mac
         self._vip_debit_cache_ts = now
 
-    def get_server_debit_bps_by_mac(self) -> dict:
-        """Return cached debit map: server_mac -> bps (float)."""
-        self._refresh_vip_debit_cache_if_needed()
-        return dict(self._vip_debit_bps_by_server_mac or {})
 
-    def get_server_debit_bps(self, server_mac: str) -> float:
+    def get_server_debit_bps_by_mac(self, server_mac: str) -> float:
         """Return cached debit for a specific server MAC, defaulting to 0.0."""
-        if not server_mac:
-            return 0.0
         self._refresh_vip_debit_cache_if_needed()
-        return float((self._vip_debit_bps_by_server_mac or {}).get(str(server_mac).lower(), 0.0) or 0.0)
-
-    def _parse_server_mac_ip_map(self, raw: str):
-        """Parse VIP_SERVER_MAC_IP_MAP as mac=ip,mac=ip."""
-        if not raw:
-            return {}
-        mapping = {}
-        for item in raw.split(","):
-            if not item.strip():
-                continue
-            if "=" not in item:
-                continue
-            mac, ip = item.split("=", 1)
-            mac = mac.strip().lower()
-            ip = ip.strip()
-            if mac and ip:
-                mapping[mac] = ip
-        return mapping
-
-    def _get_server_ip(self, server_mac: str):
-        if not server_mac:
-            return None
-        return self.server_ip_by_mac.get(str(server_mac).lower())
-
-    def _get_max_hops_cached(self) -> int:
-        max_hops = getattr(self, "_hop_cache_max", None)
-        if isinstance(max_hops, int) and max_hops > 0:
-            return max_hops
-        return 1
-
-    def _get_hops_cached(self, host_mac: str, server_mac: str):
-        if hasattr(self, "get_hops"):
-            try:
-                return self.get_hops(host_mac, server_mac)
-            except Exception:
-                return None
-        return None
-
+        return self._vip_debit_bps_by_server_mac.get(server_mac, 0.0)
+    
+    
     def _compute_vip_cost(self, *, hops: int, debit_bps: float, max_hops: int) -> float:
         norm_hops = float(hops) / float(max(max_hops, 1))
         norm_bps = 0.0
         if self.vip_debit_norm_bps and self.vip_debit_norm_bps > 0:
-            norm_bps = min(1.0, float(debit_bps) / float(self.vip_debit_norm_bps)) # The closer to the threshold the more costly the server is considered.
+            norm_bps = min(1.0, debit_bps / float(self.vip_debit_norm_bps)) # The closer to the threshold the more costly the server is considered.
         return (self.vip_w_hops * norm_hops) + (self.vip_w_debit * norm_bps)
+
+    def _vip_flow_key(
+        self,
+        *,
+        client_ip: str,
+        vip_ip: str,
+        ip_proto: int,
+        l4_sport: int | None,
+        l4_dport: int | None,
+    ) -> str | None:
+        """Return the VIP flow key used for rendezvous hashing + log de-dup."""
+
+        if not client_ip or not vip_ip:
+            return None
+        if ip_proto == 1 or not l4_dport:
+            return None
+
+        if self.vip_flow_key_mode == "five_tuple":
+            if l4_sport is None:
+                return f"{client_ip}|{vip_ip}|{int(l4_dport)}"
+            return f"{client_ip}|{vip_ip}|{int(ip_proto)}|{int(l4_sport)}|{int(l4_dport)}"
+
+        return f"{client_ip}|{vip_ip}|{int(l4_dport)}"
+
+
+    def _vip_should_log_flow_key(self, flow_key: str | None) -> bool:
+        """Return True if this VIP flow key should be logged (log-once cache).
+        Delete expired entries and enforce max cache size to avoid unbounded growth in long runs.
+        """
+
+        # if no flow_key it hasnt been logged and no way to track
+        # if flag is disabled, always log (no caching)
+        if not flow_key or not self.vip_log_once_per_flow: 
+            return True
+
+        now = time.time()
+        ttl = self.vip_log_cache_ttl_sec
+        cache = self._vip_logged_flow_keys
+
+        # Opportunistic pruning: remove expired keys first.
+        if ttl > 0 and cache:
+            expired = [k for k, ts in cache.items() if (now - float(ts or 0.0)) >= ttl]
+            for k in expired:
+                cache.pop(k, None)
+
+        # Hard cap to avoid unbounded growth in long runs.
+        max_size = self.vip_log_cache_max
+        if max_size > 0 and len(cache) > max_size:
+            # Drop oldest entries.
+            for k, _ in sorted(cache.items(), key=lambda kv: float(kv[1] or 0.0))[: max(1, len(cache) - max_size)]:
+                cache.pop(k, None)
+
+        if flow_key in cache:
+            return False
+        cache[flow_key] = now
+        return True
+
+
+    def _get_vip_candidates(
+        self,
+        *,
+        client_mac: str,
+    ):
+        """Return candidate backends with their current cost inputs."""
+
+        candidates = []
+        for server_mac in self.servers_mac:
+            hops = self.get_hops(client_mac, server_mac)
+            if hops is None:
+                continue
+            server_ip = self.server_ip_by_mac.get(server_mac)
+            if not server_ip:
+                continue
+            debit_bps = self.get_server_debit_bps_by_mac(server_mac)
+            cost = self._compute_vip_cost(hops=hops, debit_bps=debit_bps, max_hops=self._hop_cache_max)
+            candidates.append(
+                {
+                    "server_mac": server_mac,
+                    "server_ip": server_ip,
+                    "hops": int(hops),
+                    "debit_bps": debit_bps,
+                    "score": cost,
+                    "max_hops": self._hop_cache_max,
+                }
+            )
+        return candidates
+
 
     def _select_backend_for_client(self, client_mac: str):
         """Select best backend server for a client based on hop + debit cost.
@@ -205,32 +236,24 @@ class KenLearnAndLog(app_manager.OSKenApp):
         if not client_mac:
             return None
 
-        max_hops = self._get_max_hops_cached()
         best = None
 
-        for server_mac in getattr(self, "servers_mac", []) or []:
-            hops = self._get_hops_cached(client_mac, server_mac)
+        for server_mac in self.servers_mac:
+            hops = self.get_hops(client_mac, server_mac)
             if hops is None:
                 continue
-            server_ip = self._get_server_ip(server_mac)
+            server_ip = self.server_ip_by_mac.get(server_mac)
             if not server_ip:
                 continue
-            debit_bps = self.get_server_debit_bps(server_mac)
-            score = self._compute_vip_cost(hops=hops, debit_bps=debit_bps, max_hops=max_hops)
+            debit_bps = self.get_server_debit_bps_by_mac(server_mac)
+            score = self._compute_vip_cost(hops=hops, debit_bps=debit_bps, max_hops=self._hop_cache_max)
 
-            candidate = (server_mac, server_ip, hops, debit_bps, score, max_hops)
+            candidate = (server_mac, server_ip, hops, debit_bps, score, self._hop_cache_max)
             if best is None or score < best[4]:
                 best = candidate
 
         return best
 
-    def _stable_hash_unit(self, text: str) -> float:
-        """Return a stable pseudo-random float in (0, 1) for the given text."""
-        if text is None:
-            text = ""
-        digest = hashlib.sha256(text.encode("utf-8", errors="ignore")).digest()
-        value = int.from_bytes(digest[:8], byteorder="big", signed=False)
-        return (value + 1) / float(2**64 + 1)
 
     def _select_backend_for_vip_flow(
         self,
@@ -247,9 +270,9 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 Selection uses cost-aware rendezvous hashing, with a configurable flow key
                 strategy via env var `VIP_FLOW_KEY_MODE`:
 
-                - pinned_dport (default): per (client_ip, vip_ip, dport)
+                - pinned_dport: per (client_ip, vip_ip, dport)
                     Keeps iperf3 UDP's TCP control and UDP data (same dport) on the same backend.
-                - five_tuple: per (client_ip, vip_ip, proto, sport, dport)
+                - five_tuple (default): per (client_ip, vip_ip, proto, sport, dport)
                     Distributes per-connection, but may break iperf3 UDP tests.
 
                 For ICMP (no ports), falls back to per-client selection.
@@ -265,73 +288,48 @@ class KenLearnAndLog(app_manager.OSKenApp):
         if ip_proto == 1 or not l4_dport:
             return self._select_backend_for_client(client_mac)
 
-        max_hops = self._get_max_hops_cached()
-        candidates = []
-        for server_mac in getattr(self, "servers_mac", []) or []:
-            hops = self._get_hops_cached(client_mac, server_mac)
-            if hops is None:
-                continue
-            server_ip = self._get_server_ip(server_mac)
-            if not server_ip:
-                continue
-            debit_bps = self.get_server_debit_bps(server_mac)
-            cost = self._compute_vip_cost(hops=hops, debit_bps=debit_bps, max_hops=max_hops)
-            candidates.append((server_mac, server_ip, hops, debit_bps, float(cost), max_hops))
-
-        if not candidates:
-            return None
+        candidates = self._get_vip_candidates(client_mac=client_mac)
 
         # Cost-aware rendezvous hashing: each flow key ranks servers differently,
         # but lower-cost servers are favored.
-        mode = str(getattr(self, "vip_flow_key_mode", "pinned_dport") or "pinned_dport").strip().lower()
-        if mode == "five_tuple":
-            if l4_sport is None:
-                # Without a source port, five-tuple can't distribute per-connection.
-                # Fall back to the pinned_dport behavior.
-                flow_key = f"{client_ip}|{vip_ip}|{int(l4_dport)}"
-            else:
-                flow_key = f"{client_ip}|{vip_ip}|{int(ip_proto)}|{int(l4_sport)}|{int(l4_dport)}"
-        else:
-            # pinned_dport (default)
-            flow_key = f"{client_ip}|{vip_ip}|{int(l4_dport)}"
+        flow_key = self._vip_flow_key(
+            client_ip=client_ip,
+            vip_ip=vip_ip,
+            ip_proto=ip_proto,
+            l4_sport=l4_sport,
+            l4_dport=l4_dport,
+        )
+        
+        if not flow_key:
+            return self._select_backend_for_client(client_mac)
+
         best = None
         best_rank = None
-        eps = 1e-6
-        for server_mac, server_ip, hops, debit_bps, cost, max_hops in candidates:
-            weight = 1.0 / max(cost + eps, eps) # The lower the cost, the higher the weight (with epsilon to avoid division by zero).
-            u = self._stable_hash_unit(flow_key + "|" + str(server_mac).lower()) # Stable pseudo-random unit in (0, 1) for this flow-server pair. Always the same for the same inputs
-            rank = weight / max(-math.log(u), eps) # 
+        for c in candidates:
+            server_mac = c["server_mac"]
+            cost = float(c["score"])
+            weight = 1.0 / max(cost + EPS, EPS) # The lower the cost, the higher the weight (with epsilon to avoid division by zero).
+            u = stable_hash_unit(flow_key + "|" + str(server_mac).lower()) # Stable pseudo-random unit in (0, 1) for this flow-server pair. Always the same for the same inputs
+            rank = weight / max(-math.log(u), EPS) # Higher weight and higher u (less luck) gives better rank. EPS to avoid division by zero/log(0). Adds randomness to avoid always picking the same server among equals, while still favoring lower-cost ones.
             if best is None or rank > float(best_rank):
-                best = (server_mac, server_ip, hops, debit_bps, cost, max_hops)
+                best = (
+                    c["server_mac"],
+                    c["server_ip"],
+                    int(c["hops"]),
+                    float(c["debit_bps"]),
+                    float(c["score"]),
+                    int(c["max_hops"]),
+                )
                 best_rank = rank
 
         return best
 
     def _get_datapath_by_dpid(self, dpid):
-        if hasattr(self, "_datapath_by_id"):
-            dp_entry = getattr(self, "_datapath_by_id", {}).get(dpid)
-            if dp_entry:
-                return dp_entry[0]
-        for dp in getattr(self, "datapaths", []) or []:
-            if getattr(dp, "id", None) == dpid:
-                return dp
+        entry = self._datapath_by_id.get(dpid)
+        if entry is not None:
+            return entry[0]
         return None
 
-    def _get_edge_switch(self, host_mac: str):
-        if hasattr(self, "get_edge_switch"):
-            try:
-                return self.get_edge_switch(host_mac)
-            except Exception:
-                return None
-        return None
-
-    def _get_next_hop_port(self, edge_dpid: int, client_mac: str, server_mac: str):
-        if hasattr(self, "get_next_hop_port"):
-            try:
-                return self.get_next_hop_port(edge_dpid, client_mac, server_mac)
-            except Exception:
-                return None
-        return None
 
     def _install_flow(self, datapath, priority, match, actions, *,
                       idle_timeout=0, hard_timeout=0, cookie=0, flags=None):
@@ -358,6 +356,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
         )
         datapath.send_msg(mod)
 
+
     def add_flow(self, datapath, in_port, dst, src, actions):
         """Default reactive learning-switch rule installer."""
         parser = datapath.ofproto_parser
@@ -366,11 +365,13 @@ class KenLearnAndLog(app_manager.OSKenApp):
             eth_dst=dst,
             eth_src=src,
         )
+        
         self._install_flow(
             datapath,
             priority=10,
             match=match,
             actions=actions,
+            # idle_timeout=int(getattr(self, "l2_flow_idle_timeout_sec", 0) or 0),
             flags=datapath.ofproto.OFPFF_SEND_FLOW_REM,
         )
 
@@ -393,7 +394,11 @@ class KenLearnAndLog(app_manager.OSKenApp):
         # The parser helps in creating OpenFlow messages such as matches, actions, flow mods, etc.
         parser = datapath.ofproto_parser
         
-        self.datapaths.append(datapath)
+        # Register datapath early so proactive VIP rules can find the edge switch.
+        self._datapath_by_id[datapath.id] = (datapath, datapath.id)
+
+        if not any(getattr(dp, "id", None) == datapath.id for dp in self.datapaths):
+            self.datapaths.append(datapath)
 
         # Create a match object with no specific fields, meaning it will match all packets (wildcard match).
         # This is the default behavior of a hub, which forwards all traffic.
@@ -477,8 +482,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
             if ip_proto == 6:
                 if tcp_hdr is None:
                     return
-                tcp_src = int(getattr(tcp_hdr, "src_port", 0) or 0)
-                tcp_dst = int(getattr(tcp_hdr, "dst_port", 0) or 0)
+                tcp_src = int(getattr(tcp_hdr, "src_port", 0))
+                tcp_dst = int(getattr(tcp_hdr, "dst_port", 0))
                 if tcp_src <= 0 or tcp_dst <= 0:
                     return
                 fwd_l4_match = {"tcp_src": tcp_src, "tcp_dst": tcp_dst}
@@ -487,8 +492,8 @@ class KenLearnAndLog(app_manager.OSKenApp):
             if ip_proto == 17:
                 if udp_hdr is None:
                     return
-                udp_src = int(getattr(udp_hdr, "src_port", 0) or 0)
-                udp_dst = int(getattr(udp_hdr, "dst_port", 0) or 0)
+                udp_src = int(getattr(udp_hdr, "src_port", 0))
+                udp_dst = int(getattr(udp_hdr, "dst_port", 0))
                 if udp_src <= 0 or udp_dst <= 0:
                     return
                 fwd_l4_match = {"udp_src": udp_src, "udp_dst": udp_dst}
@@ -506,7 +511,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 client_mac=src,
                 client_ip=client_ip,
                 vip_ip=self.vip_ip,
-                ip_proto=int(ip_proto or 0),
+                ip_proto=ip_proto,
                 l4_sport=l4_sport,
                 l4_dport=l4_dport,
             )
@@ -514,7 +519,7 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 return
 
             server_mac, server_ip, hops, debit_bps, score, max_hops = selection
-            edge_info = self._get_edge_switch(src)
+            edge_info = self.get_edge_switch(src)
             if edge_info is None:
                 return
 
@@ -523,11 +528,9 @@ class KenLearnAndLog(app_manager.OSKenApp):
             if edge_dp is None:
                 return
 
-            next_hop_port = self._get_next_hop_port(edge_dpid, src, server_mac)
+            next_hop_port = self.get_next_hop_port(edge_dpid, src, server_mac)
             if next_hop_port is None:
                 return
-
-            lan_id = self._get_lan_id_for_debit()
 
             l4_sport = "-"
             l4_dport = "-"
@@ -538,23 +541,46 @@ class KenLearnAndLog(app_manager.OSKenApp):
                 l4_sport = str(udp_src)
                 l4_dport = str(udp_dst)
 
-            print(
-                "VIP_SELECT lan_id={} vip={} proto={} sport={} dport={} client_ip={} client_mac={} backend_ip={} backend_mac={} hops={} max_hops={} debit_bps={:.2f} score={:.4f}".format(
-                    lan_id,
-                    self.vip_ip,
-                    ip_proto,
-                    l4_sport,
-                    l4_dport,
-                    client_ip,
-                    src,
-                    server_ip,
-                    server_mac,
-                    hops,
-                    max_hops,
-                    float(debit_bps),
-                    float(score),
-                )
+            flow_key = self._vip_flow_key(
+                client_ip=client_ip,
+                vip_ip=self.vip_ip,
+                ip_proto=ip_proto,
+                l4_sport=(tcp_src if ip_proto == 6 else (udp_src if ip_proto == 17 else None)),
+                l4_dport=(tcp_dst if ip_proto == 6 else (udp_dst if ip_proto == 17 else None)),
             )
+
+            if self._vip_should_log_flow_key(flow_key):
+                print(
+                    "VIP_SELECT ts={} lan_id={} vip={} proto={} sport={} dport={} client_ip={} client_mac={} backend_ip={} backend_mac={} hops={} max_hops={} debit_bps={:.2f} score={:.4f} candidates=[{}] flow_key={}".format(
+                        datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                        self.lan_id,
+                        self.vip_ip,
+                        ip_proto,
+                        l4_sport,
+                        l4_dport,
+                        client_ip,
+                        src,
+                        server_ip,
+                        server_mac,
+                        hops,
+                        max_hops,
+                        float(debit_bps),
+                        float(score),
+                        "; ".join(
+                            [
+                                "{}({}) score={:.4f} hops={} debit_bps={:.2f}".format(
+                                    c["server_ip"],
+                                    c["server_mac"],
+                                    float(c["score"]),
+                                    int(c["hops"]),
+                                    float(c["debit_bps"]),
+                                )
+                                for c in self._get_vip_candidates(client_mac=src)
+                            ]
+                        ),
+                        flow_key or "-",
+                    )
+                )
 
             edge_parser = edge_dp.ofproto_parser
             edge_ofproto = edge_dp.ofproto

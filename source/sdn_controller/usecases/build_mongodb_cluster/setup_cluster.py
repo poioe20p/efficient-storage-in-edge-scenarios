@@ -2,7 +2,6 @@
 """Main orchestration script for MongoDB cluster setup."""
 
 import sys
-import time
 from .config_server import ConfigServerManager
 from .shard_replica_set import ShardReplicaSetManager
 from .router import RouterManager

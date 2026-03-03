@@ -89,7 +89,7 @@ class Topology_proactive(KenLearnAndLog):
         if not self.net or not self.host_attachment:
             return
 
-        servers_present = [mac for mac in getattr(self, "servers_mac", []) if mac in self.host_attachment]
+        servers_present = [mac for mac in self.servers_mac if mac in self.host_attachment]
         if not servers_present:
             return
 
@@ -118,12 +118,14 @@ class Topology_proactive(KenLearnAndLog):
         """
         datapath = ev.datapath
         if ev.state == MAIN_DISPATCHER:
-            if datapath not in self.sws:
-                self.sws.append((datapath, datapath.id))
-                self._datapath_by_id[datapath.id] = (datapath, datapath.id)
+            entry = (datapath, datapath.id)
+            if entry not in self.sws:
+                self.sws.append(entry)
+            self._datapath_by_id[datapath.id] = entry
         elif ev.state == DEAD_DISPATCHER:
-            if datapath in self.sws:
-                self.sws.remove((datapath, datapath.id))
+            entry = (datapath, datapath.id)
+            if entry in self.sws:
+                self.sws.remove(entry)
             self._datapath_by_id.pop(datapath.id, None)
 
 

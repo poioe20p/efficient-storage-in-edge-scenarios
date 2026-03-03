@@ -117,14 +117,16 @@ class Topology_proactive(KenLearnAndLog):
         """
         datapath = ev.datapath
         if ev.state == MAIN_DISPATCHER:
-            if datapath not in self.sws:
+            entry = (datapath, datapath.id)
+            if entry not in self.sws:
                 #self.logger.debug('%s:register datapath: %016x', time.time() - self.s_time, datapath.id)
-                self.sws.append((datapath, datapath.id))
-                self._datapath_by_id[datapath.id] = (datapath, datapath.id)
+                self.sws.append(entry)
+            self._datapath_by_id[datapath.id] = entry
         elif ev.state == DEAD_DISPATCHER:
-            if datapath in self.sws:
+            entry = (datapath, datapath.id)
+            if entry in self.sws:
                 #self.logger.debug('%s:unregister datapath: %016x', time.time() - self.s_time, datapath.id)
-                self.sws.remove((datapath, datapath.id))
+                self.sws.remove(entry)
             self._datapath_by_id.pop(datapath.id, None)
 
     def check_link(self, link_in, links_list):

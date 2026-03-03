@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 MONGO_HOST_IP=192.168.100.4
 MONGO_ROUTER_PORT=27020
 MONGO_CONFIG_PORT=27019
@@ -15,6 +18,15 @@ ADMIN_USER=admin
 ADMIN_PASS=admin-password
 OSKEN1_PORT=${OSKEN1_PORT:-6653}
 OSKEN2_PORT=${OSKEN2_PORT:-6654}
+
+# OS-Ken controller runtime knobs live in an env file (used by both controller containers).
+OSKEN_ENV_FILE=${OSKEN_ENV_FILE:-"${SCRIPT_DIR}/osken-controller.env"}
+
+if [[ ! -f "${OSKEN_ENV_FILE}" ]]; then
+    echo "Missing controller env file: ${OSKEN_ENV_FILE}" >&2
+    echo "Expected at: ${SCRIPT_DIR}/osken-controller.env" >&2
+    exit 1
+fi
 
 check_mongo_ok() {
     local output="$1"
@@ -751,60 +763,34 @@ configure_shard_zones_and_ranges "mongodb-router" "${MONGO_HOST_IP}" "${MONGO_RO
 # ==============================
 # 9 - Start SDN controller container
 # ==============================
-cd ..
+cd "${ROOT_DIR}"
 echo "Current directory for OS-Ken controller: $PWD"
 
 echo "Starting os-ken SDN controller container..."
 docker rm -f osken 2>/dev/null
 
-PWD=$(pwd)
-MONGO_ENV_FILE="$PWD/../.env-mongo"
+docker run -dit --name osken --network host \
+    -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+    --env-file "${OSKEN_ENV_FILE}" \
+    osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
+        --log-config-file /etc/osken/logging.conf \
+        os_ken.topology.switches sdn_controller.calculate_stats_n1
 
-if [[ ! -f "$MONGO_ENV_FILE" ]]; then
-    echo "MongoDB environment file '$MONGO_ENV_FILE' not found. Aborting."
-    echo "Using direct environment variables instead."
-    docker run -dit --name osken --network host \
-        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
-        -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
-        -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
-        -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
-            --log-config-file /etc/osken/logging.conf \
-            os_ken.topology.switches sdn_controller.calculate_stats_n1
-
-    docker run -dit --name osken_2 --network host \
-        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        -e MONGO_ROUTER_HOST="${MONGO_HOST_IP}" \
-        -e MONGO_ROUTER_PORT="${MONGO_ROUTER_PORT}" \
-        -e MONGO_CONFIG_HOST="${MONGO_HOST_IP}" \
-        -e MONGO_CONFIG_PORT="${MONGO_CONFIG_PORT}" \
-        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
-            --log-config-file /etc/osken/logging.conf \
-            os_ken.topology.switches sdn_controller.calculate_stats_n2
-
-else
-    docker run -dit --name osken --network host \
-        --env-file "$MONGO_ENV_FILE" \
-        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
-            --log-config-file /etc/osken/logging.conf \
-            os_ken.topology.switches sdn_controller.calculate_stats_n1
-
-    docker run -dit --name osken_2 --network host \
-        --env-file "$MONGO_ENV_FILE" \
-        -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
-        osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
-            --log-config-file /etc/osken/logging.conf \
-            os_ken.topology.switches sdn_controller.calculate_stats_n2
-fi
+docker run -dit --name osken_2 --network host \
+    -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
+    --env-file "${OSKEN_ENV_FILE}" \
+    -e LAN_ID=lan2 \
+    -e VIP_IP="10.0.1.100" \
+    osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
+        --log-config-file /etc/osken/logging.conf \
+        os_ken.topology.switches sdn_controller.calculate_stats_n2
 
 if [[ $? -ne 0 ]]; then
     echo "Failed to start SDN controller container. Aborting."
     exit 1
 fi
 
-cd scripts
+cd "${SCRIPT_DIR}"
 
 # ==============================
 # 9.1 - Point both OVS switches to the SDN controller

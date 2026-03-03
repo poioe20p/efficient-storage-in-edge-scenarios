@@ -22,4 +22,4 @@ class DebitStats:
 
     lan_id: str
     time_stamp: int = field(default_factory=_utc_now_ts)
-    port: List[SwitchPortStats] = field(default_factory=list)
+    switch_ports: List[SwitchPortStats] = field(default_factory=list)

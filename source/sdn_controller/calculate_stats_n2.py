@@ -23,7 +23,7 @@ class CalculateSwitchPortDebit(Topology_proactive):
         self._last_port_counters = {}
         self._port_desc = {}
 
-        self._lan_id = "lan_2"
+        self.lan_id = "lan_2"
         self._other_lan_id = "lan_1"
         self._port_stats_reply_count = 0
         self._debit_repo = DebitRepository(MongodbRouter().get_simple_connection_string(add_app=True))
@@ -42,12 +42,12 @@ class CalculateSwitchPortDebit(Topology_proactive):
         Topology_proactive tracks datapaths in `self._datapath_by_id` and `self.sws`.
         This helper keeps the stats poller resilient to internal representation changes.
         """
-        if hasattr(self, "_datapath_by_id") and isinstance(self._datapath_by_id, dict):
+        if self._datapath_by_id:
             for dp, _ in self._datapath_by_id.values():
                 yield dp
             return
 
-        if hasattr(self, "sws") and isinstance(self.sws, list):
+        if self.sws:
             for dp, _ in self.sws:
                 yield dp
             return
@@ -274,7 +274,7 @@ class CalculateSwitchPortDebit(Topology_proactive):
         # Print local rates (keep current behavior: only server-facing host ports).
         if port_stats_entries:
             self._print_debit_stats(
-                DebitStats(lan_id=self._lan_id, port=port_stats_entries),
+                DebitStats(lan_id=self.lan_id, switch_ports=port_stats_entries),
                 prefix="PORT_RATE",
                 show_header=False,
             )
@@ -282,7 +282,7 @@ class CalculateSwitchPortDebit(Topology_proactive):
         # Persist periodically (every 2nd stats reply) to avoid excessive writes.
         if port_stats_entries and (self._port_stats_reply_count % 2 == 0):
             try:
-                debit_stats = DebitStats(lan_id=self._lan_id, port=port_stats_entries)
+                debit_stats = DebitStats(lan_id=self.lan_id, switch_ports=port_stats_entries)
                 self._debit_repo.upsert_debit_by_lan_id(debit_stats)
             except Exception:
                 pass

@@ -14,6 +14,11 @@ AUTO_PORT=1
 USE_UDP=0
 UDP_BANDWIDTH=10M
 
+# Safety: upper bound for blocking docker exec calls.
+# Applied on the host side (this script), so it does not depend on utilities
+# inside containers. 0 disables timeouts.
+DOCKER_EXEC_TIMEOUT_SEC=0
+
 # When multiple clients run concurrently, reusing the same server port can make
 # iperf3 reject sessions (single-test server instances) and clients may surface
 # confusing errors like "unable to send control message".
@@ -82,6 +87,7 @@ Options:
   --udp                       Use UDP (-u). If set, --streams is ignored.
   --bandwidth <rate>         UDP target bandwidth (-b) (default: 10M)
   --tcp-rate <rate>          TCP pacing rate (iperf3 --fq-rate, optional)
+  --exec-timeout <sec>       Timeout for docker exec calls (default: auto; 0 disables)
 
   Note: If you explicitly set --lan1-clients, LAN2 is disabled unless you also
         explicitly set --lan2-clients (and vice-versa). Use --lan1-only/--lan2-only
@@ -161,6 +167,11 @@ parse_args() {
         TCP_RATE="$2"
         shift 2
         ;;
+      --exec-timeout)
+        [[ $# -ge 2 ]] || die "--exec-timeout requires a value"
+        DOCKER_EXEC_TIMEOUT_SEC="$2"
+        shift 2
+        ;;
       --lan1-clients)
         [[ $# -ge 2 ]] || die "--lan1-clients requires a value"
         LAN1_CLIENTS_RAW="$2"
@@ -221,6 +232,7 @@ parse_args() {
 
   is_uint "$DURATION_SEC" || die "--duration must be an integer (got: $DURATION_SEC)"
   is_uint "$SERVER_PORT" || die "--port must be an integer (got: $SERVER_PORT)"
+  is_uint "$DOCKER_EXEC_TIMEOUT_SEC" || die "--exec-timeout must be an integer (got: $DOCKER_EXEC_TIMEOUT_SEC)"
   if [[ "$USE_UDP" != "1" ]]; then
     is_uint "$PARALLEL_STREAMS" || die "--streams must be an integer (got: $PARALLEL_STREAMS)"
     [[ "$PARALLEL_STREAMS" -ge 1 ]] || die "--streams must be >= 1"
@@ -241,6 +253,19 @@ parse_args() {
   elif [[ "$LAN2_CLIENTS_SET" == "1" && "$LAN1_CLIENTS_SET" != "1" ]]; then
     LAN1_CLIENTS_RAW=""
   fi
+}
+
+docker_exec() {
+  # Wrapper to prevent indefinite hangs.
+  # - If DOCKER_EXEC_TIMEOUT_SEC is 0, run docker exec directly.
+  # - Else, use `timeout` on the host.
+  if [[ "$DOCKER_EXEC_TIMEOUT_SEC" -eq 0 ]]; then
+    docker exec "$@"
+    return
+  fi
+
+  require_cmd timeout
+  timeout --preserve-status "$DOCKER_EXEC_TIMEOUT_SEC" docker exec "$@"
 }
 
 parse_clients() {
@@ -280,7 +305,7 @@ ensure_container_running() {
 
 container_has_iperf3() {
   local name=$1
-  docker exec "$name" sh -lc 'command -v iperf3 >/dev/null 2>&1'
+  docker_exec "$name" sh -lc 'command -v iperf3 >/dev/null 2>&1'
 }
 
 ensure_iperf3_in_container() {
@@ -298,7 +323,7 @@ stop_iperf3_server() {
   local name=$1
   local port=$2
 
-  docker exec "$name" sh -lc '
+  docker_exec "$name" sh -lc '
     port="$1"
     pidfile="/tmp/iperf3_server_${port}.pid"
     if [ -f "$pidfile" ]; then
@@ -318,12 +343,12 @@ try_start_iperf3_server() {
   local pidfile="/tmp/iperf3_server_${port}.pid"
   local logfile="/tmp/iperf3_server_${port}.log"
 
-  docker exec "$name" sh -lc "
+  docker_exec "$name" sh -lc "
     rm -f '$pidfile' '$logfile';
     iperf3 -s -p '$port' -D -1 --pidfile '$pidfile' --logfile '$logfile'
   " >/dev/null 2>&1 || return 1
 
-  docker exec "$name" sh -lc "
+  docker_exec "$name" sh -lc "
     [ -f '$pidfile' ] && kill -0 \"\$(cat '$pidfile')\" >/dev/null 2>&1
   " >/dev/null 2>&1
 }
@@ -542,11 +567,16 @@ run_iperf3_client() {
     fi
   fi
 
-  docker exec "$client_container" iperf3 "${args[@]}"
+  docker_exec "$client_container" iperf3 "${args[@]}"
 }
 
 main() {
   parse_args "$@"
+
+  # Default docker exec timeout: duration + a small buffer (server setup + handshake).
+  if [[ "$DOCKER_EXEC_TIMEOUT_SEC" -eq 0 ]]; then
+    DOCKER_EXEC_TIMEOUT_SEC=$((DURATION_SEC + 25))
+  fi
 
   parse_clients "${LAN1_CLIENTS_RAW}" LAN1_CLIENTS
   parse_clients "${LAN2_CLIENTS_RAW}" LAN2_CLIENTS
