@@ -230,3 +230,4 @@ tese/main.*
 !tese/main.tex
 !tese/main.pdf
 .vscode/settings.json
+source/scripts/osken-controller.env

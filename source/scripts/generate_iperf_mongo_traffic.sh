@@ -26,8 +26,8 @@ DOCKER_EXEC_TIMEOUT_SEC=0
 # per job (base port + job index) and start matching servers on all backends.
 FORCE_SINGLE_PORT=0
 
-LAN1_CLIENTS_RAW=container1
-LAN2_CLIENTS_RAW=container3
+LAN1_CLIENTS_RAW=edge_server_n1
+LAN2_CLIENTS_RAW=edge_server_n2
 
 # Track whether the user explicitly set LAN client lists.
 # If they set only one side, disable the other side (instead of using defaults)
@@ -35,11 +35,8 @@ LAN2_CLIENTS_RAW=container3
 LAN1_CLIENTS_SET=0
 LAN2_CLIENTS_SET=0
 
-LAN1_MONGO_CONTAINER=mongodb-n1
-LAN2_MONGO_CONTAINER=mongodb-n2
-
-LAN1_MONGO_SECONDARY_CONTAINER=mongodb-n3
-LAN2_MONGO_SECONDARY_CONTAINER=mongodb-n4
+LAN1_MONGO_CONTAINER=mongodb_n1
+LAN2_MONGO_CONTAINER=mongodb_n2
 
 LAN1_MONGO_IP=10.0.0.100
 LAN2_MONGO_IP=10.0.1.100
@@ -49,11 +46,10 @@ LAN2_MONGO_IP=10.0.1.100
 # - source/scripts/build_network_2.sh (LAN2)
 # Note: containers use --network none, so Docker can't report these IPs.
 declare -A CLIENT_IP_BY_CONTAINER=(
-  [container1]="10.0.0.2"
-  [container2]="10.0.0.3"
-  [container5]="10.0.0.5"
-  [container3]="10.0.1.2"
-  [container4]="10.0.1.3"
+  [edge_server_n1]="10.0.0.2"
+  [mongodb_n1]="10.0.0.4"
+  [edge_server_n2]="10.0.1.2"
+  [mongodb_n2]="10.0.1.3"
 )
 
 format_clients_with_ips() {
@@ -93,15 +89,13 @@ Options:
         explicitly set --lan2-clients (and vice-versa). Use --lan1-only/--lan2-only
         for clarity.
 
-  --lan1-clients <list>      Comma-separated LAN1 clients (default: container1, only 1)
-  --lan2-clients <list>      Comma-separated LAN2 clients (default: container3, only 1)
+  --lan1-clients <list>      Comma-separated LAN1 clients (default: edge_server_n1)
+  --lan2-clients <list>      Comma-separated LAN2 clients (default: edge_server_n2)
   --lan1-only                Run only LAN1 clients
   --lan2-only                Run only LAN2 clients
 
-  --lan1-mongo <container>   MongoDB container in LAN1 (default: mongodb-n1)
-  --lan2-mongo <container>   MongoDB container in LAN2 (default: mongodb-n2)
-  --lan1-mongo-secondary <c> Secondary MongoDB container in LAN1 (default: mongodb-n3)
-  --lan2-mongo-secondary <c> Secondary MongoDB container in LAN2 (default: mongodb-n4)
+  --lan1-mongo <container>   MongoDB container in LAN1 (default: mongodb_n1)
+  --lan2-mongo <container>   MongoDB container in LAN2 (default: mongodb_n2)
   --lan1-ip <ip>             Target IP in LAN1 (default: 10.0.0.100 VIP)
   --lan2-ip <ip>             Target IP in LAN2 (default: 10.0.1.100 VIP)
 
@@ -110,7 +104,7 @@ Options:
 Examples:
   ./source/scripts/generate_iperf_mongo_traffic.sh --duration 30 --streams 4
   ./source/scripts/generate_iperf_mongo_traffic.sh --udp --bandwidth 50M
-  ./source/scripts/generate_iperf_mongo_traffic.sh --lan1-clients container1,container2 --tcp-rate 7M
+  ./source/scripts/generate_iperf_mongo_traffic.sh --lan1-only --tcp-rate 7M
 EOF
 }
 
@@ -202,16 +196,6 @@ parse_args() {
       --lan2-mongo)
         [[ $# -ge 2 ]] || die "--lan2-mongo requires a value"
         LAN2_MONGO_CONTAINER="$2"
-        shift 2
-        ;;
-      --lan1-mongo-secondary)
-        [[ $# -ge 2 ]] || die "--lan1-mongo-secondary requires a value"
-        LAN1_MONGO_SECONDARY_CONTAINER="$2"
-        shift 2
-        ;;
-      --lan2-mongo-secondary)
-        [[ $# -ge 2 ]] || die "--lan2-mongo-secondary requires a value"
-        LAN2_MONGO_SECONDARY_CONTAINER="$2"
         shift 2
         ;;
       --lan1-ip)
@@ -590,18 +574,14 @@ main() {
   server_containers=()
   if [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
     server_containers+=("$LAN1_MONGO_CONTAINER")
-    server_containers+=("$LAN1_MONGO_SECONDARY_CONTAINER")
   fi
   if [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
     server_containers+=("$LAN2_MONGO_CONTAINER")
-    server_containers+=("$LAN2_MONGO_SECONDARY_CONTAINER")
   fi
 
   if [[ ${#LAN1_CLIENTS[@]} -gt 0 ]]; then
     ensure_container_running "$LAN1_MONGO_CONTAINER"
     ensure_iperf3_in_container "$LAN1_MONGO_CONTAINER"
-    ensure_container_running "$LAN1_MONGO_SECONDARY_CONTAINER"
-    ensure_iperf3_in_container "$LAN1_MONGO_SECONDARY_CONTAINER"
     for client in "${LAN1_CLIENTS[@]}"; do
       ensure_container_running "$client"
       ensure_iperf3_in_container "$client"
@@ -611,8 +591,6 @@ main() {
   if [[ ${#LAN2_CLIENTS[@]} -gt 0 ]]; then
     ensure_container_running "$LAN2_MONGO_CONTAINER"
     ensure_iperf3_in_container "$LAN2_MONGO_CONTAINER"
-    ensure_container_running "$LAN2_MONGO_SECONDARY_CONTAINER"
-    ensure_iperf3_in_container "$LAN2_MONGO_SECONDARY_CONTAINER"
     for client in "${LAN2_CLIENTS[@]}"; do
       ensure_container_running "$client"
       ensure_iperf3_in_container "$client"

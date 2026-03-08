@@ -30,6 +30,7 @@
 - Zone assignment ties datapath IDs to shard ranges using `_zone_order` (`rs_net1`, `rs_net2`) and `_zone_size` chunks; extend these lists if you add switches or shards.
 - Packet logs are prepared in `_queue_event_for_zone` and pushed asynchronously with Eventlet to avoid blocking dataplane reactions; reuse that pattern for any new persistence tasks.
 - Toggle `enable_reactive_learning` when you need pure hub behavior (e.g., debugging new topologies) without editing flow logic.
+- Prefer direct attribute access on Pydantic models (e.g., `instance.attribute`) over `getattr(instance, "attribute")`, especially for required fields. The same for attribute of classes
 
 ## Data + Mongo Layer
 - Mongo endpoints and URIs are centralized in [sdn_controller/models/mongodb_host.py](sdn_controller/models/mongodb_host.py); prefer `MongodbRouter.get_simple_connection_string(add_app=True)` over inlined URIs.

@@ -491,7 +491,7 @@ sleep 2
 # 5 - Run build_network_1.sh to setup first network
 # ==============================
 echo "Building first network (network 1)..."
-./build_network_1.sh
+./network/build_network_1.sh
 if [[ $? -ne 0 ]]; then
     echo "Failed to build first network. Aborting."
     exit 1
@@ -598,9 +598,20 @@ fi
 # 6 - Run build_network_2.sh to setup second network
 # ==============================
 echo "Building second network (network 2)..."
-./build_network_2.sh
+./network/build_network_2.sh
 if [[ $? -ne 0 ]]; then
     echo "Failed to build second network. Aborting."
+    exit 1
+fi
+sleep 2
+
+# ==============================
+# 6.0 - Configure Router WAN and Routes
+# ==============================
+echo "Configuring router WAN interfaces and port-forwardings..."
+./network/build_router.sh
+if [[ $? -ne 0 ]]; then
+    echo "Failed to configure router. Aborting."
     exit 1
 fi
 sleep 2
