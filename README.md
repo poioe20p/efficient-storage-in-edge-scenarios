@@ -1,6 +1,15 @@
 # efficient-storage-in-edge-scenarios
 
-## Instructions
+## Setup Options
+
+This project supports two ways to manage the lab environment:
+
+1. **Docker Compose** (Recommended for development): Modern, declarative approach with simplified management
+2. **Bash Scripts** (Original method): Traditional shell scripts for complete automation
+
+See [DOCKER_COMPOSE.md](DOCKER_COMPOSE.md) for the Docker Compose guide, or continue below for the original script-based setup.
+
+## Instructions (Original Script-based Setup)
 
 > All paths below are relative to the repository root (`efficient-storage-in-edge-scenarios`). Run the commands from that directory unless noted otherwise.
 

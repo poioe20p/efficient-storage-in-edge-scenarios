@@ -1,0 +1,323 @@
+version: '3.8'
+
+# This docker-compose file orchestrates the container lifecycle for the
+# efficient-storage-in-edge-scenarios lab environment.
+#
+# IMPORTANT: This compose file handles container creation and basic configuration,
+# but network plumbing (veth pairs, namespace operations, iptables rules) still
+# requires the companion network setup scripts.
+#
+# Usage:
+#   1. Build images: docker-compose build (or use ./source/scripts/build_images.sh)
+#   2. Start containers: docker-compose up -d
+#   3. Setup networking: Run network setup companion script
+#   4. Stop containers: docker-compose down
+#
+# Note: Some services are marked as manual start (profiles) because they need
+# network configuration before they can function properly.
+
+services:
+  # ============================================================================
+  # OVS Switch Container
+  # Privileged container hosting Open vSwitch bridges and switch fabric
+  # ============================================================================
+  ovs:
+    image: ovs-container:latest
+    container_name: ovs
+    build:
+      context: ./source/docker/OVS
+      dockerfile: Dockerfile
+    privileged: true
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - /lib/modules:/lib/modules:ro
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+
+  # ============================================================================
+  # NAT Router Container
+  # Routes traffic between lab networks and provides Internet access
+  # Requires manual network configuration via scripts
+  # ============================================================================
+  nat-router:
+    image: ubuntu-nat-router:latest
+    container_name: nat-router
+    build:
+      context: ./source/docker/ubuntu-nat-router
+      dockerfile: Dockerfile
+    privileged: true
+    network_mode: none
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - ovs
+
+  # ============================================================================
+  # MongoDB Config Server
+  # Stores metadata and configuration for the sharded cluster
+  # ============================================================================
+  mongodb-config-server:
+    image: mongodb-config-server:latest
+    container_name: mongodb-config-server
+    build:
+      context: ./source/docker/ubuntu-mongodb-configsvr
+      dockerfile: Dockerfile
+    network_mode: host
+    volumes:
+      - mongodb-configdb:/data/configdb
+    command: >
+      mongod
+      --configsvr
+      --replSet configReplSet
+      --port 27019
+      --dbpath /data/configdb
+      --bind_ip 192.168.100.4
+    restart: unless-stopped
+    tty: false
+    stdin_open: false
+    depends_on:
+      - ovs
+
+  # ============================================================================
+  # MongoDB Shard - Network 1
+  # First shard replica set member
+  # ============================================================================
+  mongodb-n1:
+    image: ubuntu-mongodb:latest
+    container_name: mongodb-n1
+    build:
+      context: ./source/docker/ubuntu-mongodb
+      dockerfile: Dockerfile
+    network_mode: none
+    env_file:
+      - .env-mongo
+    volumes:
+      - mongodb-n1-data:/data/db
+    command: >
+      mongod
+      --shardsvr
+      --replSet rs_net1
+      --bind_ip_all
+      --port 27018
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    healthcheck:
+      disable: true
+    depends_on:
+      - ovs
+      - nat-router
+
+  # ============================================================================
+  # MongoDB Shard - Network 2
+  # Second shard replica set member
+  # ============================================================================
+  mongodb-n2:
+    image: ubuntu-mongodb:latest
+    container_name: mongodb-n2
+    build:
+      context: ./source/docker/ubuntu-mongodb
+      dockerfile: Dockerfile
+    network_mode: none
+    env_file:
+      - .env-mongo
+    volumes:
+      - mongodb-n2-data:/data/db
+    command: >
+      mongod
+      --shardsvr
+      --replSet rs_net2
+      --bind_ip_all
+      --port 27018
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    healthcheck:
+      disable: true
+    depends_on:
+      - ovs
+      - nat-router
+
+  # ============================================================================
+  # MongoDB Router (mongos)
+  # Query router for the sharded cluster
+  # ============================================================================
+  mongodb-router:
+    image: mongodb-router:latest
+    container_name: mongodb-router
+    build:
+      context: ./source/docker/ubuntu-mongodb-router
+      dockerfile: Dockerfile
+    network_mode: host
+    command: >
+      mongos
+      --configdb configReplSet/192.168.100.4:27019
+      --bind_ip 192.168.100.4
+      --port 27020
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - mongodb-config-server
+      - mongodb-n1
+      - mongodb-n2
+
+  # ============================================================================
+  # OS-Ken SDN Controller - Instance 1
+  # Controls OVS switches for network 1 (ovs-br0, ovs-br2)
+  # ============================================================================
+  osken:
+    image: osken-controller:latest
+    container_name: osken
+    build:
+      context: ./source/docker/os-ken
+      dockerfile: Dockerfile
+    network_mode: host
+    environment:
+      - MONGO_ROUTER_HOST=${MONGO_ROUTER_HOST:-192.168.100.4}
+      - MONGO_ROUTER_PORT=${MONGO_ROUTER_PORT:-27020}
+      - MONGO_CONFIG_HOST=${MONGO_CONFIG_HOST:-192.168.100.4}
+      - MONGO_CONFIG_PORT=${MONGO_CONFIG_PORT:-27019}
+      - PYTHONPATH=/workspace
+    env_file:
+      - .env-mongo
+    volumes:
+      - ./source:/workspace
+    working_dir: /workspace
+    command: >
+      --observe-links
+      --ofp-tcp-listen-port ${OSKEN1_PORT:-6653}
+      --log-config-file /etc/osken/logging.conf
+      os_ken.topology.switches
+      sdn_controller.calculate_stats_n1
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - mongodb-router
+      - ovs
+
+  # ============================================================================
+  # OS-Ken SDN Controller - Instance 2
+  # Controls OVS switches for network 2 (ovs-br1)
+  # ============================================================================
+  osken_2:
+    image: osken-controller:latest
+    container_name: osken_2
+    build:
+      context: ./source/docker/os-ken
+      dockerfile: Dockerfile
+    network_mode: host
+    environment:
+      - MONGO_ROUTER_HOST=${MONGO_ROUTER_HOST:-192.168.100.4}
+      - MONGO_ROUTER_PORT=${MONGO_ROUTER_PORT:-27020}
+      - MONGO_CONFIG_HOST=${MONGO_CONFIG_HOST:-192.168.100.4}
+      - MONGO_CONFIG_PORT=${MONGO_CONFIG_PORT:-27019}
+      - PYTHONPATH=/workspace
+    env_file:
+      - .env-mongo
+    volumes:
+      - ./source:/workspace
+    working_dir: /workspace
+    command: >
+      --observe-links
+      --ofp-tcp-listen-port ${OSKEN2_PORT:-6654}
+      --log-config-file /etc/osken/logging.conf
+      os_ken.topology.switches
+      sdn_controller.calculate_stats_n2
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - mongodb-router
+      - ovs
+
+  # ============================================================================
+  # Ubuntu Host Containers - Network 1
+  # Application containers for testing and workload generation
+  # ============================================================================
+  container1:
+    image: ubuntu-host:latest
+    container_name: container1
+    build:
+      context: ./source/docker/ubuntu-host
+      dockerfile: Dockerfile
+    network_mode: none
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - ovs
+
+  container2:
+    image: ubuntu-host:latest
+    container_name: container2
+    build:
+      context: ./source/docker/ubuntu-host
+      dockerfile: Dockerfile
+    network_mode: none
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - ovs
+
+  container5:
+    image: ubuntu-host:latest
+    container_name: container5
+    build:
+      context: ./source/docker/ubuntu-host
+      dockerfile: Dockerfile
+    network_mode: none
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - ovs
+
+  # ============================================================================
+  # Ubuntu Host Containers - Network 2
+  # Application containers for testing and workload generation
+  # ============================================================================
+  container3:
+    image: ubuntu-host:latest
+    container_name: container3
+    build:
+      context: ./source/docker/ubuntu-host
+      dockerfile: Dockerfile
+    network_mode: none
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - ovs
+
+  container4:
+    image: ubuntu-host:latest
+    container_name: container4
+    build:
+      context: ./source/docker/ubuntu-host
+      dockerfile: Dockerfile
+    network_mode: none
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      - ovs
+
+# ============================================================================
+# Volumes
+# Persistent storage for MongoDB data
+# ============================================================================
+volumes:
+  mongodb-configdb:
+    name: mongodb-configdb
+  mongodb-n1-data:
+    name: mongodb-n1-data
+  mongodb-n2-data:
+    name: mongodb-n2-data
