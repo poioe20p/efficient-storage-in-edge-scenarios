@@ -174,11 +174,11 @@ sleep 1
 
 
 # =============================
-# 3.1 - Initialize the mongodb_n1 replica set
+# 3.1 - Initialize the edge_storage_server_n1 replica set
 # =============================
-echo "Initializing MongoDB replica set for mongodb_n1..."
+echo "Initializing replica set for edge_storage_server_n1..."
 set +e
-RS_STATUS_CHECK=$(docker exec -i mongodb_n1 mongosh --host 10.0.0.4 --port 27018 --quiet --eval "
+RS_STATUS_CHECK=$(docker exec -i edge_storage_server_n1 mongosh --host 10.0.0.4 --port 27018 --quiet --eval "
 var status;
 try {
     status = rs.status();
@@ -205,7 +205,7 @@ if [[ ${RS_STATUS_CODE} -eq 0 && "${CLEAN_RS_STATUS}" == "ALREADY_INITIALIZED" ]
 else
     echo "Replica set not initialized yet. Running rs.initiate..."
     set +e
-    INIT_OUTPUT=$(docker exec -i mongodb_n1 mongosh --host 10.0.0.4 --port 27018 --quiet --eval "
+    INIT_OUTPUT=$(docker exec -i edge_storage_server_n1 mongosh --host 10.0.0.4 --port 27018 --quiet --eval "
     JSON.stringify(
     rs.initiate({
         _id: 'rs_net1',
@@ -236,11 +236,11 @@ sleep 2
 
 
 # ==============================
-# 5 - Initialize the mongodb_n2 replica set
+# 5 - Initialize the edge_storage_server_n2 replica set
 # ==============================
-echo "Initializing MongoDB replica set for mongodb_n2..."
+echo "Initializing replica set for edge_storage_server_n2..."
 set +e
-RS_STATUS_CHECK=$(docker exec -i mongodb_n2 mongosh --quiet --host 10.0.1.4 --port 27018 --quiet --eval "
+RS_STATUS_CHECK=$(docker exec -i edge_storage_server_n2 mongosh --quiet --host 10.0.1.4 --port 27018 --quiet --eval "
 var status;
 try {
     status = rs.status();
@@ -263,10 +263,10 @@ set -e
 
 CLEAN_RS_STATUS=$(echo "${RS_STATUS_CHECK}" | tr -d '\r\n"')
 if [[ ${RS_STATUS_CODE} -eq 0 && "${CLEAN_RS_STATUS}" == "ALREADY_INITIALIZED" ]]; then
-    echo "Config server replica set already initialized. Skipping rs.initiate."
+    echo "Edge storage server replica set already initialized. Skipping rs.initiate."
 else
     set +e
-    INIT_OUTPUT=$(docker exec -i mongodb_n2 mongosh --quiet --host 10.0.1.4 --port 27018 --quiet --eval "
+    INIT_OUTPUT=$(docker exec -i edge_storage_server_n2 mongosh --quiet --host 10.0.1.4 --port 27018 --quiet --eval "
     JSON.stringify(
     rs.initiate({
         _id: 'rs_net2',
@@ -299,9 +299,9 @@ sleep 2
 # ==============================================
 # 7 - Check if both replica sets are initialized as primary
 # ==============================================
-echo "Verifying MongoDB shard replica set statuses..."
-ensure_rs_primary "rs_net1" "mongodb_n1" "10.0.0.4" "27018" "3" "2"
-ensure_rs_primary "rs_net2" "mongodb_n2" "10.0.1.4" "27018" "3" "2"
+echo "Verifying edge_storage_server replica set statuses..."
+ensure_rs_primary "rs_net1" "edge_storage_server_n1" "10.0.0.4" "27018" "3" "2"
+ensure_rs_primary "rs_net2" "edge_storage_server_n2" "10.0.1.4" "27018" "3" "2"
 
 
 # ==============================
@@ -318,7 +318,7 @@ docker run -dit --name osken --network host \
     --env-file "${OSKEN_ENV_FILE}" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
         --log-config-file /etc/osken/logging.conf \
-        os_ken.topology.switches sdn_controller.calculate_stats_n1
+        os_ken.topology.switches sdn_controller.usecases.topology_n1
 
 docker run -dit --name osken_2 --network host \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
@@ -327,7 +327,7 @@ docker run -dit --name osken_2 --network host \
     -e VIP_IP="10.0.1.100" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
         --log-config-file /etc/osken/logging.conf \
-        os_ken.topology.switches sdn_controller.calculate_stats_n2
+        os_ken.topology.switches sdn_controller.usecases.topology_n2
     # Specify the lan2 VIP IP via environment variable to diferentiate from the ones in .env file
 
 if [[ $? -ne 0 ]]; then

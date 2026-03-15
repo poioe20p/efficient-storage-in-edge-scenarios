@@ -42,9 +42,10 @@ Options:
 	-d, --docker     Clean only Docker resources (containers, dangling images, networks)
 	-s, --stop-containers  Stop all running containers (no removal)
 	    --images     Remove project images tagged :latest (in addition to selected mode)
-	-v, --volumes    Remove MongoDB volumes (mongodb, mongodb-data)
-	-r, --reset      Remove all containers and prune MongoDB volumes (mongodb, mongodb-data)
-	-h, --help       Show this help
+	-v, --volumes            Remove edge_storage_server volumes
+	-r, --reset              Remove all containers and prune edge_storage_server volumes
+	    --image-filter NAME  Scope stop/remove operations to containers from image NAME
+	-h, --help               Show this help
 EOF
 }
 
@@ -155,9 +156,16 @@ docker_cleanup() {
 
 	log "🧹 Cleaning up Docker resources"
 
-	# Stop and remove all containers
+	# Build optional ancestor filter
+	local filter_args=()
+	if [[ -n "$IMAGE_FILTER" ]]; then
+		filter_args=(--filter "ancestor=${IMAGE_FILTER}")
+		log "Filtering containers by image: ${IMAGE_FILTER}"
+	fi
+
+	# Stop and remove containers (all, or filtered by image)
 	local cids
-	if cids=$(${DOCKER} ps -aq 2>/dev/null); then
+	if cids=$(${DOCKER} ps -aq "${filter_args[@]}" 2>/dev/null); then
 		if [[ -n "$cids" ]]; then
 			${DOCKER} stop $cids >/dev/null 2>&1 || true
 			${DOCKER} rm -f $cids >/dev/null 2>&1 || true
@@ -199,8 +207,16 @@ stop_containers() {
 	fi
 
 	log "⏸️ Stopping running containers"
+
+	# Build optional ancestor filter
+	local filter_args=()
+	if [[ -n "$IMAGE_FILTER" ]]; then
+		filter_args=(--filter "ancestor=${IMAGE_FILTER}")
+		log "Filtering containers by image: ${IMAGE_FILTER}"
+	fi
+
 	local running
-	if running=$(${DOCKER} ps -q 2>/dev/null); then
+	if running=$(${DOCKER} ps -q "${filter_args[@]}" 2>/dev/null); then
 		if [[ -n "$running" ]]; then
 			${DOCKER} stop $running >/dev/null 2>&1 || warn "Failed to stop one or more containers"
 			log "Stopped containers: $(echo "$running" | wc -w)"
@@ -224,13 +240,9 @@ images_cleanup() {
 	local images=(
 		ovs-container
 		ubuntu-nat-router
-		ubuntu-host
-		ubuntu-mongodb
+		edge_server
+		edge_storage_server
 		osken-controller
-		mongodb-config-server
-		mongodb-router
-		ubuntu-mongodb-router
-		mongodb-router
 	)
 	local removed=0
 	for img in "${images[@]}"; do
@@ -253,14 +265,14 @@ images_cleanup() {
 }
 
 volumes_cleanup() {
-	log "🧹 Removing MongoDB volumes"
+	log "🧹 Removing edge_storage_server volumes"
 	local DOCKER
 	DOCKER=$(docker_cmd)
 	if [[ -z "$DOCKER" ]]; then
 		warn "Docker not installed; skipping volume removal."
 		return 0
 	fi
-	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-n3-data mongodb-n4-data mongodb-configdb mongodb-router mongodb-config-server)
+	local volumes=(edge-storage-server-n1-data edge-storage-server-n2-data)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
@@ -280,7 +292,7 @@ volumes_cleanup() {
 }
 
 reset_cleanup() {
-	log "♻️ Performing full reset (containers + MongoDB volumes)"
+	log "♻️ Performing full reset (containers + edge_storage_server volumes)"
 	local DOCKER
 	DOCKER=$(docker_cmd)
 	if [[ -z "$DOCKER" ]]; then
@@ -299,10 +311,10 @@ reset_cleanup() {
 		warn "Failed to list containers for reset."
 	fi
 
-	# Ensure named MongoDB containers are removed even if stopped
-	${DOCKER} container rm -f mongodb mongodb-data mongodb-config-server >/dev/null 2>&1 || true
+	# Ensure named storage containers are removed even if stopped
+	${DOCKER} container rm -f edge_storage_server_n1 edge_storage_server_n2 >/dev/null 2>&1 || true
 
-	local volumes=(mongodb mongodb-data mongodb-n1-data mongodb-n2-data mongodb-n3-data mongodb-n4-data mongodb-configdb mongodb-router mongodb-config-server)
+	local volumes=(edge-storage-server-n1-data edge-storage-server-n2-data)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
@@ -317,7 +329,7 @@ reset_cleanup() {
 		fi
 	done
 	if [[ $removed -gt 0 ]]; then
-		log "✅ Reset removed ${removed} MongoDB volume(s)."
+			log "✅ Reset removed ${removed} edge_storage_server volume(s)."
 	fi
 }
 
@@ -327,6 +339,7 @@ DO_VOLUMES=false
 DO_RESET=false
 DO_STOP_CONTAINERS=false
 MODE_SELECTED=false
+IMAGE_FILTER=""
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-n|--network)
@@ -341,6 +354,9 @@ while [[ $# -gt 0 ]]; do
 			DO_VOLUMES=true; shift ;;
 		-r|--reset)
 			DO_RESET=true; shift ;;
+		--image-filter)
+			[[ -z "${2-}" ]] && { error "--image-filter requires an argument"; exit 2; }
+			IMAGE_FILTER="$2"; shift 2 ;;
 		-h|--help)
 			print_usage; exit 0 ;;
 		*)
@@ -382,7 +398,7 @@ if [[ "$DO_VOLUMES" == true ]]; then
 	volumes_cleanup
 fi
 
-# Reset option (containers + MongoDB volumes)
+# Reset option (containers + edge_storage_server volumes)
 if [[ "$DO_RESET" == true ]]; then
 	reset_cleanup
 fi

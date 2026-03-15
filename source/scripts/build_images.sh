@@ -11,7 +11,7 @@ fi
 #   ./build_images.sh                # Build all images
 #   ./build_images.sh OVS            # Build only the OVS image (by directory name)
 #   ./build_images.sh ovs-container  # Build only the OVS image (by tag)
-#   ./build_images.sh OVS ubuntu-host ubuntu-mongodb  # Build selected images
+#   ./build_images.sh OVS edge_server edge_storage_server  # Build selected images
 #
 # Notes:
 # - The script auto-detects the project root based on its own location.
@@ -43,7 +43,7 @@ Usage:
 	./build_images.sh                # Build all images
 	./build_images.sh OVS            # Build only the OVS image (by directory name)
 	./build_images.sh ovs-container  # Build only the OVS image (by tag)
-	./build_images.sh OVS ubuntu-host ubuntu-mongodb  # Build selected images
+	./build_images.sh OVS edge_server edge_storage_server  # Build selected images
 
 Options:
 	-r, --reset NAME   Remove the running/stopped container associated with NAME before rebuilding.
@@ -95,19 +95,19 @@ set -- "${POSITIONAL_ARGS[@]}"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
 DOCKER_DIR="${REPO_ROOT}/docker"
-MONGO_ENV_FILE="${REPO_ROOT}/.env-mongo"
+STORAGE_ENV_FILE="${REPO_ROOT}/.env-mongo"
 
-# Export variables in MONGO_ENV_FILE for use as build args if needed
-if [[ -f "$MONGO_ENV_FILE" ]]; then
-	log "Loading MongoDB environment from: $MONGO_ENV_FILE"
-	# Export all simple KEY=VALUE entries from the env file
-	set -a
-	source "$MONGO_ENV_FILE"
-	set +a
-else
-	log "MongoDB env file not found at: $MONGO_ENV_FILE"
-	log "MongoDB image will build, but container may start without authentication!"
-fi
+# # Export variables in STORAGE_ENV_FILE for use as build args if needed
+# if [[ -f "$STORAGE_ENV_FILE" ]]; then
+# 	log "Loading edge_storage_server environment from: $STORAGE_ENV_FILE"
+# 	# Export all simple KEY=VALUE entries from the env file
+# 	set -a
+# 	source "$STORAGE_ENV_FILE"
+# 	set +a
+# else
+# 	log "edge_storage_server env file not found at: $STORAGE_ENV_FILE"
+# 	log "edge_storage_server image will build, but container may start without authentication!"
+# fi
 
 
 [[ -d "$DOCKER_DIR" ]] || {
@@ -155,21 +155,13 @@ log "Docker command: $DOCKER"
 declare -A CONTAINER_NAME_MAP=(
 	["ovs"]="ovs"
 	["ovs-container"]="ovs"
-	# ["ryu"]="ryu"
-	# ["ryu-controller"]="ryu"
 	["os-ken"]="osken"
 	["osken-controller"]="osken"
-	["ubuntu-host"]="edge_server_n1"
-	["ubuntu-host"]="edge_server_n2"
+	["edge_server"]="edge_server_n1"
+	["edge_server"]="edge_server_n2"
+	["edge_storage_server"]="edge_storage_server_n1"
+	["edge_storage_server"]="edge_storage_server_n2"
 	["ubuntu-nat-router"]="nat-router"
-	["ubuntu-mongodb"]="mongodb"
-	["edge_server_n1"]="edge_server_n1"
-	["edge_server_n2"]="edge_server_n2"
-	["nat-router"]="nat-router"
-	["mongodb"]="mongodb"
-	# ["mongodb-config-server"]="mongodb-config-server"
-	# ["mongodb-router"]="mongodb-router"
-	# ["ubuntu-mongodb-router"]="mongodb-router"
 )
 
 resolve_container_name() {
@@ -221,11 +213,9 @@ declare -A RESET_APPLIED=()
 IMAGES=(
 	"OVS:ovs-container"
 	"ubuntu-nat-router:ubuntu-nat-router"
-	"ubuntu-host:ubuntu-host"
-	"ubuntu-mongodb:ubuntu-mongodb"
+	"edge_server:edge_server"
+	"edge_storage_server:edge_storage_server"
 	"os-ken:osken-controller"
-	"ubuntu-mongodb-configsvr:mongodb-config-server"
-	"ubuntu-mongodb-router:mongodb-router"
 )
 
 ### Build helper

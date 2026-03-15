@@ -56,12 +56,17 @@ sudo nsenter -t $PID_ROUTER -n bash -c "
   echo 1 > /proc/sys/net/ipv4/ip_forward
 "
 
-# Ensure the host can reach the lab subnet (10.0.0.0/24) for tools like MongoDB Compass
-echo "Ensuring host route to 10.0.0.0/24 via 192.168.100.2..."
+# Ensure the host can reach both lab subnets via the NAT router WAN interface
+echo "Ensuring host routes to 10.0.0.0/24 and 10.0.1.0/24 via 192.168.100.2..."
 if ! sudo ip route replace 10.0.0.0/24 via 192.168.100.2 dev veth4 >/dev/null 2>&1; then
   echo "WARNING: failed to program route to 10.0.0.0/24; check host networking." >&2
 else
   ip route show 10.0.0.0/24
+fi
+if ! sudo ip route replace 10.0.1.0/24 via 192.168.100.2 dev veth4 >/dev/null 2>&1; then
+  echo "WARNING: failed to program route to 10.0.1.0/24; check host networking." >&2
+else
+  ip route show 10.0.1.0/24
 fi
 
 # Enable IP forwarding + NAT on host for Internet access
@@ -99,38 +104,29 @@ sudo nsenter -t $PID_ROUTER -n bash -c '
   done
 '
 
-# Forward mongodb traffic between the WAN (eth0) and LAN sides (eth1, eth2)
+# Forward traffic between all interface pairs (WAN↔LAN1, WAN↔LAN2, LAN1↔LAN2)
 sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth0 -o eth1 -j ACCEPT
 sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT
 sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth0 -o eth2 -j ACCEPT
 sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth2 -o eth0 -j ACCEPT
+# Cross-LAN forwarding (needed for inter-LAN connectivity)
+sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth1 -o eth2 -j ACCEPT
+sudo nsenter -t $PID_ROUTER -n iptables -A FORWARD -i eth2 -o eth1 -j ACCEPT
 
 # Expose MongoDB members via DNAT/SNAT
-# mongodb_n1 (10.0.0.4:27018) exposed as 192.168.100.2:27018
+# edge_storage_server_n1 (10.0.0.4:27018) exposed as 192.168.100.2:27018
 sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
   -d 192.168.100.2 --dport 27018 -j DNAT --to-destination 10.0.0.4:27018
 sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth1 -p tcp \
   -s 10.0.0.4 --sport 27018 -j SNAT --to-source 192.168.100.2:27018
 
-# mongodb-n3 (10.0.0.6:27018) exposed as 192.168.100.2:27118
-sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
-  -d 192.168.100.2 --dport 27118 -j DNAT --to-destination 10.0.0.6:27018
-sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth1 -p tcp \
-  -s 10.0.0.6 --sport 27018 -j SNAT --to-source 192.168.100.2:27118
-
 # NETWORK 2 MongoDB 
 # ------------------------
-# mongodb-n2 (10.0.1.4:27018) exposed as 192.168.100.2:27118
+# edge_storage_server_n2 (10.0.1.4:27018) exposed as 192.168.100.2:27118
 sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
   -d 192.168.100.2 --dport 27118 -j DNAT --to-destination 10.0.1.4:27018
 sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth2 -p tcp \
   -s 10.0.1.4 --sport 27018 -j SNAT --to-source 192.168.100.2:27118
-
-# mongodb_n2 (10.0.1.5:27018) exposed as 192.168.100.2:27218
-sudo nsenter -t $PID_ROUTER -n iptables -t nat -A PREROUTING -i eth0 -p tcp \
-  -d 192.168.100.2 --dport 27218 -j DNAT --to-destination 10.0.1.5:27018
-sudo nsenter -t $PID_ROUTER -n iptables -t nat -A POSTROUTING -o eth2 -p tcp \
-  -s 10.0.1.5 --sport 27018 -j SNAT --to-source 192.168.100.2:27218
 
 echo "============================================================================"
 echo "NAT router configuration complete."

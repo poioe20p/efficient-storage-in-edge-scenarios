@@ -1,7 +1,14 @@
 #!/bin/bash
 
 # ============================================================================
-# Attach a running Docker container to an existing LAN managed by OVS
+# Attach a running MongoDB container to an existing LAN and join a replica set
+# ============================================================================
+# Prerequisites:
+#   The container must already be running with --replSet <rs_name> --bind_ip_all
+#   Example:
+#     docker run -dit --name edge_storage_server_n1_member2 --network none \
+#       -v edge_storage_server_n1_member2-data:/data/db edge_storage_server mongod \
+#       --replSet rs_net1 --bind_ip_all --port 27018
 # ============================================================================
 
 set -euo pipefail
@@ -12,6 +19,8 @@ readonly OVS_CONTAINER="ovs"
 declare -A LAN_BRIDGE=( [1]="ovs-br0" [2]="ovs-br1" )
 declare -A LAN_SUBNET=( [1]="10.0.0" [2]="10.0.1" )
 declare -A LAN_GATEWAY=( [1]="10.0.0.1" [2]="10.0.1.1" )
+declare -A LAN_DEFAULT_RS=( [1]="rs_net1" [2]="rs_net2" )
+declare -A LAN_DEFAULT_PRIMARY_CONTAINER=( [1]="edge_storage_server_n1" [2]="edge_storage_server_n2" )
 declare -A VETH_RANGE_START=( [1]=10 [2]=30 )
 declare -A VETH_RANGE_END=( [1]=19 [2]=49 )
 declare -A RESERVED_SUFFIX=( [1]="1 100" [2]="1 100" )
@@ -21,28 +30,33 @@ CONTAINER_NAME=""
 IP=""
 MAC=""
 IFACE_NAME="eth0"
+PORT=27018
+RS_NAME=""
+PRIMARY_CONTAINER=""
 PID_OVS=""
 
 usage() {
 	cat <<EOF
 Usage: $SCRIPT_NAME --lan <1|2> --name <container> [OPTIONS]
 
-Attach an already-running Docker container to an existing LAN.
+Attach an already-running MongoDB container to an existing LAN and join its replica set.
 
 Required:
-  --lan <1|2>              Target LAN
-  --name, -n <container>   Running Docker container name
+  --lan <1|2>                  Target LAN
+  --name, -n <container>       Running Docker container name
 
 Optional:
-  --ip <x.x.x.x>           IP address (auto-assigned if omitted)
-  --mac <XX:XX:XX:XX:XX:XX>
-						   MAC address (auto-generated if omitted)
-  --iface <name>           Interface name inside the container (default: eth0)
-  -h, --help               Show this help
+  --ip <x.x.x.x>               IP address (auto-assigned if omitted)
+  --mac <XX:XX:XX:XX:XX:XX>    MAC address (auto-generated if omitted)
+  --iface <name>               Interface name inside the container (default: eth0)
+  --port <port>                MongoDB port (default: 27018)
+  --rs-name <name>             Replica set name (default: rs_net1 / rs_net2 based on LAN)
+  --primary <container>        Container to run rs.add() on (default: edge_storage_server_n[LAN])
+  -h, --help                   Show this help
 
 Examples:
-  $SCRIPT_NAME --lan 1 --name test_client_1
-  $SCRIPT_NAME --lan 2 --name edge_storage_server_n2_member2 --ip 10.0.1.5
+  $SCRIPT_NAME --lan 1 --name edge_storage_server_n1_member2
+  $SCRIPT_NAME --lan 2 --name edge_storage_server_n2_member2 --ip 10.0.1.5 --rs-name rs_net2
 EOF
 	exit 0
 }
@@ -66,15 +80,19 @@ validate_requirements() {
 	local state
 	state=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null) \
 		|| die "Container '$CONTAINER_NAME' does not exist."
-
 	[[ "$state" == "running" ]] \
 		|| die "Container '$CONTAINER_NAME' is not running (state: ${state})."
+
+	state=$(docker inspect -f '{{.State.Status}}' "$PRIMARY_CONTAINER" 2>/dev/null) \
+		|| die "Primary container '$PRIMARY_CONTAINER' does not exist."
+	[[ "$state" == "running" ]] \
+		|| die "Primary container '$PRIMARY_CONTAINER' is not running (state: ${state})."
 
 	docker inspect -f '{{.State.Pid}}' "$OVS_CONTAINER" >/dev/null 2>&1 \
 		|| die "Container '$OVS_CONTAINER' is not running."
 
 	docker exec "$OVS_CONTAINER" ovs-vsctl br-exists "${LAN_BRIDGE[$LAN]}" \
-		|| die "OVS bridge '${LAN_BRIDGE[$LAN]}' does not exist." # Check if the specified LAN bridge exists in OVS
+		|| die "OVS bridge '${LAN_BRIDGE[$LAN]}' does not exist."
 }
 
 collect_used_ips() {
@@ -94,7 +112,7 @@ collect_used_ips() {
 
 		local addrs
 		addrs=$(sudo nsenter -t "$pid" -n ip -4 -o addr show 2>/dev/null \
-			| grep -oE "${subnet//./\\.}\.[0-9]+" || true) # Extract IP, -4 for ipv4 and -o for one-line output
+			| grep -oE "${subnet//./\\.}\.[0-9]+" || true)
 
 		local addr
 		for addr in $addrs; do
@@ -108,7 +126,6 @@ collect_used_ips() {
 validate_ip_not_taken() {
 	local used
 	used=$(collect_used_ips)
-
 	if echo "$used" | grep -qxF "$IP"; then
 		die "IP $IP is already in use on LAN ${LAN}."
 	fi
@@ -155,10 +172,105 @@ find_free_veth_index() {
 
 cleanup_stale_veth() {
 	local ovs_veth="$1"
-
 	if ip link show "$ovs_veth" >/dev/null 2>&1; then
 		sudo ip link del "$ovs_veth" >/dev/null 2>&1 || true
 	fi
+}
+
+# Find the current primary host:port by querying PRIMARY_CONTAINER
+find_primary_host() {
+	local primary_host
+	set +e
+	primary_host=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet --port "$PORT" --eval "
+try {
+    var m = db.adminCommand({ isMaster: 1 });
+    print(m.primary);
+} catch(e) {
+    print('ERROR:' + e);
+}
+" 2>/dev/null | tr -d '\r\n')
+	set -e
+
+	[[ -z "$primary_host" || "$primary_host" == ERROR:* ]] \
+		&& die "Could not determine primary of '${RS_NAME}' via '${PRIMARY_CONTAINER}': ${primary_host}"
+
+	echo "$primary_host"  # e.g. 10.0.0.4:27018
+}
+
+rs_add_member() {
+	local new_host="${IP}:${PORT}"
+	local primary_host="$1"   # host:port of current primary
+	local primary_ip="${primary_host%%:*}"
+	local primary_port="${primary_host##*:}"
+
+	echo "Running rs.add('${new_host}') via primary ${primary_host}..."
+	set +e
+	local output
+	output=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet \
+		--host "$primary_ip" --port "$primary_port" --eval "
+JSON.stringify(rs.add('${new_host}'))
+" 2>/dev/null)
+	set -e
+
+	if ! echo "$output" | grep -Eq '"ok"\s*:\s*1'; then
+		echo "rs.add() did not return ok:1. Output:"
+		printf '%s\n' "$output"
+		die "rs.add('${new_host}') failed."
+	fi
+
+	echo "rs.add('${new_host}') succeeded."
+}
+
+ensure_rs_secondary() {
+	local new_host="${IP}:${PORT}"
+	local primary_host="$1"
+	local primary_ip="${primary_host%%:*}"
+	local primary_port="${primary_host##*:}"
+	local max_retries="${2:-10}"
+	local retry_delay="${3:-3}"
+
+	echo "Waiting for '${CONTAINER_NAME}' (${new_host}) to reach SECONDARY state..."
+
+	local attempt
+	for attempt in $(seq 1 "${max_retries}"); do
+		echo "  Status check attempt ${attempt}/${max_retries}..."
+		set +e
+		local state
+		state=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet \
+			--host "$primary_ip" --port "$primary_port" --eval "
+try {
+    var status = rs.status();
+    var member = status.members.find(m => m.name === '${new_host}');
+    print(member ? member.stateStr : 'NOT_FOUND');
+} catch(e) {
+    print('ERROR:' + e);
+}
+" 2>/dev/null | tr -d '\r\n')
+		set -e
+
+		case "$state" in
+			SECONDARY)
+				echo "  ✅ ${new_host} is SECONDARY."
+				return 0
+				;;
+			STARTUP*|RECOVERING)
+				echo "  Still syncing (${state}), retrying in ${retry_delay}s..."
+				;;
+			NOT_FOUND)
+				echo "  Member not yet visible in rs.status(), retrying in ${retry_delay}s..."
+				;;
+			ERROR:*)
+				echo "  rs.status() error: ${state}, retrying in ${retry_delay}s..."
+				;;
+			*)
+				echo "  Unexpected state '${state}', retrying in ${retry_delay}s..."
+				;;
+		esac
+
+		sleep "${retry_delay}"
+	done
+
+	die "'${new_host}' did not reach SECONDARY after ${max_retries} attempts."
 }
 
 main() {
@@ -169,7 +281,7 @@ main() {
 	local gateway="${LAN_GATEWAY[$LAN]}"
 
 	echo "============================================================================"
-	echo "Attaching container '${CONTAINER_NAME}' to LAN ${LAN}"
+	echo "Attaching storage container '${CONTAINER_NAME}' to LAN ${LAN}"
 	echo "============================================================================"
 
 	if [[ -z "$IP" ]]; then
@@ -217,7 +329,7 @@ main() {
 
 	echo
 	echo "============================================================================"
-	echo "Node added successfully"
+	echo "Network node added successfully"
 	echo "============================================================================"
 	echo "  Container      : ${CONTAINER_NAME}"
 	echo "  LAN            : ${LAN} (${bridge})"
@@ -235,8 +347,37 @@ main() {
 	else
 		echo "  ⚠️  Gateway ping failed — SDN flows may not be installed yet" >&2
 	fi
+
+	# ============================================================================
+	# Replica set membership
+	# ============================================================================
+	echo
+	echo "============================================================================"
+	echo "Joining replica set '${RS_NAME}'"
+	echo "============================================================================"
+
+	local primary_host
+	primary_host=$(find_primary_host)
+	echo "  Primary: ${primary_host}"
+
+	rs_add_member "$primary_host"
+
+	ensure_rs_secondary "$primary_host"
+
+	echo
+	echo "============================================================================"
+	echo "Storage node joined successfully"
+	echo "============================================================================"
+	echo "  Container      : ${CONTAINER_NAME}"
+	echo "  Replica set    : ${RS_NAME}"
+	echo "  Member         : ${IP}:${PORT}"
+	echo "  Primary        : ${primary_host}"
+	echo "============================================================================"
 }
 
+# ============================================================================
+# Argument parsing
+# ============================================================================
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--lan)
@@ -259,6 +400,18 @@ while [[ $# -gt 0 ]]; do
 			IFACE_NAME="$2"
 			shift 2
 			;;
+		--port)
+			PORT="$2"
+			shift 2
+			;;
+		--rs-name)
+			RS_NAME="$2"
+			shift 2
+			;;
+		--primary)
+			PRIMARY_CONTAINER="$2"
+			shift 2
+			;;
 		-h|--help)
 			usage
 			;;
@@ -267,5 +420,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 	esac
 done
+
+# Apply defaults that depend on LAN (must be after arg parsing)
+[[ -n "$LAN" ]] || die "--lan is required."
+[[ -z "$RS_NAME" ]] && RS_NAME="${LAN_DEFAULT_RS[$LAN]}"
+[[ -z "$PRIMARY_CONTAINER" ]] && PRIMARY_CONTAINER="${LAN_DEFAULT_PRIMARY_CONTAINER[$LAN]}"
 
 main

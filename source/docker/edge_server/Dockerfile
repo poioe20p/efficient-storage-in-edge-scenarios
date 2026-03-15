@@ -4,10 +4,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 DB_URL=mongodb://10.0.0.4:27017/test \
 MONGO_VERSION=7.0
 
-# Base networking tools + MongoDB mongosh client
+# Base networking tools + Python + MongoDB mongosh client
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates curl gnupg iputils-ping net-tools iperf3 \
+       python3 python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     # Add MongoDB repo (7.0 for jammy)
     && mkdir -p /etc/apt/keyrings \
@@ -19,4 +20,10 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-CMD ["/bin/bash"]
+RUN pip3 install --no-cache-dir flask
+
+COPY app.py /app.py
+
+EXPOSE 5000
+
+CMD ["python3", "/app.py"]

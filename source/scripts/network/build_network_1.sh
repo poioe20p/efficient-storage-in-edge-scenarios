@@ -16,16 +16,8 @@ done
 
 # Add links to kernel
 sudo ip link add veth1 type veth peer name veth1-peer # edge_server_n1
-sudo ip link add veth2 type veth peer name veth2-peer # mongodb_n1
+sudo ip link add veth2 type veth peer name veth2-peer # edge_storage_server_n1
 sudo ip link add veth3 type veth peer name veth3-peer # router LAN side
-
-# ==============================
-# 3 - Attach veth peers to OVS bridge
-# =============================
-echo "Attaching veth peers to OVS bridge..."
-docker exec ovs ip link set veth1 up # bring up interface connected to edge_server_n1
-docker exec ovs ip link set veth2 up # bring up interface connected to mongodb_n1
-docker exec ovs ip link set veth3 up # bring up interface connected to router LAN side
 
 # ==============================
 # Step 3.1: Move veth interfaces into OVS container's namespace
@@ -47,17 +39,25 @@ docker exec ovs ovs-vsctl add-port ovs-br0 veth2
 docker exec ovs ovs-vsctl add-port ovs-br0 veth3
 
 # ==============================
+# Step 3.3: Bring up veth interfaces inside OVS namespace (must happen after netns move)
+echo "Bringing up veth interfaces inside OVS namespace..."
+# ==============================
+docker exec ovs ip link set veth1 up # interface connected to edge_server_n1
+docker exec ovs ip link set veth2 up # interface connected to edge_storage_server_n1
+docker exec ovs ip link set veth3 up # interface connected to router LAN side
+
+# ==============================
 # Step 4: Launch containers
 echo "Launching application containers..."
 # ==============================
 # --network none: prevents Docker from creating default network
 # --privileged for NAT router: needed to run iptables inside it
-docker run -dit --name edge_server_n1 --network none ubuntu-host
+docker run -dit --name edge_server_n1 --network none edge_server
 
-echo "Starting MongoDB shard member container mongodb_n1..."
-docker run -dit --name mongodb_n1 --network none \
+echo "Starting edge_storage_server_n1 container..."
+docker run -dit --name edge_storage_server_n1 --network none \
   --no-healthcheck \
-  -v mongodb_n1-data:/data/db ubuntu-mongodb mongod \
+  -v edge_storage_server_n1-data:/data/db edge_storage_server mongod \
   --replSet rs_net1 --bind_ip_all --port 27018
 
 # If any docker run fails, abort early.
@@ -70,7 +70,7 @@ fi
 # Get process IDs (needed to move interfaces into namespaces)
 PID1=$(docker inspect -f '{{.State.Pid}}' edge_server_n1)
 PID_ROUTER=$(docker inspect -f '{{.State.Pid}}' nat-router)
-PID_MONGO=$(docker inspect -f '{{.State.Pid}}' mongodb_n1)
+PID_MONGO=$(docker inspect -f '{{.State.Pid}}' edge_storage_server_n1)
 
 # ==============================
 # Step 5: Move peer interfaces into the containers
@@ -97,7 +97,7 @@ sudo nsenter -t $PID1 -n ip link set eth0 up
 sudo nsenter -t $PID1 -n ip addr add 10.0.0.2/24 dev eth0
 sudo nsenter -t $PID1 -n ip route add default via 10.0.0.1  # router as gateway
 
-# Configure mongodb container
+# Configure edge_storage_server_n1 container
 sudo nsenter -t $PID_MONGO -n ip link set veth2-peer name eth0
 sudo nsenter -t $PID_MONGO -n ip link set eth0 address 00:00:00:00:00:04   # static MAC
 sudo nsenter -t $PID_MONGO -n ip link set eth0 up
