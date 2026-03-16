@@ -272,7 +272,8 @@ volumes_cleanup() {
 		warn "Docker not installed; skipping volume removal."
 		return 0
 	fi
-	local volumes=(edge-storage-server-n1-data edge-storage-server-n2-data)
+	# Base node volumes
+	local volumes=(edge_storage_server_n1-data edge_storage_server_n2-data)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
@@ -284,6 +285,20 @@ volumes_cleanup() {
 			fi
 		else
 			log "Volume not present, skipping: $vol"
+		fi
+	done
+	# Extra node volumes: naming convention is edge_storage_server_n<LAN>_<N>-data
+	# e.g. edge_storage_server_n1_1-data, edge_storage_server_n2_3-data
+	# Distinguished from base volumes (edge_storage_server_n1-data) by the underscore after the LAN digit.
+	local extra_vols
+	extra_vols=$(${DOCKER} volume ls --format '{{.Name}}' 2>/dev/null \
+		| grep -E '^edge_storage_server_n[0-9]_[0-9]' || true)
+	for vol in $extra_vols; do
+		if ${DOCKER} volume rm "$vol" >/dev/null 2>&1; then
+			log "Removed extra node volume: $vol"
+			((++removed))
+		else
+			warn "Failed to remove extra node volume: $vol"
 		fi
 	done
 	if [[ $removed -gt 0 ]]; then
@@ -314,7 +329,8 @@ reset_cleanup() {
 	# Ensure named storage containers are removed even if stopped
 	${DOCKER} container rm -f edge_storage_server_n1 edge_storage_server_n2 >/dev/null 2>&1 || true
 
-	local volumes=(edge-storage-server-n1-data edge-storage-server-n2-data)
+	# Base node volumes
+	local volumes=(edge_storage_server_n1-data edge_storage_server_n2-data)
 	local removed=0
 	for vol in "${volumes[@]}"; do
 		if ${DOCKER} volume inspect "$vol" >/dev/null 2>&1; then
@@ -326,6 +342,18 @@ reset_cleanup() {
 			fi
 		else
 			log "Volume not present, skipping: $vol"
+		fi
+	done
+	# Extra node volumes: naming convention is edge_storage_server_n<LAN>_<N>-data
+	local extra_vols
+	extra_vols=$(${DOCKER} volume ls --format '{{.Name}}' 2>/dev/null \
+		| grep -E '^edge_storage_server_n[0-9]_[0-9]' || true)
+	for vol in $extra_vols; do
+		if ${DOCKER} volume rm -f "$vol" >/dev/null 2>&1; then
+			log "Removed extra node volume: $vol"
+			((++removed))
+		else
+			warn "Failed to remove extra node volume: $vol"
 		fi
 	done
 	if [[ $removed -gt 0 ]]; then

@@ -161,6 +161,20 @@ cleanup_stale_veth() {
 	fi
 }
 
+# Remove all OVS flow entries that reference the given MAC as either source or
+# destination. This is necessary when re-attaching a container with a MAC that
+# was previously on a different OVS port: without this, stale flows would
+# forward packets to the old (now-deleted) port and the new node would never
+# receive replies.
+flush_stale_mac_flows() {
+	local bridge="$1"
+	local mac="$2"
+
+	echo "Flushing stale OVS flows for MAC ${mac} on ${bridge}..."
+	docker exec "$OVS_CONTAINER" ovs-ofctl del-flows "$bridge" "dl_src=${mac}" 2>/dev/null || true
+	docker exec "$OVS_CONTAINER" ovs-ofctl del-flows "$bridge" "dl_dst=${mac}" 2>/dev/null || true
+}
+
 main() {
 	validate_requirements
 	ensure_ovs_namespace
@@ -202,6 +216,10 @@ main() {
 	docker exec "$OVS_CONTAINER" ip link set "$ovs_veth" up
 	docker exec "$OVS_CONTAINER" ovs-vsctl add-port "$bridge" "$ovs_veth"
 
+	# Purge any stale flows from a prior attachment of this MAC on a different
+	# port — otherwise the controller routes replies to the old dead port.
+	flush_stale_mac_flows "$bridge" "$MAC"
+
 	local pid
 	pid=$(docker inspect -f '{{.State.Pid}}' "$CONTAINER_NAME")
 
@@ -227,14 +245,6 @@ main() {
 	echo "  Switch port    : ${ovs_veth} (inside OVS / ${bridge})"
 	echo "  Container link : ${container_veth} -> ${IFACE_NAME} (inside ${CONTAINER_NAME})"
 	echo "============================================================================"
-
-	# Ping the gateway to trigger SDN controller flow installation for this host
-	echo "Announcing to SDN controller via gateway ping..."
-	if sudo nsenter -t "$pid" -n ping -c1 -W2 "$gateway" > /dev/null 2>&1; then
-		echo "  ✅ ${CONTAINER_NAME} announced (${IP} -> ${gateway})"
-	else
-		echo "  ⚠️  Gateway ping failed — SDN flows may not be installed yet" >&2
-	fi
 }
 
 while [[ $# -gt 0 ]]; do

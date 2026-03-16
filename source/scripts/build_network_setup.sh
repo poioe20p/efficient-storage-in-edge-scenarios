@@ -300,8 +300,8 @@ sleep 2
 # 7 - Check if both replica sets are initialized as primary
 # ==============================================
 echo "Verifying edge_storage_server replica set statuses..."
-ensure_rs_primary "rs_net1" "edge_storage_server_n1" "10.0.0.4" "27018" "3" "2"
-ensure_rs_primary "rs_net2" "edge_storage_server_n2" "10.0.1.4" "27018" "3" "2"
+ensure_rs_primary "rs_net1" "edge_storage_server_n1" "10.0.0.4" "27018" "15" "5"
+ensure_rs_primary "rs_net2" "edge_storage_server_n2" "10.0.1.4" "27018" "15" "5"
 
 
 # ==============================

@@ -1,0 +1,6 @@
+docker run -dit --name edge_storage_server_n1_1 --network none \
+  --no-healthcheck \
+  -v edge_storage_server_n1_1-data:/data/db edge_storage_server mongod \
+  --replSet rs_net1 --bind_ip_all --port 27018
+
+docker run -dit --name edge_server_n1 --network none edge_server

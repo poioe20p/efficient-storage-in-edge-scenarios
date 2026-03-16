@@ -177,6 +177,18 @@ cleanup_stale_veth() {
 	fi
 }
 
+# Remove all OVS flow entries that reference the given MAC as either source or
+# destination. Prevents stale flows from a prior attachment on a different port
+# from silently dropping traffic to/from the re-attached container.
+flush_stale_mac_flows() {
+	local bridge="$1"
+	local mac="$2"
+
+	echo "Flushing stale OVS flows for MAC ${mac} on ${bridge}..."
+	docker exec "$OVS_CONTAINER" ovs-ofctl del-flows "$bridge" "dl_src=${mac}" 2>/dev/null || true
+	docker exec "$OVS_CONTAINER" ovs-ofctl del-flows "$bridge" "dl_dst=${mac}" 2>/dev/null || true
+}
+
 # Find the current primary host:port by querying PRIMARY_CONTAINER
 find_primary_host() {
 	local primary_host
@@ -208,9 +220,20 @@ rs_add_member() {
 	local output
 	output=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet \
 		--host "$primary_ip" --port "$primary_port" --eval "
-JSON.stringify(rs.add('${new_host}'))
+try {
+    var result = rs.add('${new_host}');
+    print(JSON.stringify(result));
+} catch(e) {
+    print('ERROR:' + e);
+}
 " 2>/dev/null)
 	set -e
+
+	if echo "$output" | grep -q '^ERROR:'; then
+		echo "rs.add() threw an exception:"
+		printf '%s\n' "$output"
+		die "rs.add('${new_host}') failed."
+	fi
 
 	if ! echo "$output" | grep -Eq '"ok"\s*:\s*1'; then
 		echo "rs.add() did not return ok:1. Output:"
@@ -273,6 +296,25 @@ try {
 	die "'${new_host}' did not reach SECONDARY after ${max_retries} attempts."
 }
 
+# Returns lines of the form "host:port STATE" for every member in the replica set.
+# Non-fatal: prints a warning and returns an empty string on failure.
+get_rs_members() {
+	local primary_host="$1"
+	local primary_ip="${primary_host%%:*}"
+	local primary_port="${primary_host##*:}"
+
+	set +e
+	local output
+	output=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet \
+		--host "$primary_ip" --port "$primary_port" --eval "
+var status = rs.status();
+status.members.forEach(function(m) { print(m.name + ' ' + m.stateStr); });
+" 2>/dev/null)
+	set -e
+
+	echo "$output"
+}
+
 main() {
 	validate_requirements
 	ensure_ovs_namespace
@@ -314,6 +356,10 @@ main() {
 	docker exec "$OVS_CONTAINER" ip link set "$ovs_veth" up
 	docker exec "$OVS_CONTAINER" ovs-vsctl add-port "$bridge" "$ovs_veth"
 
+	# Purge any stale flows from a prior attachment of this MAC on a different
+	# port — otherwise the controller routes replies to the old dead port.
+	flush_stale_mac_flows "$bridge" "$MAC"
+
 	local pid
 	pid=$(docker inspect -f '{{.State.Pid}}' "$CONTAINER_NAME")
 
@@ -340,14 +386,6 @@ main() {
 	echo "  Container link : ${container_veth} -> ${IFACE_NAME} (inside ${CONTAINER_NAME})"
 	echo "============================================================================"
 
-	# Ping the gateway to trigger SDN controller flow installation for this host
-	echo "Announcing to SDN controller via gateway ping..."
-	if sudo nsenter -t "$pid" -n ping -c1 -W2 "$gateway" > /dev/null 2>&1; then
-		echo "  ✅ ${CONTAINER_NAME} announced (${IP} -> ${gateway})"
-	else
-		echo "  ⚠️  Gateway ping failed — SDN flows may not be installed yet" >&2
-	fi
-
 	# ============================================================================
 	# Replica set membership
 	# ============================================================================
@@ -364,14 +402,29 @@ main() {
 
 	ensure_rs_secondary "$primary_host"
 
+	local rs_members
+	rs_members=$(get_rs_members "$primary_host")
+
 	echo
 	echo "============================================================================"
 	echo "Storage node joined successfully"
 	echo "============================================================================"
 	echo "  Container      : ${CONTAINER_NAME}"
 	echo "  Replica set    : ${RS_NAME}"
-	echo "  Member         : ${IP}:${PORT}"
+	echo "  New member     : ${IP}:${PORT}"
 	echo "  Primary        : ${primary_host}"
+	echo "  Members        :"
+	if [[ -n "$rs_members" ]]; then
+		while IFS= read -r line; do
+			[[ -z "$line" ]] && continue
+			local host state
+			host="${line%% *}"
+			state="${line##* }"
+			printf '    %-25s %s\n' "$host" "$state"
+		done <<< "$rs_members"
+	else
+		echo "    ⚠️  Could not retrieve member list"
+	fi
 	echo "============================================================================"
 }
 
