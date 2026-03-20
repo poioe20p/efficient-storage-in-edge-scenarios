@@ -162,6 +162,8 @@ declare -A CONTAINER_NAME_MAP=(
 	["edge_storage_server"]="edge_storage_server_n1"
 	["edge_storage_server"]="edge_storage_server_n2"
 	["ubuntu-nat-router"]="nat-router"
+	["local_state_server"]="aggregator_n1"
+	["local_state_server"]="aggregator_n2"
 )
 
 resolve_container_name() {
@@ -216,6 +218,7 @@ IMAGES=(
 	"edge_server:edge_server"
 	"edge_storage_server:edge_storage_server"
 	"os-ken:osken-controller"
+	"local_state_server:local_state_server"
 )
 
 ### Build helper

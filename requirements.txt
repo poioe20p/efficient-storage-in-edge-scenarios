@@ -3,4 +3,5 @@ eventlet
 pymongo
 networkx
 python-dotenv
+pydantic
 # ryu

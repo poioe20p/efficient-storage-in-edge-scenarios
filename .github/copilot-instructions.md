@@ -1,4 +1,4 @@
-The only important things are is the docs folder
+The only important things are is the docs folder and in the scripts folder
 
 DONT LOOK AT ANYTHING IN sdn_controller (as it's all outdated)
 

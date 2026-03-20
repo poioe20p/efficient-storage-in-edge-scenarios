@@ -11,31 +11,33 @@ echo "Configuring NAT router WAN interface..."
 # Get router container PID if not set already
 PID_ROUTER=${PID_ROUTER:-$(docker inspect -f '{{.State.Pid}}' nat-router)}
 
-# Set up veth pairs for WAN (veth4) and Internet Uplink (veth6)
+# Set up veth pairs for WAN (veth5) and Internet Uplink (veth6).
+# NOTE: veth1-4 are reserved for build_network_1.sh (OVS bridge ports for LAN1).
+#       veth21-24 are reserved for build_network_2.sh (OVS bridge ports for LAN2).
 echo "Creating veth pairs for router WAN and Internet..."
-for IFACE in veth4 veth6 veth4-peer veth6-peer; do
+for IFACE in veth5 veth6 veth5-peer veth6-peer; do
   if ip link show "$IFACE" >/dev/null 2>&1; then
     sudo ip link del "$IFACE" >/dev/null 2>&1 || true
   fi
 done
 
 # Add links to kernel
-sudo ip link add veth4 type veth peer name veth4-peer # router WAN side
+sudo ip link add veth5 type veth peer name veth5-peer # router WAN side
 sudo ip link add veth6 type veth peer name veth6-peer # dedicated internet uplink
 
 # Move peers to NAT router namespace
-sudo ip link set veth4-peer netns $PID_ROUTER
+sudo ip link set veth5-peer netns $PID_ROUTER
 sudo ip link set veth6-peer netns $PID_ROUTER
 
 # Configure WAN interface (eth0)
-sudo nsenter -t $PID_ROUTER -n ip link set veth4-peer name eth0
+sudo nsenter -t $PID_ROUTER -n ip link set veth5-peer name eth0
 sudo nsenter -t $PID_ROUTER -n ip link set eth0 address 00:00:00:00:00:BB  # router WAN MAC
 sudo nsenter -t $PID_ROUTER -n ip link set eth0 up
 sudo nsenter -t $PID_ROUTER -n ip addr add 192.168.100.2/24 dev eth0  # router’s WAN IP
 sudo nsenter -t $PID_ROUTER -n ip route add default via 192.168.100.1  # host as gateway
 
-sudo ip link set veth4 up
-sudo ip addr add 192.168.100.1/24 dev veth4  # host acts as router’s gateway
+sudo ip link set veth5 up
+sudo ip addr add 192.168.100.1/24 dev veth5  # host acts as router's gateway
 
 # Configure dedicated uplink between host and NAT router for Internet access (eth3)
 INTERNET_LINK_HOST_IP=${INTERNET_LINK_HOST_IP:-172.20.0.1/30}
@@ -58,12 +60,12 @@ sudo nsenter -t $PID_ROUTER -n bash -c "
 
 # Ensure the host can reach both lab subnets via the NAT router WAN interface
 echo "Ensuring host routes to 10.0.0.0/24 and 10.0.1.0/24 via 192.168.100.2..."
-if ! sudo ip route replace 10.0.0.0/24 via 192.168.100.2 dev veth4 >/dev/null 2>&1; then
+if ! sudo ip route replace 10.0.0.0/24 via 192.168.100.2 dev veth5 >/dev/null 2>&1; then
   echo "WARNING: failed to program route to 10.0.0.0/24; check host networking." >&2
 else
   ip route show 10.0.0.0/24
 fi
-if ! sudo ip route replace 10.0.1.0/24 via 192.168.100.2 dev veth4 >/dev/null 2>&1; then
+if ! sudo ip route replace 10.0.1.0/24 via 192.168.100.2 dev veth5 >/dev/null 2>&1; then
   echo "WARNING: failed to program route to 10.0.1.0/24; check host networking." >&2
 else
   ip route show 10.0.1.0/24

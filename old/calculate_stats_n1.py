@@ -7,10 +7,10 @@ from os_ken.controller.handler import (
     set_ev_cls,
 )
 from os_ken.controller import ofp_event
-from sdn_controller.usecases.topology_n2 import Topology_proactive
-from sdn_controller.library.models.debit import DebitStats
-from sdn_controller.library.repositories.debit import DebitRepository
-from sdn_controller.models.mongodb_host import MongodbRouter
+from old.usecases.topology_n1 import Topology_proactive
+from old.library.models.debit import DebitStats
+from old.library.repositories.debit import DebitRepository
+from old.models.mongodb_host import MongodbRouter
 import time
 
 class CalculateSwitchPortDebit(Topology_proactive):
@@ -21,10 +21,11 @@ class CalculateSwitchPortDebit(Topology_proactive):
         self.polling_interval = float(5)
         self.monitor_thread = hub.spawn(self._monitor)
         self._last_port_counters = {}
+        # (dpid, port_no) -> {"hw_addr": str, "name": str}
         self._port_desc = {}
-
-        self.lan_id = "lan_2"
-        self._other_lan_id = "lan_1"
+        
+        self.lan_id = "lan_1"
+        self._other_lan_id = "lan_2"
         self._port_stats_reply_count = 0
         self._debit_repo = DebitRepository(MongodbRouter().get_simple_connection_string(add_app=True))
         
@@ -46,14 +47,6 @@ class CalculateSwitchPortDebit(Topology_proactive):
             for dp, _ in self._datapath_by_id.values():
                 yield dp
             return
-
-        if self.sws:
-            for dp, _ in self.sws:
-                yield dp
-            return
-
-        for dp in getattr(self, "datapaths", []) or []:
-            yield dp
 
 
     def request_port_stats(self, datapath):
@@ -105,7 +98,8 @@ class CalculateSwitchPortDebit(Topology_proactive):
 
     def _build_host_ports(self):
         host_ports = {}
-        for host in getattr(self, "hosts", []) or []:
+        for host in self.hosts:
+            # host tuple: (host.mac, host.port.dpid, host.port.port_no)
             try:
                 host_ports[(int(host[1]), int(host[2]))] = str(host[0])
             except Exception:
@@ -116,7 +110,8 @@ class CalculateSwitchPortDebit(Topology_proactive):
     def _build_link_neighbors(self):
         link_ports = set()
         link_neighbors = {}
-        for link in getattr(self, "links", []) or []:
+        for link in self.links:
+            # link tuple: (src_dpid, dst_dpid, src_port_no)
             try:
                 key = (int(link[0]), int(link[2]))
                 link_ports.add(key)
@@ -200,7 +195,7 @@ class CalculateSwitchPortDebit(Topology_proactive):
                 continue
 
         if show_header:
-            print("---------------------------------------")
+            print("-----------------------------------")
 
 
     def _collect_port_stats_entries(self, *, datapath, dpid, now_epoch, stats_body, host_ports, link_ports, link_neighbors):

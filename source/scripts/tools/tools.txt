@@ -4,3 +4,8 @@ docker run -dit --name edge_storage_server_n1_1 --network none \
   --replSet rs_net1 --bind_ip_all --port 27018
 
 docker run -dit --name edge_server_n1 --network none edge_server
+
+curl http://10.0.0.2:5000/health
+curl http://10.0.1.2:5000/health
+
+docker exec ovs ovs-ofctl dump-flows ovs-br0

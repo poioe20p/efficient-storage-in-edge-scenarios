@@ -104,14 +104,14 @@ network_cleanup() {
 	log "🧹 Cleaning up network artifacts"
 	require_cmd ip
 	# veth pairs to remove (both ends handled by single 'del')
-	local veths=(veth1 veth2 veth3 veth4 veth5)
+	local veths=(veth1 veth2 veth3 veth4 veth5 veth6)
 	for v in "${veths[@]}"; do
 		ip_safe_del_link "$v"
 	done
 
 	# Flush host-side IP config (best-effort)
-	if $SUDO ip link show veth4 >/dev/null 2>&1; then
-		$SUDO ip addr flush dev veth4 || warn "Failed to flush addresses on veth4"
+	if $SUDO ip link show veth5 >/dev/null 2>&1; then
+		$SUDO ip addr flush dev veth5 || warn "Failed to flush addresses on veth5"
 	fi
 
 	# Remove OVS netns symlink if it exists
@@ -243,6 +243,7 @@ images_cleanup() {
 		edge_server
 		edge_storage_server
 		osken-controller
+		local_state_server
 	)
 	local removed=0
 	for img in "${images[@]}"; do

@@ -316,18 +316,22 @@ docker rm -f osken 2>/dev/null
 docker run -dit --name osken --network host \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
     --env-file "${OSKEN_ENV_FILE}" \
+    -e LAN_ID=lan1 \
+    -e TOPOLOGY_PUB_PORT=5559 \
+    -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5560 \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
         --log-config-file /etc/osken/logging.conf \
-        os_ken.topology.switches sdn_controller.usecases.topology_n1
+        sdn_controller.main_n1
 
 docker run -dit --name osken_2 --network host \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
     --env-file "${OSKEN_ENV_FILE}" \
     -e LAN_ID=lan2 \
-    -e VIP_IP="10.0.1.100" \
+    -e TOPOLOGY_PUB_PORT=5560 \
+    -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5559 \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
         --log-config-file /etc/osken/logging.conf \
-        os_ken.topology.switches sdn_controller.usecases.topology_n2
+        sdn_controller.main_n2
     # Specify the lan2 VIP IP via environment variable to diferentiate from the ones in .env file
 
 if [[ $? -ne 0 ]]; then

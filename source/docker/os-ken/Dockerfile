@@ -26,16 +26,17 @@ RUN wget -qO /tmp/mongodb-server-7.0.asc https://www.mongodb.org/static/pgp/serv
 
 WORKDIR /workspace
 COPY logging.conf /etc/osken/logging.conf
+COPY entrypoint.py /usr/local/bin/osken-entrypoint.py
 
 # 3. Install Python Dependencies
 # We pin eventlet to 0.33.3 to avoid SSL crashes common in newer versions
 RUN pip install --upgrade pip setuptools wheel && \
     pip install os-ken==3.1.1 && \
-    pip install eventlet python-dotenv pymongo networkx mininet
+    pip install eventlet python-dotenv pymongo networkx mininet pydantic zmq
 
 # 4. Define the Entrypoint
-# We use 'python -m' to bypass potential PATH issues with the binary script.
-ENTRYPOINT ["python3", "-m", "os_ken.cmd.manager"]
+# Monkey-patch eventlet BEFORE importing os_ken to avoid "RLock not greened" warnings.
+ENTRYPOINT ["python3", "/usr/local/bin/osken-entrypoint.py"]
 
 # 5. Default Command (Can be overridden by docker run)
 # By default, show help if no script is provided

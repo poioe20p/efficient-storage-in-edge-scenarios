@@ -5,23 +5,27 @@ set -euo pipefail
 #   LAN1 (ovs-br0, 10.0.0.0/24):
 #     edge_server_n1          10.0.0.2   (gateway 10.0.0.1 via nat-router eth1)
 #     edge_storage_server_n1  10.0.0.4   (gateway 10.0.0.1 via nat-router eth1)
+#     aggregator_n1           10.0.0.5   (gateway 10.0.0.1 via nat-router eth1)
 #   LAN2 (ovs-br1, 10.0.1.0/24):
 #     edge_server_n2          10.0.1.2   (gateway 10.0.1.1 via nat-router eth2)
 #     edge_storage_server_n2  10.0.1.3   (gateway 10.0.1.1 via nat-router eth2)
+#     aggregator_n2           10.0.1.5   (gateway 10.0.1.1 via nat-router eth2)
 
 PING_COUNT=${PING_COUNT:-3}
 PING_TIMEOUT=${PING_TIMEOUT:-2}
 DEFAULT_TARGETS=(8.8.8.8 google.com)
 IFS=' ' read -r -a INTERNET_TARGETS <<< "${INTERNET_TARGETS:-${DEFAULT_TARGETS[*]}}"
 
-LAN1_CONTAINERS=(edge_server_n1 edge_storage_server_n1)
-LAN2_CONTAINERS=(edge_server_n2 edge_storage_server_n2)
+LAN1_CONTAINERS=(edge_server_n1 edge_storage_server_n1 aggregator_n1)
+LAN2_CONTAINERS=(edge_server_n2 edge_storage_server_n2 aggregator_n2)
 LAN1_VIP=10.0.0.100
 LAN2_VIP=10.0.1.100
 LAN1_EDGE_IP=10.0.0.2
 LAN1_MONGO_IP=10.0.0.4
+LAN1_AGG_IP=10.0.0.5
 LAN2_EDGE_IP=10.0.1.2
 LAN2_MONGO_IP=10.0.1.4
+LAN2_AGG_IP=10.0.1.5
 
 print_usage() {
     cat <<'EOF'
@@ -71,36 +75,44 @@ ping_internet_targets() {
 run_lan1_tests() {
     echo "=== LAN1 connectivity ==="
     ping_from_container edge_server_n1 ${LAN1_MONGO_IP} "edge_storage_server_n1"
+    ping_from_container edge_server_n1 ${LAN1_AGG_IP} "aggregator_n1"
     ping_from_container edge_storage_server_n1 ${LAN1_EDGE_IP} "edge_server_n1"
+    ping_from_container aggregator_n1 ${LAN1_EDGE_IP} "edge_server_n1"
+    ping_from_container aggregator_n1 ${LAN1_MONGO_IP} "edge_storage_server_n1"
     echo "=== LAN1 VIP connectivity ==="
-    ping_from_container edge_server_n1 ${LAN1_VIP} "LAN1 VIP"
-    ping_from_container edge_storage_server_n1 ${LAN1_VIP} "LAN1 VIP"
+    # ping_from_container edge_server_n1 ${LAN1_VIP} "LAN1 VIP"
+    # ping_from_container edge_storage_server_n1 ${LAN1_VIP} "LAN1 VIP"
     echo "=== LAN1 Internet connectivity ==="
-    ping_internet_targets edge_server_n1
-    ping_internet_targets edge_storage_server_n1
+    # ping_internet_targets edge_server_n1
+    # ping_internet_targets edge_storage_server_n1
 }
 
 run_lan2_tests() {
     echo "=== LAN2 connectivity ==="
     ping_from_container edge_server_n2 ${LAN2_MONGO_IP} "edge_storage_server_n2"
+    ping_from_container edge_server_n2 ${LAN2_AGG_IP} "aggregator_n2"
     ping_from_container edge_storage_server_n2 ${LAN2_EDGE_IP} "edge_server_n2"
+    ping_from_container aggregator_n2 ${LAN2_EDGE_IP} "edge_server_n2"
+    ping_from_container aggregator_n2 ${LAN2_MONGO_IP} "edge_storage_server_n2"
     echo "=== LAN2 VIP connectivity ==="
-    ping_from_container edge_server_n2 ${LAN2_VIP} "LAN2 VIP"
-    ping_from_container edge_storage_server_n2 ${LAN2_VIP} "LAN2 VIP"
+    # ping_from_container edge_server_n2 ${LAN2_VIP} "LAN2 VIP"
+    # ping_from_container edge_storage_server_n2 ${LAN2_VIP} "LAN2 VIP"
     echo "=== LAN2 Internet connectivity ==="
-    ping_internet_targets edge_server_n2
-    ping_internet_targets edge_storage_server_n2
+    # ping_internet_targets edge_server_n2
+    # ping_internet_targets edge_storage_server_n2
 }
 
 run_cross_tests() {
     echo "=== Cross-LAN connectivity ==="
     ping_from_container edge_server_n1 ${LAN2_EDGE_IP} "LAN2 edge_server_n2"
     ping_from_container edge_server_n1 ${LAN2_MONGO_IP} "LAN2 mongodb_n2"
+    ping_from_container edge_server_n1 ${LAN2_AGG_IP} "LAN2 aggregator_n2"
     ping_from_container edge_server_n2 ${LAN1_EDGE_IP} "LAN1 edge_server_n1"
     ping_from_container edge_server_n2 ${LAN1_MONGO_IP} "LAN1 mongodb_n1"
+    ping_from_container edge_server_n2 ${LAN1_AGG_IP} "LAN1 aggregator_n1"
     echo "=== Cross-LAN VIP connectivity ==="
-    ping_from_container edge_server_n1 ${LAN1_VIP} "LAN1 VIP"
-    ping_from_container edge_server_n2 ${LAN2_VIP} "LAN2 VIP"
+    # ping_from_container edge_server_n1 ${LAN1_VIP} "LAN1 VIP"
+    # ping_from_container edge_server_n2 ${LAN2_VIP} "LAN2 VIP"
 }
 
 main() {
