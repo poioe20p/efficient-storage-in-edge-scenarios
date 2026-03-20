@@ -20,10 +20,10 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir flask pyzmq psutil
+RUN pip3 install --no-cache-dir pyzmq psutil
 
-COPY source /source
+COPY aggregator.py /aggregator.py
 
-EXPOSE 5000
+EXPOSE 5555 5556
 
-CMD ["python3", "/source/app.py"]
+CMD ["python3", "/aggregator.py"]

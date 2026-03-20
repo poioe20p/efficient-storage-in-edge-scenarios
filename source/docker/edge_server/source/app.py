@@ -3,6 +3,7 @@ import os
 import threading
 
 from flask import Flask, jsonify, request
+from telemetry import init_telemetry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,6 +21,12 @@ _config: dict = {
 BIND_HOST: str = os.environ.get("BIND_HOST", "0.0.0.0")
 BIND_PORT: int = int(os.environ.get("BIND_PORT", "5000"))
 
+# TO-DO: THIS NEEDS TO BE THREAD-SAFE
+vip_data_lock = threading.Lock()
+vip_data_per_domain = {
+    "lan_1": "10.0.0.200",
+    "lan_2": "10.0.1.200"
+}
 
 def get_db_url() -> str:
     with _config_lock:
@@ -64,6 +71,17 @@ def post_data():
     log.info("POST /data — db_url=%s body=%s", db_url, body)
     # TODO: insert body into MongoDB via db_url
     return jsonify({"message": "not implemented", "db_url": db_url}), 501
+
+@app.route("/vip_data", methods=["PUT"])
+def set_vip_data():
+    body = request.get_json(silent=True) or {}
+    # it should perform a python dict update with the body
+    with vip_data_lock:
+        vip_data_per_domain.update(body)
+    return jsonify({"message": "VIP data updated", "vip_data": vip_data_per_domain}), 200
+
+
+init_telemetry(app)
 
 
 if __name__ == "__main__":

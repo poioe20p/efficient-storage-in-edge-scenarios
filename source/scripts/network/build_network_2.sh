@@ -5,6 +5,41 @@
 set -euo pipefail
 
 # ==============================
+# Helper: get_container_pid <container_name> [timeout_s]
+# Retries until the container has a non-zero PID or the timeout is reached.
+# If the container has exited early, prints its logs and aborts.
+# ==============================
+get_container_pid() {
+    local container="$1"
+    local timeout="${2:-5}"
+    local elapsed=0
+    local pid=0
+    local status
+
+    while [[ $elapsed -lt $timeout ]]; do
+        status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)
+        if [[ "$status" == "exited" || "$status" == "dead" ]]; then
+            echo "Error: container '$container' exited unexpectedly." >&2
+            echo "--- logs for $container ---" >&2
+            docker logs "$container" >&2 || true
+            exit 1
+        fi
+        pid=$(docker inspect -f '{{.State.Pid}}' "$container" 2>/dev/null || echo 0)
+        if [[ "$pid" -gt 0 ]]; then
+            echo "$pid"
+            return 0
+        fi
+        sleep 1
+        (( elapsed++ )) || true
+    done
+
+    echo "Error: timed out waiting for PID of container '$container'." >&2
+    echo "--- logs for $container ---" >&2
+    docker logs "$container" >&2 || true
+    exit 1
+}
+
+# ==============================
 # 1 - Create OVS bridge and veth pairs
 # =============================
 echo "Creating OVS bridge ovs-br1..."
@@ -62,6 +97,7 @@ echo "Launching application containers..."
 docker run -dit --name edge_server_n2 --network none \
   -e SERVER_ID=edge_server_n2 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.1.5:5555 \
+  -e LOG_LEVEL=INFO \
   edge_server
 
 # Review as each network will have its own mongodb shard
@@ -73,6 +109,7 @@ docker run -dit --name edge_storage_server_n2 --network none \
   -e MONGO_URI=mongodb://localhost:27018/ \
   -e INTERVAL_S=10 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.1.5:5555 \
+  -e LOG_LEVEL=INFO \
   -v edge_storage_server_n2-data:/data/db edge_storage_server mongod \
   --replSet rs_net2 --bind_ip_all --port 27018
 
@@ -82,6 +119,7 @@ docker run -dit --name aggregator_n2 --network none \
   -e PULL_ADDR=tcp://0.0.0.0:5555 \
   -e PUB_ADDR=tcp://0.0.0.0:5556 \
   -e WINDOW_S=10 \
+  -e LOG_LEVEL=DEBUG \
   local_state_server
 
 if [[ $? -ne 0 ]]; then
@@ -90,10 +128,10 @@ if [[ $? -ne 0 ]]; then
 fi
 
 # Get process IDs (needed to move interfaces into namespaces)
-PID=$(docker inspect -f '{{.State.Pid}}' edge_server_n2)
-PID_ROUTER=$(docker inspect -f '{{.State.Pid}}' nat-router)
-PID_MONGO=$(docker inspect -f '{{.State.Pid}}' edge_storage_server_n2)
-PID_AGG=$(docker inspect -f '{{.State.Pid}}' aggregator_n2)
+PID=$(get_container_pid edge_server_n2)
+PID_ROUTER=$(get_container_pid nat-router)
+PID_MONGO=$(get_container_pid edge_storage_server_n2)
+PID_AGG=$(get_container_pid aggregator_n2)
 
 # ==============================
 # Step 5: Move peer interfaces into the containers

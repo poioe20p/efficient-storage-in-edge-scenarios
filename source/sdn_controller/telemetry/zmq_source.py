@@ -68,5 +68,9 @@ class ZmqTelemetrySource(TelemetryEventSource):
                         summary.domain_summary.avg_time_proc_ms,
                         summary.domain_summary.avg_time_db_ms,
                     )
+                    logger.debug(
+                        "telemetry full summary: %s",
+                        summary.model_dump_json(indent=2)
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("telemetry receive error: %s", exc)
