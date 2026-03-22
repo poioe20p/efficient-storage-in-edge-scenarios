@@ -314,21 +314,29 @@ echo "Starting os-ken SDN controller container..."
 docker rm -f osken 2>/dev/null
 
 docker run -dit --name osken --network host \
+    --privileged --pid=host \
+    -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
     --env-file "${OSKEN_ENV_FILE}" \
     -e LAN_ID=lan1 \
     -e TOPOLOGY_PUB_PORT=5559 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5560 \
+    -e SERVER_MACS="edge_server_n1:00:00:00:00:00:02" \
+    -e STORAGE_MACS="edge_storage_server_n1:00:00:00:00:00:04" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n1
 
 docker run -dit --name osken_2 --network host \
+    --privileged --pid=host \
+    -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
     --env-file "${OSKEN_ENV_FILE}" \
     -e LAN_ID=lan2 \
     -e TOPOLOGY_PUB_PORT=5560 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5559 \
+    -e SERVER_MACS="edge_server_n2:00:00:00:00:00:05" \
+    -e STORAGE_MACS="edge_storage_server_n2:00:00:00:00:00:06" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n2

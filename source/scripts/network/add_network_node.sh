@@ -245,6 +245,9 @@ main() {
 	echo "  Switch port    : ${ovs_veth} (inside OVS / ${bridge})"
 	echo "  Container link : ${container_veth} -> ${IFACE_NAME} (inside ${CONTAINER_NAME})"
 	echo "============================================================================"
+	# Machine-readable summary — parsed by the Python controller (NodeAdder)
+	echo "RESULT_IP=${IP}"
+	echo "RESULT_MAC=${MAC}"
 }
 
 while [[ $# -gt 0 ]]; do

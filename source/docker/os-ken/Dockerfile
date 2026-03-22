@@ -24,6 +24,21 @@ RUN wget -qO /tmp/mongodb-server-7.0.asc https://www.mongodb.org/static/pgp/serv
     apt-get install -y --no-install-recommends mongodb-org-mongos && \
     rm -rf /var/lib/apt/lists/* /tmp/mongodb-server-7.0.asc
 
+# Install docker-ce-cli and host-level tools required by node-addition scripts.
+# wget and gnupg are already present from the first apt layer.
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && wget -qO - https://download.docker.com/linux/debian/gpg \
+       | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bullseye stable" \
+       > /etc/apt/sources.list.d/docker.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        iproute2 \
+        util-linux \
+        sudo \
+        docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /workspace
 COPY logging.conf /etc/osken/logging.conf
 COPY entrypoint.py /usr/local/bin/osken-entrypoint.py

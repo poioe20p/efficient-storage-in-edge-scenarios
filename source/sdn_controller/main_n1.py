@@ -12,6 +12,7 @@ from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
 from os_ken import cfg
 
+from .elasticity import ComputeAlert, DataAlert, ElasticityManager
 from .telemetry.models import TelemetrySummary
 from .telemetry.zmq_source import ZmqTelemetrySource
 from .topology import TopologyMixin
@@ -25,16 +26,9 @@ _REQUIRED_APP = ['os_ken.topology.switches']
 
 logger = logging.getLogger('os_ken.main_n1')
 
-def _print_summary(summary: TelemetrySummary) -> None:
-    """Called from the ZMQ receive thread each time a summary arrives."""
-    ds = summary.domain_summary
-    print(
-        f"[telemetry] network={summary.network_id} "
-        f"proc_ms={ds.avg_time_proc_ms:.1f} "
-        f"db_ms={ds.avg_time_db_ms:.1f} "
-        f"requests={ds.total_requests} "
-        f"cpu={ds.average_cpu_percent:.1f}%"
-    )
+# Latency thresholds that trigger Thread 3 alerts — tunable via env vars.
+_TAU_PROC_MS  = float(os.environ.get("TAU_PROC_MS",  "200000"))
+_TAU_DADOS_MS = float(os.environ.get("TAU_DADOS_MS", "150000"))
 
 
 class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
@@ -49,6 +43,7 @@ class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
         self.enable_reactive_learning = True
         self.datapaths = []
         self._datapath_by_id = {}
+        self._lan_id = os.environ.get("LAN_ID", "lan1")
 
         _aggregator_endpoints = [
             ep.strip()
@@ -64,12 +59,71 @@ class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
         ]
         logger.info("aggregator endpoints: %s", _aggregator_endpoints)
         logger.info("peer topology endpoints: %s", _peer_endpoints)
+        logger.info("thresholds: tau_proc=%.0fms  tau_dados=%.0fms", _TAU_PROC_MS, _TAU_DADOS_MS)
+
+        # Thread 3 — must be created before ZmqTelemetrySource so the
+        # on_update callback can safely reference self._elasticity.
+        self._elasticity = ElasticityManager(topology_mixin=self)
+        self._elasticity.start()
+
+        # Thread 2 — ZMQ subscriber for telemetry summaries and topology updates.
         self._telemetry = ZmqTelemetrySource(
             endpoints=_aggregator_endpoints + _peer_endpoints,
-            on_update=_print_summary,
+            on_update=self._on_telemetry_update,
             on_topology_update=self.on_topology_update,
         )
         self._telemetry.start()
+        self._bypass_telemetry_for_elasticity_on_odd_number = 1 # set to an odd number to enable elasticity alerts based on telemetry, even if thresholds are not breached (for testing)
+
+    def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
+        """Thread 2 callback — log the summary and forward threshold breaches to Thread 3."""
+        if summary.network_id != self._lan_id:
+            logger.debug("ignoring telemetry for %s (this controller owns %s)", summary.network_id, self._lan_id)
+            return
+        ds = summary.domain_summary
+        print(
+            f"[telemetry] network={summary.network_id} "
+            f"proc_ms={ds.avg_time_proc_ms:.1f} "
+            f"db_ms={ds.avg_time_db_ms:.1f} "
+            f"requests={ds.total_requests} "
+            f"cpu={ds.average_cpu_percent:.1f}%"
+        )
+
+        # Parse LAN number from network_id, e.g. "lan1" -> 1.
+        try:
+            lan = int(summary.network_id.replace("lan", ""))
+        except ValueError:
+            logger.warning("could not parse LAN from network_id=%s", summary.network_id)
+            return
+
+        # if ds.avg_time_db_ms > _TAU_DADOS_MS:
+        if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
+            logger.info(
+                "[threshold] T_dados=%.1fms > τ=%.1fms on %s — submitting data alert",
+                ds.avg_time_db_ms, _TAU_DADOS_MS, summary.network_id,
+            )
+            self._elasticity.submit_alert(
+                DataAlert(
+                    lan=lan,
+                    network_id=summary.network_id,
+                    rs_name=f"rs_net{lan}",
+                    primary_container=f"edge_storage_server_n{lan}",
+                )
+            )
+
+
+        # if ds.avg_time_proc_ms > _TAU_PROC_MS:
+        if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
+            logger.info(
+                "[threshold] T_proc=%.1fms > τ=%.1fms on %s — submitting compute alert",
+                ds.avg_time_proc_ms, _TAU_PROC_MS, summary.network_id,
+            )
+            self._elasticity.submit_alert(
+                ComputeAlert(lan=lan, network_id=summary.network_id)
+            )
+        
+        self._bypass_telemetry_for_elasticity_on_odd_number += 1 # increment to alternate between triggering and not triggering alerts based on telemetry
+
 
     def _install_flow(self, datapath, priority, match, actions, *,
                       idle_timeout=0, hard_timeout=0, cookie=0, flags=None):
@@ -190,10 +244,12 @@ class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
         dpid_int = int(datapath.id)  # Datapath ID as integer for shard key routing
         self.mac_to_port.setdefault(dpid_int, {})  # Initialize mapping for this switch if absent
         
-        # Learn a MAC address to avoid flooding next time
-        if src not in self.mac_to_port[dpid_int]:  # If the source MAC is not already tracked for this switch
-            self.mac_to_port[dpid_int][src] = in_port
-            logger.debug("MAC learned: dpid=%s src=%s -> port=%s", dpid_int, src, in_port)
+        # Learn a MAC address to avoid flooding next time.
+        # Always update — handles the case where a container is replaced on a
+        # different OVS port but retains the same MAC (elasticity retries).
+        if self.mac_to_port[dpid_int].get(src) != in_port:
+            logger.debug("MAC learned/updated: dpid=%s src=%s -> port=%s", dpid_int, src, in_port)
+        self.mac_to_port[dpid_int][src] = in_port
         
         # Determine the output port for the destination MAC address    
         if dst in self.mac_to_port[dpid_int]:

@@ -394,6 +394,13 @@ main() {
 	echo "Joining replica set '${RS_NAME}'"
 	echo "============================================================================"
 
+	# Seed the OVS MAC table before rs.add() so the primary can reach the new
+	# member immediately. Without this, the primary may use a cached ARP entry
+	# and hit a stale or missing OVS flow, causing replication to fail.
+	echo "Seeding OVS MAC table for ${CONTAINER_NAME}..."
+	docker exec "$CONTAINER_NAME" ping -c 3 -W 1 "$gateway" >/dev/null 2>&1 || true
+	sleep 0.5
+
 	local primary_host
 	primary_host=$(find_primary_host)
 	echo "  Primary: ${primary_host}"
@@ -426,6 +433,9 @@ main() {
 		echo "    ⚠️  Could not retrieve member list"
 	fi
 	echo "============================================================================"
+	# Machine-readable summary — parsed by the Python controller (NodeAdder)
+	echo "RESULT_IP=${IP}"
+	echo "RESULT_MAC=${MAC}"
 }
 
 # ============================================================================

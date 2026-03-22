@@ -5,7 +5,10 @@ docker run -dit --name edge_storage_server_n1_1 --network none \
 
 docker run -dit --name edge_server_n1 --network none edge_server
 
-curl http://10.0.0.2:5000/health
-curl http://10.0.1.2:5000/health
+curl -O "http://10.0.0.2:5000/health" && \
+curl -O "http://10.0.1.2:5000/health"
 
 docker exec ovs ovs-ofctl dump-flows ovs-br0
+
+docker logs -f osken | grep -Ew "elasticity|threshold|node_add"
+docker logs -f osken_2 | grep -Ew "elasticity|threshold|node_add"
