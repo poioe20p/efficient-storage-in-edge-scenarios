@@ -79,7 +79,7 @@ existing `AGGREGATOR_ENDPOINTS` pattern).
 | Variable                     | Default (n1)                | Default (n2) | Description                                                                            |
 | ---------------------------- | --------------------------- | ------------ | -------------------------------------------------------------------------------------- |
 | `VIP_SERVER_IP`            | `10.0.0.100`              | same         | Global virtual IP for the compute/app server pool (same across both controllers)       |
-| `VIP_DATA_IP`              | `10.0.0.101`              | same         | Global virtual IP for the storage (MongoDB) pool (same across both controllers)        |
+| `VIP_DATA_IP`              | `10.0.0.200`              | same         | Global virtual IP for the storage (MongoDB) pool (same across both controllers)        |
 | `VIP_SERVER_MAC`           | `aa:bb:cc:dd:ee:01`       | same         | Virtual MAC for the server VIP (same across both controllers)                          |
 | `VIP_DATA_MAC`             | `aa:bb:cc:dd:ee:02`       | same         | Virtual MAC for the data/storage VIP (same across both controllers)                    |
 | `NETWORK_ID`               | `lan1`                    | `lan2`     | Identifies this controller's domain in published snapshots                             |
@@ -138,7 +138,7 @@ def __init__(self, *args, **kwargs):
 
     # Global VIPs — identical on both controllers
     self.vip_server_ip  = os.environ.get("VIP_SERVER_IP",  "10.0.0.100")
-    self.vip_data_ip    = os.environ.get("VIP_DATA_IP",    "10.0.0.101")
+    self.vip_data_ip    = os.environ.get("VIP_DATA_IP",    "10.0.0.200")
     self.vip_server_mac = os.environ.get("VIP_SERVER_MAC", "aa:bb:cc:dd:ee:01")
     self.vip_data_mac   = os.environ.get("VIP_DATA_MAC",   "aa:bb:cc:dd:ee:02")
 

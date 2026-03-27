@@ -95,6 +95,7 @@ echo "Launching application containers..."
 # --network none: prevents Docker from creating default network
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name edge_server_n2 --network none \
+  -e LAN_ID=lan2 \
   -e SERVER_ID=edge_server_n2 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.1.5:5555 \
   -e LOG_LEVEL=INFO \
@@ -105,13 +106,14 @@ docker run -dit --name edge_server_n2 --network none \
 echo "Starting MongoDB shard member container edge_storage_server_n2..."
 docker run -dit --name edge_storage_server_n2 --network none \
   --no-healthcheck \
+  -e LAN_ID=lan2 \
   -e SERVER_ID=edge_storage_server_n2 \
-  -e MONGO_URI=mongodb://localhost:27018/ \
-  -e INTERVAL_S=10 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.1.5:5555 \
+  -e MONGO_REPLSET=rs_net2 \
+  -e MONGO_PORT=27018 \
+  -e TELEMETRY_INTERVAL_S=10 \
   -e LOG_LEVEL=INFO \
-  -v edge_storage_server_n2-data:/data/db edge_storage_server mongod \
-  --replSet rs_net2 --bind_ip_all --port 27018
+  -v edge_storage_server_n2-data:/data/db edge_storage_server
 
 echo "Starting aggregator_n2 container..."
 docker run -dit --name aggregator_n2 --network none \

@@ -48,7 +48,8 @@ application-level configuration.
 | Router LAN iptables iface | `eth1` | `eth2` |
 | Router WAN iface | `eth0` | `eth0` |
 | Veth index range | `10–19` (new nodes) | `30–49` (new nodes) |
-| Reserved IPs | `.1` (gw), `.100` (VIP) | `.1` (gw), `.100` (VIP) |
+| Reserved IPs | `.1` (gw), `.100` (VIP_Web), `.200` (VIP_Data) | same |
+| IP auto-assign range | `.2–.29` (service nodes only; test clients use `.30+`) | same |
 
 > Existing scripts now use `veth1-3` for LAN 1, `veth21-23` for LAN 2,
 > and router-related links such as `veth4` / `veth6`.
@@ -134,10 +135,28 @@ Scan the subnet for used addresses. Two practical approaches:
 
 **Recommended: Approach A** — iterate running containers, resolve each container
 PID, read its IP via `nsenter -t PID -n ip -4 -o addr show`, and collect
-taken addresses. Add the gateway (`.1`) and the VIP (`.100`) to the reserved
-set.
+taken addresses. **Also scan `ip netns list`** and read addresses from each
+named namespace via `sudo ip -n "$ns" -4 -o addr show` — this covers
+namespace-based test clients created by `create_test_clients.sh` which are
+invisible to `docker ps`. Add `.1` (gateway), `.100` (VIP_Web), and `.200`
+(VIP_Data) to the reserved set.
 
-Go with approach A, for now.
+Implementation pattern (matches `create_test_clients.sh`):
+```bash
+# Docker containers
+for cid in $(docker ps -q); do
+    pid=$(docker inspect -f '{{.State.Pid}}' "$cid") || continue
+    sudo nsenter -t "$pid" -n ip -4 -o addr show | grep -oE "${subnet//./\.}\.[0-9]+"
+done
+
+# Named namespaces (test clients invisible to docker ps)
+while read -r ns _rest; do
+    sudo ip -n "$ns" -4 -o addr show | grep -oE "${subnet//./\.}\.[0-9]+"
+done < <(ip netns list 2>/dev/null || true)
+```
+
+Applies to both `add_network_node.sh` and `add_network_storage_node.sh`
+(each has its own copy of `collect_used_ips`).
 
 ### 4.2. MAC Address Collisions
 

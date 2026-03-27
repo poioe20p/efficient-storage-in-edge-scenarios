@@ -321,8 +321,7 @@ docker run -dit --name osken --network host \
     -e LAN_ID=lan1 \
     -e TOPOLOGY_PUB_PORT=5559 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5560 \
-    -e SERVER_MACS="edge_server_n1:00:00:00:00:00:02" \
-    -e STORAGE_MACS="edge_storage_server_n1:00:00:00:00:00:04" \
+    -e SERVER_MACS="00:00:00:00:00:02" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n1
@@ -335,8 +334,7 @@ docker run -dit --name osken_2 --network host \
     -e LAN_ID=lan2 \
     -e TOPOLOGY_PUB_PORT=5560 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5559 \
-    -e SERVER_MACS="edge_server_n2:00:00:00:00:00:05" \
-    -e STORAGE_MACS="edge_storage_server_n2:00:00:00:00:00:06" \
+    -e SERVER_MACS="00:00:00:00:00:05" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n2
@@ -388,4 +386,20 @@ install_vip_arp_reply_flow ovs-br1 "${VIP_IP_LAN2}" "${VIP_MAC}"
 
 docker exec ovs ovs-vsctl show
 
+
 echo "Build and setup of networks completed successfully."
+
+# ==============================
+# 9 - Seed controller ARP tables via connectivity tests
+# ==============================
+# Pinging all hosts triggers ARP traffic through OVS, which the SDN controllers
+# snoop to populate their IP<->MAC tables before any real client connects.
+echo "Waiting for setup to estabilize before running connectivity tests..."
+
+sleep 5
+
+echo "Running connectivity tests to seed controller ARP tables..."
+"${SCRIPT_DIR}/test_conectivity.sh" all || true
+
+./network/clients/remove_test_clients.sh --lan 1 --prefix test_client
+./network/clients/remove_test_clients.sh --lan 2 --prefix test_client

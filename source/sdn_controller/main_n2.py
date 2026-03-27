@@ -16,6 +16,7 @@ from .elasticity import ComputeAlert, DataAlert, ElasticityManager
 from .telemetry.models import TelemetrySummary
 from .telemetry.zmq_source import ZmqTelemetrySource
 from .topology import TopologyMixin
+from .vip_routing import VipRoutingMixin
 
 # Required so os-ken's app manager loads os_ken.topology.switches.
 # topology.py imports os_ken.topology.api (which calls require_app with api_style=True),
@@ -31,7 +32,7 @@ _TAU_PROC_MS  = float(os.environ.get("TAU_PROC_MS",  "200000"))
 _TAU_DADOS_MS = float(os.environ.get("TAU_DADOS_MS", "150000"))
 
 
-class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
+class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
@@ -88,6 +89,9 @@ class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
             f"cpu={ds.average_cpu_percent:.1f}%"
         )
 
+        # Update per-server T_proc used by WSM server selection (Thread 1).
+        self.update_server_tproc(summary.servers)
+
         # Parse LAN number from network_id, e.g. "lan2" -> 2.
         try:
             lan = int(summary.network_id.replace("lan", ""))
@@ -95,8 +99,8 @@ class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
             logger.warning("could not parse LAN from network_id=%s", summary.network_id)
             return
 
-        # if ds.avg_time_proc_ms > _TAU_PROC_MS:
-        if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
+        # if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
+        if ds.avg_time_proc_ms > _TAU_PROC_MS:
             logger.info(
                 "[threshold] T_proc=%.1fms > τ=%.1fms on %s — submitting compute alert",
                 ds.avg_time_proc_ms, _TAU_PROC_MS, summary.network_id,
@@ -105,8 +109,8 @@ class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
                 ComputeAlert(lan=lan, network_id=summary.network_id)
             )
 
-        # if ds.avg_time_db_ms > _TAU_DADOS_MS:
-        if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
+        # if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
+        if ds.avg_time_db_ms > _TAU_DADOS_MS:
             logger.info(
                 "[threshold] T_dados=%.1fms > τ=%.1fms on %s — submitting data alert",
                 ds.avg_time_db_ms, _TAU_DADOS_MS, summary.network_id,
@@ -233,6 +237,12 @@ class KenLearnAndLog(TopologyMixin, app_manager.OSKenApp):
         dst = eth.dst # Get the destination MAC address from the Ethernet header frame
         src = eth.src # Get the source MAC address from the Ethernet header frame
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
+            return
+
+        # VIP interception — runs before L2 learning so VIP-destined packets
+        # are not forwarded by L2 rules before DNAT is installed.
+        self.snoop_arp(pkt)
+        if self.handle_vip_packet_in(datapath, in_port, pkt, eth):
             return
 
         dpid_int = int(datapath.id)  # Datapath ID as integer for shard key routing

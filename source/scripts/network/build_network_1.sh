@@ -97,6 +97,7 @@ echo "Launching application containers..."
 # --network none: prevents Docker from creating default network
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name edge_server_n1 --network none \
+  -e LAN_ID=lan1 \
   -e SERVER_ID=edge_server_n1 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
   -e LOG_LEVEL=INFO \
@@ -104,14 +105,15 @@ docker run -dit --name edge_server_n1 --network none \
 
 echo "Starting edge_storage_server_n1 container..."
 docker run -dit --name edge_storage_server_n1 --network none \
-  -e SERVER_ID=edge_storage_server_n1 \
-  -e MONGO_URI=mongodb://localhost:27018/ \
-  -e INTERVAL_S=10 \
-  -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
-  -e LOG_LEVEL=INFO \
   --no-healthcheck \
-  -v edge_storage_server_n1-data:/data/db edge_storage_server mongod \
-  --replSet rs_net1 --bind_ip_all --port 27018
+  -e LAN_ID=lan1 \
+  -e SERVER_ID=edge_storage_server_n1 \
+  -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
+  -e MONGO_REPLSET=rs_net1 \
+  -e MONGO_PORT=27018 \
+  -e TELEMETRY_INTERVAL_S=10 \
+  -e LOG_LEVEL=INFO \
+  -v edge_storage_server_n1-data:/data/db edge_storage_server
 
 echo "Starting aggregator_n1 container..."
 docker run -dit --name aggregator_n1 --network none \
@@ -170,7 +172,7 @@ sudo nsenter -t $PID_MONGO -n ip route add default via 10.0.0.1
 
 # Configure aggregator_n1 container
 sudo nsenter -t $PID_AGG -n ip link set veth4-peer name eth0
-sudo nsenter -t $PID_AGG -n ip link set eth0 address 00:00:00:00:00:05
+sudo nsenter -t $PID_AGG -n ip link set eth0 address 00:00:00:00:00:03
 sudo nsenter -t $PID_AGG -n ip link set eth0 up
 sudo nsenter -t $PID_AGG -n ip addr add 10.0.0.5/24 dev eth0
 sudo nsenter -t $PID_AGG -n ip route add default via 10.0.0.1

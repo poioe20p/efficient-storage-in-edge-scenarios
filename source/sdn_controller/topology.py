@@ -24,31 +24,46 @@ class TopologyMixin:
 
         # Global VIPs — identical on both controllers
         self.vip_server_ip  = os.environ.get("VIP_SERVER_IP",  "10.0.0.100")
-        self.vip_data_ip    = os.environ.get("VIP_DATA_IP",    "10.0.0.101")
         self.vip_server_mac = os.environ.get("VIP_SERVER_MAC", "aa:bb:cc:dd:ee:01")
-        self.vip_data_mac   = os.environ.get("VIP_DATA_MAC",   "aa:bb:cc:dd:ee:02")
+
+        # Per-domain VIP_DATA
+        self.vip_data_n1_ip  = os.environ.get("VIP_DATA_N1_IP",  "10.0.0.200")
+        self.vip_data_n1_mac = os.environ.get("VIP_DATA_N1_MAC", "aa:bb:cc:dd:ee:02")
+        self.vip_data_n2_ip  = os.environ.get("VIP_DATA_N2_IP",  "10.0.1.200")
+        self.vip_data_n2_mac = os.environ.get("VIP_DATA_N2_MAC", "aa:bb:cc:dd:ee:03")
 
         self._network_id           = os.environ.get("LAN_ID", "lan1")
         self._topology_interval    = max(1, int(os.environ.get("TOPOLOGY_INTERVAL", "1")))
         self._heartbeat_ticks      = max(30, int(os.environ.get("TOPOLOGY_HEARTBEAT_TICKS", "30")))
         self._topology_pub_port    = int(os.environ.get("TOPOLOGY_PUB_PORT", "5557"))
 
-        self._server_macs: set[str] = {
+        # Local MAC sets — populated from env vars at startup, updated dynamically
+        self._local_server_macs: set[str] = {
             m.strip() for m in os.environ.get("SERVER_MACS", "").split(",") if m.strip()
         }
-        self._storage_macs: set[str] = {
-            m.strip() for m in os.environ.get("STORAGE_MACS", "").split(",") if m.strip()
+        self._local_storage_macs_n1: set[str] = {
+            m.strip() for m in os.environ.get("STORAGE_MACS_N1", "").split(",") if m.strip()
+        }
+        self._local_storage_macs_n2: set[str] = {
+            m.strip() for m in os.environ.get("STORAGE_MACS_N2", "").split(",") if m.strip()
         }
 
+        # Peer MAC sets — replaced wholesale on each topology update from the peer
+        self._peer_server_macs:     set[str] = set()
+        self._peer_storage_macs_n1: set[str] = set()
+        self._peer_storage_macs_n2: set[str] = set()
+
         logger.info(
-            "topology mixin init: network=%s interval=%ds heartbeat=%d ticks server_macs=%s storage_macs=%s",
+            "topology mixin init: network=%s interval=%ds heartbeat=%d ticks "
+            "server_macs=%s storage_macs_n1=%s storage_macs_n2=%s",
             self._network_id, self._topology_interval, self._heartbeat_ticks,
-            list(self._server_macs), list(self._storage_macs),
+            list(self._local_server_macs), list(self._local_storage_macs_n1), list(self._local_storage_macs_n2),
         )
 
         # VIP pools — rebuilt every tick from host_attachment + peer_hosts filtered by MAC sets
-        self.vip_server_pool:  dict[str, dict] = {}   # mac -> {mac, dpid, port_no}
-        self.vip_storage_pool: dict[str, dict] = {}   # mac -> {mac, dpid, port_no}
+        self.vip_server_pool:     dict[str, dict] = {}   # mac -> {mac, dpid, port_no}
+        self.vip_storage_pool_n1: dict[str, dict] = {}   # mac -> {mac, dpid, port_no}
+        self.vip_storage_pool_n2: dict[str, dict] = {}   # mac -> {mac, dpid, port_no}
 
         # Local topology state
         self.net             = nx.DiGraph()
@@ -91,23 +106,44 @@ class TopologyMixin:
         hub.spawn(self._topology_worker)
 
     # ------------------------------------------------------------------
+    # MAC role set properties — union of local (env/dynamic) and peer sets
+    # ------------------------------------------------------------------
+
+    @property
+    def _server_macs(self) -> set[str]:
+        return self._local_server_macs | self._peer_server_macs
+    @property
+    def _storage_macs_n1(self) -> set[str]:
+        return self._local_storage_macs_n1 | self._peer_storage_macs_n1
+
+    @property
+    def _storage_macs_n2(self) -> set[str]:
+        return self._local_storage_macs_n2 | self._peer_storage_macs_n2
+
+    # ------------------------------------------------------------------
     # Runtime host registration
     # ------------------------------------------------------------------
 
     def add_server_mac(self, mac: str) -> None:
-        self._server_macs.add(mac)
+        self._local_server_macs.add(mac)
         self._rebuild_hop_cache()
 
     def remove_server_mac(self, mac: str) -> None:
-        self._server_macs.discard(mac)
+        self._local_server_macs.discard(mac)
         self._rebuild_hop_cache()
 
-    def add_storage_mac(self, mac: str) -> None:
-        self._storage_macs.add(mac)
+    def add_storage_mac(self, mac: str, domain: str = "n1") -> None:
+        if domain == "n2":
+            self._local_storage_macs_n2.add(mac)
+        else:
+            self._local_storage_macs_n1.add(mac)
         self._rebuild_hop_cache()
 
-    def remove_storage_mac(self, mac: str) -> None:
-        self._storage_macs.discard(mac)
+    def remove_storage_mac(self, mac: str, domain: str = "n1") -> None:
+        if domain == "n2":
+            self._local_storage_macs_n2.discard(mac)
+        else:
+            self._local_storage_macs_n1.discard(mac)
         self._rebuild_hop_cache()
 
     # ------------------------------------------------------------------
@@ -163,9 +199,17 @@ class TopologyMixin:
             self.peer_hosts    = {}
             self.peer_links    = []
             self.peer_switches = []
+
+        # Replace peer MAC role sets wholesale so removals propagate correctly
+        self._peer_server_macs     = set(snapshot.server_macs)
+        self._peer_storage_macs_n1 = set(snapshot.storage_macs_n1)
+        self._peer_storage_macs_n2 = set(snapshot.storage_macs_n2)
         logger.debug(
-            "peer topology updated from %s: %d hosts",
-            snapshot.network_id, len(self.peer_hosts)
+            "peer topology updated from %s: %d hosts; peer server_macs=%s storage_n1=%s storage_n2=%s",
+            snapshot.network_id, len(self.peer_hosts),
+            list(self._peer_server_macs),
+            list(self._peer_storage_macs_n1),
+            list(self._peer_storage_macs_n2),
         )
 
     # ------------------------------------------------------------------
@@ -199,6 +243,10 @@ class TopologyMixin:
             )
             logger.info("datapath connected: dpid=%s — flushed stale flows, reinstalled table-miss", datapath.id)
 
+            # Allow mixins to install their own rules now that all stale
+            # flows have been flushed and the table-miss is back in place.
+            self._on_datapath_connected(datapath)
+
             entry = (datapath, datapath.id)
             if entry not in self.sws:
                 self.sws.append(entry)
@@ -209,6 +257,18 @@ class TopologyMixin:
                 self.sws.remove(entry)
             self._datapath_by_id.pop(datapath.id, None)
             logger.info("datapath disconnected: dpid=%s", datapath.id)
+
+    # ------------------------------------------------------------------
+    # Extension hooks
+    # ------------------------------------------------------------------
+
+    def _on_datapath_connected(self, datapath) -> None:
+        """Called after a switch reconnects and stale flows are flushed.
+
+        Override in subclasses or mixins (calling super()) to install
+        additional rules that must survive the flow-table wipe on reconnect.
+        """
+        pass
 
     # ------------------------------------------------------------------
     # Internal helpers — ported from old code
@@ -283,7 +343,7 @@ class TopologyMixin:
         if not self.net or not self.host_attachment:
             return
 
-        backend_macs = (self._server_macs | self._storage_macs) & set(self.host_attachment.keys())
+        backend_macs = (self._server_macs | self._storage_macs_n1 | self._storage_macs_n2) & set(self.host_attachment.keys())
         if not backend_macs:
             return
 
@@ -314,14 +374,16 @@ class TopologyMixin:
             mac: {"mac": mac, "dpid": dpid, "port_no": port_no}
             for mac, (dpid, port_no) in self.host_attachment.items()
         }
-        combined |= self.peer_hosts
+        combined |= self.peer_hosts # |= dict union to prefer local host_attachment data if there's overlap with peer_hosts
 
-        self.vip_server_pool  = {mac: combined[mac] for mac in self._server_macs  if mac in combined}
-        self.vip_storage_pool = {mac: combined[mac] for mac in self._storage_macs if mac in combined}
+        self.vip_server_pool     = {mac: combined[mac] for mac in self._server_macs     if mac in combined}
+        self.vip_storage_pool_n1 = {mac: combined[mac] for mac in self._storage_macs_n1 if mac in combined}
+        self.vip_storage_pool_n2 = {mac: combined[mac] for mac in self._storage_macs_n2 if mac in combined}
         logger.debug(
-            "vip_server_pool=%s vip_storage_pool=%s",
+            "vip_server_pool=%s vip_storage_pool_n1=%s vip_storage_pool_n2=%s",
             list(self.vip_server_pool),
-            list(self.vip_storage_pool),
+            list(self.vip_storage_pool_n1),
+            list(self.vip_storage_pool_n2),
         )
 
     # ------------------------------------------------------------------
@@ -419,6 +481,10 @@ class TopologyMixin:
             switches=local_section.switches,
             hops=self.hop_cache,
             ts=time.time(),
+            # Advertise this controller's locally-registered backend MACs
+            server_macs=list(self._local_server_macs),
+            storage_macs_n1=list(self._local_storage_macs_n1),
+            storage_macs_n2=list(self._local_storage_macs_n2),
         )
         try:
             self._topo_pub_socket.send_string(snapshot.model_dump_json(), zmq.NOBLOCK)

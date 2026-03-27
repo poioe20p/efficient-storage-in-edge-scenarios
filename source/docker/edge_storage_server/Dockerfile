@@ -3,8 +3,10 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     MONGO_VERSION=7.0 \
     SERVER_ID=mongo-unknown \
-    AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
-    MONGO_URI=mongodb://localhost:27017/ \
+    AGGREGATOR_PULL_ADDR= \
+    LAN_ID= \
+    MONGO_URI= \
+    MONGO_PORT=27017 \
     TELEMETRY_INTERVAL_S=10 \
     MONGO_REPLSET=
 

@@ -85,7 +85,7 @@ class NodeAdder:
         # ── Step 1: docker run ────────────────────────────────────────────────
         logger.info("[node_add] step=docker_run container=%s", name)
         t0 = time.perf_counter()
-        ok, stdout, stderr = self._docker_run_server(name)
+        ok, stdout, stderr = self._docker_run_server(name, lan)
         timings.docker_run_s = time.perf_counter() - t0
 
         if not ok:
@@ -134,7 +134,7 @@ class NodeAdder:
         # ── Step 1: docker run ────────────────────────────────────────────────
         logger.info("[node_add] step=docker_run container=%s rs=%s", name, rs_name)
         t0 = time.perf_counter()
-        ok, stdout, stderr = self._docker_run_storage(name, rs_name, port)
+        ok, stdout, stderr = self._docker_run_storage(name, rs_name, port, lan)
         timings.docker_run_s = time.perf_counter() - t0
 
         if not ok:
@@ -193,7 +193,7 @@ class NodeAdder:
             return None
         return result.stdout.strip()
 
-    def _docker_run_server(self, name: str) -> tuple[bool, str, str]:
+    def _docker_run_server(self, name: str, lan: int) -> tuple[bool, str, str]:
         state = self._container_state(name)
         if state == "running":
             logger.info("[node_add] container %s already running — skipping docker run", name)
@@ -201,10 +201,17 @@ class NodeAdder:
         if state is not None:
             logger.info("[node_add] removing stale container %s (state=%s)", name, state)
             self._cleanup_container(name)
-        cmd = ["docker", "run", "-dit", "--network", "none", "--name", name, "edge_server"]
+        cmd = [
+            "docker", "run", "-dit",
+            "--network", "none",
+            "--name", name,
+            "-e", f"SERVER_ID={name}",
+            "-e", f"LAN_ID=lan{lan}",
+            "edge_server",
+        ]
         return self._run_cmd(cmd)
 
-    def _docker_run_storage(self, name: str, rs_name: str, port: int) -> tuple[bool, str, str]:
+    def _docker_run_storage(self, name: str, rs_name: str, port: int, lan: int) -> tuple[bool, str, str]:
         state = self._container_state(name)
         if state == "running":
             logger.info("[node_add] container %s already running — skipping docker run", name)
@@ -218,8 +225,11 @@ class NodeAdder:
             "--network", "none",
             "--name", name,
             "-v", f"{vol}:/data/db",
+            "-e", f"SERVER_ID={name}",
+            "-e", f"LAN_ID=lan{lan}",
+            "-e", f"MONGO_REPLSET={rs_name}",
+            "-e", f"MONGO_PORT={port}",
             "edge_storage_server",
-            "mongod", "--replSet", rs_name, "--bind_ip_all", "--port", str(port),
         ]
         return self._run_cmd(cmd)
 
@@ -231,10 +241,10 @@ class NodeAdder:
         mac: str | None = None
         m = _RESULT_IP_RE.search(result.stdout)
         if m:
-            ip = m.group(1)
+            ip = m.group(1) # The IP assigned to the container on the script
         m = _RESULT_MAC_RE.search(result.stdout)
         if m:
-            mac = m.group(1)
+            mac = m.group(1) # The MAC assigned to the container on the script
         ok = result.returncode == 0
         if ok:
             logger.debug("[node_add] script ok  ip=%s mac=%s\n%s", ip, mac, result.stdout)

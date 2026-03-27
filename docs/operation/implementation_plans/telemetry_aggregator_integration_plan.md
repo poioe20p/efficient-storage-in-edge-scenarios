@@ -264,7 +264,8 @@ The aggregator routes events by the presence of `event_type`:
 | `event_type` value | Source | Aggregator handling |
 |---|---|---|
 | *(absent)* | `edge_server` (per HTTP request) | Averaged in `_buffer` over the window |
-| `"mongo_stats"` | `edge_storage_server` (periodic) | Latest snapshot per `server_id` in a separate `_mongo_buffer` |
+| `"mongo_stats"` | `edge_storage_server` (on client activity) | Latest snapshot per `server_id` in a separate `_mongo_buffer` |
+| `"heartbeat"` | `edge_storage_server` (every 60 s when idle) | Liveness only — not forwarded to controller |
 
 Edge server events have no `event_type` field — no changes needed to `app.py`
 for the aggregator to distinguish the two kinds.
@@ -290,11 +291,103 @@ for the aggregator to distinguish the two kinds.
 | `cpu_percent` | `psutil` | Container CPU (same field name as edge_server events). |
 | `ram_used_mb` | `psutil` | Container RAM used in MB (same field name as edge_server events). |
 
+### Activity-based push (opcounters delta tracking)
+
+The sidecar should **not** push a `mongo_stats` event on every poll cycle —
+doing so floods the aggregator with identical snapshots when MongoDB is idle.
+Instead, it uses `serverStatus.opcounters` to detect whether real client
+operations occurred since the last poll, and only pushes when activity is
+detected. When idle, a distinct `heartbeat` event is sent every
+`HEARTBEAT_INTERVAL_S` (default 60 s) so the aggregator knows the node is
+alive but doesn't forward it to the controller.
+
+#### Module-level state
+
+```python
+HEARTBEAT_INTERVAL_S = float(os.environ.get("HEARTBEAT_INTERVAL_S", "60"))
+
+_prev_opcounters: dict | None = None
+_last_send_ts: float = 0.0
+```
+
+#### Activity detection
+
+```python
+def _has_client_activity(current: dict, previous: dict | None) -> bool:
+    """Return True if non-telemetry operations occurred since the last poll.
+
+    The sidecar issues 2 admin commands per cycle (serverStatus + replSetGetStatus),
+    so a command delta of exactly 2 with no other changes means no client activity.
+    """
+    if previous is None:
+        return True  # first poll — always report initial state
+
+    client_ops = ("insert", "query", "update", "delete", "getmore")
+    for op in client_ops:
+        if current.get(op, 0) - previous.get(op, 0) > 0:
+            return True
+
+    # NOTE: Do NOT use the `command` opcounter delta as an activity signal.
+    # In a replica set, MongoDB internally exchanges heartbeat/election
+    # commands (replSetHeartbeat, replSetUpdatePosition, etc.) that inflate
+    # the command counter well beyond the sidecar's own 2 admin commands,
+    # causing telemetry to fire every cycle even when idle.
+    # Only CRUD opcounters (insert, query, update, delete, getmore) above
+    # reliably reflect real client activity.
+    return False
+```
+
+#### Conditional send in `_push_stats()`
+
+```python
+opcounters = server_status.get("opcounters", {})
+activity = _has_client_activity(opcounters, _prev_opcounters)
+_prev_opcounters = opcounters
+
+now = time.time()
+if activity:
+    event = { "event_type": "mongo_stats", ... }
+    _sock.send_json(event, zmq.NOBLOCK)
+    _last_send_ts = now
+elif now - _last_send_ts >= HEARTBEAT_INTERVAL_S:
+    event = { "event_type": "heartbeat", ... }  # same fields, different type
+    _sock.send_json(event, zmq.NOBLOCK)
+    _last_send_ts = now
+else:
+    logger.debug("No client activity — skipping telemetry push")
+```
+
+#### Heartbeat event format
+
+```json
+{
+  "event_type":          "heartbeat",
+  "server_id":           "mongo-net1",
+  "ts":                  1742126860.0,
+  "repl_lag_s":          0.0,
+  "connections_current": 1,
+  "cpu_percent":         2.1,
+  "ram_used_mb":         256.7
+}
+```
+
+The aggregator should filter out `event_type == "heartbeat"` events from the
+aggregation window so they aren't included in summaries forwarded to the
+controller. It may optionally track a "last seen" timestamp per `server_id`.
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Detection mechanism | `opcounters` delta | Zero MongoDB config, works with any version |
+| Heartbeat interval | 60 s | No ZMQ timeout concern; sufficient for liveness |
+| Heartbeat event type | `"heartbeat"` (distinct) | Aggregator excludes from controller summaries |
+| First poll | Always sends `mongo_stats` | Reports initial state on startup |
+| Own commands exclusion | `command` delta > 2 | Sidecar issues exactly 2 admin cmds per cycle |
+
 ### New files
 
 | File | Purpose |
 |---|---|
-| `source/docker/edge_storage_server/mongo_telemetry.py` | Sidecar: collects metrics, pushes ZMQ PUSH event every `TELEMETRY_INTERVAL_S` seconds |
+| `source/docker/edge_storage_server/mongo_telemetry.py` | Sidecar: collects metrics, pushes ZMQ PUSH event only when client activity detected (or heartbeat on idle) |
 | `source/docker/edge_storage_server/entrypoint.sh` | Starts `mongod`, waits for readiness ping, then starts sidecar in background |
 
 ### Aggregator summary delta

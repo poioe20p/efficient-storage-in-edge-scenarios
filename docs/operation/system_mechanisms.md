@@ -2,13 +2,7 @@
 
 This document describes the high-level workflows of the SDN-based edge orchestration architecture — how the components interact, what triggers actions, and how data flows through the system.
 
-For detailed implementation specifics, see the [details/](details/) subfolder:
-
-- [Double-VIP Routing](details/double_vip_routing.md) — OpenFlow rule mechanics, DNAT/SNAT, step-by-step VIP operations
-- [Controller Scheduling Algorithm](details/controller_scheduling_algorithm.md) — WSM cost function, MBFD heuristic, scale-out decision trees
-- [Data Gravity Tiers](details/data_gravity_tiers.md) — Cache node deployment, tier transitions, smart data retention
-- [Server Container Internals](details/server_container_internals.md) — Request processing, metrics reporting, SSR mode
-- [MongoDB Role and Design](details/mongodb_role_and_design.md) — Design rationale, sharding comparison, Change Streams, full data flow
+For detailed implementation specifics, see the [implementation plans](implementation_plans/) subfolder.
 
 ---
 
@@ -16,38 +10,39 @@ For detailed implementation specifics, see the [details/](details/) subfolder:
 
 This system implements **Topology-Aware Hierarchical Storage** coupled with **Service Placement** through **Data Gravity**: data moves toward the services and consumers that need it, and only for as long as they need it.
 
-The orchestration mechanisms are **workload-agnostic**: they react to measured demand metadata ($T_{proc}$, $T_{dados}$, cache hit ratio), not to assumptions about read/write ratios or specific application profiles.
+The orchestration mechanisms are **workload-agnostic**: they react to measured demand metadata ($T_{proc}$, $T_{dados}$), not to assumptions about read/write ratios or specific application profiles.
 
 **Core architectural principles:**
 
 1. **Independent replica sets per network.** Each network segment hosts its own single-node replica set (`rs_net1`, `rs_net2`, etc.). Data is partitioned by network origin, not by a shard key.
-2. **Three-tier data placement hierarchy.** Cross-network data demand is addressed progressively:
+2. **Data placement hierarchy.** Cross-network data demand is addressed progressively:
    - **Tier 0 — Direct routing:** Low demand is served by routing packets to the remote primary via SDN.
-   - **Tier 1 — Selective Sync Node:** Burst demand triggers a standalone `mongod` seeded with only the hot collections identified by local access tracking. Ongoing writes to those collections are forwarded via per-collection Change Streams from the primary; documents carry a TTL and are auto-evicted when demand subsides.
+   - **Tier 1 — Selective Sync Node** *(future work — not yet implemented):* Burst demand would trigger a standalone `mongod` seeded with only hot collections identified by local access tracking, kept current via per-collection Change Streams. See [§1.6](#16-future-work-selective-sync-node-tier-1) for the planned design.
    - **Tier 2 — Full replica:** Sustained high demand triggers `rs.add()` to place a full secondary in the requesting network. Removed when demand subsides.
 3. **Write-path isolation.** Writes always go to the local primary of the originating network.
-4. **Double-VIP model.** Two Virtual IPs cleanly separate the traffic planes: `VIP_Web` for client-to-server HTTP traffic and `VIP_Dados` for server-to-MongoDB traffic (one per network domain).
-
-> For the sharding vs. orchestration comparison and MongoDB's specific utility in this design, see [MongoDB Role and Design](details/mongodb_role_and_design.md).
+4. **Double-VIP model.** Two Virtual IPs cleanly separate the traffic planes: `VIP_SERVER` for client-to-server HTTP traffic and `VIP_DATA` for server-to-MongoDB traffic.
 
 ---
 
 ## 1. The Controller (SDN "Brain")
 
-The controller is a Python-based OS-Ken (Ryu) SDN application that runs on the host machine. It manages the entire system through three concurrent threads, each with a distinct responsibility. None of the threads share mutable state unsafely; communication flows in one direction through in-memory data structures.
+The controller is a Python-based OS-Ken (Ryu) SDN application that runs on the host machine. It is composed via multiple-inheritance mixins:
+
+```python
+class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
+```
+
+The system's logic is distributed across three concurrent execution contexts — each with a distinct responsibility. None of them share mutable state unsafely; communication flows in one direction through in-memory data structures and a thread-safe `Queue`.
 
 ```mermaid
-                                                                                                                                                           graph TD
-    T1["Thread 1<br/>Real-Time Scheduler<br/>(Fast Path)"]
-    T2["Thread 2<br/>Telemetry Monitor<br/>(Observer)"]
-    T3C["Thread 3: Compute Manager<br/>(T_proc threshold)"]
-    T3D["Thread 3: Data Manager<br/>(T_dados threshold)"]
+graph TD
+    T1["Thread 1<br/>OS-Ken Event Loop + VipRoutingMixin<br/>(Fast Path)"]
+    T2["Telemetry Greenthread<br/>ZmqTelemetrySource<br/>(Observer)"]
+    T3["Thread 3<br/>ElasticityManager<br/>(Slow Path)"]
 
-    T2 -->|"T_proc breached<br/>compute alert"| T3C
-    T2 -->|"T_dados breached<br/>data alert"| T3D
-    T3C -->|"updated server registry"| T1
-    T3D -->|"updated VIP_Dados DNAT<br/>(MDVBP tier map)"| T1
-    T2 -->|"live T_proc per server<br/>(WSM input)"| T1
+    T2 -->|"on_update callback<br/>threshold evaluation"| T3
+    T3 -->|"add_server_mac / add_storage_mac<br/>updates VIP pools"| T1
+    T2 -->|"_server_tproc dict<br/>(WSM input)"| T1
 ```
 
 ---
@@ -56,112 +51,217 @@ The controller is a Python-based OS-Ken (Ryu) SDN application that runs on the h
 
 **Purpose:** Handle every incoming packet that hits a table-miss or VIP punt rule, select the best destination, and install OpenFlow flow rules so that subsequent packets are forwarded entirely in the switch without controller involvement.
 
-**Constraint:** Strictly non-blocking. Thread 1 never queries a database or executes scripts. It relies exclusively on in-memory state kept up to date by Threads 2 and 3.
+**Constraint:** Strictly non-blocking. Thread 1 never queries a database or executes scripts. It relies exclusively on in-memory state kept up to date by the telemetry greenthread and Thread 3.
 
-Thread 1 handles two independent traffic planes:
+Thread 1 handles two independent traffic planes via `VipRoutingMixin`:
 
-| VIP                 | Address                               | Traffic Plane         | Selection Logic                                 |
-| :------------------ | :------------------------------------ | :-------------------- | :---------------------------------------------- |
-| **VIP_Web**   | `10.0.0.100:80`                     | Client → Web Server  | WSM cost weighted by$T_{proc}$ and hop count  |
-| **VIP_Dados** | `10.0.X.200:27017` (one per domain) | Web Server → MongoDB | Data Gravity tier map (MDVBP) — Tier 0 / 1 / 2 |
+| VIP | Default Address | Traffic Plane | Selection Logic |
+| :-- | :-------------- | :------------ | :-------------- |
+| **VIP_SERVER** | `10.0.0.100` (env: `VIP_SERVER_IP`) | Client → Web Server | WSM cost weighted by $T_{proc}$ and hop count |
+| **VIP_DATA** | `10.0.0.200` (env: `VIP_DATA_IP`) | Web Server → MongoDB | First available from storage pool *(MDVBP tier-aware selection is future work)* |
+
+Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_MAC`) configured via environment variables, used for proactive ARP replies and DNAT/SNAT rewriting.
+
+#### VIP Server Selection — WSM Cost Formula
 
 $$
 Cost_j^{web} = \theta \cdot \frac{T_{proc,j}}{T_{proc,max}} + (1 - \theta) \cdot \frac{Hops_j}{Hops_{max}}
 $$
 
-For each `VIP_Web` Packet-In, Thread 1 evaluates the cost function, installs a DNAT+SNAT rule pair, and sends a Packet-Out. For each `VIP_Dados` Packet-In, Thread 1 reads the MDVBP tier map, selects the target `mongod`, installs the DNAT+SNAT rule pair, and sends a Packet-Out. The MongoDB driver in each web server sees only `VIP_Dados:27017` — a single stable address — and never discovers the physical `mongod` topology.
+- $\theta$ is configurable via `WSM_THETA` (default `0.5`).
+- When no telemetry is available yet, the $T_{proc}$ component is set to `0.0` (no penalty) and selection falls back to hop-count only.
+- `select_server()` iterates over `vip_server_pool`, scores each candidate, and returns the one with the lowest cost.
 
-| Active Tier      | VIP_Dados Routes To                    | Rationale                  |
-| :--------------- | :------------------------------------- | :------------------------- |
-| **Tier 0** | Remote primary (cross-network)         | No local data resource yet |
-| **Tier 1** | Local selective sync node (same network) | Hot collections synced locally |
-| **Tier 2** | Local replica secondary (same network) | Full replica present       |
+#### VIP Packet-In Flow
 
-> For packet-level detail (DNAT/SNAT rule specs, `src_port` omission rationale, ARP handling, step-by-step per-VIP operations, full lifecycle example), see [Double-VIP Routing](details/double_vip_routing.md).
+For each `VIP_SERVER` Packet-In, Thread 1 evaluates the WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each `VIP_DATA` Packet-In, Thread 1 selects the first available storage backend and installs an analogous DNAT+SNAT pair.
+
+The MongoDB driver in each web server sees only `VIP_DATA:<port>` — a single stable address — and never discovers the physical `mongod` topology.
+
+#### OpenFlow Rule Priority Hierarchy
+
+| Priority | Rule Type | Purpose |
+| :------- | :-------- | :------ |
+| 200 | Proactive ARP reply | OVS answers ARP `who-has <VIP>?` directly with the VIP's virtual MAC — no controller involvement |
+| 200 | Reactive DNAT+SNAT | Installed per-connection by `handle_vip_packet_in()` after server selection; idle/hard timeout causes expiry and re-selection |
+| 100 | VIP punt | Sends VIP-destined IP packets to the controller for server selection; lower than DNAT so installed rules take precedence |
+| 5 | Proactive L2 | Topology-based forwarding installed by `TopologyMixin` |
+
+#### IP ↔ MAC Learning
+
+`VipRoutingMixin` snoops every ARP packet that passes through the switch (via `_snoop_arp()`) to build an `_ip_to_mac` / `_mac_to_ip` mapping. This is required because DNAT actions need the backend's IP address, which is not known from the VIP Packet-In alone.
+
+> See [vip_interception_plan.md](implementation_plans/vip_interception_plan.md) for the full mixin implementation.
 
 ---
 
-### 1.2 Thread 2 — Telemetry & State Monitor (Observer)
+### 1.2 Telemetry Source (Observer Greenthread)
 
-**Purpose:** Continuously watch infrastructure metrics and data-placement state. Feed live data to Thread 1 and raise typed alerts to Thread 3 when delay thresholds are breached. Thread 2 is the **QoE sentinel**: its primary concern is not server resource utilization in isolation, but **observable latency** — the metric that directly determines whether the user's Quality of Experience is being maintained.
+**Purpose:** Receive infrastructure metrics from the per-network aggregator containers and feed live data to Thread 1 (for WSM scoring) and Thread 3 (for threshold evaluation). This is the **QoE sentinel**: its primary concern is **observable latency** — the metric that directly determines whether the user's Quality of Experience is being maintained.
 
-#### Inputs
+#### Architecture
 
-| Source                 | Data                                                                | Method                                                  |
-| ---------------------- | ------------------------------------------------------------------- | ------------------------------------------------------- |
-| Aggregation Script (per network) | Per-domain aggregated delay averages: $\overline{T_{total}}$, $\overline{T_{dados}}$, $\overline{T_{proc}}$ | **Pub/sub push** (aggregation script publishes; controller subscribes) |
-| Aggregation Script (per network) | Aggregated resource headroom: RAM, storage, active connections      | **Pub/sub push**     |
-| OVS Switches           | Per-port byte/packet counters                                       | `OFPPortStatsRequest` / `OFPPortStatsReply` polling |
+The telemetry path is fully ZeroMQ-based. There is no database in the telemetry pipeline.
 
-> Raw per-server metrics are written by server containers to the **Local MongoDB** of their network domain. A per-network **Aggregation Script** computes windowed summaries (5–10 s windows) and **pushes them directly to the controller via pub/sub**. Thread 2 is woken only when a summary is published — no polling, no database dependency in the telemetry path. See [Cross-Network State & Telemetry Architecture](../other/system_cross_network_state.md) for the full architecture.
+```
+Edge Servers ──(ZMQ PUSH)──► Aggregator (per network) ──(ZMQ PUB)──► Controller (ZMQ SUB)
+                                                                        ├─ _latest dict (Thread 1 reads)
+                                                                        └─ on_update callback (→ Thread 3 queue)
+```
 
-**Latency decomposition** (computed by Thread 2 from the fields reported by each server):
+The implementation uses a `TelemetryEventSource` abstract interface with a single concrete implementation — `ZmqTelemetrySource`:
+
+- **`TelemetryEventSource` (ABC):** Exposes `start()` and `get_latest(network_id) -> TelemetrySummary | None`. Transport-agnostic — the controller never calls `receive()` or manages sockets directly.
+- **`ZmqTelemetrySource`:** Owns a `zmq.green` SUB socket that subscribes to aggregator PUB endpoints. A background eventlet greenthread (via `hub.spawn`) runs `_receive_loop()`, parsing each incoming JSON into a Pydantic `TelemetrySummary` model and caching the latest per `network_id`. Uses `zmq.green` (pyzmq's eventlet backend) so `recv_json()` yields cooperatively instead of blocking the OS-Ken event loop.
+
+Both controllers subscribe to **both** aggregators because `VIP_SERVER` selection is cross-domain — a controller may route a client to a server in the peer network, so it needs $T_{proc}$ values for all servers.
+
+The same ZMQ SUB socket also receives **topology snapshots** from the peer controller (disambiguated by a `"type": "topology"` field in the JSON payload — see §1.4).
+
+#### Telemetry Payload (from aggregator)
+
+The aggregator publishes windowed summaries conforming to the `TelemetrySummary` Pydantic model:
+
+```json
+{
+  "network_id": "net1",
+  "window_end": 1742300400.0,
+  "servers": {
+    "server-1": {
+      "avg_time_total_ms": 44.0,
+      "avg_time_db_ms": 11.5,
+      "avg_time_proc_ms": 32.5,
+      "request_count": 120,
+      "error_rate": 0.0,
+      "avg_cpu_percent": 22.4,
+      "avg_ram_used_mb": 310.0
+    }
+  },
+  "domain_summary": {
+    "total_requests": 360,
+    "avg_time_proc_ms": 33.1,
+    "avg_time_db_ms": 12.1,
+    "average_cpu_percent": 21.8,
+    "peak_time_total_ms": 98.3
+  }
+}
+```
+
+**Latency decomposition:**
 
 $$
 T_{proc} = T_{total} - T_{dados}
 $$
 
-- $T_{total}$: wall-clock time from HTTP request receipt to response sent (reported by the web server).
-- $T_{dados}$: time the web server spent blocked waiting for `VIP_Dados:27017` to reply (the MongoDB query round-trip as seen from the application).
-- $T_{proc}$: the residual — time consumed by CPU work (template rendering, serialisation, application logic).
+- $T_{total}$ (`avg_time_total_ms`): wall-clock time from HTTP request receipt to response sent.
+- $T_{dados}$ (`avg_time_db_ms`): time the web server spent blocked waiting for MongoDB to reply.
+- $T_{proc}$ (`avg_time_proc_ms`): the residual — compute work (template rendering, serialisation, application logic).
 
-#### What it does
+#### Threshold Evaluation and Alert Routing
 
-1. **Subscribes** to the pub/sub channel for its network domain. The aggregation script publishes only when a windowed summary is ready (no polling, no database cursor).
-2. **Updates shared in-memory state** with the latest per-domain delay averages and per-switch port bitrates (from OpenFlow stats polling).
-3. **Evaluates two independent threshold conditions** and routes alerts to the two logical components of Thread 3:
-   - **Compute alert** → triggered when $\overline{T_{proc}} > \tau_{proc}$. Sent to the **Compute Manager**.
-   - **Data alert** → triggered when $\overline{T_{dados}} > \tau_{dados}$. Sent to the **Data Manager**.
-4. **Thread 1** reads the in-memory state continuously for the $Cost_j^{web}$ formula and the MDVBP tier map.
+The telemetry `on_update` callback evaluates two independent threshold conditions (configurable via `TAU_PROC_MS` and `TAU_DADOS_MS` environment variables) and submits typed alerts to the `ElasticityManager` queue:
+
+- **Compute alert** → triggered when `avg_time_proc_ms > TAU_PROC_MS`. Submits a `ComputeAlert`.
+- **Data alert** → triggered when `avg_time_db_ms > TAU_DADOS_MS`. Submits a `DataAlert`.
+
+Thread 1 reads the `_server_tproc` dict (updated by `VipRoutingMixin.update_server_tproc()` on each telemetry arrival) for the WSM cost formula.
 
 ```mermaid
 sequenceDiagram
-    participant Servers as Server Containers
-    participant LocalMongo as Local MongoDB (per network)
-    participant AggScript as Aggregation Script (per network)
-    participant T2 as Controller Thread 2
+    participant Servers as Edge Server Containers
+    participant Agg as Aggregator (ZMQ PULL→PUB)
+    participant T2 as ZmqTelemetrySource (SUB)
     participant Memory as In-Memory State
-    participant TComp as Thread 3: Compute Manager
-    participant TData as Thread 3: Data Manager
+    participant T3 as ElasticityManager Queue
 
-    Servers->>LocalMongo: insert/update raw metrics<br/>{T_total, T_dados, ram, ...}
-    AggScript->>LocalMongo: read raw metrics (5–10 s window)
-    AggScript-->>T2: pub/sub push: domain summary<br/>{avg_T_total, avg_T_dados, avg_cpu, ...}
-    T2->>Memory: Update per-domain aggregated delay vector
-    T2->>T2: Compute T_proc = T_total - T_dados
-    Note over T2,Memory: Thread 1 reads Memory<br/>for WSM cost function (T_proc)
-    T2->>T2: Evaluate compute threshold:<br/>T_proc > τ_proc?
+    Servers->>Agg: ZMQ PUSH per-request metric<br/>{T_total_ms, T_dados_ms, cpu, ram}
+    Note over Agg: Window aggregation (10 s)
+    Agg-->>T2: ZMQ PUB: TelemetrySummary
+    T2->>Memory: _latest[network_id] = summary
+    T2->>T2: update _server_tproc (WSM input)
+    Note over Memory: Thread 1 reads _server_tproc<br/>for Cost_j formula
+    T2->>T2: Evaluate: avg_time_proc_ms > τ_proc?
     opt Compute threshold breached
-        T2->>TComp: Alert: compute delay high<br/>(spawn/remove web servers)
+        T2->>T3: submit_alert(ComputeAlert)
     end
-    T2->>T2: Evaluate data threshold:<br/>T_dados > τ_dados?
+    T2->>T2: Evaluate: avg_time_db_ms > τ_dados?
     opt Data threshold breached
-        T2->>TData: Alert: data delay high<br/>(trigger Data Gravity transition)
+        T2->>T3: submit_alert(DataAlert)
     end
 ```
 
-> For Change Streams mechanics, the full metrics schema, and the end-to-end controller data flow, see [MongoDB Role and Design](details/mongodb_role_and_design.md).
+> **Not yet implemented:** OVS per-port byte/packet counter polling via `OFPPortStatsRequest` / `OFPPortStatsReply`.
+
+> See [telemetry_event_source_plan.md](implementation_plans/telemetry_event_source_plan.md) and [telemetry_aggregator_integration_plan.md](implementation_plans/telemetry_aggregator_integration_plan.md) for the full implementation.
 
 ---
 
 ### 1.3 Thread 3 — Elasticity & Placement Manager (Slow Path)
 
-**Purpose:** Mutate the infrastructure by adding/removing server containers and MongoDB data resources when Thread 2 detects a threshold breach. Thread 3 is logically split into two **decoupled managers** that respond to different alert types:
+**Purpose:** Mutate the infrastructure by adding/removing server containers and MongoDB data resources when the telemetry callback detects a threshold breach. Thread 3 is implemented as the `ElasticityManager` class — a long-lived daemon thread that blocks on a `threading.Queue`, receiving typed alert objects.
 
-- **Compute Manager** — responds to $T_{proc} > \tau_{proc}$ alerts. It adds or removes web server containers to control computation delay.
-- **Data Manager** — responds to $T_{dados} > \tau_{dados}$ alerts. It triggers Data Gravity tier transitions (Selective Sync Node deployment, full replica addition, or teardown) to bring data closer to the demanding network.
+Thread 3 responds to two independent alert types:
 
-This decoupling is the system's key architectural advance: a compute bottleneck does not entail a data placement change, and a data locality problem does not entail spawning more web servers. The two managers operate independently on their respective subsystems, driven by the latency signal most relevant to each domain.
+- **`ComputeAlert`** — responds to $T_{proc} > \tau_{proc}$. Spawns a new `edge_server` container.
+- **`DataAlert`** — responds to $T_{dados} > \tau_{dados}$. Spawns a new `edge_storage_server` container and joins it to the replica set.
 
-Both managers use the **Multi-Dimensional Best-Fit Decreasing (MBFD)** heuristic, applied to different resource spaces (compute capacity for the Compute Manager, latency and cache metrics for the Data Manager). Both managers perform **Data-Coupled Task Scheduling**: a web server is never placed without ensuring low-latency data access in the same network.
+This decoupling is a key architectural property: a compute bottleneck does not entail a data placement change, and a data locality problem does not entail spawning more web servers. The two concerns operate independently, driven by the latency signal most relevant to each domain.
 
-> For the full MBFD heuristic steps, scoring formula ($Score_j$, $Cost_j^{web}$), tier escalation table, deployment sequences, and scale-in procedure, see [Controller Scheduling Algorithm](details/controller_scheduling_algorithm.md).
+> **Future work:** The current threshold evaluation is a simple breach check. A more sophisticated **Multi-Dimensional Best-Fit Decreasing (MBFD)** heuristic could be layered on top to evaluate multi-dimensional resource vectors (CPU, RAM, latency) when making placement decisions.
+
+#### Node Addition Lifecycle — `NodeAdder`
+
+The `NodeAdder` class provides per-step, timed, idempotent lifecycle methods. Each method produces a `NodeResult` with full timing and state tracking:
+
+**Compute node (`add_edge_server`):**
+1. `docker run --network none --name <name> edge_server` → `RUNNING_CONTAINER`
+2. `add_network_node.sh --lan <N> --name <name>` (veth pair + OVS port + IP/MAC config) → `ATTACHING_NETWORK`
+3. Returns `NodeResult` → `DONE`
+
+**Storage node (`add_storage_node`):**
+1. `docker run --network none --name <name> edge_storage_server mongod --replSet <rs>` → `RUNNING_CONTAINER`
+2. `add_network_storage_node.sh --lan <N> --name <name> --rs-name <rs> --primary <primary>` (veth + OVS + `rs.add()` + wait for SECONDARY) → `ATTACHING_NETWORK` / `JOINING_RS`
+3. Returns `NodeResult` → `DONE`
+
+Each step has idempotency guards: if the container already exists and is running, `docker run` is skipped; if stopped, it is cleaned up and recreated. The shell scripts check for pre-existing veth pairs and OVS ports.
+
+After a successful addition, `ElasticityManager` resolves the new container's MAC (via `docker exec <name> cat /sys/class/net/eth0/address`) and calls `TopologyMixin.add_server_mac()` or `add_storage_mac()` — which updates the VIP pool that Thread 1 reads on the next Packet-In.
+
+#### Observability — `StepTimings` and `NodeOperationState`
+
+Every operation produces structured timing data:
+
+| Field | What it measures | Typical range |
+|---|---|---|
+| `docker_run_s` | Container creation to running state | 0.1 – 1 s |
+| `network_attach_s` | veth creation → OVS → IP config (+ `rs.add` for storage) | 1 – 10 s |
+| `total_s` | Wall clock from first step to last | 1.5 – 15 s |
+
+`NodeOperationState` enum tracks progress: `PENDING` → `RUNNING_CONTAINER` → `ATTACHING_NETWORK` → `JOINING_RS` (storage only) → `DONE` / `FAILED`.
+
+#### Node Removal — Two-Phase Cooperative Drain
+
+Removal follows a **two-phase cooperative drain** to avoid cutting active connections mid-flight:
+
+**Phase A — Controller-side isolation (immediate):**
+1. Remove MAC from VIP pool (`remove_server_mac` / `remove_storage_mac`) — no new connections routed to this node.
+2. Storage only: `rs.remove(IP:PORT)` via the replica set primary — node leaves RS before shutdown.
+
+**Phase B — Node drain + cleanup:**
+
+| | Compute (`edge_server`) | Storage (`edge_storage_server`) |
+|---|---|---|
+| **Drain signal** | `docker exec <name> curl -sS -X POST http://localhost:5000/drain` | Phase A is sufficient — `rs.remove()` + VIP removal stop new work |
+| **Idle detection** | Flask active-request counter hits 0 → container calls `os._exit(0)` | Controller reads `connections_current` from telemetry pipeline |
+| **Timeout fallback** | Force-stop after 30 s | Force-stop after 15 s |
+
+After the container stops: flush OVS flows for the MAC (`dl_src` + `dl_dst`), remove OVS port, delete veth pair, `docker rm`, optionally `docker volume rm` for storage.
+
+Scale-down alert types (`ScaleDownComputeAlert`, `ScaleDownDataAlert`) are dispatched through the same `ElasticityManager` queue. The scale-down **detection policy** (when to scale down) is a separate concern, deferred until the removal mechanism is validated.
 
 #### Elastic Lifecycle: Data Gravity in Action
 
-The following diagrams show the three-phase lifecycle that distinguishes this system from static replication.
-
-**Phase 1 — Base State (Tier 0):** Each network has its own primary. No cross-network replication or caching. Minimal infrastructure.
+**Phase 1 — Base State (Tier 0):** Each network has its own primary. No cross-network replication. Minimal infrastructure.
 
 ```mermaid
 graph LR
@@ -178,30 +278,9 @@ graph LR
     style RS2_P fill:#4a9,stroke:#333,color:#fff
 ```
 
-> Writes: local. Reads (own data): local. Reads (remote data): remote fetch. No secondaries, no caches.
+> Writes: local. Reads (own data): local. Reads (remote data): remote fetch. No secondaries.
 
-**Phase 2 — Burst Demand (Tier 1):** Thread 2 detects that $T_{dados}$ from Network B clients to Network A data exceeds $\tau_{dados}$. Thread 3 deploys a Selective Sync Node in Network B, seeded with hot collections and kept current via Change Streams from the primary.
-
-```mermaid
-graph LR
-    subgraph Network A
-        RS1_P2["rs_net1<br/>PRIMARY<br/>(Net A data)"]
-    end
-    subgraph Network B
-        RS1_C["Selective Sync Node<br/>(hot collections + TTL)"]
-        RS2_P2["rs_net2<br/>PRIMARY<br/>(Net B data)"]
-    end
-
-    RS1_P2 -.->|"Change Stream per hot collection"| RS1_C
-
-    style RS1_P2 fill:#4a9,stroke:#333,color:#fff
-    style RS1_C fill:#f9f,stroke:#333,color:#000
-    style RS2_P2 fill:#4a9,stroke:#333,color:#fff
-```
-
-> Net B reads for Net A data: **served locally** from hot collections. Write propagation via Change Stream. Zero oplog overhead.
-
-**Phase 3 — Sustained Demand (Tier 2):** Demand remains high despite Tier 1 (sustained rather than burst). Thread 3 decommissions the Selective Sync Node and adds a full secondary via `rs.add()` — MongoDB autonomous replication takes over.
+**Phase 2 — Sustained Cross-Network Demand (Tier 2):** Thread 3 detects that $T_{dados}$ from Network B to Network A data exceeds $\tau_{dados}$. A full secondary is deployed via `add_storage_node()` → `rs.add()` in Network B.
 
 ```mermaid
 graph LR
@@ -213,7 +292,7 @@ graph LR
         RS2_P3["rs_net2<br/>PRIMARY<br/>(Net B data)"]
     end
 
-    RS1_P3 -->|"oplog replication (mongodb autonmous mechanism)"| RS1_S
+    RS1_P3 -->|"oplog replication (MongoDB autonomous)"| RS1_S
 
     style RS1_P3 fill:#4a9,stroke:#333,color:#fff
     style RS1_S fill:#f96,stroke:#333,color:#fff
@@ -222,7 +301,7 @@ graph LR
 
 > Net B reads for Net A data: **always local** (served by secondary). Net A's full oplog is replicated.
 
-**Phase 4 — Demand Subsides (Scale-in):** Thread 2 detects $T_{dados}$ has dropped below $\tau_{dados}$ (cross-network demand subsided). Thread 3 executes `rs.remove()` to remove the Tier 2 secondary, or closes all Change Streams and decommissions the Tier 1 Selective Sync Node. Thread 1 reverts `VIP_Dados` DNAT to Tier 0. System returns to Phase 1.
+**Phase 3 — Demand Subsides (Scale-in):** $T_{dados}$ drops below $\tau_{dados}$. Thread 3 executes the two-phase drain: `rs.remove()`, wait for idle, stop container, clean up OVS/veth. VIP routes revert to Tier 0. System returns to Phase 1.
 
 ```mermaid
 graph LR
@@ -230,7 +309,7 @@ graph LR
         RS1_P4["rs_net1<br/>PRIMARY<br/>(Net A data)"]
     end
     subgraph Network B
-        RS1_S4["rs_net1<br/>REPLICA / CACHE<br/>(removed)"]
+        RS1_S4["rs_net1<br/>SECONDARY<br/>(removed)"]
         RS2_P4["rs_net2<br/>PRIMARY<br/>(Net B data)"]
     end
 
@@ -241,81 +320,318 @@ graph LR
     style RS2_P4 fill:#4a9,stroke:#333,color:#fff
 ```
 
-> Edge storage freed, replication/cache traffic stopped. Back to base state.
+> Edge storage freed, replication traffic stopped. Back to base state.
 
-> For the full MBFD decision steps, tier escalation table, concrete deployment sequences (replica set secondary and web server container), and scale-in procedure, see [Controller Scheduling Algorithm](details/controller_scheduling_algorithm.md).
+> See [thread3_node_addition_plan.md](implementation_plans/thread3_node_addition_plan.md) and [node_removal_plan.md](implementation_plans/node_removal_plan.md) for the full implementation.
 
-### 1.4 Topology-Aware Selective Sync Node (The "Middle Path")
+---
 
-**Purpose:** Provide a lightweight, selective data access tier for burst cross-network demand — sitting between "route to remote primary" (cheap but slow) and "full replica via `rs.add()`" (fast but carries full oplog overhead). The Selective Sync Node replicates only the collections that are actually being accessed, identified by access tracking on the local MongoDB.
+### 1.4 Topology Discovery & Peer Sharing
 
-**Why this is novel:** Standard replication (MongoDB `rs.add()`) replicates the full dataset regardless of what is actually being accessed remotely. The Selective Sync Node is **demand-driven**: it seeds only the hot collections at the moment of deployment and expands/contracts that set dynamically via per-collection Change Streams. Intra-network data is never synced because the primary is already <1ms away.
+**Purpose:** Discover the local network topology (switches, links, hosts), compute shortest-path hop distances, maintain VIP backend pools, and share topology state with the peer controller — all without any database dependency.
 
-#### The Data Placement Hierarchy
+The `TopologyMixin` mixin handles all topology concerns. It is mixed into the main controller class and does not run as a separate OS thread — it uses an eventlet greenthread via `hub.spawn`.
 
-Thread 3 selects a strategy based on the relationship between the request origin and the data origin:
+#### Local Topology — `_topology_worker` Greenthread
 
-| Scenario                              | Relationship  | Strategy                              | Rationale                                                                                                  |
-| ------------------------------------- | ------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| User A reads Data A                   | Intra-network | Direct read from primary              | Primary is local. Latency is negligible. Syncing adds unnecessary complexity.                              |
-| User B reads Data A (low volume)      | Cross-network | Direct routing to remote primary      | Demand is too low to justify any local infrastructure. SDN routes packets.                                 |
-| User B reads Data A (burst demand)    | Cross-network | **Selective Sync Node**         | Primary is remote. Latency is high. Only hot collections seeded locally; Change Streams keep them current. |
-| User B reads Data A (sustained demand)| Cross-network | **Full replica** (`rs.add()`) | Demand is sustained. Full autonomous replication justified; Selective Sync Node decommissioned. |
+A background greenthread runs every `TOPOLOGY_INTERVAL` seconds (default 1 s):
 
-> For the full trigger conditions, Selective Sync Node deployment sequence, VIP_Dados DNAT configuration per tier, global `id_index` replication, tier transition state machine, timeouts, and scientific justification, see [Data Gravity Tiers](details/data_gravity_tiers.md).
+1. Queries the OS-Ken topology API (`get_all_link`, `get_host`) to discover switches, links, and hosts.
+2. Builds a NetworkX `DiGraph` (`self.net`) for shortest-path computation.
+3. Records host-to-switch attachment in `self.host_attachment` (MAC → (dpid, port_no)).
+4. Rebuilds `hop_cache`: for every known host MAC and every server/storage MAC, computes the shortest-path hop count.
+5. Rebuilds VIP pools (`vip_server_pool`, `vip_storage_pool`) by filtering the combined local + peer host attachment by registered MAC sets.
+6. On topology change: installs proactive L2 forwarding rules (priority 5) on all switches.
+
+Router MACs (`00:00:00:00:00:aa`–`dd`) are blocklisted from the host list to avoid treating inter-network router ports as service endpoints.
+
+#### Peer Topology Sharing — ZMQ PUB/SUB
+
+Each controller binds a ZMQ PUB socket on port `TOPOLOGY_PUB_PORT` (default 5557). The `_topology_worker` publishes the full topology snapshot:
+- On every detected change (hosts/links/switches differ from previous tick).
+- Every `TOPOLOGY_HEARTBEAT_TICKS` ticks (default 30) even without change — so a restarted peer gets current state within seconds.
+- Immediately when the peer's snapshot reveals it has a stale view of this controller's local network.
+
+The peer controller's `ZmqTelemetrySource` SUB socket subscribes to this PUB endpoint (in addition to aggregator endpoints). Messages are disambiguated by the `"type"` field:
+- No `"type"` field → telemetry summary (from aggregator) → `TelemetrySummary` model.
+- `"type": "topology"` → topology snapshot → routed to `TopologyMixin.on_topology_update()`.
+
+Published snapshots carry the controller's **global view** (its own local network + the peer's network as received from the peer). The receiver uses this to detect if the sender has a stale copy of the receiver's own network and triggers a correction republish.
+
+#### MAC Role Sharing
+
+Each controller maintains **separate** local and peer MAC sets:
+
+```
+_local_server_macs  (from env vars + Thread 3 additions)
+_peer_server_macs   (replaced wholesale on each peer topology update)
+─────────────────────────────────────────────────────────
+_server_macs (property) = _local | _peer   ← used by VIP pool rebuild
+```
+
+This design ensures:
+- **Additions propagate:** Thread 3 calls `add_server_mac()` → MAC is added to `_local_*` → included in next published snapshot → peer receives it.
+- **Removals propagate:** `remove_server_mac()` removes from `_local_*` → next snapshot no longer includes it → peer replaces its `_peer_*` set wholesale → MAC disappears on both sides.
+- **No stale accumulation:** Full replacement (not union) of peer sets on each update; old MACs are automatically dropped.
+
+> See [topology_mixin_plan.md](implementation_plans/topology_mixin_plan.md) and [peer_mac_role_sharing_plan.md](implementation_plans/peer_mac_role_sharing_plan.md) for the full implementation.
+
+---
+
+### 1.5 Environment Variable Reference
+
+All per-network configuration is injected via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `VIP_SERVER_IP` | `10.0.0.100` | Virtual IP for the compute/app server pool |
+| `VIP_DATA_IP` | `10.0.0.200` | Virtual IP for the storage (MongoDB) pool |
+| `VIP_SERVER_MAC` | `aa:bb:cc:dd:ee:01` | Virtual MAC for the server VIP |
+| `VIP_DATA_MAC` | `aa:bb:cc:dd:ee:02` | Virtual MAC for the data VIP |
+| `NETWORK_ID` | `lan1` | Identifies this controller's domain |
+| `SERVER_MACS` | `""` | Comma-separated MACs of compute servers behind the VIP |
+| `STORAGE_MACS` | `""` | Comma-separated MACs of storage servers |
+| `WSM_THETA` | `0.5` | Weight for $T_{proc}$ vs hops in the WSM formula |
+| `VIP_IDLE_TIMEOUT` | `30` | Seconds of idle before a DNAT rule expires |
+| `VIP_HARD_TIMEOUT` | `120` | Maximum seconds a DNAT rule persists |
+| `TAU_PROC_MS` | `200` | Compute threshold: alert when `avg_time_proc_ms` exceeds this |
+| `TAU_DADOS_MS` | `150` | Data threshold: alert when `avg_time_db_ms` exceeds this |
+| `TOPOLOGY_INTERVAL` | `1` | Seconds between topology worker ticks |
+| `TOPOLOGY_PUB_PORT` | `5557` | Port for this controller's topology PUB socket |
+| `TOPOLOGY_HEARTBEAT_TICKS` | `30` | Republish snapshot every N ticks even without change |
+| `AGGREGATOR_ENDPOINTS` | `tcp://127.0.0.1:5556` | Comma-separated aggregator PUB addresses |
+| `PEER_TOPOLOGY_ENDPOINTS` | `""` | Comma-separated peer controller PUB addresses |
+
+---
+
+### 1.6 Future Work: Selective Sync Node (Tier 1)
+
+> **Status: NOT YET IMPLEMENTED — planned as future extension.**
+
+The Selective Sync Node is intended as a lightweight intermediate tier between direct routing (Tier 0) and full replication (Tier 2). Its purpose is to provide a "middle path" for burst cross-network demand — replicating only the collections that are actually being accessed, identified by access tracking on the local MongoDB.
+
+**Planned design:**
+
+- A standalone `mongod` seeded with only the hot collections at deployment time.
+- Ongoing writes forwarded via per-collection Change Streams from the remote primary.
+- Documents carry a TTL and are auto-evicted when demand subsides.
+- Intra-network data is never synced because the primary is already local.
+
+**Planned data placement hierarchy (with Tier 1):**
+
+| Scenario | Relationship | Strategy | Rationale |
+|---|---|---|---|
+| User A reads Data A | Intra-network | Direct read from primary | Primary is local |
+| User B reads Data A (low volume) | Cross-network | Direct routing to remote primary (Tier 0) | Demand too low for local infrastructure |
+| User B reads Data A (burst demand) | Cross-network | **Selective Sync Node (Tier 1)** | Only hot collections synced locally |
+| User B reads Data A (sustained demand) | Cross-network | **Full replica via `rs.add()` (Tier 2)** | Full autonomous replication justified |
+
+When implemented, this would also require a **MDVBP (Metadata-Driven VIP Backend Picker)** tier map in Thread 1's `VIP_DATA` selection logic, replacing the current first-available strategy with tier-aware routing.
 
 ---
 
 ## 2. The Server (Application Container)
 
-Each server is a lightweight Docker container running an HTTP application (e.g., Flask/FastAPI). It handles each client request in a **dedicated thread** that follows a short-lived connection model: open connection → execute query → return response → close connection. Connection lifetime equals HTTP request lifetime — no connection pool management is required, and tier transitions take effect on the very next HTTP request after an OVS flow rule expires. Each thread selects the correct MongoDB domain VIP by reading the domain prefix embedded in the document ID (e.g., `"net2::sensor_xyz_002"` → `"net2"` → `VIP_Dados_Net2`), requiring no controller query and no extra RTT. The server also periodically reports its own resource usage to its network's Local MongoDB instance.
+Each server is a lightweight Docker container running an HTTP application (Flask). It handles each client request in a **dedicated thread** that follows a short-lived connection model: open connection → execute query → return response → close connection. Connection lifetime equals HTTP request lifetime — no connection pool management is required, and tier transitions take effect on the very next HTTP request after an OVS flow rule expires.
+
+### 2.1 Request Handling
+
+Each thread connects to `VIP_DATA:<port>` for MongoDB queries. The MongoDB driver sees only the VIP — a single stable address — and never discovers the physical `mongod` topology. The SDN network performs the DNAT rewrite transparently.
+
+### 2.2 Telemetry Reporting — ZMQ PUSH
+
+Each server pushes a metric event **directly via ZeroMQ PUSH** to its network's aggregator container after every HTTP request. There is no database in the telemetry path.
+
+The Flask app uses `@app.before_request` / `@app.after_request` hooks:
+- `before_request`: records `t_start = time.monotonic()` and initialises `t_dados_elapsed = 0.0`.
+- `after_request`: computes `t_total`, calls `push_metric()` which builds an event dict (including `cpu_percent` and `ram_used_mb` via `psutil`) and sends it via `zmq.NOBLOCK`.
+
+Per-request metric event:
+
+```json
+{
+  "server_id": "edge-server-net1-1",
+  "ts": 1742126400.0,
+  "T_total_ms": 85.2,
+  "T_dados_ms": 47.1,
+  "status_code": 200,
+  "request_type": "read",
+  "cpu_percent": 34.7,
+  "ram_used_mb": 128.3
+}
+```
+
+`zmq.NOBLOCK` ensures the hook never blocks the HTTP response even if the aggregator is temporarily unavailable — events are simply dropped.
 
 ```mermaid
 graph LR
     Client["Client Request<br/>(via DNAT)"] --> Server["Server Container"]
-    Server -->|"all DB reads<br/>(to VIP_Dados)"| VIPd["VIP_Dados:27017<br/>(SDN selects mongod)"]
-    VIPd -.->|"Tier 0: remote primary<br/>Tier 1: local cache<br/>Tier 2: local secondary"| Mongo[("mongod instance")]
-    Server -->|"writes<br/>(to VIP_Dados_Write)"| VIPdw["VIP_Dados_Write:27017<br/>(SDN → primary only)"]
-    Server -->|"metrics (T_total, T_dados, ...)"| LocalMongo["Local MongoDB<br/>(Raw Metrics — stays in domain)"]
+    Server -->|"DB queries<br/>(to VIP_DATA)"| VIPd["VIP_DATA<br/>(SDN selects mongod)"]
+    VIPd -.->|"Tier 0: remote primary<br/>Tier 2: local secondary"| Mongo[("mongod instance")]
+    Server -->|"ZMQ PUSH per-request<br/>{T_total, T_dados, cpu, ram}"| Agg["Aggregator<br/>(ZMQ PULL)"]
 ```
 
-> For request processing flows (read/write mermaid sequences), metrics reporting schema, dual-mode SSR operation, and the Data Gravity amplification effect, see [Server Container Internals](details/server_container_internals.md).
+### 2.3 Graceful Drain Endpoint
+
+For safe scale-down, each server exposes a `/drain` endpoint:
+
+- `POST /drain` — sets `_draining = True`, returns 200. Subsequent non-drain requests receive 503.
+- `GET /drain/status` — returns `{"draining": bool, "active_requests": int}`.
+- A background drain monitor thread checks every 0.5 s: when `_draining and active_requests == 0`, calls `os._exit(0)`.
+
+The drain signal is sent via `docker exec curl` (not through the network stack) to bypass potentially stale OVS flow rules.
+
+> See [telemetry_aggregator_integration_plan.md](implementation_plans/telemetry_aggregator_integration_plan.md) and [node_removal_plan.md](implementation_plans/node_removal_plan.md) for the full implementation.
 
 ---
 
-## 3. Telemetry & Cross-Domain Coordination Architecture
+## 2b. MongoDB Storage Telemetry
 
-Two distinct communication mechanisms are used, each chosen for what it is actually designed for:
+Each `edge_storage_server` container runs a bare `mongod` with a Python sidecar (`mongo_telemetry.py`) that pushes periodic snapshots to the same aggregator PULL socket used by edge servers.
 
-- **Pub/sub (telemetry path):** Aggregation scripts push windowed summaries directly to the controller. No shared database in the telemetry path. Controllers are woken only when a summary is published — no polling, no persistent cursor, no database dependency for event delivery.
-- **Shared MongoDB (coordination state):** VIP registry and topology snapshots require durable, readable state — pub/sub cannot serve a controller that needs to read current state after an event. The Shared MongoDB is retained exclusively for these concerns. Telemetry summaries do **not** pass through it.
+### Activity-Based Push
 
-> For the full architecture (layer responsibilities, pub/sub justification, cross-network flow rules, node self-registration), see [Cross-Network State & Telemetry Architecture](../other/system_cross_network_state.md).
+The sidecar uses `serverStatus.opcounters` delta tracking to avoid flooding the aggregator with identical snapshots when MongoDB is idle:
+- **Active:** client operations detected (insert/query/update/delete/getmore delta > 0, or command delta > 2 to exclude the sidecar's own admin commands) → push `mongo_stats` event.
+- **Idle:** no client activity → push a `heartbeat` event every 60 s (liveness only, not forwarded to controller).
 
-> For the Local MongoDB metrics schema and the end-to-end data flow, see [MongoDB Role and Design](details/mongodb_role_and_design.md).
+```json
+{
+  "event_type": "mongo_stats",
+  "server_id": "mongo-net1",
+  "ts": 1742126400.0,
+  "repl_lag_s": 1.2,
+  "connections_current": 4,
+  "cpu_percent": 12.3,
+  "ram_used_mb": 256.7
+}
+```
+
+The aggregator routes events by the `event_type` field: absent → edge server per-request metric (windowed averaging); `"mongo_stats"` → latest snapshot per `server_id`; `"heartbeat"` → liveness only.
+
+The aggregator's published summary includes a `"storage_nodes"` section with the latest snapshot per MongoDB instance.
+
+> See [telemetry_aggregator_integration_plan.md](implementation_plans/telemetry_aggregator_integration_plan.md) for the full sidecar and aggregator implementation.
 
 ---
 
-## 4. Final System Definition
+## 3. Telemetry & Cross-Domain Communication Architecture
 
-> This thesis proposes a **Self-Optimizing Edge Orchestration Architecture**. It utilizes **SDN-driven Double-VIP control** to detect demand and **Programmable Containers** to fulfill it. By decomposing observed latency into $T_{proc}$ (compute delay) and $T_{dados}$ (data-access delay), the controller identifies the nature of each bottleneck and applies the correct remediation: compute scale-out or a Data Gravity tier transition. By embedding synchronization logic (`sync.py`) and lifecycle management (TTL/Hit-Counts) directly into edge containers, the system achieves scalable, autonomous orchestration of compute and storage resources that minimizes service latency while strictly bounding resource usage through a three-tier storage hierarchy.
+All inter-component communication uses **ZeroMQ** exclusively. There is no shared database in the system's control or telemetry paths.
+
+### 3.1 Telemetry Path — ZMQ PUSH/PUB/SUB
+
+```
+Edge Servers ──(ZMQ PUSH)──┐
+                            ├──► Aggregator (per network) ──(ZMQ PUB :5556)──► Controller SUB
+MongoDB Sidecars ─(PUSH)───┘         │
+                                     └─ Windowed summary every WINDOW_S (default 10 s)
+```
+
+One aggregator container per network, deployed by `build_network_*.sh`, attached to the OVS bridge like any other node. The aggregator:
+- Binds a ZMQ PULL socket (port 5555) — receives per-request events from edge servers and periodic snapshots from MongoDB sidecars.
+- Binds a ZMQ PUB socket (port 5556) — publishes windowed domain summaries.
+- Computes per-server averages over a configurable window (`WINDOW_S`, default 10 s).
+- Keeps the latest MongoDB snapshot per `server_id` in a separate buffer (not windowed — latest value only).
+
+### 3.2 Topology Path — ZMQ PUB/SUB
+
+```
+Controller A ──(ZMQ PUB :5557)──► Controller B (SUB)
+Controller B ──(ZMQ PUB :5557)──► Controller A (SUB)
+```
+
+Each controller's topology PUB socket is an additional `connect()` on the existing SUB socket in `ZmqTelemetrySource`. Messages are disambiguated by `"type"`:
+- No `"type"` field → `TelemetrySummary` (from aggregator).
+- `"type": "topology"` → topology snapshot (from peer controller) → routed to `TopologyMixin.on_topology_update()`.
+
+### 3.3 End-to-End Data Flow
+
+```mermaid
+graph TB
+    subgraph "Network 1"
+        ES1["Edge Server(s)"]
+        MS1["mongod + sidecar"]
+        AGG1["Aggregator N1<br/>(PULL :5555 / PUB :5556)"]
+        CTRL1["Controller N1<br/>(SUB / PUB :5557)"]
+    end
+    subgraph "Network 2"
+        ES2["Edge Server(s)"]
+        MS2["mongod + sidecar"]
+        AGG2["Aggregator N2<br/>(PULL :5555 / PUB :5556)"]
+        CTRL2["Controller N2<br/>(SUB / PUB :5557)"]
+    end
+
+    ES1 -->|"ZMQ PUSH"| AGG1
+    MS1 -->|"ZMQ PUSH"| AGG1
+    AGG1 -->|"ZMQ PUB"| CTRL1
+    AGG1 -->|"ZMQ PUB"| CTRL2
+
+    ES2 -->|"ZMQ PUSH"| AGG2
+    MS2 -->|"ZMQ PUSH"| AGG2
+    AGG2 -->|"ZMQ PUB"| CTRL2
+    AGG2 -->|"ZMQ PUB"| CTRL1
+
+    CTRL1 <-->|"ZMQ PUB/SUB<br/>topology snapshots"| CTRL2
+```
+
+---
+
+## 4. Network Infrastructure
+
+All network attachment is performed **externally** by admin shell scripts — containers never "self-register". The scripts create veth pairs, move one end into the OVS namespace (attaching to the bridge), move the other end into the container's namespace, and configure IP/MAC/gateway via `nsenter`.
+
+### 4.1 Static Topology — `build_network_*.sh`
+
+The base topology for each network (OVS bridge, router, initial edge servers, initial storage nodes, aggregator) is built by `build_network_1.sh` and `build_network_2.sh`. These scripts are run once to establish the initial infrastructure.
+
+### 4.2 Dynamic Node Addition — `add_network_node.sh` / `add_network_storage_node.sh`
+
+Thread 3 (`NodeAdder`) calls these scripts at runtime to attach dynamically provisioned containers:
+
+- **`add_network_node.sh`** — pure Layer 2/3 wiring: allocate IP (auto-scan for next free), derive MAC, create veth pair, attach to OVS bridge, configure container interface. Does not start containers or modify MongoDB.
+- **`add_network_storage_node.sh`** — same networking, plus `rs.add()` to join the replica set and waits for the member to reach SECONDARY state.
+
+Both scripts emit `RESULT_IP=<ip>` on success for machine-readable parsing by `NodeAdder`.
+
+**IP auto-assignment:** scans all running container PIDs via `nsenter` to find taken addresses, reserves `.1` (gateway) and VIP addresses, picks the lowest free host octet.
+
+**MAC derivation:** deterministic from LAN index and host octet: `00:00:00:00:0L:HH`.
+
+### 4.3 Node Removal — `remove_network_node.sh` / `remove_network_storage_node.sh`
+
+Support `--graceful` and `--drain-timeout` flags for cooperative shutdown. Without `--graceful`, immediate removal (backward compatible).
+
+### 4.4 Test Clients — Namespace-Based
+
+For testing VIP routing, lightweight `ip netns` namespaces (no Docker image needed) can be created via `create_test_clients.sh` / `remove_test_clients.sh`. These use separate veth ranges (50–69 for LAN 1, 70–89 for LAN 2) to avoid conflicting with Thread 3's dynamic node allocation ranges (10–19 / 30–49).
+
+> See [build_network_add_node_plan.md](implementation_plans/build_network_add_node_plan.md), [node_removal_plan.md](implementation_plans/node_removal_plan.md), and [test_client_scripts_plan.md](implementation_plans/test_client_scripts_plan.md) for the full implementation.
+
+---
+
+## 5. Final System Definition
+
+> This thesis proposes a **Self-Optimizing Edge Orchestration Architecture**. It utilizes **SDN-driven Double-VIP control** to detect demand and **Programmable Containers** to fulfill it. By decomposing observed latency into $T_{proc}$ (compute delay) and $T_{dados}$ (data-access delay), the controller identifies the nature of each bottleneck and applies the correct remediation: compute scale-out or data placement via replica set expansion. The system achieves autonomous orchestration of compute and storage resources that minimizes service latency while bounding resource usage.
 
 The architecture's contribution to the state of the art is the integration of three layers that are traditionally managed independently:
 
-| Layer             | Traditional Approach                        | This System                                                                                                                                    |
-| ----------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Network** | Static routing or ECMP                      | Double-VIP SDN routing:`VIP_Web` selects best web server; `VIP_Dados` selects best `mongod` endpoint per data-gravity tier               |
-| **Compute** | Manual scaling or load-balancer round-robin | MBFD Compute Manager driven by$T_{proc}$ delay threshold — QoE-aware scale-out/in                                                           |
-| **Storage** | Static sharding or full replication         | Three-tier adaptive hierarchy (Tier 0: remote primary → Tier 1: selective sync node → Tier 2: full replica via `rs.add()`), triggered by $T_{dados}$ threshold |
+| Layer | Traditional Approach | This System |
+|---|---|---|
+| **Network** | Static routing or ECMP | Double-VIP SDN routing: `VIP_SERVER` selects best web server (WSM); `VIP_DATA` selects `mongod` endpoint |
+| **Compute** | Manual scaling or load-balancer round-robin | `ElasticityManager` driven by $T_{proc}$ threshold — QoE-aware scale-out/in with cooperative drain |
+| **Storage** | Static sharding or full replication | Adaptive hierarchy: Tier 0 (remote primary) → Tier 2 (full replica via `rs.add()`), triggered by $T_{dados}$ threshold. *(Tier 1 selective sync: future work)* |
 
 **Clean Separation of Responsibilities.** Each layer performs only its designated function and requires no knowledge of the others:
 
-| Layer                         | Responsibility                                                                     |
-| :---------------------------- | :--------------------------------------------------------------------------------- |
-| **Web server thread**   | Parse document ID prefix → connect to domain VIP → query → close connection     |
-| **OVS**                 | DNAT rewrite on new connections using installed flow rules; no protocol inspection |
-| **Controller Thread 1** | On `Packet-In` → install DNAT rule for the current tier (reads MDVBP map)       |
-| **Controller Thread 3** | Decide tier transitions based on$T_{dados}$ → update OVS rules via MDVBP map    |
-| **mongod / storage**    | Serve documents, maintain `id_index` collection                                  |
+| Layer | Responsibility |
+|:---|:---|
+| **Web server thread** | Connect to `VIP_DATA` → query → push ZMQ metric → close connection |
+| **OVS** | DNAT/SNAT rewrite on new connections using installed flow rules; no protocol inspection |
+| **Controller Thread 1** (`VipRoutingMixin`) | On `Packet-In` → select backend via WSM/pool → install DNAT+SNAT rule |
+| **Telemetry greenthread** (`ZmqTelemetrySource`) | Receive and cache telemetry summaries → evaluate thresholds → submit alerts |
+| **Controller Thread 3** (`ElasticityManager`) | Receive alerts → spawn/drain containers → update VIP pools |
+| **`TopologyMixin`** | Discover topology → compute hop cache → share with peer via ZMQ PUB |
+| **mongod / storage** | Serve documents; sidecar reports telemetry via ZMQ |
 
-By coupling these three layers under a single control loop (Threads 1–3), the system eliminates the coordination gaps that arise when network, compute, and storage are managed by independent subsystems. The Double-VIP model ensures that routing intelligence resides entirely in the SDN layer: the MongoDB driver in each web server never performs topology discovery, never sends heartbeats, and never makes data-routing decisions. The network decides. This proves that programmable containers at the edge, orchestrated by an SDN controller using latency as the primary QoE signal, can autonomously participate in data distribution decisions.
+By coupling these three layers under a single control loop, the system eliminates the coordination gaps that arise when network, compute, and storage are managed by independent subsystems. The Double-VIP model ensures that routing intelligence resides entirely in the SDN layer: the MongoDB driver in each web server never performs topology discovery, never sends heartbeats, and never makes data-routing decisions. The network decides.

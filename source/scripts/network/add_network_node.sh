@@ -14,7 +14,8 @@ declare -A LAN_SUBNET=( [1]="10.0.0" [2]="10.0.1" )
 declare -A LAN_GATEWAY=( [1]="10.0.0.1" [2]="10.0.1.1" )
 declare -A VETH_RANGE_START=( [1]=10 [2]=30 )
 declare -A VETH_RANGE_END=( [1]=19 [2]=49 )
-declare -A RESERVED_SUFFIX=( [1]="1 100" [2]="1 100" )
+# .1 = gateway, .100 = VIP_Web, .200 = VIP_Data; test clients (namespace-based) use .30+
+declare -A RESERVED_SUFFIX=( [1]="1 100 200" [2]="1 100 200" )
 
 LAN=""
 CONTAINER_NAME=""
@@ -101,7 +102,18 @@ collect_used_ips() {
 			used+=("$addr")
 		done
 	done
-
+	# Also scan named network namespaces — covers namespace-based test clients
+	# created by create_test_clients.sh, which are invisible to docker ps.
+	local ns
+	while read -r ns _rest; do
+		local addrs
+		addrs=$(sudo ip -n "$ns" -4 -o addr show 2>/dev/null \
+			| grep -oE "${subnet//./\.}\.[0-9]+" || true)
+		local addr
+		for addr in $addrs; do
+			used+=("$addr")
+		done
+	done < <(ip netns list 2>/dev/null || true)
 	printf '%s\n' "${used[@]}" | sort -u
 }
 

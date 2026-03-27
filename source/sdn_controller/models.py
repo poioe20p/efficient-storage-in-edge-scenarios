@@ -30,3 +30,7 @@ class TopologySnapshot(BaseModel):
     switches: list[int] = []
     hops: dict = {}
     ts: float = 0.0
+    # MAC role sets — advertised by sender so peer can merge them into its own pools
+    server_macs:     list[str] = []
+    storage_macs_n1: list[str] = []
+    storage_macs_n2: list[str] = []

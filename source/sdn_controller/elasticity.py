@@ -114,6 +114,7 @@ class ElasticityManager:
         if result.success and result.ip:
             if result.mac:
                 self._topo.add_server_mac(result.mac)
+                self._topo.register_backend_ip(result.mac, result.ip)
                 logger.info(
                     "[elasticity] compute: %s online  ip=%s  mac=%s",
                     name, result.ip, result.mac,
@@ -144,7 +145,8 @@ class ElasticityManager:
 
         if result.success and result.ip:
             if result.mac:
-                self._topo.add_storage_mac(result.mac)
+                self._topo.add_storage_mac(result.mac, domain=f"n{alert.lan}")
+                self._topo.register_backend_ip(result.mac, result.ip)
                 logger.info(
                     "[elasticity] data: %s online  ip=%s  mac=%s",
                     name, result.ip, result.mac,

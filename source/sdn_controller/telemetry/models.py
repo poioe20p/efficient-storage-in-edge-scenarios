@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 
@@ -9,6 +11,14 @@ class ServerSummary(BaseModel):
     error_rate: float
     avg_cpu_percent: float
     avg_ram_used_mb: float
+
+
+class StorageServerSummary(BaseModel):
+    avg_repl_lag_s: float | None
+    avg_connections: float
+    avg_cpu_percent: float
+    avg_ram_used_mb: float
+    sample_count: int
 
 
 class DomainSummary(BaseModel):
@@ -23,4 +33,5 @@ class TelemetrySummary(BaseModel):
     network_id: str
     window_end: float
     servers: dict[str, ServerSummary]
+    storage_servers: dict[str, StorageServerSummary] = {}
     domain_summary: DomainSummary

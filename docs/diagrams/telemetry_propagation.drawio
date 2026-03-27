@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="telemetry-propagation" name="Telemetry Propagation">
-        <mxGraphModel dx="1497" dy="1085" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="3145" dy="1085" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -16,22 +16,22 @@
                 <mxCell id="box_ctrl2" value="&amp;nbsp;SDN Controller 2  (subscribes to both aggregators)" style="text;html=1;strokeColor=#666666;fillColor=#f5f5f5;fontColor=#333333;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
                     <mxGeometry x="820" y="380" width="820" height="500" as="geometry"/>
                 </mxCell>
-                <mxCell id="es1" value="&lt;b&gt;Edge Server(s)&lt;/b&gt;&lt;br&gt;Flask + telemetry.py&lt;br&gt;ZMQ PUSH — per-request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="es1" value="&lt;b&gt;Edge Server(s) (Containers)&lt;/b&gt;&lt;br&gt;Flask + telemetry.py&lt;br&gt;ZMQ PUSH — per-request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="30" y="90" width="210" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="ss1" value="&lt;b&gt;Edge Storage Server&lt;/b&gt;&lt;br&gt;mongod + mongo_telemetry.py&lt;br&gt;ZMQ PUSH — every 10 s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="ss1" value="&lt;b&gt;Edge Storage Server(s) (Container)&lt;/b&gt;&lt;br&gt;mongod + mongo_telemetry.py&lt;br&gt;ZMQ PUSH — every 10 s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="45" y="220" width="210" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="agg1" value="&lt;b&gt;Aggregator (net1)&lt;/b&gt;&lt;br&gt;PULL :5555 / PUB :5556&lt;br&gt;window = 10 s&lt;br&gt;→ TelemetrySummary JSON" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="agg1" value="&lt;b&gt;Aggregator (net1) (Container)&lt;/b&gt;&lt;br&gt;PULL :5555 / PUB :5556&lt;br&gt;window = 10 s&lt;br&gt;→ TelemetrySummary JSON" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="350" y="90" width="230" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="es2" value="&lt;b&gt;Edge Server(s)&lt;/b&gt;&lt;br&gt;Flask + telemetry.py&lt;br&gt;ZMQ PUSH — per-request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="es2" value="&lt;b&gt;Edge Server(s) (Containers)&lt;/b&gt;&lt;br&gt;Flask + telemetry.py&lt;br&gt;ZMQ PUSH — per-request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="1410" y="90" width="210" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="ss2" value="&lt;b&gt;Edge Storage Server&lt;/b&gt;&lt;br&gt;mongod + mongo_telemetry.py&lt;br&gt;ZMQ PUSH — every 10 s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="ss2" value="&lt;b&gt;Edge Storage Server(s) (Containers)&lt;/b&gt;&lt;br&gt;mongod + mongo_telemetry.py&lt;br&gt;ZMQ PUSH — every 10 s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="1410" y="215" width="210" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="agg2" value="&lt;b&gt;Aggregator (net2)&lt;/b&gt;&lt;br&gt;PULL :5555 / PUB :5556&lt;br&gt;window = 10 s&lt;br&gt;→ TelemetrySummary JSON" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="agg2" value="&lt;b&gt;Aggregator (net2) (Container)&lt;/b&gt;&lt;br&gt;PULL :5555 / PUB :5556&lt;br&gt;window = 10 s&lt;br&gt;→ TelemetrySummary JSON" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="1100" y="90" width="230" height="110" as="geometry"/>
                 </mxCell>
                 <mxCell id="t2c1" value="&lt;b&gt;Thread 2&lt;/b&gt;&lt;br&gt;ZmqTelemetrySource&lt;br&gt;ZMQ SUB (zmq.green)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" parent="1" vertex="1">
@@ -43,7 +43,7 @@
                 <mxCell id="t1c1" value="&lt;b&gt;Thread 1 — Scheduler&lt;/b&gt;&lt;br&gt;WSM cost function&lt;br&gt;→ best server for VIP_Web" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="200" y="600" width="200" height="85" as="geometry"/>
                 </mxCell>
-                <mxCell id="t3c1" value="&lt;b&gt;Thread 3 — Elasticity&lt;/b&gt;&lt;br&gt;T_proc &gt; τ → scale servers&lt;br&gt;T_dados &gt; τ → relocate data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="t3c1" value="&lt;b&gt;Thread 3 — Elasticity&lt;/b&gt;&lt;br&gt;T_proc &amp;gt; τ → scale servers&lt;br&gt;T_dados &amp;gt; τ → scale/relocate data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="450" y="600" width="200" height="85" as="geometry"/>
                 </mxCell>
                 <mxCell id="ovs1" value="&lt;b&gt;OVS Switch (net1)&lt;/b&gt;&lt;br&gt;OpenFlow DNAT/SNAT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
@@ -58,16 +58,16 @@
                 <mxCell id="t1c2" value="&lt;b&gt;Thread 1 — Scheduler&lt;/b&gt;&lt;br&gt;WSM cost function&lt;br&gt;→ best server for VIP_Web" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="985" y="600" width="200" height="85" as="geometry"/>
                 </mxCell>
-                <mxCell id="t3c2" value="&lt;b&gt;Thread 3 — Elasticity&lt;/b&gt;&lt;br&gt;T_proc &gt; τ → scale servers&lt;br&gt;T_dados &gt; τ → relocate data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
+                <mxCell id="t3c2" value="&lt;b&gt;Thread 3 — Elasticity&lt;/b&gt;&lt;br&gt;T_proc &amp;gt; τ → scale servers&lt;br&gt;T_dados &amp;gt; τ → scale/relocate data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="1240" y="600" width="200" height="85" as="geometry"/>
                 </mxCell>
                 <mxCell id="ovs2" value="&lt;b&gt;OVS Switch (net2)&lt;/b&gt;&lt;br&gt;OpenFlow DNAT/SNAT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="985" y="740" width="200" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_es1_agg1" value="ZMQ PUSH/PULL" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;fontColor=#7d5300;fontSize=12;fontStyle=1;" parent="1" source="es1" target="agg1" edge="1">
+                <mxCell id="e_es1_agg1" value="ZMQ PUSH/PULL" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;fontColor=#7d5300;fontSize=12;fontStyle=0;" parent="1" source="es1" target="agg1" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_ss1_agg1" value="ZMQ PUSH/PULL  (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontColor=#b85450;fontSize=12;fontStyle=1;dashed=1;" parent="1" source="ss1" target="agg1" edge="1">
+                <mxCell id="e_ss1_agg1" value="ZMQ PUSH/PULL  (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontColor=#b85450;fontSize=12;fontStyle=0;dashed=1;" parent="1" source="ss1" target="agg1" edge="1">
                     <mxGeometry x="0.1304" relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="400" y="270"/>
@@ -75,13 +75,13 @@
                         <mxPoint x="1" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_es2_agg2" value="ZMQ PUSH/PULL" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;fontColor=#7d5300;fontSize=12;fontStyle=1;" parent="1" source="es2" target="agg2" edge="1">
+                <mxCell id="e_es2_agg2" value="ZMQ PUSH/PULL" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;fontColor=#7d5300;fontSize=12;fontStyle=0;" parent="1" source="es2" target="agg2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_ss2_agg2" value="ZMQ PUSH/PULL  (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontColor=#b85450;fontSize=12;fontStyle=1;dashed=1;" parent="1" source="ss2" target="agg2" edge="1">
+                <mxCell id="e_ss2_agg2" value="ZMQ PUSH/PULL  (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontColor=#b85450;fontSize=12;fontStyle=0;dashed=1;" parent="1" source="ss2" target="agg2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_agg1_t2c1" value="ZMQ PUB/SUB :5556&lt;br&gt;TelemetrySummary (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;fontColor=#006600;fontSize=12;fontStyle=1;strokeWidth=2;" parent="1" source="agg1" target="t2c1" edge="1">
+                <mxCell id="e_agg1_t2c1" value="ZMQ PUB/SUB :5556&lt;br&gt;TelemetrySummary (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;fontColor=#006600;fontSize=12;fontStyle=0;strokeWidth=2;" parent="1" source="agg1" target="t2c1" edge="1">
                     <mxGeometry x="-0.2522" relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="470" y="440"/>
@@ -90,7 +90,7 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_agg2_t2c2" value="ZMQ PUB/SUB :5556&lt;br&gt;TelemetrySummary (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;fontColor=#6b00a8;fontSize=12;fontStyle=1;strokeWidth=2;" parent="1" source="agg2" target="t2c2" edge="1">
+                <mxCell id="e_agg2_t2c2" value="ZMQ PUB/SUB :5556&lt;br&gt;TelemetrySummary (10 s)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;fontColor=#6b00a8;fontSize=12;fontStyle=0;strokeWidth=2;" parent="1" source="agg2" target="t2c2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_agg1_t2c2" value="cross-domain subscription" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;fontColor=#006600;fontSize=12;fontStyle=2;dashed=1;strokeWidth=2;" parent="1" source="agg1" target="t2c2" edge="1">
@@ -110,28 +110,28 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_t2c1_state" value="update _latest[ ]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;fontSize=12;" parent="1" source="t2c1" target="state_c1" edge="1">
+                <mxCell id="e_t2c1_state" value="update _latest[ ]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;fontSize=12;fontStyle=0" parent="1" source="t2c1" target="state_c1" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_state_t1c1" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;fontSize=12;" parent="1" source="state_c1" target="t1c1" edge="1">
+                <mxCell id="e_state_t1c1" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;fontSize=12;fontStyle=0" parent="1" source="state_c1" target="t1c1" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_state_t3c1" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontSize=12;" parent="1" source="state_c1" target="t3c1" edge="1">
+                <mxCell id="e_state_t3c1" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontSize=12;fontStyle=0" parent="1" source="state_c1" target="t3c1" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_t1c1_ovs1" value="install OpenFlow rules" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#006600;strokeWidth=2;fontSize=12;" parent="1" source="t1c1" target="ovs1" edge="1">
+                <mxCell id="e_t1c1_ovs1" value="install OpenFlow rules" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#006600;strokeWidth=2;fontSize=12;fontStyle=0" parent="1" source="t1c1" target="ovs1" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_t2c2_state" value="update _latest[ ]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;fontSize=12;" parent="1" source="t2c2" target="state_c2" edge="1">
+                <mxCell id="e_t2c2_state" value="update _latest[ ]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;fontSize=12;fontStyle=0" parent="1" source="t2c2" target="state_c2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_state_t1c2" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;fontSize=12;" parent="1" source="state_c2" target="t1c2" edge="1">
+                <mxCell id="e_state_t1c2" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#82b366;fontSize=12;fontStyle=0" parent="1" source="state_c2" target="t1c2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_state_t3c2" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontSize=12;" parent="1" source="state_c2" target="t3c2" edge="1">
+                <mxCell id="e_state_t3c2" value="get_latest( )" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b85450;fontSize=12;fontStyle=0" parent="1" source="state_c2" target="t3c2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_t1c2_ovs2" value="install OpenFlow rules" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#006600;strokeWidth=2;fontSize=12;" parent="1" source="t1c2" target="ovs2" edge="1">
+                <mxCell id="e_t1c2_ovs2" value="install OpenFlow rules" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#006600;strokeWidth=2;fontSize=12;fontStyle=0" parent="1" source="t1c2" target="ovs2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
             </root>

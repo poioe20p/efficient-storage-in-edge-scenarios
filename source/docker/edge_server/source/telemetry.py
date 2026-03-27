@@ -9,6 +9,15 @@ from flask import Flask, g, request
 SERVER_ID: str = os.environ.get("SERVER_ID", "unknown")
 
 
+def _aggregator_addr_from_lan() -> str:
+    """Derive the aggregator ZMQ PULL address from the LAN_ID env var (e.g. "lan1")."""
+    lan_id = os.environ.get("LAN_ID", "")
+    if not lan_id.startswith("lan"):
+        return ""
+    subnet_third_octet = int(lan_id[3:]) - 1  # lan1 → 10.0.0.x, lan2 → 10.0.1.x
+    return f"tcp://10.0.{subnet_third_octet}.5:5555"
+
+
 class MetricSender(ABC):
     @abstractmethod
     def send(self, event: dict) -> None: ...
@@ -16,7 +25,7 @@ class MetricSender(ABC):
 
 class ZmqMetricSender(MetricSender):
     def __init__(self) -> None:
-        addr = os.environ.get("AGGREGATOR_PULL_ADDR", "")
+        addr = os.environ.get("AGGREGATOR_PULL_ADDR", "") or _aggregator_addr_from_lan()
         self._sock: zmq.Socket | None = None
         if addr:
             ctx = zmq.Context.instance()

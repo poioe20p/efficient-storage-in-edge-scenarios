@@ -5,10 +5,65 @@ docker run -dit --name edge_storage_server_n1_1 --network none \
 
 docker run -dit --name edge_server_n1 --network none edge_server
 
+
 curl -O "http://10.0.0.2:5000/health" && \
 curl -O "http://10.0.1.2:5000/health"
+curl -O "http://10.0.0.100:5555/health"
+
 
 docker exec ovs ovs-ofctl dump-flows ovs-br0
+docker exec ovs ovs-ofctl dump-flows ovs-br1 | grep -Ew "00:00:00:00:00:02"
+
 
 docker logs -f osken | grep -Ew "elasticity|threshold|node_add"
 docker logs -f osken_2 | grep -Ew "elasticity|threshold|node_add"
+docker logs -f osken | grep -Ew "vip_server:"
+docker logs -f osken | grep -Ew "\[telemetry\]|vip_server:"
+
+
+sudo ip netns exec test_client_1 curl -s http://10.0.0.100:5000/health & sudo ip netns exec test_client_2 curl -s http://10.0.0.100:5000/health & sudo ip netns exec test_client_3 curl -s http://10.0.0.100:5000/health & wait
+
+sudo ip netns exec test_client_1 curl -s -X POST http://10.0.0.100:5000/wait_time \
+  -H "Content-Type: application/json" \
+  -d '{"wait_time_ms": 10}' 
+
+for i in 1 2 3; do sudo ip netns exec test_client_${i} curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 10}' | sed "s/^/[client_${i}] /" & done; wait
+
+sudo ip netns exec test_client_1 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 900}' | sed 's/^/[client_1] /' & sudo ip netns exec test_client_2 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 50}' | sed 's/^/[client_2] /' & sudo ip netns exec test_client_3 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 200}' | sed 's/^/[client_3] /' & wait
+
+
+sudo ip netns exec test_client_1 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 900}' | sed 's/^/[client_1] /' & \
+sudo ip netns exec test_client_2 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 50}' | sed 's/^/[client_2] /' & \
+sudo ip netns exec test_client_3 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 200}' | sed 's/^/[client_3] /' & \
+sudo ip netns exec test_client_4 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 900}' | sed 's/^/[client_4] /' & \
+sudo ip netns exec test_client_5 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 50}' | sed 's/^/[client_5] /' & \
+sudo ip netns exec test_client_6 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 200}' | sed 's/^/[client_6] /' & \
+sudo ip netns exec test_client_7 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 900}' | sed 's/^/[client_7] /' & \
+sudo ip netns exec test_client_8 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 50}' | sed 's/^/[client_8] /' & \
+sudo ip netns exec test_client_9 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 200}' | sed 's/^/[client_9] /' & \
+sudo ip netns exec test_client_10 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 900}' | sed 's/^/[client_10] /' & \
+wait
+
+
+sudo ip netns exec test_client_1 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 1000}' | sed 's/^/[client_1] /' & \
+sudo ip netns exec test_client_2 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 50}' | sed 's/^/[client_2] /' & \
+sudo ip netns exec test_client_3 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 5000}' | sed 's/^/[client_3] /' & \ wait
+
+sudo ip netns exec test_client_4 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 900}' | sed 's/^/[client_4] /' & \
+sudo ip netns exec test_client_5 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 50}' | sed 's/^/[client_5] /' & \ wait
+
+
+sudo ip netns exec test_client_6 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 200}' | sed 's/^/[client_6] /' & \
+sudo ip netns exec test_client_7 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 9000}' | sed 's/^/[client_7] /' & \
+sudo ip netns exec test_client_8 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 50}' | sed 's/^/[client_8] /' & \
+sudo ip netns exec test_client_9 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 2100}' | sed 's/^/[client_9] /' & \
+sudo ip netns exec test_client_10 curl -s -X POST http://10.0.0.100:5000/wait_time -H "Content-Type: application/json" -d '{"wait_time_ms": 1900}' | sed 's/^/[client_10] /' & \
+wait
+
+ip netns list | grep test_client
+sudo ip -n test_client_1 addr show
+docker exec ovs ovs-vsctl list-ports ovs-br0
+
+CPU utilization should be considered as well for the #sym:select_server and #sym:select_storage , also for newly added storage it can just consider there stats as the minimum (leads to higher preference / lower costs)
+
+Like this cust function is not matching the #file:system_mechanisms.md #file:system_to_thesis_map.md 

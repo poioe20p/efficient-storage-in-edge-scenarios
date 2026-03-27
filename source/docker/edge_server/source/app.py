@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+import time
 
 from flask import Flask, jsonify, request
 from telemetry import init_telemetry
@@ -80,6 +81,16 @@ def set_vip_data():
         vip_data_per_domain.update(body)
     return jsonify({"message": "VIP data updated", "vip_data": vip_data_per_domain}), 200
 
+
+@app.route("/wait_time", methods=["POST"])
+def post_wait_time():
+    body = request.get_json(silent=True) or {}
+    wait_time_ms = body.get("wait_time_ms")
+    if not isinstance(wait_time_ms, (int, float)):
+        return jsonify({"error": "'wait_time_ms' field must be a number"}), 400
+    log.info("POST /wait_time — simulating wait of %d ms", wait_time_ms)
+    time.sleep(wait_time_ms / 1000.0)
+    return jsonify({"message": f"Simulating wait of {wait_time_ms} ms"}), 200
 
 init_telemetry(app)
 

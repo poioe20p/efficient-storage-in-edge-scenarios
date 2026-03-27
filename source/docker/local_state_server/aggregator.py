@@ -49,24 +49,28 @@ def _publish_loop() -> None:
             logger.debug("Window empty, skipping publish")
             continue
 
+        http_events  = [e for e in window if e.get("event_type") not in ("mongo_stats", "heartbeat")]
+        mongo_events = [e for e in window if e.get("event_type") == "mongo_stats"]
+
+        # ── Per-server HTTP stats ─────────────────────────────────────────────
         by_server: dict = {}
-        for event in window:
+        for event in http_events:
             by_server.setdefault(event["server_id"], []).append(event)
 
         servers = {}
         for server_id, events in by_server.items():
             time_totals = [event["time_total_ms"] for event in events]
-            time_db = [event["time_db_ms"] for event in events]
-            time_procs = [event["time_total_ms"] - event["time_db_ms"] for event in events]
-            errors = sum(1 for event in events if event["status_code"] >= 500)
+            time_db     = [event["time_db_ms"] for event in events]
+            time_procs  = [event["time_total_ms"] - event["time_db_ms"] for event in events]
+            errors      = sum(1 for event in events if event["status_code"] >= 500)
             servers[server_id] = {
                 "avg_time_total_ms": statistics.mean(time_totals),
-                "avg_time_db_ms": statistics.mean(time_db),
-                "avg_time_proc_ms": statistics.mean(time_procs),
-                "request_count": len(events),
-                "error_rate": errors / len(events),
-                "avg_cpu_percent": statistics.mean([event["cpu_percent"] for event in events]),
-                "avg_ram_used_mb": statistics.mean([event["ram_used_mb"] for event in events]),
+                "avg_time_db_ms":    statistics.mean(time_db),
+                "avg_time_proc_ms":  statistics.mean(time_procs),
+                "request_count":     len(events),
+                "error_rate":        errors / len(events),
+                "avg_cpu_percent":   statistics.mean([event["cpu_percent"] for event in events]),
+                "avg_ram_used_mb":   statistics.mean([event["ram_used_mb"] for event in events]),
             }
             logger.debug(
                 "server_id=%s requests=%d error_rate=%.2f avg_total_ms=%.1f avg_db_ms=%.1f",
@@ -74,19 +78,44 @@ def _publish_loop() -> None:
                 statistics.mean(time_totals), statistics.mean(time_db),
             )
 
-        avg_time_proc = statistics.mean([event["time_total_ms"] - event["time_db_ms"] for event in window])
-        avg_time_db = statistics.mean([event["time_db_ms"] for event in window])
-        avg_cpu_percent = statistics.mean([event["cpu_percent"] for event in window])
+        # ── Per-server mongo stats ────────────────────────────────────────────
+        by_storage: dict = {}
+        for event in mongo_events:
+            by_storage.setdefault(event["server_id"], []).append(event)
+
+        storage_servers = {}
+        for server_id, events in by_storage.items():
+            lags = [e["repl_lag_s"] for e in events if e.get("repl_lag_s") is not None]
+            storage_servers[server_id] = {
+                "avg_repl_lag_s":  statistics.mean(lags) if lags else None,
+                "avg_connections": statistics.mean([e["connections_current"] for e in events]),
+                "avg_cpu_percent": statistics.mean([e["cpu_percent"] for e in events]),
+                "avg_ram_used_mb": statistics.mean([e["ram_used_mb"] for e in events]),
+                "sample_count":    len(events),
+            }
+
+        # ── Domain summary (HTTP only) ────────────────────────────────────────
+        if http_events:
+            avg_time_proc   = statistics.mean([e["time_total_ms"] - e["time_db_ms"] for e in http_events])
+            avg_time_db     = statistics.mean([e["time_db_ms"] for e in http_events])
+            avg_cpu_percent = statistics.mean([e["cpu_percent"] for e in http_events])
+            peak_time_total = max(e["time_total_ms"] for e in http_events)
+            total_requests  = len(http_events)
+        else:
+            avg_time_proc = avg_time_db = avg_cpu_percent = peak_time_total = 0.0
+            total_requests = 0
+
         summary = {
-            "network_id": NETWORK_ID,
-            "window_end": time.time(),
-            "servers": servers,
+            "network_id":      NETWORK_ID,
+            "window_end":      time.time(),
+            "servers":         servers,
+            "storage_servers": storage_servers,
             "domain_summary": {
-                "total_requests": len(window),
-                "avg_time_proc_ms": avg_time_proc,
-                "avg_time_db_ms": avg_time_db,
+                "total_requests":      total_requests,
+                "avg_time_proc_ms":    avg_time_proc,
+                "avg_time_db_ms":      avg_time_db,
                 "average_cpu_percent": avg_cpu_percent,
-                "peak_time_total_ms": max(event["time_total_ms"] for event in window),
+                "peak_time_total_ms":  peak_time_total,
             },
         }
         logger.info(
