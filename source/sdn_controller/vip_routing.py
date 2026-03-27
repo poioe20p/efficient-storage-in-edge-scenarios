@@ -4,8 +4,9 @@ Responsibilities:
   - ARP interception for VIP addresses (reactive, controller-generated replies)
   - IP packet interception for VIP_SERVER and VIP_DATA
   - DNAT/SNAT flow rule installation (priority 200, with timeouts)
-  - WSM cost-based server selection using T_proc + hop count
-  - Fixed-per-domain storage selection (MDVBP tier 0 baseline)
+  - Multi-dimensional WSM cost-based server selection (CPU, RAM, requests, hops)
+  - Multi-dimensional WSM cost-based storage selection (CPU, RAM, connections,
+    replication lag, hops)
   - Per-domain VIP_DATA: VIP_DATA_N1 routes to LAN1 storage,
     VIP_DATA_N2 routes to LAN2 storage
 
@@ -16,9 +17,9 @@ forwards them to the remote switch, which delivers them via normal L2
 forwarding (the packet is already rewritten — no second VIP PacketIn).
 
 This is NOT a new thread.  All methods are called inline by Thread 1's
-packet_in_handler.  State written by Thread 2 (_server_tproc) is read
-here — no locks are needed because eventlet uses cooperative switching and
-these dicts are only mutated between yield points.
+packet_in_handler.  State written by Thread 2 (_server_stats, _storage_stats)
+is read here — no locks are needed because eventlet uses cooperative switching
+and these dicts are only mutated between yield points.
 
 Usage (class MRO in main_n*.py):
     class KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp):
@@ -31,9 +32,23 @@ from os_ken.lib.packet import arp as arp_lib
 from os_ken.lib.packet import ethernet as eth_lib
 from os_ken.lib.packet import ether_types, ipv4, packet
 
+from .telemetry.models import ServerSummary, StorageServerSummary
+
 logger = logging.getLogger("os_ken.vip_routing")
 
-_WSM_THETA        = float(os.environ.get("WSM_THETA",        "0.5"))
+# --- Server (compute) WSM weights ---
+_W_CPU      = float(os.environ.get("W_CPU",      "0.3"))
+_W_RAM      = float(os.environ.get("W_RAM",      "0.1"))
+_W_REQUESTS = float(os.environ.get("W_REQUESTS", "0.2"))
+_W_HOPS     = float(os.environ.get("W_HOPS",     "0.4"))
+
+# --- Storage WSM weights ---
+_W_STORAGE_CPU         = float(os.environ.get("W_STORAGE_CPU",         "0.2"))
+_W_STORAGE_RAM         = float(os.environ.get("W_STORAGE_RAM",         "0.1"))
+_W_STORAGE_CONNECTIONS = float(os.environ.get("W_STORAGE_CONNECTIONS", "0.2"))
+_W_STORAGE_LAG         = float(os.environ.get("W_STORAGE_LAG",         "0.2"))
+_W_STORAGE_HOPS        = float(os.environ.get("W_STORAGE_HOPS",        "0.3"))
+
 _VIP_IDLE_TIMEOUT = int(os.environ.get("VIP_IDLE_TIMEOUT", "30"))
 _VIP_HARD_TIMEOUT = int(os.environ.get("VIP_HARD_TIMEOUT", "120"))
 
@@ -72,14 +87,26 @@ class VipRoutingMixin:
         self._ip_to_mac: dict[str, str] = {}   # ip  -> mac
         self._mac_to_ip: dict[str, str] = {}   # mac -> ip
 
-        # Per-server T_proc (ms) updated by Thread 2 telemetry callback.
-        # Keyed by server_id as reported in TelemetrySummary.servers.
-        self._server_tproc: dict[str, float] = {}
+        # Per-server / per-storage telemetry stats, keyed by MAC.
+        # Each container discovers its own MAC and includes it in telemetry
+        # events — the aggregator forwards it as the dict key.
+        # Updated by Thread 2 via update_server_stats() / update_storage_stats().
+        # Read by Thread 1 cost functions (select_server / select_storage).
+        self._server_stats:  dict[str, ServerSummary]        = {}
+        self._storage_stats: dict[str, StorageServerSummary] = {}
+
+        # Round-robin counters for cold-start tie-breaking.
+        # When multiple backends share the lowest WSM cost (common during cold
+        # start when all resource dimensions are 0.0), the counter ensures
+        # traffic is distributed instead of always hitting the first entry.
+        self._rr_server_idx: int = 0
+        self._rr_storage_idx: dict[str, int] = {}   # keyed by domain ("n1"/"n2")
 
         logger.info(
-            "vip routing mixin: theta=%.2f idle_timeout=%ds hard_timeout=%ds "
-            "router_port=%d cross_hop_penalty=%d",
-            _WSM_THETA, _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
+            "vip routing mixin: w_cpu=%.2f w_ram=%.2f w_req=%.2f w_hops=%.2f "
+            "idle_timeout=%ds hard_timeout=%ds router_port=%d cross_hop_penalty=%d",
+            _W_CPU, _W_RAM, _W_REQUESTS, _W_HOPS,
+            _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
             _ROUTER_OVS_PORT, _CROSS_NETWORK_HOP_PENALTY,
         )
 
@@ -264,7 +291,7 @@ class VipRoutingMixin:
     # ------------------------------------------------------------------
 
     def _handle_vip_data(self, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain) -> bool: # * allows passing domain as a keyword-only argument for clarity
-        storage = self.select_storage(domain)
+        storage = self.select_storage(domain, src_mac)
         if storage is None:
             logger.warning("vip_data(%s): pool empty, packet dropped", domain)
             return True
@@ -302,64 +329,151 @@ class VipRoutingMixin:
         return True
 
     # ------------------------------------------------------------------
-    # Server selection — WSM cost formula
+    # Server selection — multi-dimensional WSM cost function
     # ------------------------------------------------------------------
 
     def select_server(self, client_mac: str) -> dict | None:
         """Pick the web server with the lowest WSM cost from vip_server_pool.
 
-        Cost_j = θ · (T_proc_j / T_proc_max) + (1-θ) · (Hops_j / Hops_max)
+        Cost_j = w_cpu·(CPU_j/CPU_max) + w_ram·(RAM_j/RAM_max)
+               + w_req·(Req_j/Req_max) + w_hops·(Hops_j/Hops_max)
 
-        Falls back to hop-count-only when no telemetry data is available yet
-        (cold start): the T_proc penalty term is treated as 0.
+        When multiple candidates share the lowest cost (typical during cold
+        start when all resource dimensions are 0.0), round-robin across them
+        to distribute traffic evenly.
         """
         pool = self.vip_server_pool
         if not pool:
             logger.warning("select_server: pool empty")
             return None
 
-        tproc_max = max(self._server_tproc.values()) if self._server_tproc else 0.0
-        hops_max  = max(self._hop_cache_max, 1)
+        # Compute max values for normalization (only from servers in the pool)
+        pool_stats = [self._server_stats[m] for m in pool if m in self._server_stats]
+        cpu_max = max((s.avg_cpu_percent for s in pool_stats), default=0.0) or 1.0
+        ram_max = max((s.avg_ram_used_mb  for s in pool_stats), default=0.0) or 1.0
+        req_max = max((s.request_count    for s in pool_stats), default=0)   or 1
+        hops_max = max(self._hop_cache_max, 1)
 
-        best_entry, best_cost = None, float("inf")
+        best_cost = float("inf") # initialized to infinity so any real cost will be lower, ensuring at least one candidate is selected
+        tied: list[dict] = []
 
         for mac, entry in pool.items():
+            stats = self._server_stats.get(mac)
+
+            cpu_norm = (stats.avg_cpu_percent / cpu_max) if stats else 0.0
+            ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else 0.0
+            req_norm = (stats.request_count    / req_max) if stats else 0.0
+
             hops = (self.hop_cache.get(client_mac) or {}).get(mac)
             if hops is None:
                 if mac in self.peer_hosts:
                     hops = _CROSS_NETWORK_HOP_PENALTY
                 else:
                     hops = hops_max   # penalise unknown path as worst case
-            hop_norm  = hops / hops_max
+            hop_norm = hops / hops_max
 
-            tproc     = self._server_tproc.get(mac)
-            proc_norm = (tproc / tproc_max) if (tproc is not None and tproc_max > 0) else 0.0
-
-            cost = _WSM_THETA * proc_norm + (1 - _WSM_THETA) * hop_norm
+            cost = (_W_CPU * cpu_norm + _W_RAM * ram_norm
+                    + _W_REQUESTS * req_norm + _W_HOPS * hop_norm)
             logger.debug(
-                "select_server: mac=%s hops=%s tproc=%s cost=%.4f",
-                mac, hops, tproc, cost,
+                "select_server: mac=%s cpu=%.1f ram=%.1f req=%s hops=%s cost=%.4f",
+                mac,
+                stats.avg_cpu_percent if stats else 0.0,
+                stats.avg_ram_used_mb if stats else 0.0,
+                stats.request_count if stats else 0,
+                hops, cost,
             )
             if cost < best_cost:
-                best_cost, best_entry = cost, entry
+                best_cost = cost
+                tied = [entry]
+            elif cost == best_cost:
+                tied.append(entry)
 
-        if best_entry:
-            logger.info("select_server: selected=%s cost=%.4f", best_entry["mac"], best_cost)
-        return best_entry
+        if not tied:
+            return None
+
+        chosen = tied[self._rr_server_idx % len(tied)] # select from tied candidates using round-robin index
+        self._rr_server_idx += 1
+        logger.info(
+            "select_server: selected=%s cost=%.4f (tied=%d rr_idx=%d)",
+            chosen["mac"], best_cost, len(tied), self._rr_server_idx - 1,
+        )
+        return chosen
 
     # ------------------------------------------------------------------
-    # Storage selection — fixed per domain (MDVBP tier 0 baseline)
+    # Storage selection — multi-dimensional WSM cost function
     # ------------------------------------------------------------------
 
-    def select_storage(self, domain: str) -> dict | None:
-        """Return the storage node for the given domain from its dedicated pool."""
+    def select_storage(self, domain: str, client_mac: str) -> dict | None:
+        """Pick the storage node with the lowest WSM cost from the domain's pool.
+
+        Cost_j = w_cpu·(CPU_j/CPU_max) + w_ram·(RAM_j/RAM_max)
+               + w_conn·(Conn_j/Conn_max) + w_lag·(Lag_j/Lag_max)
+               + w_hops·(Hops_j/Hops_max)
+
+        When multiple candidates share the lowest cost (typical during cold
+        start when all resource dimensions are 0.0), round-robin across them
+        to distribute traffic evenly.  Each domain has its own counter.
+        """
         pool = self.vip_storage_pool_n1 if domain == "n1" else self.vip_storage_pool_n2
         if not pool:
             logger.warning("select_storage(%s): pool empty", domain)
             return None
-        entry = next(iter(pool.values()))
-        logger.info("select_storage(%s): selected=%s", domain, entry["mac"])
-        return entry
+
+        pool_stats = [self._storage_stats[m] for m in pool if m in self._storage_stats]
+        cpu_max  = max((s.avg_cpu_percent        for s in pool_stats), default=0.0) or 1.0
+        ram_max  = max((s.avg_ram_used_mb         for s in pool_stats), default=0.0) or 1.0
+        conn_max = max((s.avg_connections          for s in pool_stats), default=0.0) or 1.0
+        lag_max  = max((s.avg_repl_lag_s or 0      for s in pool_stats), default=0.0) or 1.0
+        hops_max = max(self._hop_cache_max, 1)
+
+        best_cost = float("inf") # initialized to infinity so any real cost will be lower, ensuring at least one candidate is selected
+        tied: list[dict] = []
+
+        for mac, entry in pool.items():
+            stats = self._storage_stats.get(mac)
+
+            cpu_norm  = (stats.avg_cpu_percent        / cpu_max)  if stats else 0.0
+            ram_norm  = (stats.avg_ram_used_mb         / ram_max)  if stats else 0.0
+            conn_norm = (stats.avg_connections          / conn_max) if stats else 0.0
+            lag_norm  = ((stats.avg_repl_lag_s or 0)   / lag_max)  if stats else 0.0
+
+            hops = (self.hop_cache.get(client_mac) or {}).get(mac)
+            if hops is None:
+                if mac in self.peer_hosts:
+                    hops = _CROSS_NETWORK_HOP_PENALTY
+                else:
+                    hops = hops_max
+            hop_norm = hops / hops_max
+
+            cost = (_W_STORAGE_CPU * cpu_norm + _W_STORAGE_RAM * ram_norm
+                    + _W_STORAGE_CONNECTIONS * conn_norm
+                    + _W_STORAGE_LAG * lag_norm + _W_STORAGE_HOPS * hop_norm)
+            logger.debug(
+                "select_storage(%s): mac=%s cpu=%.1f ram=%.1f conn=%.1f lag=%.2f hops=%s cost=%.4f",
+                domain, mac,
+                stats.avg_cpu_percent if stats else 0.0,
+                stats.avg_ram_used_mb if stats else 0.0,
+                stats.avg_connections if stats else 0.0,
+                (stats.avg_repl_lag_s or 0) if stats else 0.0,
+                hops, cost,
+            )
+            if cost < best_cost:
+                best_cost = cost
+                tied = [entry]
+            elif cost == best_cost:
+                tied.append(entry)
+
+        if not tied:
+            return None
+
+        rr_idx = self._rr_storage_idx.get(domain, 0)
+        chosen = tied[rr_idx % len(tied)] # select from tied candidates using round-robin index
+        self._rr_storage_idx[domain] = rr_idx + 1
+        logger.info(
+            "select_storage(%s): selected=%s cost=%.4f (tied=%d rr_idx=%d)",
+            domain, chosen["mac"], best_cost, len(tied), rr_idx,
+        )
+        return chosen
 
     # ------------------------------------------------------------------
     # DNAT / SNAT rule installation
@@ -523,16 +637,34 @@ class VipRoutingMixin:
     # Telemetry integration — called from _on_telemetry_update (Thread 2)
     # ------------------------------------------------------------------
 
-    def update_server_tproc(self, servers: dict) -> None:
-        """Update per-server T_proc values from a TelemetrySummary.servers dict.
+    def update_server_stats(self, servers: dict[str, ServerSummary]) -> None:
+        """Store per-server telemetry stats, keyed by MAC.
 
-        servers: dict[server_id, ServerSummary] as received from Thread 2.
-
-        The server_id keys are container names (e.g. 'edge_server_n1').
-        select_server currently queries the pool by MAC address, so this dict
-        is a best-effort approximation until an explicit server_id → MAC
-        mapping is wired up (e.g. via SERVER_IDS env or telemetry enrichment).
+        ``servers`` is keyed by the container's MAC address (each container
+        discovers its own MAC from eth0 and includes it in telemetry events).
+        Thread 1 reads _server_stats in select_server() for the WSM cost
+        function.
         """
-        for server_id, summary in servers.items():
-            self._server_tproc[server_id] = summary.avg_time_proc_ms
-            logger.debug("tproc updated: %s = %.1fms", server_id, summary.avg_time_proc_ms)
+        for mac, summary in servers.items():
+            self._server_stats[mac] = summary
+            logger.debug(
+                "server stats updated: mac=%s cpu=%.1f%% ram=%.1fMB req=%d",
+                mac, summary.avg_cpu_percent,
+                summary.avg_ram_used_mb, summary.request_count,
+            )
+
+    def update_storage_stats(self, storage_servers: dict[str, StorageServerSummary]) -> None:
+        """Store per-storage telemetry stats, keyed by MAC.
+
+        ``storage_servers`` is keyed by the container's MAC address.
+        Thread 1 reads _storage_stats in select_storage() for the storage
+        WSM cost function.
+        """
+        for mac, summary in storage_servers.items():
+            self._storage_stats[mac] = summary
+            logger.debug(
+                "storage stats updated: mac=%s cpu=%.1f%% ram=%.1fMB conn=%.1f lag=%s",
+                mac, summary.avg_cpu_percent,
+                summary.avg_ram_used_mb, summary.avg_connections,
+                summary.avg_repl_lag_s,
+            )

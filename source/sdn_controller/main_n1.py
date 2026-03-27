@@ -90,8 +90,9 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             f"cpu={ds.average_cpu_percent:.1f}%"
         )
 
-        # Update per-server T_proc used by WSM server selection (Thread 1).
-        self.update_server_tproc(summary.servers)
+        # Update per-server and per-storage stats for WSM cost functions (Thread 1).
+        self.update_server_stats(summary.servers)
+        self.update_storage_stats(summary.storage_servers)
 
         # Parse LAN number from network_id, e.g. "lan1" -> 1.
         try:

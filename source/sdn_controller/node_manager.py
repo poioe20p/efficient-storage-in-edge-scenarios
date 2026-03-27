@@ -205,7 +205,6 @@ class NodeAdder:
             "docker", "run", "-dit",
             "--network", "none",
             "--name", name,
-            "-e", f"SERVER_ID={name}",
             "-e", f"LAN_ID=lan{lan}",
             "edge_server",
         ]
@@ -225,7 +224,6 @@ class NodeAdder:
             "--network", "none",
             "--name", name,
             "-v", f"{vol}:/data/db",
-            "-e", f"SERVER_ID={name}",
             "-e", f"LAN_ID=lan{lan}",
             "-e", f"MONGO_REPLSET={rs_name}",
             "-e", f"MONGO_PORT={port}",

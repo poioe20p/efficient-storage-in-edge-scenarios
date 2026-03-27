@@ -2,7 +2,6 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     MONGO_VERSION=7.0 \
-    SERVER_ID=mongo-unknown \
     AGGREGATOR_PULL_ADDR= \
     LAN_ID= \
     MONGO_URI= \

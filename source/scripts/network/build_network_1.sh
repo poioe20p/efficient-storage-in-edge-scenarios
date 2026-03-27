@@ -98,7 +98,6 @@ echo "Launching application containers..."
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name edge_server_n1 --network none \
   -e LAN_ID=lan1 \
-  -e SERVER_ID=edge_server_n1 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
   -e LOG_LEVEL=INFO \
   edge_server
@@ -107,7 +106,6 @@ echo "Starting edge_storage_server_n1 container..."
 docker run -dit --name edge_storage_server_n1 --network none \
   --no-healthcheck \
   -e LAN_ID=lan1 \
-  -e SERVER_ID=edge_storage_server_n1 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
   -e MONGO_REPLSET=rs_net1 \
   -e MONGO_PORT=27018 \

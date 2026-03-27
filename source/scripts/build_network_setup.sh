@@ -27,6 +27,29 @@ check_mongo_ok() {
     fi
 }
 
+wait_for_controller_connected() {
+    local bridge="$1"
+    local max_retries="${2:-30}"
+    local retry_delay="${3:-2}"
+    local attempt
+
+    echo "Waiting for SDN controller to connect to ${bridge}..."
+    for attempt in $(seq 1 "${max_retries}"); do
+        local connected
+        connected=$(docker exec ovs ovs-vsctl show 2>/dev/null \
+            | awk "/Bridge ${bridge}/{found=1} found && /is_connected: true/{print; exit}")
+        if [[ -n "${connected}" ]]; then
+            echo "Controller connected to ${bridge}."
+            return 0
+        fi
+        echo "  Controller not yet connected to ${bridge} (${attempt}/${max_retries})..."
+        sleep "${retry_delay}"
+    done
+
+    echo "Controller failed to connect to ${bridge} after ${max_retries} attempts." >&2
+    exit 1
+}
+
 ensure_rs_primary() {
     local replset_name="$1"
     local container="$2"
@@ -385,8 +408,6 @@ install_vip_arp_reply_flow ovs-br0 "${VIP_IP_LAN1}" "${VIP_MAC}"
 install_vip_arp_reply_flow ovs-br1 "${VIP_IP_LAN2}" "${VIP_MAC}"
 
 docker exec ovs ovs-vsctl show
-
-
 echo "Build and setup of networks completed successfully."
 
 # ==============================
@@ -394,12 +415,17 @@ echo "Build and setup of networks completed successfully."
 # ==============================
 # Pinging all hosts triggers ARP traffic through OVS, which the SDN controllers
 # snoop to populate their IP<->MAC tables before any real client connects.
-echo "Waiting for setup to estabilize before running connectivity tests..."
+# Wait until both controllers have an active OpenFlow channel before sending
+# pings — otherwise ARP packets pass through OVS unseen and the IP<->MAC maps
+# remain empty, causing intermittent VIP routing failures.
+echo "Waiting for SDN controllers to establish OpenFlow connections..."
+wait_for_controller_connected "ovs-br0"
+wait_for_controller_connected "ovs-br1"
 
 sleep 5
 
 echo "Running connectivity tests to seed controller ARP tables..."
-"${SCRIPT_DIR}/test_conectivity.sh" all || true
+"${SCRIPT_DIR}/test_conectivity.sh" all || echo "WARNING: some connectivity tests failed; ARP seeding may be incomplete."
 
 ./network/clients/remove_test_clients.sh --lan 1 --prefix test_client
 ./network/clients/remove_test_clients.sh --lan 2 --prefix test_client

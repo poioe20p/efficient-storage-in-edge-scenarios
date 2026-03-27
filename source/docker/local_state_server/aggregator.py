@@ -45,6 +45,13 @@ def _publish_loop() -> None:
         with _lock:
             window, _buffer[:] = list(_buffer), []
 
+        last_seen: dict[str, float] = {}
+        for event in window:
+            sid = event.get("server_id")
+            ts  = event.get("ts", 0.0)
+            if sid and ts > last_seen.get(sid, 0.0):
+                last_seen[sid] = ts
+
         if not window:
             logger.debug("Window empty, skipping publish")
             continue
@@ -71,6 +78,7 @@ def _publish_loop() -> None:
                 "error_rate":        errors / len(events),
                 "avg_cpu_percent":   statistics.mean([event["cpu_percent"] for event in events]),
                 "avg_ram_used_mb":   statistics.mean([event["ram_used_mb"] for event in events]),
+                "last_report_ts":    last_seen.get(server_id, 0.0),
             }
             logger.debug(
                 "server_id=%s requests=%d error_rate=%.2f avg_total_ms=%.1f avg_db_ms=%.1f",
@@ -92,7 +100,37 @@ def _publish_loop() -> None:
                 "avg_cpu_percent": statistics.mean([e["cpu_percent"] for e in events]),
                 "avg_ram_used_mb": statistics.mean([e["ram_used_mb"] for e in events]),
                 "sample_count":    len(events),
+                "last_report_ts":  last_seen.get(server_id, 0.0),
             }
+
+        # ── Heartbeat-only nodes (idle but alive) ─────────────────────────────
+        heartbeats = [e for e in window if e.get("event_type") == "heartbeat"]
+        for hb in heartbeats:
+            sid = hb.get("server_id")
+            if not sid:
+                continue
+            if "connections_current" in hb:          # storage sidecar heartbeat
+                if sid not in storage_servers:
+                    storage_servers[sid] = {
+                        "avg_repl_lag_s":  hb.get("repl_lag_s"),
+                        "avg_connections": float(hb.get("connections_current", 0)),
+                        "avg_cpu_percent": hb.get("cpu_percent", 0.0),
+                        "avg_ram_used_mb": hb.get("ram_used_mb", 0.0),
+                        "sample_count":    0,
+                        "last_report_ts":  last_seen[sid],
+                    }
+            else:                                     # edge server heartbeat
+                if sid not in servers:
+                    servers[sid] = {
+                        "avg_time_total_ms": 0.0,
+                        "avg_time_db_ms":    0.0,
+                        "avg_time_proc_ms":  0.0,
+                        "request_count":     0,
+                        "error_rate":        0.0,
+                        "avg_cpu_percent":   hb.get("cpu_percent", 0.0),
+                        "avg_ram_used_mb":   hb.get("ram_used_mb", 0.0),
+                        "last_report_ts":    last_seen[sid],
+                    }
 
         # ── Domain summary (HTTP only) ────────────────────────────────────────
         if http_events:

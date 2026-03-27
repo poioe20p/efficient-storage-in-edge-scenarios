@@ -1,3 +1,10 @@
+"""Pydantic models for inter-component telemetry messages.
+
+All per-node dicts (``servers``, ``storage_servers``) are keyed by the
+node's **MAC address** (e.g. ``"00:00:00:00:00:02"``).  Each container
+discovers its own MAC from ``/sys/class/net/eth0/address`` and includes it
+in every telemetry event it pushes; the aggregator preserves the key as-is.
+"""
 from __future__ import annotations
 
 from pydantic import BaseModel
@@ -11,6 +18,7 @@ class ServerSummary(BaseModel):
     error_rate: float
     avg_cpu_percent: float
     avg_ram_used_mb: float
+    last_report_ts: float = 0.0
 
 
 class StorageServerSummary(BaseModel):
@@ -19,6 +27,7 @@ class StorageServerSummary(BaseModel):
     avg_cpu_percent: float
     avg_ram_used_mb: float
     sample_count: int
+    last_report_ts: float = 0.0
 
 
 class DomainSummary(BaseModel):

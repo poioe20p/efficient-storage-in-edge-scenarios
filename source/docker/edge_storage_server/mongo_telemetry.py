@@ -16,7 +16,33 @@ def _aggregator_addr_from_lan() -> str:
     return f"tcp://10.0.{subnet_third_octet}.5:5555"
 
 
-SERVER_ID            = os.environ.get("SERVER_ID", "mongo-unknown")
+def _discover_mac() -> str:
+    """Return the MAC address of the first non-loopback interface found in sysfs.
+
+    Prefers the interface named by the IFACE env var (default: eth0), but falls
+    back to scanning all interfaces so that containers whose primary interface is
+    named differently still report a real MAC.
+    """
+    preferred = os.environ.get("IFACE", "eth0")
+    candidates = [preferred]
+    try:
+        candidates += sorted(os.listdir("/sys/class/net"))
+    except OSError:
+        pass
+    for iface in candidates:
+        if iface == "lo":
+            continue
+        try:
+            with open(f"/sys/class/net/{iface}/address") as f:
+                mac = f.read().strip()
+            if mac and mac != "00:00:00:00:00:00":
+                return mac
+        except OSError:
+            continue
+    return "unknown"
+
+
+SERVER_MAC           = _discover_mac()
 AGGREGATOR_PULL_ADDR = os.environ.get("AGGREGATOR_PULL_ADDR", "") or _aggregator_addr_from_lan()
 MONGO_URI            = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 INTERVAL_S           = float(os.environ.get("TELEMETRY_INTERVAL_S", "2"))
@@ -30,6 +56,14 @@ _sock.connect(AGGREGATOR_PULL_ADDR)
 logger = logging.getLogger("mongo_telemetry")
 logger.info("ZMQ PUSH socket connected to %s", AGGREGATOR_PULL_ADDR)
 
+
+def _get_server_mac() -> str:
+    """Return the cached MAC, re-discovering if the interface wasn't available yet."""
+    global SERVER_MAC
+    if SERVER_MAC == "unknown":
+        SERVER_MAC = _discover_mac()
+    return SERVER_MAC
+
 _prev_opcounters: dict | None = None
 _last_send_ts: float = 0.0
 
@@ -39,9 +73,12 @@ def _has_client_activity(current: dict, previous: dict | None) -> bool:
 
     The sidecar issues 2 admin commands per cycle (serverStatus + replSetGetStatus),
     so a command delta of exactly 2 with no other changes means no client activity.
+    When previous is None this is the very first poll; we capture the baseline
+    without reporting, so the 3 internal MongoDB connections don't produce a
+    spurious mongo_stats event before any real client has connected.
     """
     if previous is None:
-        return True  # first poll — always report initial state
+        return False  # first poll — capture baseline only, do not report
 
     for op in ("insert", "query", "update", "delete", "getmore"):
         if current.get(op, 0) - previous.get(op, 0) > 0:
@@ -116,15 +153,15 @@ def _push_stats() -> None:
 
     if activity:
         event_type = "mongo_stats"
-    # elif now - _last_send_ts >= HEARTBEAT_INTERVAL_S:
-    #     event_type = "heartbeat"
+    elif now - _last_send_ts >= HEARTBEAT_INTERVAL_S:
+        event_type = "heartbeat"
     else:
         logger.debug("No client activity — skipping telemetry push")
         return
 
     event = {
         "event_type":          event_type,
-        "server_id":           SERVER_ID,
+        "server_id":           _get_server_mac(),
         "ts":                  now,
         "repl_lag_s":          repl_lag,
         "connections_current": connections_current,
@@ -132,13 +169,13 @@ def _push_stats() -> None:
         "ram_used_mb":         psutil.virtual_memory().used / 1_048_576,
     }
     logger.debug("cpu=%.1f%% ram=%.1f MB", event["cpu_percent"], event["ram_used_mb"])
-    logger.info("Pushing %s event for server_id=%s", event_type, SERVER_ID)
+    logger.info("Pushing %s event for mac=%s", event_type, _get_server_mac())
     _sock.send_json(event, zmq.NOBLOCK)
     _last_send_ts = now
 
 
 def main() -> None:
-    logger.info("mongo_telemetry starting: server_id=%s interval=%.1fs", SERVER_ID, INTERVAL_S)
+    logger.info("mongo_telemetry starting: mac=%s interval=%.1fs", _get_server_mac(), INTERVAL_S)
     while True:
         try:
             _push_stats()
