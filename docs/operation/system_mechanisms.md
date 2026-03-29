@@ -42,7 +42,7 @@ graph TD
 
     T2 -->|"on_update callback<br/>threshold evaluation"| T3
     T3 -->|"add_server_mac / add_storage_mac<br/>updates VIP pools"| T1
-    T2 -->|"_server_tproc dict<br/>(WSM input)"| T1
+    T2 -->|"_server_stats / _storage_stats dicts<br/>(WSM input)"| T1
 ```
 
 ---
@@ -57,24 +57,148 @@ Thread 1 handles two independent traffic planes via `VipRoutingMixin`:
 
 | VIP | Default Address | Traffic Plane | Selection Logic |
 | :-- | :-------------- | :------------ | :-------------- |
-| **VIP_SERVER** | `10.0.0.100` (env: `VIP_SERVER_IP`) | Client → Web Server | WSM cost weighted by $T_{proc}$ and hop count |
-| **VIP_DATA** | `10.0.0.200` (env: `VIP_DATA_IP`) | Web Server → MongoDB | First available from storage pool *(MDVBP tier-aware selection is future work)* |
+| **VIP_SERVER** | `10.0.0.100` (env: `VIP_SERVER_IP`) | Client → Web Server | Multi-dimensional WSM cost: CPU utilization, RAM usage, request count, and hop distance |
+| **VIP_DATA** | `10.0.0.200` (env: `VIP_DATA_IP`) | Web Server → MongoDB | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
 
 Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_MAC`) configured via environment variables, used for proactive ARP replies and DNAT/SNAT rewriting.
 
-#### VIP Server Selection — WSM Cost Formula
+#### VIP Server Selection — Multi-Dimensional WSM Cost Formula
+
+The system uses **two separate concerns** for its telemetry metrics: **resource-based indicators** for real-time *routing* (Thread 1), and **latency-based thresholds** for *scaling* decisions (Thread 3).
+
+- **Routing** (Thread 1 — `select_server`): uses instantaneous resource metrics — CPU utilization, RAM usage, request count, plus network hop distance — as **leading indicators** of server load. These predict where to send the *next* request before congestion manifests as high latency.
+- **Scaling** (Thread 3 — `ElasticityManager`): uses windowed latency averages — $T_{proc}$ and $T_{dados}$ — as **lagging indicators** that confirm sustained QoE degradation, triggering infrastructure mutations (spawn/remove containers).
+
+This separation is deliberate: a server reporting high CPU has not *yet* degraded user experience — the router should simply avoid it. A server reporting sustained high $T_{proc}$ has *already* degraded QoE — the system should add capacity.
+
+##### Server Cost Function
 
 $$
-Cost_j^{web} = \theta \cdot \frac{T_{proc,j}}{T_{proc,max}} + (1 - \theta) \cdot \frac{Hops_j}{Hops_{max}}
+Cost_j^{web} = w_{cpu} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram} \cdot \frac{RAM_j}{RAM_{max}} + w_{req} \cdot \frac{Req_j}{Req_{max}} + w_{hops} \cdot \frac{Hops_j}{Hops_{max}}
 $$
 
-- $\theta$ is configurable via `WSM_THETA` (default `0.5`).
-- When no telemetry is available yet, the $T_{proc}$ component is set to `0.0` (no penalty) and selection falls back to hop-count only.
-- `select_server()` iterates over `vip_server_pool`, scores each candidate, and returns the one with the lowest cost.
+Per-dimension weights are configurable via environment variables:
+
+| Env Var | Default | Dimension | Rationale |
+| :--- | :---: | :--- | :--- |
+| `W_CPU` | `0.3` | CPU utilization % | Leading indicator of compute saturation |
+| `W_RAM` | `0.1` | RAM usage (MB) | Memory pressure / swapping risk |
+| `W_REQUESTS` | `0.2` | Request count (current window) | Active load / queuing pressure |
+| `W_HOPS` | `0.4` | Network hop distance | Spatial locality — dominates when resource metrics are similar |
+
+- When no telemetry is available yet (cold start), all resource dimensions default to `0.0` — only hops contribute to the cost.
+- **Round-robin tie-breaking:** when multiple candidates share the same lowest cost (common during cold start when same-hop servers all score identically), a monotonic counter (`_rr_server_idx`) cycles through tied candidates instead of always picking the first dict entry.
+- `select_server()` iterates over `vip_server_pool`, scores each candidate, collects ties, and round-robin picks among them.
+
+```python
+def select_server(self, client_mac: str) -> dict | None:
+    pool = self.vip_server_pool
+    if not pool:
+        return None
+
+    pool_stats = [self._server_stats[m] for m in pool if m in self._server_stats]
+    cpu_max = max((s.avg_cpu_percent for s in pool_stats), default=0.0) or 1.0
+    ram_max = max((s.avg_ram_used_mb  for s in pool_stats), default=0.0) or 1.0
+    req_max = max((s.request_count    for s in pool_stats), default=0)   or 1
+    hops_max = max(self._hop_cache_max, 1)
+
+    best_cost = float("inf")
+    tied: list[dict] = []
+
+    for mac, entry in pool.items():
+        stats = self._server_stats.get(mac)
+
+        cpu_norm = (stats.avg_cpu_percent / cpu_max) if stats else 0.0
+        ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else 0.0
+        req_norm = (stats.request_count    / req_max) if stats else 0.0
+
+        hops = (self.hop_cache.get(client_mac) or {}).get(mac)
+        if hops is None:
+            hops = _CROSS_NETWORK_HOP_PENALTY if mac in self.peer_hosts else hops_max
+        hop_norm = hops / hops_max
+
+        cost = (_W_CPU * cpu_norm + _W_RAM * ram_norm
+                + _W_REQUESTS * req_norm + _W_HOPS * hop_norm)
+        if cost < best_cost:
+            best_cost = cost
+            tied = [entry]
+        elif cost == best_cost:
+            tied.append(entry)
+
+    if not tied:
+        return None
+    chosen = tied[self._rr_server_idx % len(tied)]
+    self._rr_server_idx += 1
+    return chosen
+```
+
+##### Storage Cost Function
+
+$$
+Cost_j^{data} = w_{cpu}^{s} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram}^{s} \cdot \frac{RAM_j}{RAM_{max}} + w_{conn}^{s} \cdot \frac{Conn_j}{Conn_{max}} + w_{lag}^{s} \cdot \frac{Lag_j}{Lag_{max}} + w_{hops}^{s} \cdot \frac{Hops_j}{Hops_{max}}
+$$
+
+| Env Var | Default | Dimension | Rationale |
+| :--- | :---: | :--- | :--- |
+| `W_STORAGE_CPU` | `0.2` | CPU utilization % | mongod compute saturation |
+| `W_STORAGE_RAM` | `0.1` | RAM usage (MB) | WiredTiger cache pressure |
+| `W_STORAGE_CONNECTIONS` | `0.2` | Active connections | Connection pool exhaustion risk |
+| `W_STORAGE_LAG` | `0.2` | Replication lag (s) | Data freshness for secondaries |
+| `W_STORAGE_HOPS` | `0.3` | Network hop distance | Data locality |
+
+- `select_storage(domain, client_mac)` iterates over the domain's storage pool, scores each entry, collects ties, and round-robin picks among them.
+- **Round-robin tie-breaking:** identical to `select_server`, but uses a per-domain counter (`_rr_storage_idx[domain]`) so that N1 and N2 storage pools cycle independently.
+- Cold-start behavior: missing telemetry → all resource dimensions = 0.0, only hops contribute. Same-hop candidates are round-robin'd.
+
+```python
+def select_storage(self, domain: str, client_mac: str) -> dict | None:
+    pool = self.vip_storage_pool_n1 if domain == "n1" else self.vip_storage_pool_n2
+    if not pool:
+        return None
+
+    pool_stats = [self._storage_stats[m] for m in pool if m in self._storage_stats]
+    cpu_max  = max((s.avg_cpu_percent   for s in pool_stats), default=0.0) or 1.0
+    ram_max  = max((s.avg_ram_used_mb    for s in pool_stats), default=0.0) or 1.0
+    conn_max = max((s.avg_connections     for s in pool_stats), default=0.0) or 1.0
+    lag_max  = max((s.avg_repl_lag_s or 0 for s in pool_stats), default=0.0) or 1.0
+    hops_max = max(self._hop_cache_max, 1)
+
+    best_cost = float("inf")
+    tied: list[dict] = []
+
+    for mac, entry in pool.items():
+        stats = self._storage_stats.get(mac)
+
+        cpu_norm  = (stats.avg_cpu_percent      / cpu_max)  if stats else 0.0
+        ram_norm  = (stats.avg_ram_used_mb       / ram_max)  if stats else 0.0
+        conn_norm = (stats.avg_connections        / conn_max) if stats else 0.0
+        lag_norm  = ((stats.avg_repl_lag_s or 0) / lag_max)  if stats else 0.0
+
+        hops = (self.hop_cache.get(client_mac) or {}).get(mac)
+        if hops is None:
+            hops = _CROSS_NETWORK_HOP_PENALTY if mac in self.peer_hosts else hops_max
+        hop_norm = hops / hops_max
+
+        cost = (_W_STORAGE_CPU * cpu_norm + _W_STORAGE_RAM * ram_norm
+                + _W_STORAGE_CONNECTIONS * conn_norm
+                + _W_STORAGE_LAG * lag_norm + _W_STORAGE_HOPS * hop_norm)
+        if cost < best_cost:
+            best_cost = cost
+            tied = [entry]
+        elif cost == best_cost:
+            tied.append(entry)
+
+    if not tied:
+        return None
+    rr_idx = self._rr_storage_idx.get(domain, 0)
+    chosen = tied[rr_idx % len(tied)]
+    self._rr_storage_idx[domain] = rr_idx + 1
+    return chosen
+```
 
 #### VIP Packet-In Flow
 
-For each `VIP_SERVER` Packet-In, Thread 1 evaluates the WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each `VIP_DATA` Packet-In, Thread 1 selects the first available storage backend and installs an analogous DNAT+SNAT pair.
+For each `VIP_SERVER` Packet-In, Thread 1 evaluates the multi-dimensional WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each `VIP_DATA` Packet-In, Thread 1 evaluates the storage WSM cost function and installs an analogous DNAT+SNAT pair.
 
 The MongoDB driver in each web server sees only `VIP_DATA:<port>` — a single stable address — and never discovers the physical `mongod` topology.
 
@@ -90,6 +214,48 @@ The MongoDB driver in each web server sees only `VIP_DATA:<port>` — a single s
 #### IP ↔ MAC Learning
 
 `VipRoutingMixin` snoops every ARP packet that passes through the switch (via `_snoop_arp()`) to build an `_ip_to_mac` / `_mac_to_ip` mapping. This is required because DNAT actions need the backend's IP address, which is not known from the VIP Packet-In alone.
+
+#### Cross-Network VIP Routing
+
+When the WSM cost function selects a backend that lives on the **peer network** (learned via `TopologyMixin.peer_hosts`), the controller must route the DNAT'd packet across the inter-LAN router instead of delivering it to a local OVS port.
+
+##### How peer backends enter the VIP pools
+
+1. The peer controller publishes its topology via ZMQ PUB (see §1.4).
+2. The local controller's `ZmqTelemetrySource` receives it and calls `on_topology_update()`, which populates `peer_hosts` (MAC → {dpid, port_no}) and replaces `_peer_server_macs` / `_peer_storage_macs_*` with the peer's MAC role sets.
+3. Every topology tick, `_rebuild_vip_pools()` merges `host_attachment` (local) with `peer_hosts` (remote) and filters by `_server_macs` (which is `_local_server_macs ∪ _peer_server_macs`). Peer server MACs therefore appear in `vip_server_pool` alongside local ones.
+
+##### Hop cost for peer backends
+
+`select_server()` and `select_storage()` use `hop_cache` for local backends, but `hop_cache` is built from the local NetworkX graph and has no entries for peer MACs. When `hop_cache` returns `None` for a MAC, the code checks `if mac in self.peer_hosts` — if true, it assigns the constant `CROSS_NETWORK_HOP_PENALTY` (default: 3) as the hop count. This biases the cost function against remote backends while still allowing them to be selected when local backends are overloaded.
+
+##### Output port resolution (3-step fallback)
+
+When `_install_vip_dnat_snat()` determines where to send the rewritten packet, it follows a 3-step fallback:
+
+1. **`get_next_hop_port(dpid, client_mac, backend_mac)`** — shortest path in the local NetworkX graph. Works for local multi-switch topologies. Returns `None` for peer MACs (not in the local graph).
+2. **`host_attachment.get(backend_mac)`** — direct port lookup for single-switch setups. Returns `None` for peer MACs (not locally attached).
+3. **`peer_hosts` + `ROUTER_OVS_PORT`** — if the MAC is in `peer_hosts` and `ROUTER_OVS_PORT > 0`, the packet is output to the OVS port connected to the inter-LAN router.
+
+If none of the three steps resolve a port, the packet is dropped with a warning log.
+
+##### End-to-end packet path
+
+```
+Client ──► Local OVS (PacketIn → controller)
+               │
+               ├─ Controller: select_server() picks peer backend
+               ├─ Controller: DNAT rewrite (eth_dst=real_MAC, ipv4_dst=real_IP)
+               ├─ Controller: output=ROUTER_OVS_PORT
+               │
+               ▼
+         Inter-LAN Router ──► Peer OVS Switch ──► Peer Backend
+                                (L2 forwarding)    (no second PacketIn)
+```
+
+The SNAT return rule matches on `eth_src=backend_mac, eth_dst=client_mac` and rewrites the source back to the VIP MAC/IP before forwarding to the client's ingress port.
+
+Because the DNAT'd packet already carries the real destination MAC and IP, the peer OVS switch delivers it via normal L2 forwarding — no second VIP PacketIn is triggered on the remote controller.
 
 > See [vip_interception_plan.md](implementation_plans/vip_interception_plan.md) for the full mixin implementation.
 
@@ -164,7 +330,54 @@ The telemetry `on_update` callback evaluates two independent threshold condition
 - **Compute alert** → triggered when `avg_time_proc_ms > TAU_PROC_MS`. Submits a `ComputeAlert`.
 - **Data alert** → triggered when `avg_time_db_ms > TAU_DADOS_MS`. Submits a `DataAlert`.
 
-Thread 1 reads the `_server_tproc` dict (updated by `VipRoutingMixin.update_server_tproc()` on each telemetry arrival) for the WSM cost formula.
+Thread 1 reads the `_server_stats` and `_storage_stats` dicts (updated by `VipRoutingMixin.update_server_stats()` and `update_storage_stats()` on each telemetry arrival) for the multi-dimensional WSM cost functions.
+
+**Telemetry → Routing vs Scaling split:**
+
+| Metric | Used by Thread 1 (Routing) | Used by Thread 3 (Scaling) |
+| :--- | :---: | :---: |
+| `avg_cpu_percent` | ✅ Server + Storage WSM | — |
+| `avg_ram_used_mb` | ✅ Server + Storage WSM | — |
+| `request_count` | ✅ Server WSM | — |
+| `avg_connections` | ✅ Storage WSM | — |
+| `avg_repl_lag_s` | ✅ Storage WSM | — |
+| `avg_time_proc_ms` ($T_{proc}$) | — | ✅ ComputeAlert threshold |
+| `avg_time_db_ms` ($T_{dados}$) | — | ✅ DataAlert threshold |
+| Hop distance | ✅ Server + Storage WSM | — |
+
+#### Server-ID ↔ MAC Mapping
+
+Telemetry payloads identify servers by `server_id` (container name, e.g. `"edge_server_n1"`), but VIP pools are keyed by MAC address. A bidirectional mapping (`_id_to_mac` / `_mac_to_id`) bridges these two namespaces:
+
+- **Static nodes:** parsed from `SERVER_ID_MAP` env var at boot (e.g. `"edge_server_n1=aa:bb:cc:dd:ee:ff,mongo_n1=11:22:33:44:55:66"`).
+- **Dynamic nodes:** registered by `ElasticityManager` when Thread 3 adds a container — it knows both the container name and the MAC from the `NodeResult`.
+
+```python
+# VipRoutingMixin.__init__
+self._id_to_mac: dict[str, str] = {}   # server_id -> mac
+self._mac_to_id: dict[str, str] = {}   # mac -> server_id
+
+# Seed from env var for static nodes
+for pair in os.environ.get("SERVER_ID_MAP", "").split(","):
+    if "=" in pair:
+        sid, mac = pair.strip().split("=", 1)
+        self._id_to_mac[sid.strip()] = mac.strip()
+        self._mac_to_id[mac.strip()] = sid.strip()
+```
+
+`update_server_stats()` resolves each `server_id` → MAC before storing the full `ServerSummary`:
+
+```python
+def update_server_stats(self, servers: dict[str, ServerSummary]) -> None:
+    for server_id, summary in servers.items():
+        mac = self._id_to_mac.get(server_id)
+        if mac is None:
+            logger.warning("server stats: no MAC mapping for %s", server_id)
+            continue
+        self._server_stats[mac] = summary
+```
+
+The same pattern applies to `update_storage_stats()` for `StorageServerSummary` objects.
 
 ```mermaid
 sequenceDiagram
@@ -178,13 +391,13 @@ sequenceDiagram
     Note over Agg: Window aggregation (10 s)
     Agg-->>T2: ZMQ PUB: TelemetrySummary
     T2->>Memory: _latest[network_id] = summary
-    T2->>T2: update _server_tproc (WSM input)
-    Note over Memory: Thread 1 reads _server_tproc<br/>for Cost_j formula
-    T2->>T2: Evaluate: avg_time_proc_ms > τ_proc?
+    T2->>T2: update_server_stats → _server_stats[mac]<br/>update_storage_stats → _storage_stats[mac]
+    Note over Memory: Thread 1 reads _server_stats<br/>and _storage_stats for Cost_j formulas
+    T2->>T2: Evaluate: avg_time_proc_ms > τ_proc?<br/>(scaling — Thread 3 only)
     opt Compute threshold breached
         T2->>T3: submit_alert(ComputeAlert)
     end
-    T2->>T2: Evaluate: avg_time_db_ms > τ_dados?
+    T2->>T2: Evaluate: avg_time_db_ms > τ_dados?<br/>(scaling — Thread 3 only)
     opt Data threshold breached
         T2->>T3: submit_alert(DataAlert)
     end
@@ -394,6 +607,8 @@ All per-network configuration is injected via environment variables:
 | `WSM_THETA` | `0.5` | Weight for $T_{proc}$ vs hops in the WSM formula |
 | `VIP_IDLE_TIMEOUT` | `30` | Seconds of idle before a DNAT rule expires |
 | `VIP_HARD_TIMEOUT` | `120` | Maximum seconds a DNAT rule persists |
+| `ROUTER_OVS_PORT` | `0` | OVS port connected to the inter-LAN router; `0` = cross-network routing disabled |
+| `CROSS_NETWORK_HOP_PENALTY` | `3` | Constant hop count assigned to peer-network backends in the WSM cost function |
 | `TAU_PROC_MS` | `200` | Compute threshold: alert when `avg_time_proc_ms` exceeds this |
 | `TAU_DADOS_MS` | `150` | Data threshold: alert when `avg_time_db_ms` exceeds this |
 | `TOPOLOGY_INTERVAL` | `1` | Seconds between topology worker ticks |

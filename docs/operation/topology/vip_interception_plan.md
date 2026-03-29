@@ -4,11 +4,11 @@
 
 Add OpenFlow-based interception of **VIP_SERVER** (HTTP) and **VIP_DATA** (MongoDB) traffic to the existing OS-Ken SDN controller. A new `VipRoutingMixin` handles server selection (WSM cost formula), storage selection (fixed per domain), DNAT/SNAT flow rule installation, and proactive ARP virtualization.
 
+## Architecture
+
 This is **not a new thread**. The mixin adds methods to the same `KenLearnAndLog` class via inheritance (same pattern as `TopologyMixin`). Thread 1's `packet_in_handler` calls into VIP methods inline — same greenthread, same event loop.
 
 ---
-
-## Architecture
 
 ```
 KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
@@ -32,12 +32,12 @@ KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
 
 ## Files to Change
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `sdn_controller/vip_routing.py` | **NEW** | VIP routing mixin (all VIP logic) |
-| `sdn_controller/main_n1.py` | Modify | Add mixin to MRO, VIP check in PacketIn, call ARP/punt install |
-| `sdn_controller/main_n2.py` | Modify | Same changes as main_n1 |
-| `scripts/osken-controller.env` | Modify | Add `WSM_THETA`, `VIP_IDLE_TIMEOUT`, `VIP_HARD_TIMEOUT` |
+| File                              | Action        | Purpose                                                        |
+| --------------------------------- | ------------- | -------------------------------------------------------------- |
+| `sdn_controller/vip_routing.py` | **NEW** | VIP routing mixin (all VIP logic)                              |
+| `sdn_controller/main_n1.py`     | Modify        | Add mixin to MRO, VIP check in PacketIn, call ARP/punt install |
+| `sdn_controller/main_n2.py`     | Modify        | Same changes as main_n1                                        |
+| `scripts/osken-controller.env`  | Modify        | Add `WSM_THETA`, `VIP_IDLE_TIMEOUT`, `VIP_HARD_TIMEOUT`  |
 
 ---
 
@@ -557,20 +557,20 @@ VIP_HARD_TIMEOUT=120
 
 After deployment, the switch will have these rules (inspectable via `ovs-ofctl dump-flows`):
 
-| Priority | Match | Actions | Installed By |
-|----------|-------|---------|-------------|
-| **0** | `*` (wildcard) | `output:CONTROLLER` | table-miss (switch connect) |
-| **1** | `eth_type=0x0806` (ARP) | `FLOOD` | proactive topology flows |
-| **5** | `in_port, eth_src, eth_dst` | `output:next_hop` | proactive topology flows |
-| **10** | `in_port, eth_src, eth_dst` | `output:learned_port` | reactive L2 learning |
-| **100** | `eth_type=0x0800, nw_dst=VIP_SERVER_IP` | `output:CONTROLLER` | **VIP punt (new)** |
-| **100** | `eth_type=0x0800, nw_dst=VIP_DATA_IP` | `output:CONTROLLER` | **VIP punt (new)** |
-| **200** | `arp, arp_op=1, arp_tpa=VIP_SERVER_IP` | ARP reply with VIP_SERVER_MAC | **VIP ARP (new)** |
-| **200** | `arp, arp_op=1, arp_tpa=VIP_DATA_IP` | ARP reply with VIP_DATA_MAC | **VIP ARP (new)** |
-| **200** | `nw_dst=VIP_SERVER_IP` | DNAT → `real_server_ip/mac` | **VIP DNAT (new, per-flow)** |
-| **200** | `nw_src=real_server_ip` | SNAT → `VIP_SERVER_ip/mac` | **VIP SNAT (new, per-flow)** |
-| **200** | `nw_src=web_server_ip, nw_dst=VIP_DATA_IP` | DNAT → `storage_ip/mac` | **VIP DNAT (new, per-flow)** |
-| **200** | `nw_src=storage_ip, nw_dst=web_server_ip` | SNAT → `VIP_DATA_ip/mac` | **VIP SNAT (new, per-flow)** |
+| Priority      | Match                                        | Actions                       | Installed By                       |
+| ------------- | -------------------------------------------- | ----------------------------- | ---------------------------------- |
+| **0**   | `*` (wildcard)                             | `output:CONTROLLER`         | table-miss (switch connect)        |
+| **1**   | `eth_type=0x0806` (ARP)                    | `FLOOD`                     | proactive topology flows           |
+| **5**   | `in_port, eth_src, eth_dst`                | `output:next_hop`           | proactive topology flows           |
+| **10**  | `in_port, eth_src, eth_dst`                | `output:learned_port`       | reactive L2 learning               |
+| **100** | `eth_type=0x0800, nw_dst=VIP_SERVER_IP`    | `output:CONTROLLER`         | **VIP punt (new)**           |
+| **100** | `eth_type=0x0800, nw_dst=VIP_DATA_IP`      | `output:CONTROLLER`         | **VIP punt (new)**           |
+| **200** | `arp, arp_op=1, arp_tpa=VIP_SERVER_IP`     | ARP reply with VIP_SERVER_MAC | **VIP ARP (new)**            |
+| **200** | `arp, arp_op=1, arp_tpa=VIP_DATA_IP`       | ARP reply with VIP_DATA_MAC   | **VIP ARP (new)**            |
+| **200** | `nw_dst=VIP_SERVER_IP`                     | DNAT →`real_server_ip/mac` | **VIP DNAT (new, per-flow)** |
+| **200** | `nw_src=real_server_ip`                    | SNAT →`VIP_SERVER_ip/mac`  | **VIP SNAT (new, per-flow)** |
+| **200** | `nw_src=web_server_ip, nw_dst=VIP_DATA_IP` | DNAT →`storage_ip/mac`     | **VIP DNAT (new, per-flow)** |
+| **200** | `nw_src=storage_ip, nw_dst=web_server_ip`  | SNAT →`VIP_DATA_ip/mac`    | **VIP SNAT (new, per-flow)** |
 
 ---
 
@@ -608,9 +608,12 @@ After deployment, the switch will have these rules (inspectable via `ovs-ofctl d
 
 ## WSM Cost Formula
 
-$$Cost_j^{web} = \theta \cdot \frac{T_{proc,j}}{T_{proc,max}} + (1-\theta) \cdot \frac{Hops_j}{Hops_{max}}$$
+$$
+Cost_j^{web} = \theta \cdot \frac{T_{proc,j}}{T_{proc,max}} + (1-\theta) \cdot \frac{Hops_j}{Hops_{max}}
+$$
 
 Where:
+
 - $\theta$ = `WSM_THETA` (default 0.5) — weight between processing time and network distance
 - $T_{proc,j}$ = average processing time of server $j$ (from Thread 2 telemetry)
 - $Hops_j$ = shortest-path hop count from requesting client to server $j$ (from topology)
@@ -694,10 +697,10 @@ but new IP).
 
 ### Files Changed
 
-| File | Change |
-|------|--------|
-| `sdn_controller/vip_routing.py` | New `register_backend_ip(mac, ip)` method on `VipRoutingMixin`, placed alongside `snoop_arp()` |
-| `sdn_controller/elasticity.py` | Call `self._topo.register_backend_ip(result.mac, result.ip)` in both `_handle_compute` and `_handle_data`, inside the existing `result.success and result.ip and result.mac` guard |
+| File                              | Change                                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sdn_controller/vip_routing.py` | New `register_backend_ip(mac, ip)` method on `VipRoutingMixin`, placed alongside `snoop_arp()`                                                                                       |
+| `sdn_controller/elasticity.py`  | Call `self._topo.register_backend_ip(result.mac, result.ip)` in both `_handle_compute` and `_handle_data`, inside the existing `result.success and result.ip and result.mac` guard |
 
 ### `register_backend_ip` implementation
 

@@ -18,8 +18,11 @@ IFS=' ' read -r -a INTERNET_TARGETS <<< "${INTERNET_TARGETS:-${DEFAULT_TARGETS[*
 
 LAN1_CONTAINERS=(edge_server_n1 edge_storage_server_n1 aggregator_n1)
 LAN2_CONTAINERS=(edge_server_n2 edge_storage_server_n2 aggregator_n2)
-LAN1_VIP=10.0.0.100
-LAN2_VIP=10.0.1.100
+VIP_SERVER=10.0.0.100        # shared VIP — punt rule installed on both switches
+LAN1_VIP_DATA=10.0.0.101
+LAN2_VIP_DATA=10.0.1.101
+LAN1_VIP=${VIP_SERVER}       # alias for commented-out VIP ping tests
+LAN2_VIP=${VIP_SERVER}
 LAN1_EDGE_IP=10.0.0.2
 LAN1_MONGO_IP=10.0.0.4
 LAN1_AGG_IP=10.0.0.5
@@ -34,7 +37,8 @@ Usage: ./test_conectivity.sh [lan1|lan2|cross|all]
   lan1   -> Ping between LAN1 hosts (edge_server_n1, edge_storage_server_n1) and out to the Internet.
   lan2   -> Ping between LAN2 hosts (edge_server_n2, edge_storage_server_n2) and out to the Internet.
   cross  -> Ping between LAN1 and LAN2 hosts.
-  all    -> Run lan1, lan2, and cross suites sequentially.
+  arp    -> Force every static backend to ARP for its LAN VIPs, seeding the controller's MAC->IP table.
+  all    -> Run arp bootstrap, then lan1, lan2, and cross suites sequentially.
 
 Environment:
     PING_COUNT / PING_TIMEOUT   -> Adjust ping aggressiveness (defaults 3 / 2s).
@@ -70,6 +74,47 @@ ping_internet_targets() {
     for target in "${INTERNET_TARGETS[@]}"; do
         ping_from_container "$source" "$target" "Internet (${target})"
     done
+}
+
+arp_ping_from_container() {
+    local source=$1
+    local target=$2
+    if ! docker ps --format '{{.Names}}' | grep -Fxq "$source"; then
+        echo "  [${source}] ⚠️  not running, skipped"
+        return 0
+    fi
+    echo -n "  [${source}] -> ${target} ... "
+    # Delete the ARP cache entry for this target so the next ping forces a fresh
+    # ARP request on the wire. The SDN controller snoops this ARP to learn the
+    # sender's MAC->IP mapping. We use arp -d + ping because neither arping nor
+    # iproute2 (ip) are installed in the containers — only net-tools (arp).
+    docker exec "$source" arp -d "$target" 2>/dev/null || true
+    if docker exec "$source" ping -c 1 -W 2 "$target" >/dev/null 2>&1; then
+        echo "✅ reply received"
+    else
+        echo "⚠️  no reply (ARP sent; controller should have snooped sender MAC)"
+    fi
+}
+
+run_arp_bootstrap() {
+    echo "=== ARP bootstrap — seeding controller MAC->IP table ==="
+    echo "--- LAN1 backends -> VIP_SERVER (${VIP_SERVER}) ---"
+    for c in "${LAN1_CONTAINERS[@]}"; do
+        arp_ping_from_container "$c" "${VIP_SERVER}"
+    done
+    echo "--- LAN1 backends -> VIP_DATA_N1 (${LAN1_VIP_DATA}) ---"
+    for c in "${LAN1_CONTAINERS[@]}"; do
+        arp_ping_from_container "$c" "${LAN1_VIP_DATA}"
+    done
+    echo "--- LAN2 backends -> VIP_SERVER (${VIP_SERVER}) ---"
+    for c in "${LAN2_CONTAINERS[@]}"; do
+        arp_ping_from_container "$c" "${VIP_SERVER}"
+    done
+    echo "--- LAN2 backends -> VIP_DATA_N2 (${LAN2_VIP_DATA}) ---"
+    for c in "${LAN2_CONTAINERS[@]}"; do
+        arp_ping_from_container "$c" "${LAN2_VIP_DATA}"
+    done
+    echo "Verify with: docker logs osken | grep 'arp learned'"
 }
 
 run_lan1_tests() {
@@ -132,7 +177,11 @@ main() {
         cross|lan1lan2|lan2lan1)
             run_cross_tests
             ;;
+        arp)
+            run_arp_bootstrap
+            ;;
         all)
+            run_arp_bootstrap
             run_lan1_tests
             run_lan2_tests
             run_cross_tests

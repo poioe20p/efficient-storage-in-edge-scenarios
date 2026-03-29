@@ -20,7 +20,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir flask pyzmq psutil
+RUN pip3 install --no-cache-dir flask pyzmq psutil pymongo
 
 COPY source /source
 

@@ -127,7 +127,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 ComputeAlert(lan=lan, network_id=summary.network_id)
             )
         
-        self._bypass_telemetry_for_elasticity_on_odd_number += 1 # increment to alternate between triggering and not triggering alerts based on telemetry
+        # self._bypass_telemetry_for_elasticity_on_odd_number += 1 # increment to alternate between triggering and not triggering alerts based on telemetry
 
 
     def _install_flow(self, datapath, priority, match, actions, *,

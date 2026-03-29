@@ -345,6 +345,7 @@ docker run -dit --name osken --network host \
     -e TOPOLOGY_PUB_PORT=5559 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5560 \
     -e SERVER_MACS="00:00:00:00:00:02" \
+    -e ROUTER_MAC="00:00:00:00:00:AA" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n1
@@ -358,6 +359,7 @@ docker run -dit --name osken_2 --network host \
     -e TOPOLOGY_PUB_PORT=5560 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5559 \
     -e SERVER_MACS="00:00:00:00:00:05" \
+    -e ROUTER_MAC="00:00:00:00:00:CC" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n2
@@ -384,28 +386,10 @@ if [[ $? -ne 0 ]]; then
 fi
 
 
-# ==============================
-# 8.2 - Install VIP ARP reply flows (Anycast service IPs)
-# ==============================
-VIP_IP_LAN1=10.0.0.100
-VIP_IP_LAN2=10.0.1.100
-VIP_MAC=aa:bb:cc:dd:ee:ff
-
-install_vip_arp_reply_flow() {
-    local bridge="$1"
-    local vip_ip="$2"
-    local vip_mac="$3"
-
-    local match="priority=200,arp,arp_op=1,arp_tpa=${vip_ip}"
-    local flow="${match},actions=move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],set_field:${vip_mac}->eth_src,set_field:2->arp_op,move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],set_field:${vip_mac}->arp_sha,move:NXM_OF_ARP_SPA[]->NXM_OF_ARP_TPA[],set_field:${vip_ip}->arp_spa,IN_PORT"
-
-    echo "Installing VIP ARP reply flow on ${bridge} for ${vip_ip} (${vip_mac})"
-    docker exec ovs ovs-ofctl -O OpenFlow13 --strict del-flows "${bridge}" "${match}" >/dev/null 2>&1 || true
-    docker exec ovs ovs-ofctl -O OpenFlow13 add-flow "${bridge}" "${flow}" || true
-}
-
-install_vip_arp_reply_flow ovs-br0 "${VIP_IP_LAN1}" "${VIP_MAC}"
-install_vip_arp_reply_flow ovs-br1 "${VIP_IP_LAN2}" "${VIP_MAC}"
+# NOTE: VIP ARP replies are handled by the SDN controller itself via
+# install_vip_arp_punt_rules (priority=100 punt rules).  Installing static
+# OVS flows here at priority=200 would override the controller's punt rules,
+# preventing snoop_arp from ever learning MAC->IP mappings.
 
 docker exec ovs ovs-vsctl show
 echo "Build and setup of networks completed successfully."

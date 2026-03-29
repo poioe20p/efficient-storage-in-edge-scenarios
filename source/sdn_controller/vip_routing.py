@@ -37,15 +37,15 @@ from .telemetry.models import ServerSummary, StorageServerSummary
 logger = logging.getLogger("os_ken.vip_routing")
 
 # --- Server (compute) WSM weights ---
-_W_CPU      = float(os.environ.get("W_CPU",      "0.3"))
-_W_RAM      = float(os.environ.get("W_RAM",      "0.1"))
+_W_CPU      = float(os.environ.get("W_CPU",      "0.2"))
+_W_RAM      = float(os.environ.get("W_RAM",      "0.2"))
 _W_REQUESTS = float(os.environ.get("W_REQUESTS", "0.2"))
 _W_HOPS     = float(os.environ.get("W_HOPS",     "0.4"))
 
 # --- Storage WSM weights ---
 _W_STORAGE_CPU         = float(os.environ.get("W_STORAGE_CPU",         "0.2"))
-_W_STORAGE_RAM         = float(os.environ.get("W_STORAGE_RAM",         "0.1"))
-_W_STORAGE_CONNECTIONS = float(os.environ.get("W_STORAGE_CONNECTIONS", "0.2"))
+_W_STORAGE_RAM         = float(os.environ.get("W_STORAGE_RAM",         "0.2"))
+_W_STORAGE_CONNECTIONS = float(os.environ.get("W_STORAGE_CONNECTIONS", "0.1"))
 _W_STORAGE_LAG         = float(os.environ.get("W_STORAGE_LAG",         "0.2"))
 _W_STORAGE_HOPS        = float(os.environ.get("W_STORAGE_HOPS",        "0.3"))
 
@@ -57,10 +57,11 @@ _VIP_HARD_TIMEOUT = int(os.environ.get("VIP_HARD_TIMEOUT", "120"))
 # forwarding DNAT'd packets via the router toward peer-network backends.
 _ROUTER_OVS_PORT  = int(os.environ.get("ROUTER_OVS_PORT",  "0"))
 
-# Constant hop penalty assigned to backends on the peer network.
-# Used instead of hop_cache (which is local-only) when the selected backend
-# lives across the router.  Must be > 0.
-_CROSS_NETWORK_HOP_PENALTY = int(os.environ.get("CROSS_NETWORK_HOP_PENALTY", "3"))
+# MAC address of the router's interface on this controller's LAN.
+# When a cross-network backend replies, the router performs L3 forwarding
+# and substitutes its own MAC as eth_src.  The SNAT match must use this
+# MAC instead of the real backend MAC for return-path rewriting.
+_ROUTER_MAC = os.environ.get("ROUTER_MAC", "").strip().lower() or None
 
 
 class VipRoutingMixin:
@@ -102,12 +103,12 @@ class VipRoutingMixin:
         self._rr_server_idx: int = 0
         self._rr_storage_idx: dict[str, int] = {}   # keyed by domain ("n1"/"n2")
 
-        logger.info(
+        logger.debug(
             "vip routing mixin: w_cpu=%.2f w_ram=%.2f w_req=%.2f w_hops=%.2f "
-            "idle_timeout=%ds hard_timeout=%ds router_port=%d cross_hop_penalty=%d",
+            "idle_timeout=%ds hard_timeout=%ds router_port=%d",
             _W_CPU, _W_RAM, _W_REQUESTS, _W_HOPS,
             _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
-            _ROUTER_OVS_PORT, _CROSS_NETWORK_HOP_PENALTY,
+            _ROUTER_OVS_PORT,
         )
 
     # ------------------------------------------------------------------
@@ -260,6 +261,7 @@ class VipRoutingMixin:
             return True
 
         server_mac = server["mac"]
+        logger.debug("vip_server: _mac_to_ip=%s", self._mac_to_ip)
         server_ip  = self._mac_to_ip.get(server_mac)
         if server_ip is None:
             logger.warning(
@@ -297,6 +299,7 @@ class VipRoutingMixin:
             return True
 
         storage_mac = storage["mac"]
+        logger.debug("vip_data(%s): _mac_to_ip=%s", domain, self._mac_to_ip)
         storage_ip  = self._mac_to_ip.get(storage_mac)
         if storage_ip is None:
             logger.warning(
@@ -360,16 +363,23 @@ class VipRoutingMixin:
         for mac, entry in pool.items():
             stats = self._server_stats.get(mac)
 
-            cpu_norm = (stats.avg_cpu_percent / cpu_max) if stats else 0.0
-            ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else 0.0
-            req_norm = (stats.request_count    / req_max) if stats else 0.0
+            # Unknown stats → treat as worst-case (1.0) so backends without
+            # telemetry yet (e.g. peer backends, newly added nodes) are not
+            # accidentally preferred over measured local backends.
+            cpu_norm = (stats.avg_cpu_percent / cpu_max) if stats else 1.0
+            ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else 1.0
+            req_norm = (stats.request_count    / req_max) if stats else 1.0
 
             hops = (self.hop_cache.get(client_mac) or {}).get(mac)
             if hops is None:
                 if mac in self.peer_hosts:
-                    hops = _CROSS_NETWORK_HOP_PENALTY
+                    local_avg = max(self._avg_hop_count, 1.0)
+                    peer_avg  = max(self._peer_avg_hop_count, 1.0)
+                    hops = local_avg + peer_avg
+                elif mac in self.host_attachment:
+                    hops = max(self._avg_hop_count, 1.0)   # local unknown: avg local cost
                 else:
-                    hops = hops_max   # penalise unknown path as worst case
+                    hops = hops_max   # truly unknown MAC — safety net
             hop_norm = hops / hops_max
 
             cost = (_W_CPU * cpu_norm + _W_RAM * ram_norm
@@ -432,17 +442,24 @@ class VipRoutingMixin:
         for mac, entry in pool.items():
             stats = self._storage_stats.get(mac)
 
-            cpu_norm  = (stats.avg_cpu_percent        / cpu_max)  if stats else 0.0
-            ram_norm  = (stats.avg_ram_used_mb         / ram_max)  if stats else 0.0
-            conn_norm = (stats.avg_connections          / conn_max) if stats else 0.0
-            lag_norm  = ((stats.avg_repl_lag_s or 0)   / lag_max)  if stats else 0.0
+            # Unknown stats → treat as worst-case (1.0) so backends without
+            # telemetry yet (e.g. peer backends, newly added nodes) are not
+            # accidentally preferred over measured local backends.
+            cpu_norm  = (stats.avg_cpu_percent        / cpu_max)  if stats else 1.0
+            ram_norm  = (stats.avg_ram_used_mb         / ram_max)  if stats else 1.0
+            conn_norm = (stats.avg_connections          / conn_max) if stats else 1.0
+            lag_norm  = ((stats.avg_repl_lag_s or 0)   / lag_max)  if stats else 1.0
 
             hops = (self.hop_cache.get(client_mac) or {}).get(mac)
             if hops is None:
                 if mac in self.peer_hosts:
-                    hops = _CROSS_NETWORK_HOP_PENALTY
+                    local_avg = max(self._avg_hop_count, 1.0)
+                    peer_avg  = max(self._peer_avg_hop_count, 1.0)
+                    hops = local_avg + peer_avg
+                elif mac in self.host_attachment:
+                    hops = max(self._avg_hop_count, 1.0)   # local unknown: avg local cost
                 else:
-                    hops = hops_max
+                    hops = hops_max   # truly unknown MAC — safety net
             hop_norm = hops / hops_max
 
             cost = (_W_STORAGE_CPU * cpu_norm + _W_STORAGE_RAM * ram_norm
@@ -505,6 +522,7 @@ class VipRoutingMixin:
 
         # Prefer get_next_hop_port for multi-switch topologies; fall back to
         # host_attachment for single-switch (backend directly connected here).
+        is_cross_network = False
         backend_port = self.get_next_hop_port(datapath.id, client_mac, real_backend_mac)
         if backend_port is None:
             backend_loc = self.host_attachment.get(real_backend_mac)
@@ -512,6 +530,7 @@ class VipRoutingMixin:
                 _, backend_port = backend_loc
             elif real_backend_mac in self.peer_hosts and _ROUTER_OVS_PORT > 0:
                 backend_port = _ROUTER_OVS_PORT
+                is_cross_network = True
                 logger.info(
                     "dnat/snat: cross-network mac=%s -> router port %d",
                     real_backend_mac, _ROUTER_OVS_PORT,
@@ -535,8 +554,14 @@ class VipRoutingMixin:
             ipv4_dst=vip_ip,
             ip_proto=ip_proto,
         )
+        # Cross-network: the frame must be addressed to the router's LAN MAC so
+        # the router's kernel IP stack accepts it for L3 forwarding.  Sending
+        # eth_dst=real_backend_mac causes the router to silently drop the frame
+        # (not destined for any of its own interfaces).
+        dnat_eth_dst = (_ROUTER_MAC if is_cross_network and _ROUTER_MAC
+                        else real_backend_mac)
         dnat_actions = [
-            parser.OFPActionSetField(eth_dst=real_backend_mac),
+            parser.OFPActionSetField(eth_dst=dnat_eth_dst),
             parser.OFPActionSetField(ipv4_dst=real_backend_ip),
             parser.OFPActionOutput(backend_port),
         ]
@@ -551,9 +576,22 @@ class VipRoutingMixin:
         # eth_dst=client_mac + ipv4_dst=client_ip are critical: without them ALL
         # outgoing traffic from the backend (to any host) would get its source
         # rewritten to VIP_IP, breaking the backend's non-VIP connections.
+        #
+        # Cross-network: the router does L3 forwarding between LANs, which
+        # rewrites eth_src to the router's own LAN MAC.  The return packet
+        # arrives at this switch with eth_src=ROUTER_MAC, not the real backend
+        # MAC.  We must match on the router MAC to intercept return traffic.
+        if is_cross_network and _ROUTER_MAC:
+            snat_eth_src = _ROUTER_MAC
+            logger.debug(
+                "snat: cross-network, matching router mac=%s instead of backend mac=%s",
+                _ROUTER_MAC, real_backend_mac,
+            )
+        else:
+            snat_eth_src = real_backend_mac
         snat_match = parser.OFPMatch(
             eth_type=0x0800,
-            eth_src=real_backend_mac,
+            eth_src=snat_eth_src,
             eth_dst=client_mac,
             ipv4_src=real_backend_ip,
             ipv4_dst=client_ip,

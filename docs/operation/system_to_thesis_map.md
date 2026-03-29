@@ -23,7 +23,10 @@ How the implemented **Metadata-Driven Edge Orchestration** architecture — Doub
 
 ### Where it diverges or goes beyond
 
-* The proposal frames the challenge generically ("meta-information"). The system narrows the meta-information to two concrete, measurable latency signals — $T_{proc}$ and $T_{dados}$ — and argues that **observable delay is a better orchestration signal than CPU/RAM utilization** (a server at 90% CPU can respond in 5 ms; a server at 10% CPU can block 200 ms on a slow DB call). This is a stronger claim than the proposal anticipated.
+* The proposal frames the challenge generically ("meta-information"). The system separates meta-information into two distinct classes for two distinct purposes:
+  * **Resource metrics** (CPU %, RAM, request count, active connections, replication lag, hop distance) are used for **real-time routing** (Thread 1 WSM cost functions) — they are *leading indicators* that predict where to send the next request before congestion manifests.
+  * **Latency metrics** ($T_{proc}$, $T_{dados}$) are used for **scaling decisions** (Thread 3 threshold evaluation) — they are *lagging indicators* that confirm sustained QoE degradation, triggering infrastructure mutations.
+  This dual-concern separation is a stronger architectural contribution than the proposal anticipated: routing and scaling consume *different* subsets of the same telemetry stream, each using the signal class best suited to its decision timescale.
 * The proposal does not mention the **Dual-VIP** model or **L3-only traffic classification**. These are design innovations that emerged during implementation and go beyond the original framing.
 
 ---
@@ -50,7 +53,7 @@ How the implemented **Metadata-Driven Edge Orchestration** architecture — Doub
 | :------------------------------- | :---------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Containerized services** |     ✅     | Docker containers for web servers, MongoDB instances, Selective Sync Nodes, and the SDN controller image (OS-Ken).                                                                                                                                                   |
 | **Adaptive**               |     ✅     | The system adapts to demand in real-time: Thread 2 observes latency → Thread 3 mutates infrastructure → Thread 1 re-routes traffic. The Selective Sync Node (`mongod` + Change Stream consumer script) autonomously pulls data via Change Streams on instantiation. |
-| **Metadata-informed**      |     ✅     | Metadata driving decisions:$T_{total}$, $T_{dados}$ (decomposed into $T_{proc}$), RAM %, storage %, active connections, hit-count, cache-hit-rate, unique-data-%. Latency metrics collected per-request and stored in Local MongoDB; summaries pushed to the controller via pub/sub (Aggregation Script → controller); Thread 2 subscribes to that channel. |
+| **Metadata-informed**      | ✅     | Metadata driving decisions: **Routing** (Thread 1) uses CPU %, RAM, request count, active connections, replication lag, and hop distance via multi-dimensional WSM cost functions. **Scaling** (Thread 3) uses $T_{proc}$ and $T_{dados}$ latency thresholds. Additionally: hit-count, cache-hit-rate, unique-data-% for tier transitions. Metrics collected per-request via ZMQ PUSH; windowed summaries published by aggregator; Thread 2 subscribes and resolves server_id → MAC before storing stats for Thread 1 consumption. |
 
 ### Objective 4 — *"Define and execute experimental scenarios that simulate realistic edge workloads and data usage patterns."*
 
@@ -93,7 +96,9 @@ How the implemented **Metadata-Driven Edge Orchestration** architecture — Doub
 #### Activity 2.2: *"Specify system components, interaction flows, and decision-making algorithms, especially for handling spatio-temporal metadata."*
 
 * **Fulfilled by:**
-  * **Routing algorithm (Thread 1):** WSM cost function — $Cost_j^{web} = \theta \cdot \frac{T_{proc,j}}{T_{proc,max}} + (1 - \theta) \cdot \frac{Hops_j}{Hops_{max}}$
+  * **Routing algorithms (Thread 1):** Multi-dimensional WSM cost functions for both compute and data routing:
+    * Server: $Cost_j^{web} = w_{cpu} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram} \cdot \frac{RAM_j}{RAM_{max}} + w_{req} \cdot \frac{Req_j}{Req_{max}} + w_{hops} \cdot \frac{Hops_j}{Hops_{max}}$
+    * Storage: $Cost_j^{data} = w_{cpu}^{s} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram}^{s} \cdot \frac{RAM_j}{RAM_{max}} + w_{conn}^{s} \cdot \frac{Conn_j}{Conn_{max}} + w_{lag}^{s} \cdot \frac{Lag_j}{Lag_{max}} + w_{hops}^{s} \cdot \frac{Hops_j}{Hops_{max}}$
   * **Placement algorithm (Thread 3):** MBFD heuristic with delay-based scoring — $Score_j = \|\vec{S}_{free,j} - \vec{u}_i\|$
   * **Tier transition rules (Thread 3 Data Manager):**
     * Tier 0 → 1: $T_{dados} \geq \tau_{dados}$
@@ -150,7 +155,7 @@ The following design decisions were not explicitly anticipated in the proposal b
 | :------------------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Double-VIP model**                  | `VIP_Web` (compute routing) and `VIP_Dados` (data routing) cleanly separate the two traffic planes at L3. No deep packet inspection. | Eliminates the need for `mongos`, config servers, and application-level routing logic. The MongoDB driver sees one stable address.                                                                                        |
 | **Elimination of sharding**           | Independent replica sets per network replace the original sharded design. No shard keys, no zone ranges, no `sh.moveChunk()`.          | Dramatically simplifies bootstrap (two `rs.initiate()` commands) and eliminates the heavyweight chunk-migration mechanism.                                                                                                |
-| **Delay-based orchestration**         | $T_{proc}$ and $T_{dados}$ replace CPU/RAM utilization as the primary scaling signals.                                               | Directly measures user-perceptible Quality of Experience rather than server-internal resource consumption. A server at 10% CPU can still block 200 ms on a slow DB call — CPU monitors miss this;$T_{dados}$ catches it. |
+| **Dual-concern telemetry separation** | Resource metrics (CPU, RAM, connections, hops) drive **routing** (Thread 1); latency metrics ($T_{proc}$, $T_{dados}$) drive **scaling** (Thread 3). Each concern uses the signal class matched to its decision timescale. | Routing uses *leading indicators* to steer traffic proactively; scaling uses *lagging indicators* to confirm sustained QoE degradation before mutating infrastructure. This avoids both premature scaling (CPU spike ≠ capacity problem) and sluggish routing (waiting for latency to rise before avoiding overloaded nodes). |
 | **Decoupled Compute/Data managers**   | Thread 3 splits into two independent managers responding to different delay signals.                                                     | A compute bottleneck doesn't trigger unnecessary data replication. A data locality problem doesn't spawn unnecessary web servers. Correct remediation for each bottleneck type.                                             |
 | **Document-ID-encoded routing**       | The domain prefix in each document ID (e.g.,`"net2::sensor_xyz_002"`) tells the web server which `VIP_Dados` to connect to.          | Zero overhead: no directory lookup, no controller query, no extra RTT. The routing decision is baked into the data at write time.                                                                                           |
 | **Data Gravity Amplification Effect** | SSR workloads trigger 2×`VIP_Dados` queries per HTTP request, amplifying both the cost of remote data and the benefit of local data.  | Provides the strongest empirical argument for topology-aware data placement and makes tier transition decisions faster and more decisive.                                                                                   |
@@ -180,7 +185,10 @@ When the jury asks: *"How does your system improve over existing edge approaches
 
 > Existing systems treat network routing, compute scaling, and data placement as three independent problems — each managed by a separate subsystem with no shared context.
 >
-> This thesis contributes a **cross-layer orchestration framework** where a single SDN controller decomposes observable latency into its compute component ($T_{proc}$) and its data-access component ($T_{dados}$), and applies the correct remediation for each: spawning web servers for compute bottlenecks, or triggering a **three-tier Data Gravity** transition for data-locality bottlenecks.
+> This thesis contributes a **cross-layer orchestration framework** where a single SDN controller consumes multi-dimensional telemetry and applies it through two distinct decision loops:
+>
+> - **Routing** (Thread 1): multi-dimensional WSM cost functions use CPU utilization, RAM usage, request count (for servers) / active connections and replication lag (for storage), and hop distance as *leading indicators* to steer each new connection to the least-loaded, most-local backend.
+> - **Scaling** (Thread 3): latency thresholds ($T_{proc} > \tau_{proc}$, $T_{dados} > \tau_{dados}$) serve as *lagging indicators* that confirm sustained QoE degradation, triggering infrastructure mutations — spawning web servers for compute bottlenecks, or triggering a **three-tier Data Gravity** transition for data-locality bottlenecks.
 >
 > The system is **lightweight by default** (Tier 0: zero additional infrastructure) and **scalable by design** (Tier 1: bounded Selective Sync Node → Tier 2: full replica). It only consumes edge resources when — and for as long as — demand justifies them, then automatically reclaims them.
 >

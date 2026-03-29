@@ -97,6 +97,10 @@ class TopologyMixin:
         self._peer_network_id: str  = ""
         self._topo_correction_needed: bool = False
 
+        # Avg hop count for dynamic cross-network penalty computation
+        self._avg_hop_count: float = 0.0
+        self._peer_avg_hop_count: float = 0.0
+
         # ZMQ PUB for outgoing topology snapshots
         self._topo_pub_ctx    = zmq.Context()
         self._topo_pub_socket = self._topo_pub_ctx.socket(zmq.PUB)
@@ -204,13 +208,22 @@ class TopologyMixin:
         self._peer_server_macs     = set(snapshot.server_macs)
         self._peer_storage_macs_n1 = set(snapshot.storage_macs_n1)
         self._peer_storage_macs_n2 = set(snapshot.storage_macs_n2)
+        self._peer_avg_hop_count = snapshot.avg_hop_count
         logger.debug(
-            "peer topology updated from %s: %d hosts; peer server_macs=%s storage_n1=%s storage_n2=%s",
+            "peer topology updated from %s: %d hosts; peer server_macs=%s storage_n1=%s storage_n2=%s peer_avg_hops=%.2f",
             snapshot.network_id, len(self.peer_hosts),
             list(self._peer_server_macs),
             list(self._peer_storage_macs_n1),
             list(self._peer_storage_macs_n2),
+            self._peer_avg_hop_count,
         )
+
+        # Seed _mac_to_ip for peer hosts so VIP routing can resolve their IPs
+        # without waiting for local ARP snooping (which never fires for cross-network hosts).
+        for h in self.peer_hosts.values():
+            ip = h.get("ip")
+            if ip:
+                self.register_backend_ip(h["mac"], ip)
 
     # ------------------------------------------------------------------
     # OS-Ken state change handler
@@ -367,6 +380,14 @@ class TopologyMixin:
         )
         logger.debug("hop cache rebuilt: %d hosts, %d resolved paths", len(self.hop_cache), resolved)
 
+        all_hops = [
+            v for per_host in self.hop_cache.values()
+            for v in per_host.values()
+            if v is not None
+        ]
+        self._avg_hop_count = sum(all_hops) / len(all_hops) if all_hops else 0.0
+        logger.debug("hop cache avg hops: %.2f (from %d resolved paths)", self._avg_hop_count, len(all_hops))
+
 
     def _rebuild_vip_pools(self) -> None:
         """Merge local host_attachment and peer_hosts, then filter by MAC membership sets."""
@@ -456,7 +477,7 @@ class TopologyMixin:
     def _publish_topology(self) -> None:
         local_section = TopologyNetworkSection(
             hosts=[
-                TopologyHostEntry(mac=mac, dpid=dpid, port_no=port_no)
+                TopologyHostEntry(mac=mac, dpid=dpid, port_no=port_no, ip=self._mac_to_ip.get(mac))
                 for mac, (dpid, port_no) in self.host_attachment.items()
             ],
             links=[
@@ -485,6 +506,7 @@ class TopologyMixin:
             server_macs=list(self._local_server_macs),
             storage_macs_n1=list(self._local_storage_macs_n1),
             storage_macs_n2=list(self._local_storage_macs_n2),
+            avg_hop_count=self._avg_hop_count,
         )
         try:
             self._topo_pub_socket.send_string(snapshot.model_dump_json(), zmq.NOBLOCK)

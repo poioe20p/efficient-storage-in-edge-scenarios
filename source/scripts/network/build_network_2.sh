@@ -177,7 +177,7 @@ sudo nsenter -t $PID_AGG -n ip route add default via 10.0.1.1
 # Step 7: Configure NAT router internal (LAN side)
 echo "Configuring NAT router interfaces..."
 # ==============================
-sudo nsenter -t $PID_ROUTER -n ip link set veth23-peer name eth2
+sudo nsenter -t $PID_ROUTER -n ip link set veth23-peer name eth2 # port number 3 on OVS (veth23 <-> ovs-br1)
 sudo nsenter -t $PID_ROUTER -n ip link set eth2 address 00:00:00:00:00:CC  # router LAN MAC
 sudo nsenter -t $PID_ROUTER -n ip link set eth2 up
 sudo nsenter -t $PID_ROUTER -n ip addr add 10.0.1.1/24 dev eth2  # default GW for LAN
