@@ -12,10 +12,10 @@ from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
 from os_ken import cfg
 
-from .elasticity import ComputeAlert, DataAlert, ElasticityManager
+from .elasticity.elasticity import ComputeAlert, DataAlert, ElasticityManager
 from .telemetry.models import TelemetrySummary
 from .telemetry.zmq_source import ZmqTelemetrySource
-from .topology import TopologyMixin
+from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
 
 # Required so os-ken's app manager loads os_ken.topology.switches.

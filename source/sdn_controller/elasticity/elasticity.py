@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from .node_manager import NodeAdder
 
 if TYPE_CHECKING:
-    from .topology import TopologyMixin
+    from ..topology.topology import TopologyMixin
 
 logger = logging.getLogger("os_ken.elasticity")
 
