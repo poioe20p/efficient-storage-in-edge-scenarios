@@ -13,9 +13,9 @@ before acting, partial failures leave a clean slate the next time the operation
 is retried, and every step is individually timed to produce a structured
 execution record.
 
----
-
 ## Architecture: Three-Thread Interaction
+
+---
 
 ```
 Thread 2 (Observer)     Thread 3 (Elasticity Mgr)      Infrastructure

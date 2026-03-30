@@ -20,7 +20,7 @@ The orchestration mechanisms are **workload-agnostic**: they react to measured d
    - **Tier 1 — Selective Sync Node** *(future work — not yet implemented):* Burst demand would trigger a standalone `mongod` seeded with only hot collections identified by local access tracking, kept current via per-collection Change Streams. See [§1.6](#16-future-work-selective-sync-node-tier-1) for the planned design.
    - **Tier 2 — Full replica:** Sustained high demand triggers `rs.add()` to place a full secondary in the requesting network. Removed when demand subsides.
 3. **Write-path isolation.** Writes always go to the local primary of the originating network.
-4. **Double-VIP model.** Two Virtual IPs cleanly separate the traffic planes: `VIP_SERVER` for client-to-server HTTP traffic and `VIP_DATA` for server-to-MongoDB traffic.
+4. **Double-VIP model.** Two VIP types cleanly separate the traffic planes: `VIP_SERVER` for client-to-server HTTP traffic and `VIP_DATA` (per-domain: `VIP_DATA_N1`, `VIP_DATA_N2`) for server-to-MongoDB traffic.
 
 ---
 
@@ -58,9 +58,10 @@ Thread 1 handles two independent traffic planes via `VipRoutingMixin`:
 | VIP | Default Address | Traffic Plane | Selection Logic |
 | :-- | :-------------- | :------------ | :-------------- |
 | **VIP_SERVER** | `10.0.0.100` (env: `VIP_SERVER_IP`) | Client → Web Server | Multi-dimensional WSM cost: CPU utilization, RAM usage, request count, and hop distance |
-| **VIP_DATA** | `10.0.0.200` (env: `VIP_DATA_IP`) | Web Server → MongoDB | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
+| **VIP_DATA_N1** | `10.0.0.200` (env: `VIP_DATA_N1_IP`) | Web Server → MongoDB (LAN 1) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
+| **VIP_DATA_N2** | `10.0.1.200` (env: `VIP_DATA_N2_IP`) | Web Server → MongoDB (LAN 2) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
 
-Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_MAC`) configured via environment variables, used for proactive ARP replies and DNAT/SNAT rewriting.
+Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_N1_MAC`, `VIP_DATA_N2_MAC`) configured via environment variables, used for ARP replies and DNAT/SNAT rewriting.
 
 #### VIP Server Selection — Multi-Dimensional WSM Cost Formula
 
@@ -81,12 +82,12 @@ Per-dimension weights are configurable via environment variables:
 
 | Env Var | Default | Dimension | Rationale |
 | :--- | :---: | :--- | :--- |
-| `W_CPU` | `0.3` | CPU utilization % | Leading indicator of compute saturation |
-| `W_RAM` | `0.1` | RAM usage (MB) | Memory pressure / swapping risk |
+| `W_CPU` | `0.2` | CPU utilization % | Leading indicator of compute saturation |
+| `W_RAM` | `0.2` | RAM usage (MB) | Memory pressure / swapping risk |
 | `W_REQUESTS` | `0.2` | Request count (current window) | Active load / queuing pressure |
 | `W_HOPS` | `0.4` | Network hop distance | Spatial locality — dominates when resource metrics are similar |
 
-- When no telemetry is available yet (cold start), all resource dimensions default to `0.0` — only hops contribute to the cost.
+- **Unknown telemetry:** backends without stats are assigned worst-case normalized scores (`1.0`) across all resource dimensions, preventing unmeasured nodes from being accidentally preferred over measured ones.
 - **Round-robin tie-breaking:** when multiple candidates share the same lowest cost (common during cold start when same-hop servers all score identically), a monotonic counter (`_rr_server_idx`) cycles through tied candidates instead of always picking the first dict entry.
 - `select_server()` iterates over `vip_server_pool`, scores each candidate, collects ties, and round-robin picks among them.
 
@@ -108,13 +109,18 @@ def select_server(self, client_mac: str) -> dict | None:
     for mac, entry in pool.items():
         stats = self._server_stats.get(mac)
 
-        cpu_norm = (stats.avg_cpu_percent / cpu_max) if stats else 0.0
-        ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else 0.0
-        req_norm = (stats.request_count    / req_max) if stats else 0.0
+        cpu_norm = (stats.avg_cpu_percent / cpu_max) if stats else 1.0
+        ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else 1.0
+        req_norm = (stats.request_count    / req_max) if stats else 1.0
 
         hops = (self.hop_cache.get(client_mac) or {}).get(mac)
         if hops is None:
-            hops = _CROSS_NETWORK_HOP_PENALTY if mac in self.peer_hosts else hops_max
+            if mac in self.peer_hosts:
+                hops = max(self._avg_hop_count, 1.0) + max(self._peer_avg_hop_count, 1.0)
+            elif mac in self.host_attachment:
+                hops = max(self._avg_hop_count, 1.0)
+            else:
+                hops = hops_max
         hop_norm = hops / hops_max
 
         cost = (_W_CPU * cpu_norm + _W_RAM * ram_norm
@@ -141,14 +147,14 @@ $$
 | Env Var | Default | Dimension | Rationale |
 | :--- | :---: | :--- | :--- |
 | `W_STORAGE_CPU` | `0.2` | CPU utilization % | mongod compute saturation |
-| `W_STORAGE_RAM` | `0.1` | RAM usage (MB) | WiredTiger cache pressure |
-| `W_STORAGE_CONNECTIONS` | `0.2` | Active connections | Connection pool exhaustion risk |
+| `W_STORAGE_RAM` | `0.2` | RAM usage (MB) | WiredTiger cache pressure |
+| `W_STORAGE_CONNECTIONS` | `0.1` | Active connections | Connection pool exhaustion risk |
 | `W_STORAGE_LAG` | `0.2` | Replication lag (s) | Data freshness for secondaries |
 | `W_STORAGE_HOPS` | `0.3` | Network hop distance | Data locality |
 
 - `select_storage(domain, client_mac)` iterates over the domain's storage pool, scores each entry, collects ties, and round-robin picks among them.
 - **Round-robin tie-breaking:** identical to `select_server`, but uses a per-domain counter (`_rr_storage_idx[domain]`) so that N1 and N2 storage pools cycle independently.
-- Cold-start behavior: missing telemetry → all resource dimensions = 0.0, only hops contribute. Same-hop candidates are round-robin'd.
+- **Unknown telemetry:** backends without stats are assigned worst-case normalized scores (`1.0`) across all resource dimensions. Same-hop candidates are round-robin'd.
 
 ```python
 def select_storage(self, domain: str, client_mac: str) -> dict | None:
@@ -169,14 +175,19 @@ def select_storage(self, domain: str, client_mac: str) -> dict | None:
     for mac, entry in pool.items():
         stats = self._storage_stats.get(mac)
 
-        cpu_norm  = (stats.avg_cpu_percent      / cpu_max)  if stats else 0.0
-        ram_norm  = (stats.avg_ram_used_mb       / ram_max)  if stats else 0.0
-        conn_norm = (stats.avg_connections        / conn_max) if stats else 0.0
-        lag_norm  = ((stats.avg_repl_lag_s or 0) / lag_max)  if stats else 0.0
+        cpu_norm  = (stats.avg_cpu_percent      / cpu_max)  if stats else 1.0
+        ram_norm  = (stats.avg_ram_used_mb       / ram_max)  if stats else 1.0
+        conn_norm = (stats.avg_connections        / conn_max) if stats else 1.0
+        lag_norm  = ((stats.avg_repl_lag_s or 0) / lag_max)  if stats else 1.0
 
         hops = (self.hop_cache.get(client_mac) or {}).get(mac)
         if hops is None:
-            hops = _CROSS_NETWORK_HOP_PENALTY if mac in self.peer_hosts else hops_max
+            if mac in self.peer_hosts:
+                hops = max(self._avg_hop_count, 1.0) + max(self._peer_avg_hop_count, 1.0)
+            elif mac in self.host_attachment:
+                hops = max(self._avg_hop_count, 1.0)
+            else:
+                hops = hops_max
         hop_norm = hops / hops_max
 
         cost = (_W_STORAGE_CPU * cpu_norm + _W_STORAGE_RAM * ram_norm
@@ -198,18 +209,21 @@ def select_storage(self, domain: str, client_mac: str) -> dict | None:
 
 #### VIP Packet-In Flow
 
-For each `VIP_SERVER` Packet-In, Thread 1 evaluates the multi-dimensional WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each `VIP_DATA` Packet-In, Thread 1 evaluates the storage WSM cost function and installs an analogous DNAT+SNAT pair.
+For each `VIP_SERVER` Packet-In, Thread 1 evaluates the multi-dimensional WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each `VIP_DATA_N1` or `VIP_DATA_N2` Packet-In, Thread 1 evaluates the storage WSM cost function for the corresponding domain and installs an analogous DNAT+SNAT pair.
 
-The MongoDB driver in each web server sees only `VIP_DATA:<port>` — a single stable address — and never discovers the physical `mongod` topology.
+The MongoDB driver in each web server sees only `VIP_DATA_N*:<port>` — a stable per-domain VIP address — and never discovers the physical `mongod` topology.
 
 #### OpenFlow Rule Priority Hierarchy
 
 | Priority | Rule Type | Purpose |
 | :------- | :-------- | :------ |
-| 200 | Proactive ARP reply | OVS answers ARP `who-has <VIP>?` directly with the VIP's virtual MAC — no controller involvement |
 | 200 | Reactive DNAT+SNAT | Installed per-connection by `handle_vip_packet_in()` after server selection; idle/hard timeout causes expiry and re-selection |
-| 100 | VIP punt | Sends VIP-destined IP packets to the controller for server selection; lower than DNAT so installed rules take precedence |
-| 5 | Proactive L2 | Topology-based forwarding installed by `TopologyMixin` |
+| 100 | VIP ARP punt | Matches ARP requests for VIP addresses → sends to controller for reactive ARP reply via `_reply_vip_arp()` |
+| 100 | VIP IP punt | Matches IP packets destined for VIP addresses → sends to controller for backend selection |
+| 10 | Reactive L2 learning | Installed by `packet_in_handler` for learned MAC-port mappings |
+| 5 | Proactive L2 forwarding | Topology-based forwarding installed by `TopologyMixin` |
+| 1 | ARP flood | Floods all ARP traffic (installed by `TopologyMixin`) |
+| 0 | Table-miss | Sends unmatched packets to controller (installed by `TopologyMixin`) |
 
 #### IP ↔ MAC Learning
 
@@ -227,7 +241,16 @@ When the WSM cost function selects a backend that lives on the **peer network** 
 
 ##### Hop cost for peer backends
 
-`select_server()` and `select_storage()` use `hop_cache` for local backends, but `hop_cache` is built from the local NetworkX graph and has no entries for peer MACs. When `hop_cache` returns `None` for a MAC, the code checks `if mac in self.peer_hosts` — if true, it assigns the constant `CROSS_NETWORK_HOP_PENALTY` (default: 3) as the hop count. This biases the cost function against remote backends while still allowing them to be selected when local backends are overloaded.
+`select_server()` and `select_storage()` use `hop_cache` for local backends, but `hop_cache` is built from the local NetworkX graph and has no entries for peer MACs. Hops are resolved in priority order:
+
+| Condition | Hops assigned |
+|---|---|
+| Path in `hop_cache` | Real shortest-path length |
+| Local, no path yet | `max(_avg_hop_count, 1.0)` |
+| Cross-network (peer) | `max(_avg_hop_count, 1.0) + max(_peer_avg_hop_count, 1.0)` |
+| Truly unknown MAC | `hops_max` (worst case) |
+
+The `_avg_hop_count` is computed by `TopologyMixin._rebuild_hop_cache()` and published in `TopologySnapshot.avg_hop_count`. The peer's value is stored as `_peer_avg_hop_count` on receipt. The `max(..., 1.0)` guard prevents cold-start zero values from making cross-network backends appear free.
 
 ##### Output port resolution (3-step fallback)
 
@@ -245,7 +268,7 @@ If none of the three steps resolve a port, the packet is dropped with a warning 
 Client ──► Local OVS (PacketIn → controller)
                │
                ├─ Controller: select_server() picks peer backend
-               ├─ Controller: DNAT rewrite (eth_dst=real_MAC, ipv4_dst=real_IP)
+               ├─ Controller: DNAT rewrite (eth_dst=ROUTER_MAC, ipv4_dst=real_IP)
                ├─ Controller: output=ROUTER_OVS_PORT
                │
                ▼
@@ -253,9 +276,9 @@ Client ──► Local OVS (PacketIn → controller)
                                 (L2 forwarding)    (no second PacketIn)
 ```
 
-The SNAT return rule matches on `eth_src=backend_mac, eth_dst=client_mac` and rewrites the source back to the VIP MAC/IP before forwarding to the client's ingress port.
+For cross-network backends, the SNAT return rule matches on `eth_src=ROUTER_MAC, eth_dst=client_mac` (not the real backend MAC, since the router rewrites `eth_src` during L3 forwarding) and rewrites the source back to the VIP MAC/IP before forwarding to the client's ingress port. For local backends, the SNAT rule matches `eth_src=backend_mac` directly.
 
-Because the DNAT'd packet already carries the real destination MAC and IP, the peer OVS switch delivers it via normal L2 forwarding — no second VIP PacketIn is triggered on the remote controller.
+Because the DNAT'd packet carries the real destination IP (and the router resolves the final backend MAC via its own ARP), the peer OVS switch delivers it via normal L2 forwarding — no second VIP PacketIn is triggered on the remote controller.
 
 > See [vip_interception_plan.md](implementation_plans/vip_interception_plan.md) for the full mixin implementation.
 
@@ -438,7 +461,7 @@ The `NodeAdder` class provides per-step, timed, idempotent lifecycle methods. Ea
 
 Each step has idempotency guards: if the container already exists and is running, `docker run` is skipped; if stopped, it is cleaned up and recreated. The shell scripts check for pre-existing veth pairs and OVS ports.
 
-After a successful addition, `ElasticityManager` resolves the new container's MAC (via `docker exec <name> cat /sys/class/net/eth0/address`) and calls `TopologyMixin.add_server_mac()` or `add_storage_mac()` — which updates the VIP pool that Thread 1 reads on the next Packet-In.
+Both shell scripts emit machine-readable lines (`RESULT_IP=<ip>`, `RESULT_MAC=<mac>`) at the end of a successful run; `NodeAdder._run_script()` parses these via regex to populate `NodeResult.ip` and `NodeResult.mac`. On a successful result, `ElasticityManager` calls `TopologyMixin.add_server_mac()` or `add_storage_mac()` and `register_backend_ip()` — which updates the VIP pool that Thread 1 reads on the next Packet-In.
 
 #### Observability — `StepTimings` and `NodeOperationState`
 
@@ -547,22 +570,22 @@ The `TopologyMixin` mixin handles all topology concerns. It is mixed into the ma
 
 #### Local Topology — `_topology_worker` Greenthread
 
-A background greenthread runs every `TOPOLOGY_INTERVAL` seconds (default 1 s):
+A background greenthread runs every `TOPOLOGY_INTERVAL` seconds (default 5 s):
 
 1. Queries the OS-Ken topology API (`get_all_link`, `get_host`) to discover switches, links, and hosts.
 2. Builds a NetworkX `DiGraph` (`self.net`) for shortest-path computation.
 3. Records host-to-switch attachment in `self.host_attachment` (MAC → (dpid, port_no)).
 4. Rebuilds `hop_cache`: for every known host MAC and every server/storage MAC, computes the shortest-path hop count.
-5. Rebuilds VIP pools (`vip_server_pool`, `vip_storage_pool`) by filtering the combined local + peer host attachment by registered MAC sets.
+5. Rebuilds VIP pools (`vip_server_pool`, `vip_storage_pool_n1`, `vip_storage_pool_n2`) by filtering the combined local + peer host attachment by registered MAC sets.
 6. On topology change: installs proactive L2 forwarding rules (priority 5) on all switches.
 
-Router MACs (`00:00:00:00:00:aa`–`dd`) are blocklisted from the host list to avoid treating inter-network router ports as service endpoints.
+Router MACs (configured via `ROUTER_MAC_BLOCKLIST` env var) are blocklisted from the host list to avoid treating inter-network router ports as service endpoints.
 
 #### Peer Topology Sharing — ZMQ PUB/SUB
 
 Each controller binds a ZMQ PUB socket on port `TOPOLOGY_PUB_PORT` (default 5557). The `_topology_worker` publishes the full topology snapshot:
 - On every detected change (hosts/links/switches differ from previous tick).
-- Every `TOPOLOGY_HEARTBEAT_TICKS` ticks (default 30) even without change — so a restarted peer gets current state within seconds.
+- Every `TOPOLOGY_HEARTBEAT_INTERVAL` seconds (default 15) even without change — so a restarted peer gets current state within seconds.
 - Immediately when the peer's snapshot reveals it has a stale view of this controller's local network.
 
 The peer controller's `ZmqTelemetrySource` SUB socket subscribes to this PUB endpoint (in addition to aggregator endpoints). Messages are disambiguated by the `"type"` field:
@@ -598,22 +621,25 @@ All per-network configuration is injected via environment variables:
 | Variable | Default | Description |
 |---|---|---|
 | `VIP_SERVER_IP` | `10.0.0.100` | Virtual IP for the compute/app server pool |
-| `VIP_DATA_IP` | `10.0.0.200` | Virtual IP for the storage (MongoDB) pool |
 | `VIP_SERVER_MAC` | `aa:bb:cc:dd:ee:01` | Virtual MAC for the server VIP |
-| `VIP_DATA_MAC` | `aa:bb:cc:dd:ee:02` | Virtual MAC for the data VIP |
+| `VIP_DATA_N1_IP` | `10.0.0.200` | Virtual IP for LAN 1 MongoDB storage |
+| `VIP_DATA_N1_MAC` | — | Virtual MAC for VIP_DATA_N1 |
+| `VIP_DATA_N2_IP` | `10.0.1.200` | Virtual IP for LAN 2 MongoDB storage |
+| `VIP_DATA_N2_MAC` | — | Virtual MAC for VIP_DATA_N2 |
 | `NETWORK_ID` | `lan1` | Identifies this controller's domain |
 | `SERVER_MACS` | `""` | Comma-separated MACs of compute servers behind the VIP |
-| `STORAGE_MACS` | `""` | Comma-separated MACs of storage servers |
-| `WSM_THETA` | `0.5` | Weight for $T_{proc}$ vs hops in the WSM formula |
+| `STORAGE_MACS_N1` | `""` | Comma-separated MACs of LAN 1 storage servers |
+| `STORAGE_MACS_N2` | `""` | Comma-separated MACs of LAN 2 storage servers |
 | `VIP_IDLE_TIMEOUT` | `30` | Seconds of idle before a DNAT rule expires |
 | `VIP_HARD_TIMEOUT` | `120` | Maximum seconds a DNAT rule persists |
 | `ROUTER_OVS_PORT` | `0` | OVS port connected to the inter-LAN router; `0` = cross-network routing disabled |
-| `CROSS_NETWORK_HOP_PENALTY` | `3` | Constant hop count assigned to peer-network backends in the WSM cost function |
-| `TAU_PROC_MS` | `200` | Compute threshold: alert when `avg_time_proc_ms` exceeds this |
-| `TAU_DADOS_MS` | `150` | Data threshold: alert when `avg_time_db_ms` exceeds this |
-| `TOPOLOGY_INTERVAL` | `1` | Seconds between topology worker ticks |
+| `ROUTER_MAC` | — | Router's LAN-side interface MAC (per controller) |
+| `ROUTER_MAC_BLOCKLIST` | — | Comma-separated MACs to exclude from host discovery |
+| `TAU_PROC_MS` | `600` | Compute threshold: alert when `avg_time_proc_ms` exceeds this |
+| `TAU_DADOS_MS` | `150000` | Data threshold: alert when `avg_time_db_ms` exceeds this |
+| `TOPOLOGY_INTERVAL` | `5` | Seconds between topology worker polls |
 | `TOPOLOGY_PUB_PORT` | `5557` | Port for this controller's topology PUB socket |
-| `TOPOLOGY_HEARTBEAT_TICKS` | `30` | Republish snapshot every N ticks even without change |
+| `TOPOLOGY_HEARTBEAT_INTERVAL` | `15` | Seconds before publishing a heartbeat update |
 | `AGGREGATOR_ENDPOINTS` | `tcp://127.0.0.1:5556` | Comma-separated aggregator PUB addresses |
 | `PEER_TOPOLOGY_ENDPOINTS` | `""` | Comma-separated peer controller PUB addresses |
 
@@ -641,7 +667,7 @@ The Selective Sync Node is intended as a lightweight intermediate tier between d
 | User B reads Data A (burst demand) | Cross-network | **Selective Sync Node (Tier 1)** | Only hot collections synced locally |
 | User B reads Data A (sustained demand) | Cross-network | **Full replica via `rs.add()` (Tier 2)** | Full autonomous replication justified |
 
-When implemented, this would also require a **MDVBP (Metadata-Driven VIP Backend Picker)** tier map in Thread 1's `VIP_DATA` selection logic, replacing the current first-available strategy with tier-aware routing.
+When implemented, this would also require a **MDVBP (Metadata-Driven VIP Backend Picker)** tier map in Thread 1's `VIP_DATA_N*` selection logic, replacing the current first-available strategy with tier-aware routing.
 
 ---
 
@@ -651,7 +677,7 @@ Each server is a lightweight Docker container running an HTTP application (Flask
 
 ### 2.1 Request Handling
 
-Each thread connects to `VIP_DATA:<port>` for MongoDB queries. The MongoDB driver sees only the VIP — a single stable address — and never discovers the physical `mongod` topology. The SDN network performs the DNAT rewrite transparently.
+Each thread connects to the appropriate domain VIP (`VIP_DATA_N1` or `VIP_DATA_N2`) for MongoDB queries. The MongoDB driver sees only the VIP — a stable per-domain address — and never discovers the physical `mongod` topology. The SDN network performs the DNAT rewrite transparently.
 
 ### 2.2 Telemetry Reporting — ZMQ PUSH
 
@@ -681,7 +707,7 @@ Per-request metric event:
 ```mermaid
 graph LR
     Client["Client Request<br/>(via DNAT)"] --> Server["Server Container"]
-    Server -->|"DB queries<br/>(to VIP_DATA)"| VIPd["VIP_DATA<br/>(SDN selects mongod)"]
+    Server -->|"DB queries<br/>(to VIP_DATA_N*)"| VIPd["VIP_DATA_N1 / N2<br/>(SDN selects mongod)"]
     VIPd -.->|"Tier 0: remote primary<br/>Tier 2: local secondary"| Mongo[("mongod instance")]
     Server -->|"ZMQ PUSH per-request<br/>{T_total, T_dados, cpu, ram}"| Agg["Aggregator<br/>(ZMQ PULL)"]
 ```
@@ -833,7 +859,7 @@ The architecture's contribution to the state of the art is the integration of th
 
 | Layer | Traditional Approach | This System |
 |---|---|---|
-| **Network** | Static routing or ECMP | Double-VIP SDN routing: `VIP_SERVER` selects best web server (WSM); `VIP_DATA` selects `mongod` endpoint |
+| **Network** | Static routing or ECMP | Double-VIP SDN routing: `VIP_SERVER` selects best web server (WSM); `VIP_DATA_N1`/`VIP_DATA_N2` selects per-domain `mongod` endpoint |
 | **Compute** | Manual scaling or load-balancer round-robin | `ElasticityManager` driven by $T_{proc}$ threshold — QoE-aware scale-out/in with cooperative drain |
 | **Storage** | Static sharding or full replication | Adaptive hierarchy: Tier 0 (remote primary) → Tier 2 (full replica via `rs.add()`), triggered by $T_{dados}$ threshold. *(Tier 1 selective sync: future work)* |
 
@@ -841,7 +867,7 @@ The architecture's contribution to the state of the art is the integration of th
 
 | Layer | Responsibility |
 |:---|:---|
-| **Web server thread** | Connect to `VIP_DATA` → query → push ZMQ metric → close connection |
+| **Web server thread** | Connect to `VIP_DATA_N*` → query → push ZMQ metric → close connection |
 | **OVS** | DNAT/SNAT rewrite on new connections using installed flow rules; no protocol inspection |
 | **Controller Thread 1** (`VipRoutingMixin`) | On `Packet-In` → select backend via WSM/pool → install DNAT+SNAT rule |
 | **Telemetry greenthread** (`ZmqTelemetrySource`) | Receive and cache telemetry summaries → evaluate thresholds → submit alerts |
