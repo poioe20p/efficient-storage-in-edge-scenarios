@@ -28,7 +28,7 @@
                 <mxCell id="bg_web" value="&lt;b&gt;VIP_WEB Path — 10.0.0.100:80  (HTTP load balancing)&lt;/b&gt;" style="text;html=1;strokeColor=#e65100;fillColor=#fff8e1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
                     <mxGeometry x="20" y="60" width="1860" height="450" as="geometry"/>
                 </mxCell>
-                <mxCell id="bg_data" value="&lt;b&gt;VIP_DATA Path — 10.0.X.200:27017  (MongoDB routing)&lt;/b&gt;" style="text;html=1;strokeColor=#b71c1c;fillColor=#fce4ec;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
+                <mxCell id="bg_data" value="&lt;b&gt;VIP_DATA Path — 10.0.X.200:27018  (MongoDB routing)&lt;/b&gt;" style="text;html=1;strokeColor=#b71c1c;fillColor=#fce4ec;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
                     <mxGeometry x="20" y="530" width="1860" height="455" as="geometry"/>
                 </mxCell>
 
@@ -189,7 +189,7 @@
                 </mxCell>
 
                 <!-- ③ TCP SYN: Web Server → OVS punt rule (orange solid) -->
-                <mxCell id="e_syn_data" value="③ TCP SYN  dst=10.0.X.200:27017  (src=ws_ip, domain-mapped)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;fontSize=11;fontColor=#e65100;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_data" target="ovs_punt_data" edge="1">
+                <mxCell id="e_syn_data" value="③ TCP SYN  dst=10.0.X.200:27018  (src=ws_ip, domain-mapped)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;fontSize=11;fontColor=#e65100;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_data" target="ovs_punt_data" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
 

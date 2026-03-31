@@ -678,7 +678,7 @@ if [ -n "${MONGO_PORT:-}" ]; then
 fi
 
 # Derive MONGO_URI from MONGO_PORT so the sidecar connects to the right port.
-export MONGO_URI="${MONGO_URI:-mongodb://localhost:${MONGO_PORT:-27017}/}"
+export MONGO_URI="${MONGO_URI:-mongodb://localhost:${MONGO_PORT:-27018}/}"
 
 # Start mongod in the background.
 # shellcheck disable=SC2086
@@ -686,7 +686,7 @@ mongod $MONGOD_ARGS &
 MONGOD_PID=$!
 
 # Wait until mongod accepts connections before starting the sidecar.
-until mongosh --port "${MONGO_PORT:-27017}" --quiet --eval "db.runCommand({ping:1})" >/dev/null 2>&1; do
+until mongosh --port "${MONGO_PORT:-27018}" --quiet --eval "db.runCommand({ping:1})" >/dev/null 2>&1; do
     sleep 1
 done
 
@@ -709,7 +709,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MONGO_VERSION=7.0 \
     SERVER_ID=mongo-unknown \
     AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
-    MONGO_URI=mongodb://localhost:27017/ \
+    MONGO_URI=mongodb://localhost:27018/ \
     TELEMETRY_INTERVAL_S=10 \
     MONGO_REPLSET=
 ```
@@ -723,7 +723,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     AGGREGATOR_PULL_ADDR= \
     LAN_ID= \
     MONGO_URI= \
-    MONGO_PORT=27017 \
+    MONGO_PORT=27018 \
     TELEMETRY_INTERVAL_S=10 \
     MONGO_REPLSET=
 ```

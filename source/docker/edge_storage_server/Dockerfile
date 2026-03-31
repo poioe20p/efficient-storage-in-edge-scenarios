@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     AGGREGATOR_PULL_ADDR= \
     LAN_ID= \
     MONGO_URI= \
-    MONGO_PORT=27017 \
+    MONGO_PORT=27018 \
     TELEMETRY_INTERVAL_S=10 \
     MONGO_REPLSET=
 
@@ -37,6 +37,6 @@ RUN chmod +x /entrypoint.sh
 VOLUME ["/data/db"]
 
 # Expose default MongoDB port (documentational, networking is handled externally)
-EXPOSE 27017
+EXPOSE 27018
 
 CMD ["/entrypoint.sh"]

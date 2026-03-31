@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
-DB_URL=mongodb://10.0.0.4:27017/test \
+DB_URL=mongodb://10.0.0.4:27018/test \
 MONGO_VERSION=7.0
 
 # Base networking tools + Python + MongoDB mongosh client

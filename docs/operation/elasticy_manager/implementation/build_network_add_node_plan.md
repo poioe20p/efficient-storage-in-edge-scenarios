@@ -249,7 +249,7 @@ that already-deployed topology.
 
 ```bash
 # Add a plain host to LAN 1 (IP auto-assigned)
-./add_network_node.sh --lan 1 --name test_client_1
+./add_network_node.sh --lan 1 --name edge_server
 # Output includes IP, switch port name, and container link name
 
 # Attach a MongoDB member already running in LAN 2 with a manual IP

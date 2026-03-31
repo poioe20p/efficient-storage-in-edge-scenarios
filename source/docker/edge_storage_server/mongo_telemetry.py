@@ -44,7 +44,7 @@ def _discover_mac() -> str:
 
 SERVER_MAC           = _discover_mac()
 AGGREGATOR_PULL_ADDR = os.environ.get("AGGREGATOR_PULL_ADDR", "") or _aggregator_addr_from_lan()
-MONGO_URI            = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI            = os.environ.get("MONGO_URI", "mongodb://localhost:27018/")
 INTERVAL_S           = float(os.environ.get("TELEMETRY_INTERVAL_S", "2"))
 HEARTBEAT_INTERVAL_S = float(os.environ.get("HEARTBEAT_INTERVAL_S", "60"))
 LOG_LEVEL            = os.environ.get("LOG_LEVEL", "INFO").upper()

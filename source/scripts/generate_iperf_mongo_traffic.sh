@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generates traffic to the MongoDB shard containers using iperf3.
+# Generates traffic to the edge_storage_server containers using iperf3.
 # Note: iperf3 generates throughput traffic (TCP/UDP), not ICMP ping.
 # Defaults target:
 #   LAN1 VIP: 10.0.0.100
@@ -35,8 +35,8 @@ LAN2_CLIENTS_RAW=edge_server_n2
 LAN1_CLIENTS_SET=0
 LAN2_CLIENTS_SET=0
 
-LAN1_MONGO_CONTAINER=mongodb_n1
-LAN2_MONGO_CONTAINER=mongodb_n2
+LAN1_MONGO_CONTAINER=edge_storage_server_n1
+LAN2_MONGO_CONTAINER=edge_storage_server_n2
 
 LAN1_MONGO_IP=10.0.0.100
 LAN2_MONGO_IP=10.0.1.100
@@ -47,9 +47,9 @@ LAN2_MONGO_IP=10.0.1.100
 # Note: containers use --network none, so Docker can't report these IPs.
 declare -A CLIENT_IP_BY_CONTAINER=(
   [edge_server_n1]="10.0.0.2"
-  [mongodb_n1]="10.0.0.4"
+  [edge_storage_server_n1]="10.0.0.4"
   [edge_server_n2]="10.0.1.2"
-  [mongodb_n2]="10.0.1.3"
+  [edge_storage_server_n2]="10.0.1.3"
 )
 
 format_clients_with_ips() {
@@ -94,8 +94,8 @@ Options:
   --lan1-only                Run only LAN1 clients
   --lan2-only                Run only LAN2 clients
 
-  --lan1-mongo <container>   MongoDB container in LAN1 (default: mongodb_n1)
-  --lan2-mongo <container>   MongoDB container in LAN2 (default: mongodb_n2)
+  --lan1-mongo <container>   Storage container in LAN1 (default: edge_storage_server_n1)
+  --lan2-mongo <container>   Storage container in LAN2 (default: edge_storage_server_n2)
   --lan1-ip <ip>             Target IP in LAN1 (default: 10.0.0.100 VIP)
   --lan2-ip <ip>             Target IP in LAN2 (default: 10.0.1.100 VIP)
 
@@ -607,7 +607,7 @@ main() {
     MULTI_PORT=1
   fi
 
-  echo "Starting iperf3 servers on MongoDB containers..." >&2
+  echo "Starting iperf3 servers on edge_storage_server containers..." >&2
   if [[ "$AUTO_PORT" == "1" ]]; then
     if [[ "$MULTI_PORT" == "1" ]]; then
       pick_port_range_and_start_servers_multi "$SERVER_PORT" "$total_jobs" "${server_containers[@]}"

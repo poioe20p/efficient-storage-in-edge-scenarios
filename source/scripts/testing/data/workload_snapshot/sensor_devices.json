@@ -1,0 +1,402 @@
+[
+  {
+    "_id": "lan1::device::001",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::002",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::003",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::004",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::005",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::006",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::007",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::008",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::009",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::010",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::011",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::012",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::013",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::014",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::015",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::016",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::017",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::018",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::019",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::020",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::021",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::022",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::023",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::024",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::025",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::026",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::027",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::028",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::029",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::030",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::031",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::032",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::033",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::034",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::035",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::036",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::037",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::038",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::039",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::040",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::041",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::042",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::043",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::044",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::045",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::046",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::047",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::048",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::049",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan1::device::050",
+    "region_origin": "lan1"
+  },
+  {
+    "_id": "lan2::device::001",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::002",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::003",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::004",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::005",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::006",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::007",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::008",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::009",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::010",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::011",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::012",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::013",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::014",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::015",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::016",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::017",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::018",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::019",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::020",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::021",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::022",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::023",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::024",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::025",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::026",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::027",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::028",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::029",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::030",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::031",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::032",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::033",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::034",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::035",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::036",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::037",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::038",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::039",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::040",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::041",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::042",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::043",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::044",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::045",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::046",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::047",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::048",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::049",
+    "region_origin": "lan2"
+  },
+  {
+    "_id": "lan2::device::050",
+    "region_origin": "lan2"
+  }
+]

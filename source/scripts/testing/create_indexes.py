@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""
+create_indexes.py — run once after seeding, creates indexes on both replica-set primaries
+"""
+
+from pymongo import MongoClient, ASCENDING
+import argparse
+
+REGIONS = {
+    "lan1": "mongodb://10.0.0.4:27018/",
+    "lan2": "mongodb://10.0.1.4:27018/",
+}
+
+
+def setup(uri: str, label: str):
+    client = MongoClient(uri)
+    db = client["edge_platform"]
+
+    # sensor_reports
+    db.sensor_reports.create_index([("region_origin", ASCENDING)])
+    db.sensor_reports.create_index([("tags", ASCENDING)])
+    db.sensor_reports.create_index([("device_type", ASCENDING), ("payload.status", ASCENDING)])
+
+    # device_registry
+    db.device_registry.create_index([("home_region", ASCENDING)])
+    db.device_registry.create_index([("subscribed_tags", ASCENDING)])
+
+    # query_events — compound index for the anomaly detection aggregation
+    db.query_events.create_index(
+        [("timestamp", ASCENDING), ("region_served", ASCENDING)]
+    )
+    db.query_events.create_index([("device_id", ASCENDING)])
+
+    # TTL index on query_events (expire after 24h)
+    db.query_events.create_index(
+        [("timestamp", ASCENDING)],
+        expireAfterSeconds=86400,
+        name="ttl_query_events"
+    )
+
+    print(f"[{label}] Indexes created.")
+    client.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mongo-lan1", default=REGIONS["lan1"], help="MongoDB URI for LAN 1 primary")
+    parser.add_argument("--mongo-lan2", default=REGIONS["lan2"], help="MongoDB URI for LAN 2 primary")
+    args = parser.parse_args()
+    setup(args.mongo_lan1, "lan1")
+    setup(args.mongo_lan2, "lan2")

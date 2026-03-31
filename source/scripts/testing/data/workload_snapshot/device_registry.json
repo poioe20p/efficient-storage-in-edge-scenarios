@@ -1,0 +1,828 @@
+[
+  {
+    "_id": "lan1::node::001",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "industrial",
+      "high-priority",
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::002",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal",
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::003",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::004",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "mechanical"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::005",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "mechanical",
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::006",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::007",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::008",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "high-priority",
+      "mechanical",
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::009",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "mechanical"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::010",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "high-priority",
+      "industrial",
+      "mechanical"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::011",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::012",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::013",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::014",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::015",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental",
+      "industrial",
+      "mechanical"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::016",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::017",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "industrial",
+      "mechanical",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::018",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::019",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal",
+      "mechanical"
+    ],
+    "watched_devices": [
+      "lan2::device::010",
+      "lan2::device::053",
+      "lan2::device::092"
+    ]
+  },
+  {
+    "_id": "lan1::node::020",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "industrial",
+      "mechanical",
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::021",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::022",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::023",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "logistics",
+      "industrial",
+      "mechanical"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::024",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal",
+      "high-priority",
+      "mechanical"
+    ],
+    "watched_devices": [
+      "lan2::device::013",
+      "lan2::device::015",
+      "lan2::device::096"
+    ]
+  },
+  {
+    "_id": "lan1::node::025",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::026",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::027",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::028",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal",
+      "high-priority",
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::029",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::030",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::031",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "high-priority",
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::032",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::033",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::034",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "mechanical",
+      "industrial",
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::035",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "environmental",
+      "mechanical",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::036",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "mechanical",
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::037",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "mechanical"
+    ],
+    "watched_devices": [
+      "lan2::device::041",
+      "lan2::device::051",
+      "lan2::device::003",
+      "lan2::device::038",
+      "lan2::device::095",
+      "lan2::device::005",
+      "lan2::device::096"
+    ]
+  },
+  {
+    "_id": "lan1::node::038",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::039",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "thermal",
+      "logistics",
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan1::node::040",
+    "home_region": "lan1",
+    "subscribed_tags": [
+      "logistics",
+      "environmental",
+      "industrial"
+    ],
+    "watched_devices": [
+      "lan2::device::022",
+      "lan2::device::082",
+      "lan2::device::042",
+      "lan2::device::089",
+      "lan2::device::054",
+      "lan2::device::018"
+    ]
+  },
+  {
+    "_id": "lan2::node::001",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "logistics",
+      "environmental",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::002",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::003",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "high-priority",
+      "mechanical",
+      "thermal"
+    ],
+    "watched_devices": [
+      "lan1::device::086",
+      "lan1::device::076",
+      "lan1::device::023",
+      "lan1::device::009",
+      "lan1::device::002",
+      "lan1::device::047",
+      "lan1::device::093",
+      "lan1::device::096"
+    ]
+  },
+  {
+    "_id": "lan2::node::004",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "industrial",
+      "thermal",
+      "high-priority"
+    ],
+    "watched_devices": [
+      "lan1::device::032",
+      "lan1::device::082",
+      "lan1::device::039",
+      "lan1::device::066",
+      "lan1::device::022",
+      "lan1::device::043",
+      "lan1::device::038",
+      "lan1::device::059"
+    ]
+  },
+  {
+    "_id": "lan2::node::005",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "mechanical",
+      "high-priority"
+    ],
+    "watched_devices": [
+      "lan1::device::044",
+      "lan1::device::068",
+      "lan1::device::093",
+      "lan1::device::036"
+    ]
+  },
+  {
+    "_id": "lan2::node::006",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::007",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::008",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "thermal",
+      "high-priority",
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::009",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "industrial",
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::010",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "high-priority",
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::011",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::012",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::013",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "mechanical",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::014",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "mechanical",
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::015",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "industrial"
+    ],
+    "watched_devices": [
+      "lan1::device::036",
+      "lan1::device::095",
+      "lan1::device::046",
+      "lan1::device::093",
+      "lan1::device::052",
+      "lan1::device::037",
+      "lan1::device::007"
+    ]
+  },
+  {
+    "_id": "lan2::node::016",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "thermal",
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::017",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "high-priority",
+      "environmental"
+    ],
+    "watched_devices": [
+      "lan1::device::004",
+      "lan1::device::049",
+      "lan1::device::047",
+      "lan1::device::064",
+      "lan1::device::096",
+      "lan1::device::002",
+      "lan1::device::063"
+    ]
+  },
+  {
+    "_id": "lan2::node::018",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "industrial",
+      "high-priority",
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::019",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "thermal",
+      "mechanical"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::020",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "high-priority"
+    ],
+    "watched_devices": [
+      "lan1::device::003",
+      "lan1::device::089",
+      "lan1::device::008",
+      "lan1::device::029"
+    ]
+  },
+  {
+    "_id": "lan2::node::021",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "logistics"
+    ],
+    "watched_devices": [
+      "lan1::device::059",
+      "lan1::device::050",
+      "lan1::device::035",
+      "lan1::device::038",
+      "lan1::device::025",
+      "lan1::device::030",
+      "lan1::device::084",
+      "lan1::device::079"
+    ]
+  },
+  {
+    "_id": "lan2::node::022",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "mechanical"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::023",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "mechanical"
+    ],
+    "watched_devices": [
+      "lan1::device::086",
+      "lan1::device::022",
+      "lan1::device::093",
+      "lan1::device::053"
+    ]
+  },
+  {
+    "_id": "lan2::node::024",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "logistics"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::025",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "mechanical",
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::026",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "mechanical",
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::027",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::028",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "thermal",
+      "industrial",
+      "environmental"
+    ],
+    "watched_devices": [
+      "lan1::device::035",
+      "lan1::device::006",
+      "lan1::device::056",
+      "lan1::device::086",
+      "lan1::device::078",
+      "lan1::device::067",
+      "lan1::device::028"
+    ]
+  },
+  {
+    "_id": "lan2::node::029",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::030",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "logistics"
+    ],
+    "watched_devices": [
+      "lan1::device::091",
+      "lan1::device::009",
+      "lan1::device::078",
+      "lan1::device::053",
+      "lan1::device::046",
+      "lan1::device::001"
+    ]
+  },
+  {
+    "_id": "lan2::node::031",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "logistics"
+    ],
+    "watched_devices": [
+      "lan1::device::038",
+      "lan1::device::085",
+      "lan1::device::059"
+    ]
+  },
+  {
+    "_id": "lan2::node::032",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "high-priority",
+      "mechanical",
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::033",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "industrial"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::034",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "high-priority",
+      "logistics",
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::035",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "environmental",
+      "high-priority",
+      "mechanical"
+    ],
+    "watched_devices": [
+      "lan1::device::041",
+      "lan1::device::044",
+      "lan1::device::034",
+      "lan1::device::065"
+    ]
+  },
+  {
+    "_id": "lan2::node::036",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "logistics",
+      "environmental"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::037",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "logistics",
+      "thermal",
+      "high-priority"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::038",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "mechanical",
+      "thermal"
+    ],
+    "watched_devices": [
+      "lan1::device::090",
+      "lan1::device::029",
+      "lan1::device::084",
+      "lan1::device::074",
+      "lan1::device::051"
+    ]
+  },
+  {
+    "_id": "lan2::node::039",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "thermal"
+    ],
+    "watched_devices": []
+  },
+  {
+    "_id": "lan2::node::040",
+    "home_region": "lan2",
+    "subscribed_tags": [
+      "thermal",
+      "logistics",
+      "environmental"
+    ],
+    "watched_devices": []
+  }
+]

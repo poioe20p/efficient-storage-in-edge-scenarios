@@ -411,5 +411,5 @@ sleep 5
 echo "Running connectivity tests to seed controller ARP tables..."
 "${SCRIPT_DIR}/test_conectivity.sh" all || echo "WARNING: some connectivity tests failed; ARP seeding may be incomplete."
 
-./network/clients/remove_test_clients.sh --lan 1 --prefix test_client
-./network/clients/remove_test_clients.sh --lan 2 --prefix test_client
+./network/clients/remove_test_clients.sh --lan 1 --prefix lan1_client
+./network/clients/remove_test_clients.sh --lan 2 --prefix lan2_client

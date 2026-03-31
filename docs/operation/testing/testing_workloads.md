@@ -50,8 +50,8 @@ Latest readings from IoT devices. One document per device, updated in-place (ups
 
 ```json
 {
-  "_id": "net1::device::482",
-  "region_origin": "net1",
+  "_id": "lan1::device::482",
+  "region_origin": "lan1",
   "device_type": "temperature_sensor",
   "tags": ["industrial", "high-priority"],
   "unit": "celsius",
@@ -85,9 +85,9 @@ One document per registered edge node or application client. Describes which dev
 ```json
 {
   "_id": "node_891",
-  "home_region": "net2",
+  "home_region": "lan2",
   "subscribed_tags": ["industrial", "high-priority"],
-  "watched_devices": ["net1::device::482", "net1::device::501"],
+  "watched_devices": ["lan1::device::482", "lan1::device::501"],
   "alert_config": {
     "email": "ops@example.com",
     "threshold_override": {"temperature_sensor": 75.0}
@@ -109,8 +109,8 @@ Append-only log of every device data request served by the edge platform.
 ```json
 {
   "node_id": "node_891",
-  "device_id": "net1::device::482",
-  "region_served": "net2",
+  "device_id": "lan1::device::482",
+  "region_served": "lan2",
   "timestamp": ISODate(...),
   "latency_ms": 84,
   "served_from_tier": 1
@@ -155,12 +155,12 @@ This creates:
 ## 2. Anomaly Detection Query (Aggregation Driver)
 
 ```
-GET /anomalies?region=net2&window=1h
+GET /anomalies?region=lan2&window=1h
 ```
 
 Edge server runs MongoDB aggregation on `query_events` and `sensor_reports`:
 
-- Match `query_events` within time window and `region_served = net2`
+- Match `query_events` within time window and `region_served = lan2`
 - Group by `device_id`, count queries
 - Join with `sensor_reports` to filter devices in `warning` or `critical` status
 - Sort by query count descending
@@ -221,24 +221,24 @@ This creates:
 
 ### Phase 1 — Local Consumption
 
-- net1 edge nodes query net1 device data
-- net2 edge nodes query net2 device data
+- lan1 edge nodes query lan1 device data
+- lan2 edge nodes query lan2 device data
 - Expect: no cross-region replication; both regions served from their own primary at Tier 0
 
 ### Phase 2 — Cross-Region Device Hotspot
 
 Simulate:
 
-- A cluster of net1 industrial sensors enters warning state
-- net2 edge nodes begin polling net1 device data heavily
-- 70% of net2 traffic issues `/device/<net1::device::*>/latest` requests
+- A cluster of lan1 industrial sensors enters warning state
+- lan2 edge nodes begin polling lan1 device data heavily
+- 70% of lan2 traffic issues `/device/<lan1::device::*>/latest` requests
 
 Expected:
 
-- $T_{dados}$ increases in net2 (queries crossing the inter-region link)
+- $T_{dados}$ increases in lan2 (queries crossing the inter-region link)
 - Data Manager detects sustained $T_{dados} > \tau_{dados}$
-- Data Manager deploys a Selective Sync Node in net2 for the net1 device data subset
-- After synchronization, net2 queries are served locally; $T_{dados}$ decreases
+- Data Manager deploys a Selective Sync Node in lan2 for the lan1 device data subset
+- After synchronization, lan2 queries are served locally; $T_{dados}$ decreases
 
 Measure:
 
@@ -269,12 +269,12 @@ Measure:
 
 ### Phase 4 — Demand Drop
 
-The net1 device cluster returns to normal state. Traffic returns to baseline: net2 nodes stop issuing cross-region queries; request rate drops uniformly.
+The lan1 device cluster returns to normal state. Traffic returns to baseline: lan2 nodes stop issuing cross-region queries; request rate drops uniformly.
 
 Expected:
 
 - Selective Sync Node TTL cache cools down; hit-count drops; cold documents self-evict
-- Data Manager detects $T_{dados}$ back below threshold; removes the net2 Selective Sync Node (Tier 1 → Tier 0)
+- Data Manager detects $T_{dados}$ back below threshold; removes the lan2 Selective Sync Node (Tier 1 → Tier 0)
 - Compute Manager detects idle web servers; removes excess containers (scale-in)
 - Resource usage returns to baseline
 
@@ -292,7 +292,7 @@ This workload lets you demonstrate:
 
 ### 1. Flexible schema
 
-Device payload schemas differ entirely by `device_type` — a temperature sensor, a vibration sensor, and a GPS tracker have nothing structurally in common. MongoDB ingests all of them into one collection without schema migrations.
+Device payload schemas differ entirely by `device_type` — a temperature sensor, a vibration sensor, a GPS tracker, a humidity sensor, a power meter, and a proximity sensor (9 types total) have nothing structurally in common. MongoDB ingests all of them into one collection without schema migrations.
 
 ### 2. Aggregation framework
 
@@ -326,6 +326,8 @@ You only need:
 - 3 endpoints (`/device/<id>/latest`, `/anomalies`, `/dashboard/<node_id>`)
 - A seeding script (populate devices with heterogeneous payloads per region)
 - A traffic generator with tunable request mix and phase transitions
+
+> **Implementation details**: see [traffic_generator_plan.md](traffic_generator_plan.md) for the full specification of `export_workload_snapshot.py`, `traffic_generator.py`, and `phases.json`.
 
 That’s enough to produce:
 

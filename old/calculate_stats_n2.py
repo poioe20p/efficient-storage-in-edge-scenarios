@@ -286,4 +286,3 @@ class CalculateSwitchPortDebit(Topology_proactive):
                 self._debit_repo.upsert_debit_by_lan_id(debit_stats)
             except Exception:
                 pass
-    

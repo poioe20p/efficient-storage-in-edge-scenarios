@@ -593,7 +593,7 @@ After deployment, the switch will have these rules (inspectable via `ovs-ofctl d
 ### VIP_DATA (MongoDB)
 
 ```
-1. Web server opens TCP connection to 10.0.0.200:27017 (VIP_DATA)
+1. Web server opens TCP connection to 10.0.0.200:27018 (VIP_DATA)
 2. ARP for 10.0.0.200 → answered by switch → VIP_DATA_MAC
 3. IP packet to VIP_DATA_IP hits punt rule → PacketIn
 4. packet_in_handler → handle_vip_packet_in → select_storage
@@ -644,7 +644,7 @@ docker exec edge_server_n1 arping -c 1 10.0.0.100
 docker exec edge_server_n1 curl http://10.0.0.100:5000/health
 
 # 4. MongoDB through VIP
-docker exec edge_server_n1 mongosh mongodb://10.0.0.200:27017 --eval "db.runCommand({ping:1})"
+docker exec edge_server_n1 mongosh mongodb://10.0.0.200:27018 --eval "db.runCommand({ping:1})"
 
 # 5. Controller logs
 docker logs osken 2>&1 | grep -iE "vip|dnat|snat|select_server|select_storage"
