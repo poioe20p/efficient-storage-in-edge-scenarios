@@ -60,13 +60,12 @@ EOF
 
 # ── Helper: pull recent docker logs ──────────────────────────────────────────
 
-# Grab the last N lines — grep patterns handle the actual filtering.
-# Controller emits ~1 debug line/sec, so 500 covers ~8 min of history.
-readonly LOG_TAIL=500
-
+# Uses --since with a host-clock timestamp captured just before the request.
+# docker logs --since compares against the daemon's own capture timestamps
+# (always host clock), so container timezone differences are irrelevant.
 collect_logs() {
     local container="$1"
-    docker logs "$container" --tail "$LOG_TAIL" 2>&1
+    docker logs "$container" --since "$LOG_SINCE" 2>&1
 }
 
 # ── Helper: filter lines, return fallback message if nothing matched ─────────
@@ -143,6 +142,9 @@ else
 fi
 
 # ── Phase 3: Execute request ────────────────────────────────────────────────
+
+# Capture host timestamp ~2s before the request so we catch any setup logs.
+LOG_SINCE=$(date -u -d '2 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
 
 # Fire the request — append -w to capture HTTP status code on last line
 RESPONSE=$(ip netns exec "$NS" "${CURL_CMD[@]}" \

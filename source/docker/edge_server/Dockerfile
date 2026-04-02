@@ -1,6 +1,7 @@
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
+PYTHONUNBUFFERED=1 \
 DB_URL=mongodb://10.0.0.4:27018/test \
 MONGO_VERSION=7.0
 
