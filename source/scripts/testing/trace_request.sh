@@ -241,10 +241,6 @@ fi
 # Response
 echo -e "${BOLD}── Response ───────────────────────────────────────────────────${RESET}"
 echo -e "  HTTP ${SC}${HTTP_CODE}${RESET}"
-if [[ ${#BODY} -gt 200 ]]; then
-    echo "  ${BODY:0:200}…"
-else
-    echo "  $BODY"
-fi
+echo "  $BODY"
 echo ""
 echo -e "${BOLD}══════════════════════════════════════════════════════════════${RESET}"
