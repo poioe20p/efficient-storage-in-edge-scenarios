@@ -22,16 +22,15 @@ app = Flask(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-_config_lock = threading.Lock()
-_config: dict = {
-    "db_url": os.environ.get("DB_URL", "mongodb://10.0.0.200:27018/"),
-}
-
-BIND_HOST: str = os.environ.get("BIND_HOST", "0.0.0.0")
-BIND_PORT: int = int(os.environ.get("BIND_PORT", "5000"))
-DB_NAME:   str = os.environ.get("DB_NAME", "edge_platform")
-REGION:    str = os.environ.get("REGION", "lan1")
-DATA_TIER: str = os.environ.get("DATA_TIER", "0")
+BIND_HOST:   str = os.environ.get("BIND_HOST", "0.0.0.0")
+BIND_PORT:   int = int(os.environ.get("BIND_PORT", "5000"))
+DB_NAME:     str = os.environ.get("DB_NAME", "edge_platform")
+LAN_ID:      str = os.environ.get("LAN_ID", "lan1")
+DATA_TIER:   str = os.environ.get("DATA_TIER", "0")
+DB_PORT:      int   = int(os.environ.get("DB_PORT", "27018"))
+MAX_IDLE_MS:  int   = int(os.environ.get("MAX_IDLE_MS",
+                          str(int(os.environ.get("VIP_IDLE_TIMEOUT", "30")) * 1000)))
+TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "150000"))
 
 vip_data_lock = threading.Lock()
 vip_data_per_domain = {
@@ -40,48 +39,42 @@ vip_data_per_domain = {
 }
 
 
-def get_db_url() -> str:
-    with _config_lock:
-        return _config["db_url"]
-
-
-def set_db_url(value: str) -> None:
-    with _config_lock:
-        _config["db_url"] = value
-    # No persistent client to reset — each request opens its own connection.
-
-
 # ---------------------------------------------------------------------------
-# MongoDB client — one connection per HTTP request.
-# Each request creates a fresh TCP SYN to VIP_Dados so the SDN controller
-# can intercept and DNAT it to whichever storage tier is currently active.
-# The client lives in Flask's per-request context (g) and is closed in
-# teardown_request, guaranteeing the TCP socket is gone before the next
-# request from the same client.
+# MongoDB client — one singleton MongoClient per LAN.
+# maxPoolSize=1 ensures exactly one DNAT selection per LAN per edge server.
+# maxIdleTimeMS matches VIP_IDLE_TIMEOUT so the driver closes the socket
+# at the same cadence as the SDN controller removes idle DNAT rules.
 # ---------------------------------------------------------------------------
 
-def _get_db():
-    """Return the per-request MongoDB database handle, creating it on first use."""
-    if not hasattr(g, "mongo_client"):
-        g.mongo_client = MongoClient(get_db_url(), serverSelectionTimeoutMS=3000)
-    return g.mongo_client[DB_NAME]
+_clients_lock = threading.Lock()
+_mongo_clients: dict[str, MongoClient] = {}
 
 
-@app.teardown_request
-def _close_mongo(_exc):
-    client = g.pop("mongo_client", None)
-    if client is not None:
-        client.close()
+def _get_client(lan: str) -> MongoClient:
+    with _clients_lock:
+        client = _mongo_clients.get(lan)
+        if client is None:
+            with vip_data_lock:
+                vip_ip = vip_data_per_domain[lan]
+            url = f"mongodb://{vip_ip}:{DB_PORT}/"
+            client = MongoClient(
+                url, maxPoolSize=1, maxIdleTimeMS=MAX_IDLE_MS,
+                serverSelectionTimeoutMS=3000,
+                directConnection=True,
+            )
+            _mongo_clients[lan] = client
+            log.info("Created MongoClient for %s → %s (maxIdleTimeMS=%d)", lan, url, MAX_IDLE_MS)
+        return client
 
 
 @contextmanager
-def timed_db():
-    """Yields the per-request MongoDB database handle and accumulates elapsed
-    time into ``g.time_db_elapsed`` so the telemetry layer can report
-    T_dados correctly."""
+def timed_db(lan: str):
+    """Yields a MongoDB database handle for the given LAN and accumulates
+    elapsed time into ``g.time_db_elapsed`` so the telemetry layer can
+    report T_dados correctly."""
     t0 = time.monotonic()
     try:
-        yield _get_db()
+        yield _get_client(lan)[DB_NAME]
     finally:
         g.time_db_elapsed = getattr(g, "time_db_elapsed", 0.0) + (time.monotonic() - t0)
 
@@ -95,23 +88,14 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
-@app.route("/config/db_url", methods=["PUT"])
-def config_set_db_url():
-    body = request.get_json(silent=True) or {}
-    new_url = body.get("db_url")
-    if not new_url or not isinstance(new_url, str):
-        return jsonify({"error": "'db_url' string field required"}), 400
-    old_url = get_db_url()
-    set_db_url(new_url)
-    log.info("PUT /config/db_url — changed from=%s to=%s", old_url, new_url)
-    return jsonify({"db_url": new_url}), 200
-
-
 @app.route("/vip_data", methods=["PUT"])
 def set_vip_data():
     body = request.get_json(silent=True) or {}
     with vip_data_lock:
         vip_data_per_domain.update(body)
+    with _clients_lock:
+        for lan in body:
+            _mongo_clients.pop(lan, None)
     return jsonify({"message": "VIP data updated", "vip_data": vip_data_per_domain}), 200
 
 
@@ -141,9 +125,10 @@ def device_latest(device_id: str):
     T_dados amplification effect described in the workload model.
     """
     node_id = request.args.get("node_id", "unknown")
+    device_lan = device_id.split("::")[0]
 
     try:
-        with timed_db() as db:
+        with timed_db(device_lan) as db:
             doc = db.sensor_reports.find_one({"_id": device_id})
 
         if doc is None:
@@ -151,7 +136,8 @@ def device_latest(device_id: str):
 
         threshold_override = None
         if node_id != "unknown":
-            with timed_db() as db:
+            node_lan = node_id.split("::")[0]
+            with timed_db(node_lan) as db:
                 registry = db.device_registry.find_one(
                     {"_id": node_id},
                     {"alert_config.threshold_override": 1},
@@ -173,13 +159,13 @@ def device_latest(device_id: str):
         query_event = {
             "node_id":         node_id,
             "device_id":       device_id,
-            "region_served":   REGION,
+            "region_served":   LAN_ID,
             "timestamp":       datetime.now(timezone.utc),
             "latency_ms":      round(g.time_db_elapsed * 1000, 2),
             "served_from_tier": DATA_TIER,
         }
         try:
-            with timed_db() as db:
+            with timed_db(LAN_ID) as db:
                 db.query_events.insert_one(query_event)
         except PyMongoError as exc:
             log.warning("query_events insert failed: %s", exc)
@@ -199,17 +185,17 @@ def anomalies():
     enriched with their current sensor status.
 
     Query params:
-      region  — region to filter query_events (default: REGION env var)
+      region  — region to filter query_events (default: LAN_ID env var)
       window  — look-back window in hours (default: 1)
     """
-    region   = request.args.get("region", REGION)
+    region   = request.args.get("region", LAN_ID)
     window_h = float(request.args.get("window", "1"))
     since_dt = datetime.fromtimestamp(
         time.time() - window_h * 3600, tz=timezone.utc
     )
 
     try:
-        with timed_db() as db:
+        with timed_db(LAN_ID) as db:
             pipeline = [
                 {"$match": {
                     "region_served": region,
@@ -226,14 +212,18 @@ def anomalies():
             hot_devices = list(db.query_events.aggregate(pipeline))
 
         device_ids = [d["_id"] for d in hot_devices]
-        with timed_db() as db:
-            status_map = {
-                d["_id"]: d
+        ids_by_lan: dict[str, list[str]] = {}
+        for did in device_ids:
+            ids_by_lan.setdefault(did.split("::")[0], []).append(did)
+
+        status_map: dict[str, dict] = {}
+        for lan, ids in ids_by_lan.items():
+            with timed_db(lan) as db:
                 for d in db.sensor_reports.find(
-                    {"_id": {"$in": device_ids}},
+                    {"_id": {"$in": ids}},
                     {"payload.status": 1, "payload.value": 1, "device_type": 1, "tags": 1},
-                )
-            }
+                ):
+                    status_map[d["_id"]] = d
 
         for d in hot_devices:
             status = status_map.get(d["_id"], {})
@@ -260,9 +250,10 @@ def dashboard(node_id: str):
       limit  — max devices to return (default: 10)
     """
     limit = int(request.args.get("limit", "10"))
+    node_lan = node_id.split("::")[0]
 
     try:
-        with timed_db() as db:
+        with timed_db(node_lan) as db:
             registry = db.device_registry.find_one({"_id": node_id})
 
         if registry is None:
@@ -270,14 +261,16 @@ def dashboard(node_id: str):
 
         subscribed_tags = registry.get("subscribed_tags", [])
 
-        with timed_db() as db:
-            devices = list(
-                db.sensor_reports.find(
-                    {"tags": {"$in": subscribed_tags}},
-                    {"_id": 1, "device_type": 1, "tags": 1,
-                     "payload": 1, "metadata": 1, "region_origin": 1},
+        devices: list[dict] = []
+        for lan in vip_data_per_domain:
+            with timed_db(lan) as db:
+                devices.extend(
+                    db.sensor_reports.find(
+                        {"tags": {"$in": subscribed_tags}},
+                        {"_id": 1, "device_type": 1, "tags": 1,
+                         "payload": 1, "metadata": 1, "region_origin": 1},
+                    )
                 )
-            )
 
         # Sort descending by urgency: value / alert_threshold
         def urgency(doc):
@@ -306,15 +299,26 @@ def dashboard(node_id: str):
 
 # ---------------------------------------------------------------------------
 
+@app.after_request
+def _check_tdados_threshold(response):
+    time_db_ms = getattr(g, "time_db_elapsed", 0.0) * 1000
+    if time_db_ms > TAU_DADOS_MS:
+        with _clients_lock:
+            evicted = list(_mongo_clients.keys())
+            _mongo_clients.clear()
+        log.warning(
+            "T_dados=%.1fms > \u03c4=%.1fms \u2014 evicted clients %s to force reconnection",
+            time_db_ms, TAU_DADOS_MS, evicted,
+        )
+    return response
+
 init_telemetry(app)
 
 if __name__ == "__main__":
     log.info(
-        "Starting edge-server on %s:%d  db=%s/%s  region=%s",
-        BIND_HOST, BIND_PORT, get_db_url(), DB_NAME, REGION,
+        "Starting edge-server on %s:%d  lan=%s  db_name=%s  vip_data=%s"
+        "  maxIdleTimeMS=%d  tau_dados=%.0fms",
+        BIND_HOST, BIND_PORT, LAN_ID, DB_NAME, vip_data_per_domain,
+        MAX_IDLE_MS, TAU_DADOS_MS,
     )
-
-    # log.info(
-    #     "Starting edge-server"
-    # )
     app.run(host=BIND_HOST, port=BIND_PORT, threaded=True)

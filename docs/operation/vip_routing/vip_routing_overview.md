@@ -233,6 +233,55 @@ Each controller receives its own `ROUTER_MAC` via `-e ROUTER_MAC=...` in the
 
 ---
 
+## Edge Server Connection Model
+
+Edge servers (`app.py`) connect to VIP_DATA addresses to reach MongoDB storage.
+Since device documents are partitioned by LAN — each seeded only into its origin
+LAN's replica set — the edge server routes each query to the correct VIP_DATA
+address based on the `lan1`/`lan2` prefix in the document `_id` (e.g.
+`lan1::device::042` → `VIP_DATA_N1`, `lan2::device::007` → `VIP_DATA_N2`).
+
+### Per-LAN Singleton Clients
+
+Each edge server maintains a module-level `MongoClient` per LAN with
+`maxPoolSize=1` and `maxIdleTimeMS` aligned with `VIP_IDLE_TIMEOUT × 1000`.
+This design amortises TCP handshake + MongoDB hello cost across requests while
+preserving the SDN controller's DNAT re-evaluation:
+
+- **During traffic bursts:** the socket is reused — the DNAT rule is still
+  active and directs all traffic to the same backend regardless.
+- **After idle window:** the driver closes the socket automatically. The next
+  request opens a fresh TCP SYN → `packet_in` → controller re-evaluates WSM
+  and may select a different backend.
+
+`maxPoolSize=1` ensures exactly one DNAT selection is active per LAN per edge
+server at any time, consistent with the workload model.
+
+### LAN Resolution from Document IDs
+
+Device and node IDs follow `{lan}::{type}::{number}` — the LAN is
+`id.split("::")[0]`. Each workload route resolves the target LAN:
+
+| Route | `sensor_reports` / `device_registry` LAN | `query_events` LAN |
+|-------|------------------------------------------|--------------------|
+| `device_latest` | Parsed from `device_id` / `node_id` prefix | `LAN_ID` (local) |
+| `anomalies` | Grouped by `device_id` prefix per enrichment query | `LAN_ID` (local) |
+| `dashboard` | `node_id` prefix for registry; **both LANs** for sensor data | — |
+
+`query_events` always goes to the local `LAN_ID` because it tracks this edge
+server's activity, not the data's origin.
+
+### VIP Address Updates
+
+The `/vip_data` PUT route updates `vip_data_per_domain` and invalidates any
+cached singleton client whose LAN was changed, so the next query recreates the
+client with the new VIP address.
+
+See the [VIP Interception Plan — Per-LAN VIP_DATA Routing addendum](implementation/vip_interception_plan.md#addendum--per-lan-vip_data-routing-from-edge-server)
+for full implementation details.
+
+---
+
 ## Telemetry Integration
 
 Thread 2's `_on_telemetry_update()` callback (in `main_n*.py`) calls:
@@ -279,6 +328,9 @@ Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 | `VIP_HARD_TIMEOUT`         | `120`   | DNAT/SNAT hard timeout (seconds)                   |
 | `ROUTER_OVS_PORT`          | `0`     | OVS port to inter-LAN router (0 = disabled)       |
 | `ROUTER_MAC`               | —       | Router LAN-side MAC for cross-network SNAT match   |
+| `LAN_ID`                   | `lan1`  | Edge server's home LAN (replaces `REGION`)         |
+| `DB_PORT`                  | `27018` | MongoDB port for VIP_DATA addresses                |
+| `MAX_IDLE_MS`              | `VIP_IDLE_TIMEOUT × 1000` | PyMongo `maxIdleTimeMS` — socket recycling window |
 
 ---
 
@@ -287,3 +339,7 @@ Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 - **Staleness cost function** — an additional WSM dimension penalizing backends
   whose telemetry has gone stale, so idle or unresponsive nodes are
   deprioritized instead of frozen at their last known cost.
+- **Per-LAN VIP_DATA routing** — edge servers route each MongoDB query to the
+  correct VIP_DATA address based on the document `_id` LAN prefix, using
+  singleton clients with `maxIdleTimeMS` for DNAT coherence.
+  See [implementation plan](implementation/vip_interception_plan.md#addendum--per-lan-vip_data-routing-from-edge-server).

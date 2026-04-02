@@ -38,6 +38,7 @@ KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
 | `sdn_controller/main_n1.py`     | Modify        | Add mixin to MRO, VIP check in PacketIn, call ARP/punt install |
 | `sdn_controller/main_n2.py`     | Modify        | Same changes as main_n1                                        |
 | `scripts/osken-controller.env`  | Modify        | Add `WSM_THETA`, `VIP_IDLE_TIMEOUT`, `VIP_HARD_TIMEOUT`  |
+| `docker/edge_server/source/app.py` | Modify     | Per-LAN VIP_DATA routing, singleton clients, LAN-aware queries |
 
 ---
 
@@ -658,7 +659,7 @@ docker logs osken 2>&1 | grep -iE "vip|dnat|snat|select_server|select_storage"
 ## Open Items
 
 1. **Port rewrite**: Design doc says VIP_Web is `:80` but Flask runs on `:5000`. Currently matching on `nw_dst` only (no port match). Add `tp_dst` rewrite if port translation is needed.
-2. **Per-domain VIP_DATA**: Currently a single `VIP_DATA_IP=10.0.0.200`. Extend to per-domain VIPs (e.g., `10.0.0.200`, `10.0.1.200`) when multi-domain routing is implemented.
+2. ~~**Per-domain VIP_DATA**: Currently a single `VIP_DATA_IP=10.0.0.200`. Extend to per-domain VIPs (e.g., `10.0.0.200`, `10.0.1.200`) when multi-domain routing is implemented.~~ → Addressed in the *Per-LAN VIP_DATA Routing* addendum above.
 3. **Telemetry → MAC mapping**: `TelemetrySummary.servers` keys are container names (e.g., `edge_server_n1`), not MACs. The `update_server_tproc` method needs a name→MAC mapping (via an env var or telemetry enrichment) for WSM to work with per-MAC granularity.
 4. **ARP reply field swap**: The proactive ARP reply rule uses `set_field` to write SHA/SPA but relies on OVS preserving the original ARP sender fields in THA/TPA. This needs testing — if OVS overwrites THA/TPA prematurely, we may need `NXActionRegMove` to properly swap the fields.
 
@@ -740,3 +741,233 @@ docker logs osken 2>&1 | grep "IP unknown"
 # Confirm the first packet to the new server is routed immediately (no drop delay):
 docker logs osken 2>&1 | grep "vip_server:"
 ```
+
+---
+
+## Addendum — Per-LAN VIP_DATA Routing from Edge Server
+
+### Problem
+
+Edge servers (`app.py`) use a single `DB_URL` for all MongoDB operations
+regardless of which LAN the requested data lives in. Since device documents are
+partitioned by LAN — each seeded only into its origin LAN's replica set — and
+VIP_DATA addresses are per-domain (`VIP_DATA_N1` on LAN 1, `VIP_DATA_N2` on
+LAN 2), the edge server must route each query to the correct VIP_DATA address
+based on the `lan1`/`lan2` prefix in the document `_id`.
+
+Additionally, the current implementation creates a fresh `MongoClient` per HTTP
+request, paying the TCP handshake + MongoDB hello cost each time. This cost is
+unnecessary during traffic bursts where the same DNAT rule is active (rules live
+for `VIP_IDLE_TIMEOUT=30s`).
+
+A third issue: the docker run commands in `build_network_1.sh` /
+`build_network_2.sh` pass `LAN_ID` (not `REGION`), so `REGION` always falls
+back to the default `"lan1"`.
+
+### Connection Model: Singleton with Dual Recycling
+
+A module-level `MongoClient` per LAN (`maxPoolSize=1`) with two complementary
+recycling mechanisms that ensure DNAT re-evaluation happens in both quiet and
+busy periods:
+
+1. **`maxIdleTimeMS`** (quiet periods) — matches `VIP_IDLE_TIMEOUT × 1000`.
+   The PyMongo driver closes the socket after this idle window, so the next
+   request forces a fresh TCP SYN → `packet_in` → controller re-runs WSM.
+
+2. **`TAU_DADOS_MS` threshold** (busy periods) — an `after_request` hook
+   checks the request's accumulated `T_dados` (`g.time_db_elapsed × 1000`).
+   When it exceeds the same threshold the SDN controller uses for elasticity
+   alerts (`TAU_DADOS_MS`), all per-LAN singleton clients are evicted from the
+   pool. The next request on any LAN creates a fresh `MongoClient` → fresh TCP
+   SYN → `packet_in` → controller re-evaluates WSM with current conditions.
+
+Without the threshold check, under sustained load the socket never goes idle,
+`maxIdleTimeMS` never fires, and the DNAT rule stays pinned to the same backend
+indefinitely — even if the controller has since spawned a better-suited backend.
+
+```
+Request A arrives
+  → pool empty → TCP SYN → packet_in → controller selects B1 → DNAT installed
+  → queries run on reused socket
+
+Request B arrives (within maxIdleTimeMS)
+  → socket reused → hits B1 (same DNAT rule)
+  → T_dados within threshold → no action
+
+Request C arrives (load spike on B1)
+  → socket reused → T_dados exceeds TAU_DADOS_MS
+  → after_request evicts all clients from pool
+  → next request forces new TCP SYN → fresh packet_in
+  → controller re-evaluates WSM, may select B2
+
+... idle > maxIdleTimeMS (quiet period) ...
+  → driver closes socket; VIP_IDLE_TIMEOUT also expires → DNAT removed
+
+Request D arrives
+  → new TCP SYN → fresh packet_in → controller re-evaluates WSM
+```
+
+Both `VIP_IDLE_TIMEOUT` and `maxIdleTimeMS` are idle timeouts — they only fire
+when no traffic is flowing. Setting them to the same value keeps them coherent.
+`maxPoolSize=1` ensures exactly one DNAT selection is active per LAN per edge
+server. Making it easier to manage the lifecycle of connections and allowing for more frequent and pourposefully packet in.
+
+#### Concurrency Safety: Pop-Without-Close
+
+When evicting clients (both in the threshold hook and `/vip_data` PUT), entries
+are **popped from the dict but never `.close()`d**. An explicit `.close()` would
+race against in-flight operations on other Flask threads that still hold a
+reference to the old `MongoClient`:
+
+```
+Thread A: _get_client("lan1") → gets client ref → releases lock → starts query
+Thread B: after_request → acquires lock → pops "lan1" → releases lock
+Thread A: query completes on old client (still valid — not closed)
+Thread C: _get_client("lan1") → no entry → creates fresh client → new TCP SYN
+```
+
+CPython's reference-counting GC destroys the orphaned `MongoClient` (and closes
+its socket) as soon as the last `timed_db` context holding a reference exits.
+With `maxPoolSize=1`, at most one orphaned socket per LAN can exist briefly.
+
+### Document ID Convention
+
+IDs follow `{lan}::{type}::{number}` — the LAN is `id.split("::")[0]`:
+
+| Entity          | Example ID            | LAN extracted |
+|-----------------|-----------------------|---------------|
+| Sensor device   | `lan1::device::042`   | `lan1`        |
+| Monitoring node | `lan2::node::007`     | `lan2`        |
+
+### Fixes
+
+**Fix 1 — Rename `REGION` → `LAN_ID`**
+
+Replace `REGION: str = os.environ.get("REGION", "lan1")` with
+`LAN_ID: str = os.environ.get("LAN_ID", "lan1")` and update all references.
+
+**Fix 2 — Replace single `db_url` with per-LAN singleton clients**
+
+Remove `_config_lock`, `_config`, `get_db_url()`, `set_db_url()`, `_get_db()`,
+and `@app.teardown_request _close_mongo()`. Add:
+
+```python
+DB_PORT: int = int(os.environ.get("DB_PORT", "27018"))
+MAX_IDLE_MS: int = int(os.environ.get("MAX_IDLE_MS",
+                       str(int(os.environ.get("VIP_IDLE_TIMEOUT", "30")) * 1000)))
+
+_clients_lock = threading.Lock()
+_mongo_clients: dict[str, MongoClient] = {}
+
+def _get_client(lan: str) -> MongoClient:
+    with _clients_lock:
+        client = _mongo_clients.get(lan)
+        if client is None:
+            with vip_data_lock:
+                vip_ip = vip_data_per_domain[lan]
+            url = f"mongodb://{vip_ip}:{DB_PORT}/"
+            client = MongoClient(
+                url, maxPoolSize=1, maxIdleTimeMS=MAX_IDLE_MS,
+                serverSelectionTimeoutMS=3000,
+            )
+            _mongo_clients[lan] = client
+            log.info("Created MongoClient for %s → %s (maxIdleTimeMS=%d)", lan, url, MAX_IDLE_MS)
+        return client
+```
+
+**Fix 3 — `timed_db(lan)` context manager**
+
+```python
+@contextmanager
+def timed_db(lan: str):
+    t0 = time.monotonic()
+    try:
+        yield _get_client(lan)[DB_NAME]
+    finally:
+        g.time_db_elapsed = getattr(g, "time_db_elapsed", 0.0) + (time.monotonic() - t0)
+```
+
+**Fix 4 — Remove `/config/db_url` route**
+
+Delete the `config_set_db_url()` route. VIP_DATA addresses are managed via
+`/vip_data` PUT.
+
+**Fix 5 — `/vip_data` PUT resets affected clients**
+
+After updating `vip_data_per_domain`, evict stale singleton clients (pop-without-close
+for concurrency safety — see *Concurrency Safety* above):
+
+```python
+with _clients_lock:
+    for lan in body:
+        _mongo_clients.pop(lan, None)
+```
+
+**Fix 6 — `device_latest`: LAN-aware queries**
+
+Parse `device_lan = device_id.split("::")[0]`. Use `timed_db(device_lan)` for
+`sensor_reports`, `timed_db(node_lan)` for `device_registry`, and
+`timed_db(LAN_ID)` for `query_events` (local activity log).
+
+**Fix 7 — `anomalies`: LAN-aware enrichment**
+
+`query_events` uses `timed_db(LAN_ID)`. Enrichment groups `device_ids` by LAN
+prefix and issues one `sensor_reports.find()` per LAN.
+
+**Fix 8 — `dashboard`: both LANs for sensor data**
+
+`device_registry` uses node's LAN. `sensor_reports` queries **both LANs** (tags
+can match devices on either) and merges before urgency sort.
+
+**Fix 9 — Startup log**
+
+Update to reflect `LAN_ID`, `vip_data_per_domain`, `MAX_IDLE_MS`, and `TAU_DADOS_MS`.
+
+**Fix 10 — T_dados adaptive reconnection**
+
+Add `TAU_DADOS_MS` env var (same name and default as the SDN controller) and an
+`after_request` hook that evicts all per-LAN singleton clients when the request's
+accumulated `T_dados` exceeds the threshold. This forces the next request to
+create a fresh TCP connection, triggering a `packet_in` → WSM re-evaluation:
+
+```python
+TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "150000"))
+
+@app.after_request
+def _check_tdados_threshold(response):
+    time_db_ms = getattr(g, "time_db_elapsed", 0.0) * 1000
+    if time_db_ms > TAU_DADOS_MS:
+        with _clients_lock:
+            evicted = list(_mongo_clients.keys())
+            _mongo_clients.clear()
+        log.warning(
+            "T_dados=%.1fms > τ=%.1fms — evicted clients %s to force reconnection",
+            time_db_ms, TAU_DADOS_MS, evicted,
+        )
+    return response
+```
+
+The hook is registered **before** `init_telemetry(app)`. Flask executes
+`after_request` hooks in reverse registration order, so the telemetry hook
+(registered by `init_telemetry`) runs first — the metric is captured before the
+client eviction happens.
+
+### Per-LAN Routing Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LAN_ID` | `lan1` | Edge server's home LAN (replaces `REGION`) |
+| `DB_PORT` | `27018` | MongoDB port for VIP_DATA addresses |
+| `MAX_IDLE_MS` | `VIP_IDLE_TIMEOUT × 1000` (30000) | PyMongo `maxIdleTimeMS` — socket recycling window (quiet periods) |
+| `TAU_DADOS_MS` | `150000` | T_dados threshold — evict all clients when exceeded (busy periods) |
+
+### Per-LAN Routing Invariants
+
+1. A query for `lan1::device::*` connects via `vip_data_per_domain["lan1"]` (VIP_DATA_N1)
+2. A query for `lan2::device::*` connects via `vip_data_per_domain["lan2"]` (VIP_DATA_N2)
+3. `query_events` always goes to `LAN_ID` — the local edge server's activity log
+4. At most one TCP socket per LAN is active at any time (`maxPoolSize=1`)
+5. Socket recycling aligns with DNAT rule lifetime (`maxIdleTimeMS ≈ VIP_IDLE_TIMEOUT`)
+6. `/vip_data` PUT invalidates the affected singleton client
+7. When T_dados exceeds `TAU_DADOS_MS`, **all** LAN clients are evicted — next request forces fresh `packet_in` → WSM re-evaluation
+8. Client eviction uses pop-without-close — never `.close()` a client that may be in use by another thread
