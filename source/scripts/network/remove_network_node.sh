@@ -15,6 +15,10 @@ LAN=""
 CONTAINER_NAME=""
 IFACE_NAME="eth0"
 PID_OVS=""
+GRACEFUL=false
+DRAIN_TIMEOUT=30
+OVS_VETH=""      # pre-discovered veth from Phase A (skips nsenter if provided)
+CONTAINER_MAC="" # pre-discovered MAC from Phase A (skips nsenter if provided)
 
 usage() {
 	cat <<EOF
@@ -28,6 +32,11 @@ Required:
 
 Optional:
   --iface <name>           Interface name inside the container (default: eth0)
+  --graceful               Send /drain signal and wait for self-exit before cleanup
+                           (CLI use only; the controller handles drain in Python)
+  --drain-timeout <s>      Seconds to wait for graceful drain (default: 30)
+  --veth <veth>            Pre-discovered OVS-side veth (skips nsenter discovery)
+  --mac <mac>              Pre-discovered container MAC (skips nsenter discovery)
   -h, --help               Show this help
 
 Examples:
@@ -117,20 +126,57 @@ main() {
 	local pid=""
 	local mac=""
 
-	if [[ "$state" == "running" ]]; then
+	if [[ -n "$OVS_VETH" && -n "$CONTAINER_MAC" ]]; then
+		# Phase B fast path: veth and MAC were pre-discovered in Phase A while
+		# the container was still running.  Skip nsenter (netns may be gone).
+		ovs_veth="$OVS_VETH"
+		mac="$CONTAINER_MAC"
+		echo "Using pre-discovered veth=${ovs_veth} mac=${mac}"
+	elif [[ "$state" == "running" ]]; then
 		pid=$(docker inspect -f '{{.State.Pid}}' "$CONTAINER_NAME")
-		echo "Discovering OVS veth for '${IFACE_NAME}' in '${CONTAINER_NAME}'..."
-		ovs_veth=$(discover_ovs_veth "$pid")
-		echo "  OVS port: ${ovs_veth}"
-		mac=$(sudo nsenter -t "$pid" -n ip link show "$IFACE_NAME" 2>/dev/null \
-			| awk '/link\/ether/{print $2}')
+
+		# Optional: send drain signal before stopping (CLI --graceful mode only).
+		# The controller does NOT use --graceful — it handles drain in Python.
+		if [[ "$GRACEFUL" == "true" ]]; then
+			echo "Sending drain signal to '${CONTAINER_NAME}'..."
+			if docker exec "$CONTAINER_NAME" curl -sf -X POST http://localhost:5000/drain >/dev/null 2>&1; then
+				echo "  Drain accepted. Waiting up to ${DRAIN_TIMEOUT}s for self-exit..."
+				local elapsed=0
+				while [[ $elapsed -lt $DRAIN_TIMEOUT ]]; do
+					sleep 1
+					((elapsed++))
+					if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1 || \
+					   [[ "$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null)" != "running" ]]; then
+						echo "  Container exited after ${elapsed}s."
+						break
+					fi
+				done
+			else
+				echo "  ⚠️  Drain signal failed — proceeding with immediate stop." >&2
+			fi
+			# Re-read state after drain wait
+			state=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "removed")
+			if [[ "$state" == "running" ]]; then
+				pid=$(docker inspect -f '{{.State.Pid}}' "$CONTAINER_NAME")
+			fi
+		fi
+
+		if [[ "$state" == "running" ]]; then
+			echo "Discovering OVS veth for '${IFACE_NAME}' in '${CONTAINER_NAME}'..."
+			ovs_veth=$(discover_ovs_veth "$pid")
+			echo "  OVS port: ${ovs_veth}"
+			mac=$(sudo nsenter -t "$pid" -n ip link show "$IFACE_NAME" 2>/dev/null \
+				| awk '/link\/ether/{print $2}')
+		fi
 	else
 		echo "  ⚠️  Container is not running (state: ${state}); veth discovery skipped." >&2
 		echo "  OVS port may need manual cleanup: ovs-vsctl del-port ${bridge} <vethN>" >&2
 	fi
 
-	echo "Stopping container '${CONTAINER_NAME}'..."
-	docker stop "$CONTAINER_NAME" >/dev/null
+	if [[ "$state" != "removed" ]]; then
+		echo "Stopping container '${CONTAINER_NAME}'..."
+		docker stop --time 5 "$CONTAINER_NAME" >/dev/null 2>/dev/null || true
+	fi
 
 	if [[ -n "$ovs_veth" ]]; then
 		if [[ -n "$mac" ]]; then
@@ -173,6 +219,22 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--iface)
 			IFACE_NAME="$2"
+			shift 2
+			;;
+		--graceful)
+			GRACEFUL=true
+			shift
+			;;
+		--drain-timeout)
+			DRAIN_TIMEOUT="$2"
+			shift 2
+			;;
+		--veth)
+			OVS_VETH="$2"
+			shift 2
+			;;
+		--mac)
+			CONTAINER_MAC="$2"
 			shift 2
 			;;
 		-h|--help)

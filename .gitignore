@@ -231,3 +231,6 @@ tese/main.*
 !tese/main.pdf
 .vscode/settings.json
 source/scripts/osken-controller.env
+source/scripts/testing/metrics/*
+source/scripts/testing/data/workload_snapshot/sensor_devices.json
+source/scripts/testing/data/workload_snapshot/device_registry.json

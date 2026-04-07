@@ -59,15 +59,23 @@ class ZmqTelemetrySource(TelemetryEventSource):
                     logger.info("telemetry topology update: %s", data)
                 else:
                     summary = TelemetrySummary.model_validate(data)
-                    self._latest[summary.network_id] = summary
+                    # Only cache real summaries — mini-summaries (drain_complete
+                    # pass-throughs) have empty servers/storage_servers and no
+                    # domain_summary; caching them would corrupt WSM cost inputs.
+                    if summary.servers or summary.storage_servers:
+                        self._latest[summary.network_id] = summary
                     if self._on_update is not None:
                         self._on_update(summary) # This calls the function passed to on_update with summary
-                    logger.info(
-                        "telemetry update network=%s avg_proc_time_ms=%.1f avg_db_access_ms=%.1f",
-                        summary.network_id,
-                        summary.domain_summary.avg_time_proc_ms,
-                        summary.domain_summary.avg_time_db_ms,
-                    )
+                    if summary.domain_summary is not None:
+                        logger.info(
+                            "telemetry update network=%s avg_proc_time_ms=%.1f avg_db_access_ms=%.1f",
+                            summary.network_id,
+                            summary.domain_summary.avg_time_proc_ms,
+                            summary.domain_summary.avg_time_db_ms,
+                        )
+                    else:
+                        logger.info("telemetry mini-summary network=%s control_events=%s",
+                                    summary.network_id, summary.control_events)
                     logger.debug(
                         "telemetry full summary: %s",
                         summary.model_dump_json(indent=2)

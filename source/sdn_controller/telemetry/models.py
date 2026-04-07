@@ -36,6 +36,7 @@ class DomainSummary(BaseModel):
     avg_time_db_ms: float
     average_cpu_percent: float
     peak_time_total_ms: float
+    avg_storage_cpu_percent: float = 0.0  # domain average across all storage servers
 
 
 class TelemetrySummary(BaseModel):
@@ -43,4 +44,5 @@ class TelemetrySummary(BaseModel):
     window_end: float
     servers: dict[str, ServerSummary]
     storage_servers: dict[str, StorageServerSummary] = {}
-    domain_summary: DomainSummary
+    domain_summary: DomainSummary | None = None  # absent in mini-summaries (drain_complete)
+    control_events: list[dict] = []  # drain_complete and other control-plane events

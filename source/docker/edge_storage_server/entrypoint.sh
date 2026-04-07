@@ -13,6 +13,11 @@ fi
 # Derive MONGO_URI from MONGO_PORT so the sidecar connects to the right port.
 export MONGO_URI="${MONGO_URI:-mongodb://localhost:${MONGO_PORT:-27018}/}"
 
+# Forward SIGTERM to mongod so it gets a clean shutdown (quiesce).
+# Without this, bash (PID 1) swallows the signal and mongod only
+# receives SIGKILL after the container stop timeout expires.
+trap 'kill -TERM $MONGOD_PID; wait $MONGOD_PID; exit $?' SIGTERM
+
 # Start mongod in the background.
 # shellcheck disable=SC2086
 mongod $MONGOD_ARGS &

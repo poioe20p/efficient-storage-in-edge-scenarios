@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from flask import Flask, g, jsonify, request
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
-from telemetry import init_telemetry
+from telemetry import init_telemetry, ZmqMetricSender, _get_server_mac
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +30,16 @@ DATA_TIER:   str = os.environ.get("DATA_TIER", "0")
 DB_PORT:      int   = int(os.environ.get("DB_PORT", "27018"))
 MAX_IDLE_MS:  int   = int(os.environ.get("MAX_IDLE_MS",
                           str(int(os.environ.get("VIP_IDLE_TIMEOUT", "30")) * 1000)))
-TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "150000"))
+TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "5000"))
+
+# ---------------------------------------------------------------------------
+# Drain state — set by POST /drain, read by before_request and drain monitor
+# ---------------------------------------------------------------------------
+
+_draining = False
+_active_requests = 0
+_active_requests_lock = threading.Lock()
+_SKIP_COUNTING = frozenset({"/health", "/drain"})
 
 vip_data_lock = threading.Lock()
 vip_data_per_domain = {
@@ -60,6 +69,8 @@ def _get_client(lan: str) -> MongoClient:
             client = MongoClient(
                 url, maxPoolSize=1, maxIdleTimeMS=MAX_IDLE_MS,
                 serverSelectionTimeoutMS=3000,
+                connectTimeoutMS=2000,
+                socketTimeoutMS=5000,
                 directConnection=True,
             )
             _mongo_clients[lan] = client
@@ -80,12 +91,65 @@ def timed_db(lan: str):
 
 
 # ---------------------------------------------------------------------------
+# Drain guard — registered before init_telemetry so it has priority
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def _drain_guard():
+    global _active_requests
+    g.counted = False # g is the Flask request-global namespace; this flag tracks whether the current request was counted in _active_requests
+    if request.path in _SKIP_COUNTING:
+        return None  # control-plane routes bypass counting and drain check
+    if _draining:
+        return jsonify({"status": "draining"}), 503
+    with _active_requests_lock:
+        _active_requests += 1
+    g.counted = True  # only set after successful increment
+    return None
+
+
+@app.after_request
+def _drain_counter(response):
+    global _active_requests
+    # Guard with g.counted (set in _drain_guard) — NOT _draining — so that
+    # requests which were counted before draining was set still decrement.
+    if getattr(g, "counted", False):
+        with _active_requests_lock:
+            _active_requests -= 1
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Control-plane routes (used by the SDN controller)
 # ---------------------------------------------------------------------------
 
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"}), 200
+
+
+_drain_monitor_thread: threading.Thread | None = None
+
+
+@app.route("/drain", methods=["POST"])
+def drain():
+    """Signal the server to stop accepting new requests and drain in-flight ones.
+
+    The drain monitor thread watches ``_active_requests`` and fires a
+    ``drain_complete`` ZMQ event once all in-flight requests finish, then
+    terminates the process via ``os._exit(0)``.
+    """
+    global _draining, _drain_monitor_thread
+    _draining = True
+    if _drain_monitor_thread is None:
+        _drain_monitor_thread = threading.Thread(
+            target=_drain_monitor, daemon=True, name="drain-monitor"
+        )
+        _drain_monitor_thread.start()
+    with _active_requests_lock:
+        remaining = _active_requests
+    log.info("Drain activated — rejecting new requests, %d in-flight", remaining)
+    return jsonify({"status": "draining", "active_requests": remaining}), 200
 
 
 @app.route("/vip_data", methods=["PUT"])
@@ -306,13 +370,42 @@ def _check_tdados_threshold(response):
         with _clients_lock:
             evicted = list(_mongo_clients.keys())
             _mongo_clients.clear()
-        log.warning(
+        log.debug(
             "T_dados=%.1fms > \u03c4=%.1fms \u2014 evicted clients %s to force reconnection",
             time_db_ms, TAU_DADOS_MS, evicted,
         )
     return response
 
-init_telemetry(app)
+
+# ---------------------------------------------------------------------------
+# Drain monitor — background thread that fires drain_complete and self-exits
+# ---------------------------------------------------------------------------
+
+# Shared sender: reused by telemetry and drain monitor so both emit through
+# the same ZMQ PUSH connection.
+_metric_sender = ZmqMetricSender()
+
+
+def _drain_monitor() -> None:
+    """Background thread: started by POST /drain. Polls active_requests and,
+    once all in-flight requests finish, sends a drain_complete ZMQ event then
+    terminates the process via os._exit(0).
+    """
+    while True:
+        time.sleep(0.5)
+        with _active_requests_lock:
+            remaining = _active_requests
+        if remaining <= 0:
+            log.info("Drain complete \u2014 all in-flight requests finished, sending drain_complete event")
+            _metric_sender.send({
+                "event_type": "drain_complete",
+                "server_id":  _get_server_mac(),
+                "ts":         time.time(),
+            })
+            time.sleep(0.1)  # small delay to let ZMQ flush the send buffer
+            os._exit(0)  # noqa: SLF001 — intentional hard exit after drain
+
+init_telemetry(app, sender=_metric_sender)
 
 if __name__ == "__main__":
     log.info(

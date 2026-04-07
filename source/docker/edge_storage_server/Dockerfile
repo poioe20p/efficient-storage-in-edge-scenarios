@@ -1,6 +1,7 @@
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
     MONGO_VERSION=7.0 \
     AGGREGATOR_PULL_ADDR= \
     LAN_ID= \

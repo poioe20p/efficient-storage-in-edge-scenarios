@@ -34,6 +34,20 @@ def _receive_loop() -> None:
     while True:
         event = pull.recv_json()
         logger.debug("Received event from server_id=%s event_type=%s", event.get("server_id"), event.get("event_type"))
+        if event.get("event_type") == "drain_complete":
+            # Forward drain_complete immediately as a mini-summary — do not
+            # buffer into the aggregation window.  The controller needs this
+            # signal as fast as possible to trigger Phase B cleanup.
+            mini = {
+                "network_id":     NETWORK_ID,
+                "window_end":     time.time(),
+                "servers":        {},
+                "storage_servers": {},
+                "control_events": [event],
+            }
+            logger.info("drain_complete received for server_id=%s — publishing mini-summary", event.get("server_id"))
+            pub.send_json(mini)
+            continue  # do not also buffer into the window
         with _lock:
             _buffer.append(event)
 
@@ -143,17 +157,27 @@ def _publish_loop() -> None:
             avg_time_proc = avg_time_db = avg_cpu_percent = peak_time_total = 0.0
             total_requests = 0
 
+        # ── Domain-average storage CPU (across all storage server entries) ────
+        storage_cpu_values = [
+            ss["avg_cpu_percent"]
+            for ss in storage_servers.values()
+            if ss.get("avg_cpu_percent") is not None
+        ]
+        avg_storage_cpu_percent = statistics.mean(storage_cpu_values) if storage_cpu_values else 0.0
+
         summary = {
             "network_id":      NETWORK_ID,
             "window_end":      time.time(),
             "servers":         servers,
             "storage_servers": storage_servers,
+            "control_events":  [],
             "domain_summary": {
-                "total_requests":      total_requests,
-                "avg_time_proc_ms":    avg_time_proc,
-                "avg_time_db_ms":      avg_time_db,
-                "average_cpu_percent": avg_cpu_percent,
-                "peak_time_total_ms":  peak_time_total,
+                "total_requests":          total_requests,
+                "avg_time_proc_ms":        avg_time_proc,
+                "avg_time_db_ms":          avg_time_db,
+                "average_cpu_percent":     avg_cpu_percent,
+                "peak_time_total_ms":      peak_time_total,
+                "avg_storage_cpu_percent": avg_storage_cpu_percent,
             },
         }
         logger.info(

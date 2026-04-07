@@ -29,6 +29,7 @@ PORT=27018
 RS_NAME=""
 PRIMARY_CONTAINER=""
 KEEP_VOLUME=false
+SKIP_RS=false    # skip rs.remove() step (controller already handled it in Python)
 PID_OVS=""
 
 usage() {
@@ -48,6 +49,7 @@ Optional:
   --rs-name <name>             Replica set name (default: rs_net1 / rs_net2 based on LAN)
   --primary <container>        Container to run rs.remove() on (default: edge_storage_server_n[LAN])
   --keep-volume                Do not remove the Docker data volume (default: remove it)
+  --skip-rs                    Skip rs.remove() step (controller already ran it in Python)
   -h, --help                   Show this help
 
 Notes:
@@ -86,10 +88,13 @@ validate_requirements() {
 	[[ "$state" == "running" ]] \
 		|| die "Container '$CONTAINER_NAME' is not running (state: ${state}). RS removal requires the container to be up."
 
-	state=$(docker inspect -f '{{.State.Status}}' "$PRIMARY_CONTAINER" 2>/dev/null) \
-		|| die "Primary container '$PRIMARY_CONTAINER' does not exist."
-	[[ "$state" == "running" ]] \
-		|| die "Primary container '$PRIMARY_CONTAINER' is not running (state: ${state})."
+	# Only check primary container when we are responsible for rs.remove().
+	if [[ "$SKIP_RS" == "false" ]]; then
+		state=$(docker inspect -f '{{.State.Status}}' "$PRIMARY_CONTAINER" 2>/dev/null) \
+			|| die "Primary container '$PRIMARY_CONTAINER' does not exist."
+		[[ "$state" == "running" ]] \
+			|| die "Primary container '$PRIMARY_CONTAINER' is not running (state: ${state})."
+	fi
 
 	docker inspect -f '{{.State.Pid}}' "$OVS_CONTAINER" >/dev/null 2>&1 \
 		|| die "Container '$OVS_CONTAINER' is not running."
@@ -308,20 +313,24 @@ main() {
 	# ============================================================================
 	# Replica set removal (before stopping container)
 	# ============================================================================
-	echo
-	echo "============================================================================"
-	echo "Removing '${member_host}' from replica set '${RS_NAME}'"
-	echo "============================================================================"
+	if [[ "$SKIP_RS" == "false" ]]; then
+		echo
+		echo "============================================================================"
+		echo "Removing '${member_host}' from replica set '${RS_NAME}'"
+		echo "============================================================================"
 
-	local primary_host
-	primary_host=$(find_primary_host)
-	echo "  Primary: ${primary_host}"
+		local primary_host
+		primary_host=$(find_primary_host)
+		echo "  Primary: ${primary_host}"
 
-	rs_remove_member "$member_host" "$primary_host"
-	ensure_rs_removed "$member_host" "$primary_host"
+		rs_remove_member "$member_host" "$primary_host"
+		ensure_rs_removed "$member_host" "$primary_host"
 
-	local rs_members
-	rs_members=$(get_rs_members "$primary_host")
+		local rs_members
+		rs_members=$(get_rs_members "$primary_host")
+	else
+		echo "[--skip-rs] rs.remove() already handled by controller — skipping."
+	fi
 
 	# ============================================================================
 	# Network teardown
@@ -331,11 +340,26 @@ main() {
 	echo "Tearing down network"
 	echo "============================================================================"
 
-	echo "Stopping container '${CONTAINER_NAME}'..."
-	docker stop "$CONTAINER_NAME" >/dev/null
+	if [[ "$SKIP_RS" == "true" ]]; then
+		# Flush DNAT flows BEFORE stopping the container.  This actively breaks
+		# any surviving data-plane connections so no clients can reach this
+		# mongod after rs.remove() already removed its RS membership.
+		if [[ -n "$mac" ]]; then
+			flush_stale_mac_flows "$bridge" "$mac"
+		fi
+	fi
 
-	if [[ -n "$mac" ]]; then
-		flush_stale_mac_flows "$bridge" "$mac"
+	echo "Stopping container '${CONTAINER_NAME}'..."
+	# Use --time 15 to allow MongoDB's SIGTERM quiesce period to complete.
+	# After flow flush and rs.remove() there are no client connections and no
+	# RS obligations, so the quiesce completes almost instantly.
+	docker stop --time 15 "$CONTAINER_NAME" >/dev/null
+
+	if [[ "$SKIP_RS" == "false" ]]; then
+		# Normal path: flush flows after container stop (existing behaviour).
+		if [[ -n "$mac" ]]; then
+			flush_stale_mac_flows "$bridge" "$mac"
+		fi
 	fi
 
 	echo "Removing OVS port '${ovs_veth}' from bridge '${bridge}'..."
@@ -420,6 +444,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--keep-volume)
 			KEEP_VOLUME=true
+			shift
+			;;
+		--skip-rs)
+			SKIP_RS=true
 			shift
 			;;
 		-h|--help)

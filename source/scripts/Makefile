@@ -16,10 +16,16 @@ DEVICES      ?= 100
 NODES        ?= 60
 CLIENTS      ?= 3
 SNAPSHOT_DIR ?= testing/data/workload_snapshot
+SKIP_CLIENTS  ?= 1
+SKIP_SEED     ?= 1
+SKIP_SNAPSHOT ?= 1
+DRY_RUN       ?=
+
 
 .PHONY: setup_network \
         create_clients teardown_clients \
-        setup_test_data seed_sensor_reports seed_device_registry create_indexes export_snapshot
+        setup_test_data seed_sensor_reports seed_device_registry create_indexes export_snapshot \
+        run_experiment
 
 # ── Network ──────────────────────────────────────────────────────────────────
 
@@ -76,3 +82,19 @@ export_snapshot:
 	  --mongo-lan1 $(MONGO_LAN1) \
 	  --mongo-lan2 $(MONGO_LAN2) \
 	  --output-dir $(SNAPSHOT_DIR)
+
+# ── Experiment ────────────────────────────────────────────────────────────────
+
+## Run the full 4-phase experiment (traffic generator + resource stats collector).
+## Optional flags (set to any non-empty value to enable):
+##   make run_experiment SKIP_CLIENTS=1   # namespaces already created
+##   make run_experiment SKIP_SEED=1      # data already seeded
+##   make run_experiment SKIP_SNAPSHOT=1  # snapshot already exported
+##   make run_experiment DRY_RUN=1        # no real HTTP requests
+run_experiment:
+	sudo bash testing/run_experiment.sh \
+	  --snapshot-dir $(abspath $(SNAPSHOT_DIR)) \
+	  $(if $(filter-out 0 false,$(SKIP_CLIENTS)),--skip-clients) \
+	  $(if $(filter-out 0 false,$(SKIP_SEED)),--skip-seed) \
+	  $(if $(filter-out 0 false,$(SKIP_SNAPSHOT)),--skip-snapshot) \
+	  $(if $(filter-out 0 false,$(DRY_RUN)),--dry-run)

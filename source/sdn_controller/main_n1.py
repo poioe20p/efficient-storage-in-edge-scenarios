@@ -12,8 +12,8 @@ from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
 from os_ken import cfg
 
-from .elasticity.elasticity import ComputeAlert, DataAlert, ElasticityManager
-from .telemetry.models import TelemetrySummary
+from .elasticity.elasticity import ComputeAlert, DataAlert, ElasticityManager, ScaleDownComputeAlert, ScaleDownDataAlert
+from .telemetry.models import TelemetrySummary, DomainSummary
 from .telemetry.zmq_source import ZmqTelemetrySource
 from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
@@ -28,8 +28,21 @@ _REQUIRED_APP = ['os_ken.topology.switches']
 logger = logging.getLogger('os_ken.main_n1')
 
 # Latency thresholds that trigger Thread 3 alerts — tunable via env vars.
-_TAU_PROC_MS  = float(os.environ.get("TAU_PROC_MS",  "600"))
-_TAU_DADOS_MS = float(os.environ.get("TAU_DADOS_MS", "150000"))
+_TAU_PROC_MS  = float(os.environ.get("TAU_PROC_MS",  "2.3"))
+_TAU_DADOS_MS = float(os.environ.get("TAU_DADOS_MS", "50"))
+
+# Scale-up thresholds (CPU component — latency thresholds reuse _TAU_PROC_MS/_TAU_DADOS_MS)
+_TAU_CPU_UP             = float(os.environ.get("TAU_CPU_UP",             "58"))
+_TAU_STORAGE_CPU_UP     = float(os.environ.get("TAU_STORAGE_CPU_UP",     "50"))
+
+# Scale-down thresholds
+_TAU_CPU_DOWN           = float(os.environ.get("TAU_CPU_DOWN",           "49"))
+_TAU_PROC_DOWN_MS       = float(os.environ.get("TAU_PROC_DOWN_MS",       "1.7"))
+_TAU_STORAGE_CPU_DOWN   = float(os.environ.get("TAU_STORAGE_CPU_DOWN",   "48"))
+_TAU_DB_DOWN_MS         = float(os.environ.get("TAU_DB_DOWN_MS",         "45"))
+_SCALE_DOWN_CONSECUTIVE = int(os.environ.get("SCALE_DOWN_COMPUTE_CONSECUTIVE", "9"))
+_SCALE_DOWN_STORAGE_CONSECUTIVE = int(os.environ.get("SCALE_DOWN_STORAGE_CONSECUTIVE", "9"))
+_TELEMETRY_TIMEOUT_WINDOWS = int(os.environ.get("TELEMETRY_TIMEOUT_WINDOWS", "10"))
 
 
 class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
@@ -67,6 +80,20 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._elasticity = ElasticityManager(topology_mixin=self)
         self._elasticity.start()
 
+        # Dynamic node tracking for scale-down (populated on add, cleared on remove)
+        self._dynamic_node_macs: set[str] = set()
+        self._active: dict = {}           # mac -> NodeInfo (insertion order = LIFO)
+
+        # Telemetry timeout: per-MAC absent-window counters
+        self._absent_window_count: dict[str, int] = {}
+
+        # Underutilization: per-tier consecutive-window counters
+        self._scale_down_compute_consecutive: int = 0
+        self._scale_down_storage_consecutive: int = 0
+        # Scale-up counters (for cross-direction reset tracking)
+        self._scale_up_compute_consecutive:   int = 0
+        self._scale_up_storage_consecutive:   int = 0
+
         # Thread 2 — ZMQ subscriber for telemetry summaries and topology updates.
         self._telemetry = ZmqTelemetrySource(
             endpoints=_aggregator_endpoints + _peer_endpoints,
@@ -74,13 +101,67 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             on_topology_update=self.on_topology_update,
         )
         self._telemetry.start()
-        self._bypass_telemetry_for_elasticity_on_odd_number = 1 # set to an odd number to enable elasticity alerts based on telemetry, even if thresholds are not breached (for testing)
 
     def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
-        """Thread 2 callback — log the summary and forward threshold breaches to Thread 3."""
+        """Thread 2 callback — orchestrate telemetry processing and forward threshold breaches to Thread 3."""
         if summary.network_id != self._lan_id:
             logger.debug("ignoring telemetry for %s (this controller owns %s)", summary.network_id, self._lan_id)
             return
+
+        self._sync_node_tracking()
+        self._process_drain_events(summary)
+
+        # Mini-summaries (drain_complete pass-throughs) have empty server dicts.
+        # A regular summary always has at least one server from heartbeats.
+        if not summary.servers and not summary.storage_servers:
+            return
+
+        self._log_and_update_stats(summary)
+
+        try:
+            lan = int(summary.network_id.replace("lan", ""))
+        except ValueError:
+            logger.warning("could not parse LAN from network_id=%s", summary.network_id)
+            return
+
+        self._detect_absent_nodes(summary)
+
+        if self._elasticity.is_busy():
+            logger.debug("[scale-down] elasticity manager is busy — skipping underutilisation check")
+            return
+
+        ds = summary.domain_summary
+        self._evaluate_scale_up(ds, lan, summary.network_id)
+        self._evaluate_scale_down_compute(ds)
+        self._evaluate_scale_down_storage(ds)
+
+    def _sync_node_tracking(self) -> None:
+        """Consume removal and addition completions from Thread 3 into local tracking state."""
+        for mac in self._elasticity.consume_removal_completions():
+            self._dynamic_node_macs.discard(mac)
+            self._absent_window_count.pop(mac, None)
+            self._active.pop(mac, None)
+            logger.info("[scale-down] removed MAC %s from dynamic tracking after cleanup", mac)
+
+        for info in self._elasticity.consume_addition_completions():
+            self._dynamic_node_macs.add(info.mac)
+            self._active[info.mac] = info
+            logger.info("[scale-down] tracking new dynamic %s node mac=%s name=%s",
+                        info.node_type, info.mac, info.name)
+
+
+    def _process_drain_events(self, summary: TelemetrySummary) -> None:
+        """Handle drain_complete control events forwarded by the aggregator."""
+        for event in summary.control_events:
+            if event.get("event_type") == "drain_complete":
+                mac = event.get("server_id")
+                if mac and self._elasticity.has_pending_drain(mac):
+                    logger.info("[scale-down] drain_complete received for mac=%s — submitting Phase B cleanup", mac)
+                    self._elasticity.submit_cleanup_compute(mac)
+
+
+    def _log_and_update_stats(self, summary: TelemetrySummary) -> None:
+        """Print domain summary metrics and push per-server stats to Thread 1."""
         ds = summary.domain_summary
         print(
             f"[telemetry] network={summary.network_id} "
@@ -89,46 +170,163 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             f"requests={ds.total_requests} "
             f"cpu={ds.average_cpu_percent:.1f}%"
         )
-
-        # Update per-server and per-storage stats for WSM cost functions (Thread 1).
         self.update_server_stats(summary.servers)
         self.update_storage_stats(summary.storage_servers)
 
-        # Parse LAN number from network_id, e.g. "lan1" -> 1.
-        try:
-            lan = int(summary.network_id.replace("lan", ""))
-        except ValueError:
-            logger.warning("could not parse LAN from network_id=%s", summary.network_id)
+
+    def _detect_absent_nodes(self, summary: TelemetrySummary) -> None:
+        """Detect dynamic nodes that have stopped reporting and trigger their removal."""
+        for mac in list(self._dynamic_node_macs):
+            present = (mac in summary.servers) or (mac in summary.storage_servers)
+            if present:
+                self._absent_window_count[mac] = 0
+            else:
+                self._absent_window_count[mac] = self._absent_window_count.get(mac, 0) + 1
+                count = self._absent_window_count[mac]
+                logger.debug("[scale-down] mac=%s absent for %d windows", mac, count)
+                if count >= _TELEMETRY_TIMEOUT_WINDOWS:
+                    logger.warning("[scale-down] mac=%s absent for %d windows — triggering removal", mac, count)
+                    self._absent_window_count[mac] = 0
+                    if self._elasticity.has_pending_drain(mac):
+                        # Phase A already ran; go straight to Phase B cleanup.
+                        logger.info("[scale-down] pending drain exists for mac=%s — submitting CleanupComputeAlert", mac)
+                        self._elasticity.submit_cleanup_compute(mac)
+                    else:
+                        self._submit_scale_down_alert(mac)
+
+
+    def _evaluate_scale_up(self, ds: DomainSummary, lan: int, network_id: str) -> None:
+        """Evaluate scale-up thresholds for storage and compute tiers."""
+        if (ds.avg_storage_cpu_percent > _TAU_STORAGE_CPU_UP
+                and ds.avg_time_db_ms > _TAU_DADOS_MS):
+            logger.info(
+                "[threshold] storage_cpu=%.1f%% > \u03c4=%.1f%% AND T_dados=%.1fms > \u03c4=%.1fms"
+                " on %s \u2014 submitting data alert",
+                ds.avg_storage_cpu_percent, _TAU_STORAGE_CPU_UP,
+                ds.avg_time_db_ms, _TAU_DADOS_MS, network_id,
+            )
+            self._scale_up_storage_consecutive += 1
+            if self._scale_up_storage_consecutive >= 2:
+                self._scale_down_storage_consecutive = 0  # cross-direction reset
+                self._elasticity.submit_alert(
+                    DataAlert(
+                        lan=lan,
+                        network_id=network_id,
+                        rs_name=f"rs_net{lan}",
+                        primary_container=f"edge_storage_server_n{lan}",
+                    )
+                )
+                self._scale_up_storage_consecutive = 0
+        else:
+            self._scale_up_storage_consecutive = 0
+
+        if (ds.average_cpu_percent > _TAU_CPU_UP
+                and ds.avg_time_proc_ms > _TAU_PROC_MS):
+            logger.info(
+                "[threshold] cpu=%.1f%% > \u03c4=%.1f%% AND T_proc=%.1fms > \u03c4=%.1fms"
+                " on %s \u2014 submitting compute alert",
+                ds.average_cpu_percent, _TAU_CPU_UP,
+                ds.avg_time_proc_ms, _TAU_PROC_MS, network_id,
+            )
+            self._scale_up_compute_consecutive += 1
+            if self._scale_up_compute_consecutive >= 2:
+                self._scale_down_compute_consecutive = 0  # cross-direction reset
+                self._elasticity.submit_alert(
+                    ComputeAlert(lan=lan, network_id=network_id)
+                )
+                self._scale_up_compute_consecutive = 0
+        else:
+            self._scale_up_compute_consecutive = 0
+
+    def _evaluate_scale_down_compute(self, ds: DomainSummary) -> None:
+        """Evaluate compute scale-down and remove the last added dynamic compute node if sustained."""
+        if (ds.average_cpu_percent < _TAU_CPU_DOWN
+                and ds.avg_time_proc_ms < _TAU_PROC_DOWN_MS):
+            self._scale_down_compute_consecutive += 1
+        else:
+            self._scale_down_compute_consecutive = 0
+
+        if self._scale_down_compute_consecutive >= _SCALE_DOWN_CONSECUTIVE:
+            last = self._find_last_dynamic_compute_node()
+            if last is not None:
+                logger.info(
+                    "[scale-down] compute underutilisation: %d windows below threshold — removing %s",
+                    self._scale_down_compute_consecutive, last.name,
+                )
+                self._scale_down_compute_consecutive = 0
+                self._submit_scale_down_alert(last.mac)
+            else:
+                # No eligible node; discard accumulated windows
+                self._scale_down_compute_consecutive = 0
+
+    def _evaluate_scale_down_storage(self, ds: DomainSummary) -> None:
+        """Evaluate storage scale-down and remove the last added dynamic storage node if sustained."""
+        if (ds.avg_storage_cpu_percent < _TAU_STORAGE_CPU_DOWN
+                and ds.avg_time_db_ms < _TAU_DB_DOWN_MS):
+            self._scale_down_storage_consecutive += 1
+        else:
+            self._scale_down_storage_consecutive = 0
+
+        if self._scale_down_storage_consecutive >= _SCALE_DOWN_STORAGE_CONSECUTIVE:
+            last = self._find_last_dynamic_storage_node()
+            if last is not None:
+                logger.info(
+                    "[scale-down] storage underutilisation: %d windows below threshold — removing %s",
+                    self._scale_down_storage_consecutive, last.name,
+                )
+                self._scale_down_storage_consecutive = 0
+                self._submit_scale_down_alert(last.mac)
+            else:
+                self._scale_down_storage_consecutive = 0
+
+    def _find_last_dynamic_compute_node(self):
+        """Return the NodeInfo for the most recently added dynamic compute node (LIFO)."""
+        for mac, info in reversed(list(self._active.items())):
+            if info.node_type == "compute" and mac in self._dynamic_node_macs:
+                return info
+        return None
+
+    def _find_last_dynamic_storage_node(self):
+        """Return the NodeInfo for the most recently added dynamic storage node (LIFO)."""
+        for mac, info in reversed(list(self._active.items())):
+            if info.node_type == "storage" and mac in self._dynamic_node_macs:
+                return info
+        return None
+
+    def _submit_scale_down_alert(self, mac: str) -> None:
+        """Build and submit the appropriate scale-down alert for the given MAC.
+
+        Only dynamically added MACs are eligible — static/primary nodes are
+        never removed.  Looks up the NodeInfo to populate all alert fields.
+        """
+        if mac not in self._dynamic_node_macs:
+            logger.warning("[scale-down] mac=%s not in dynamic_node_macs — ignoring", mac)
+            return
+        info = self._active.get(mac)
+        if info is None:
+            logger.warning("[scale-down] no NodeInfo for mac=%s — cannot build alert", mac)
             return
 
-        # if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
-        if ds.avg_time_db_ms > _TAU_DADOS_MS:
-            logger.info(
-                "[threshold] T_dados=%.1fms > τ=%.1fms on %s — submitting data alert",
-                ds.avg_time_db_ms, _TAU_DADOS_MS, summary.network_id,
+        if info.node_type == "compute":
+            alert = ScaleDownComputeAlert(
+                lan=info.lan,
+                network_id=info.network_id,
+                container_name=info.name,
+                mac=mac,
             )
-            self._elasticity.submit_alert(
-                DataAlert(
-                    lan=lan,
-                    network_id=summary.network_id,
-                    rs_name=f"rs_net{lan}",
-                    primary_container=f"edge_storage_server_n{lan}",
-                )
+        else:
+            alert = ScaleDownDataAlert(
+                lan=info.lan,
+                network_id=info.network_id,
+                container_name=info.name,
+                mac=mac,
+                ip=info.ip,
+                rs_name=info.rs_name,
+                primary_container=info.primary_container,
+                port=info.port,
             )
-
-
-        # if self._bypass_telemetry_for_elasticity_on_odd_number % 2 != 0:
-        if ds.avg_time_proc_ms > _TAU_PROC_MS:
-            logger.info(
-                "[threshold] T_proc=%.1fms > τ=%.1fms on %s — submitting compute alert",
-                ds.avg_time_proc_ms, _TAU_PROC_MS, summary.network_id,
-            )
-            self._elasticity.submit_alert(
-                ComputeAlert(lan=lan, network_id=summary.network_id)
-            )
-        
-        # self._bypass_telemetry_for_elasticity_on_odd_number += 1 # increment to alternate between triggering and not triggering alerts based on telemetry
-
+        logger.info("[scale-down] submitting alert: %s", alert)
+        self._elasticity.submit(alert)
 
     def _install_flow(self, datapath, priority, match, actions, *,
                       idle_timeout=0, hard_timeout=0, cookie=0, flags=None):
