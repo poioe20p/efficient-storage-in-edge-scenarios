@@ -3,10 +3,10 @@
 ## Purpose
 
 The Elasticity Manager (Thread 3) is responsible for mutating the infrastructure
-in response to latency breaches detected by Thread 2. It handles spawning new
-`edge_server` and `edge_storage_server` containers at runtime and wiring them
-into the running network. A future extension will add graceful node removal
-(scale-down).
+in response to latency breaches and underutilisation signals detected by Thread 2.
+It handles spawning **and gracefully removing** `edge_server` and
+`edge_storage_server` containers at runtime and wiring/unwiring them from the
+running network.
 
 ---
 
@@ -47,7 +47,10 @@ source/sdn_controller/
 ├── elasticity/
 │   ├── __init__.py
 │   ├── elasticity.py             # ElasticityManager — Thread 3 queue/dispatch
-│   └── node_manager.py           # NodeAdder — per-step timed lifecycle
+│   ├── node_common.py            # Shared types (NodeResult, RemovalResult, NodeInfo, …),
+│   │                             #   constants (SCRIPTS_DIR), and _BaseNodeAdder helpers
+│   ├── compute_node_manager.py   # ComputeNodeAdder — edge_server lifecycle + drain phases
+│   └── storage_node_manager.py  # StorageNodeAdder — edge_storage_server lifecycle + rs.remove()
 └── topology/
     └── topology.py               # TopologyMixin — VIP pool (add_server_mac, add_storage_mac, etc.)
 
@@ -63,28 +66,30 @@ source/scripts/network/
 Produced by Thread 2's `_on_telemetry_update` callback in `main_n1.py`, consumed
 by Thread 3.
 
-| Alert            | Trigger                            | Fields                                                                |
-| ---------------- | ---------------------------------- | --------------------------------------------------------------------- |
-| `ComputeAlert` | `avg_time_proc_ms > TAU_PROC_MS` | `lan`, `network_id`                                               |
-| `DataAlert`    | `avg_time_db_ms > TAU_DADOS_MS`  | `lan`, `network_id`, `rs_name`, `primary_container`, `port` |
+| Alert                     | Trigger                                          | Fields                                                                        |
+| ------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `ComputeAlert`          | `avg_time_proc_ms > TAU_PROC_MS` (2 windows)   | `lan`, `network_id`                                                         |
+| `DataAlert`             | `avg_time_db_ms > TAU_DADOS_MS` (2 windows)    | `lan`, `network_id`, `rs_name`, `primary_container`, `port`          |
+| `ScaleDownComputeAlert` | Underutilisation (9 windows) or timeout         | `lan`, `network_id`, `container_name`, `mac`                          |
+| `ScaleDownDataAlert`    | Underutilisation (9 windows) or timeout         | `lan`, `network_id`, `container_name`, `mac`, `ip`, `rs_name`, `primary_container`, `port` |
+| `CleanupComputeAlert`   | `drain_complete` ZMQ event / telemetry timeout  | `mac`                                                                         |
+
+Scale-up requires 2 consecutive windows above threshold. Scale-down requires 9
+consecutive windows below threshold (asymmetric — scale down slow, scale up fast).
 
 Thresholds are configured via environment variables:
 
-| Variable         | Default    | Description                         |
-| ---------------- | ---------- | ----------------------------------- |
-| `TAU_PROC_MS`  | `600`    | Processing latency threshold (ms)   |
-| `TAU_DADOS_MS` | `150000` | Data/storage latency threshold (ms) |
-
-### Threshold Evaluation (Thread 2 → Thread 3)
-
-The `_on_telemetry_update` callback in `main_n1.py`:
-
-1. Ignores summaries not matching this controller's `LAN_ID`.
-2. Logs latency and CPU metrics.
-3. Updates per-server and per-storage stats for the WSM cost functions (Thread 1).
-4. Parses the LAN number from `network_id` (e.g. `"lan1" → 1`).
-5. Compares `avg_time_db_ms` against `TAU_DADOS_MS` — submits a `DataAlert` on breach.
-6. Compares `avg_time_proc_ms` against `TAU_PROC_MS` — submits a `ComputeAlert` on breach.
+| Variable                          | Default    | Description                                        |
+| --------------------------------- | ---------- | -------------------------------------------------- |
+| `TAU_PROC_MS`                   | `600`    | Processing latency scale-up threshold (ms)         |
+| `TAU_DADOS_MS`                  | `150000` | DB latency scale-up threshold (ms)                 |
+| `TAU_CPU_DOWN`                  | `20`     | Domain avg CPU below → compute idle              |
+| `TAU_PROC_DOWN_MS`              | `100`    | Domain avg proc latency below → compute idle     |
+| `TAU_STORAGE_CPU_DOWN`          | `20`     | Domain avg storage CPU below → storage idle      |
+| `TAU_DB_DOWN_MS`                | `50000`  | Domain avg DB latency below → storage idle       |
+| `SCALE_DOWN_COMPUTE_CONSECUTIVE`| `9`      | Compute scale-down window count                    |
+| `SCALE_DOWN_STORAGE_CONSECUTIVE`| `9`      | Storage scale-down window count                    |
+| `TELEMETRY_TIMEOUT_WINDOWS`     | `10`     | Absent windows before dead-node removal            |
 
 ---
 

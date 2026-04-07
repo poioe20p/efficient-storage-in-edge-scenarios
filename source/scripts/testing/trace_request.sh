@@ -32,13 +32,14 @@ readonly SCRIPT_NAME="$(basename "$0")"
 
 if [[ -t 1 ]]; then
     readonly BOLD='\033[1m'
+    readonly DIM='\033[2m'
     readonly CYAN='\033[36m'
     readonly GREEN='\033[32m'
     readonly YELLOW='\033[33m'
     readonly RED='\033[31m'
     readonly RESET='\033[0m'
 else
-    readonly BOLD='' CYAN='' GREEN='' YELLOW='' RED='' RESET=''
+    readonly BOLD='' DIM='' CYAN='' GREEN='' YELLOW='' RED='' RESET=''
 fi
 
 # ── Usage ────────────────────────────────────────────────────────────────────
@@ -58,14 +59,11 @@ EOF
     exit 1
 }
 
-# ── Helper: pull recent docker logs ──────────────────────────────────────────
+# ── Helper: pull docker logs within a time window ────────────────────────────
 
-# Uses --since with a host-clock timestamp captured just before the request.
-# docker logs --since compares against the daemon's own capture timestamps
-# (always host clock), so container timezone differences are irrelevant.
 collect_logs() {
     local container="$1"
-    docker logs "$container" --since "$LOG_SINCE" 2>&1
+    docker logs "$container" --since "$BEFORE_TS" --until "$AFTER_TS" 2>&1
 }
 
 # ── Helper: filter lines, return fallback message if nothing matched ─────────
@@ -141,10 +139,10 @@ else
     exit 1
 fi
 
-# ── Phase 3: Execute request ────────────────────────────────────────────────
+# ── Phase 3: Execute request with timestamp window ──────────────────────────
 
-# Capture host timestamp ~2s before the request so we catch any setup logs.
-LOG_SINCE=$(date -u -d '2 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
+# Record start timestamp (1 second before for docker log margin)
+BEFORE_TS=$(date -u -d '-1 second' '+%Y-%m-%dT%H:%M:%S')
 
 # Fire the request — append -w to capture HTTP status code on last line
 RESPONSE=$(ip netns exec "$NS" "${CURL_CMD[@]}" \
@@ -153,6 +151,9 @@ RESPONSE=$(ip netns exec "$NS" "${CURL_CMD[@]}" \
 # Split: body = all lines except last, HTTP code = last line
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)
 BODY=$(echo "$RESPONSE" | sed '$d')
+
+# Record end timestamp (5 seconds buffer for async telemetry flush)
+AFTER_TS=$(date -u -d '+5 seconds' '+%Y-%m-%dT%H:%M:%S')
 
 # ── Phase 4: Collect & filter logs ──────────────────────────────────────────
 
@@ -175,15 +176,8 @@ EDGE_IP=$(echo "$CTRL_LOGS" \
     | grep -oP '(?<=real=)\S+' | head -1 || true)
 
 # --- Section 3: VIP_DATA routing ---
-# If we know the edge server IP, narrow the filter to its VIP_DATA events;
-# otherwise fall back to the broad pattern (e.g. when DNAT was already cached).
-if [[ -n "$EDGE_IP" ]]; then
-    VIP_DATA_PATTERN="vip_data\(.*client=${EDGE_IP}|select_storage\(|dnat/snat installed:.*10\.0\.[01]\.200.*real=.*client=${EDGE_IP}"
-else
-    VIP_DATA_PATTERN="select_storage\(|vip_data\(|dnat/snat installed:.*10\.0\.[01]\.200"
-fi
 VIP_DATA_LINES=$(echo "$CTRL_LOGS" | filter_or_fallback \
-    "$VIP_DATA_PATTERN" \
+    "select_storage\(|vip_data\(|dnat/snat installed:.*10\.0\.[01]\.200" \
     "(no VIP_DATA routing — DNAT flow may already be installed)")
 
 # --- Section 4: Cross-LAN routing (if applicable) ---
@@ -243,6 +237,10 @@ fi
 # Response
 echo -e "${BOLD}── Response ───────────────────────────────────────────────────${RESET}"
 echo -e "  HTTP ${SC}${HTTP_CODE}${RESET}"
-echo "  $BODY"
+if [[ ${#BODY} -gt 200 ]]; then
+    echo "  ${BODY:0:200}…"
+else
+    echo "  $BODY"
+fi
 echo ""
 echo -e "${BOLD}══════════════════════════════════════════════════════════════${RESET}"
