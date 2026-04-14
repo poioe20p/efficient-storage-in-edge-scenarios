@@ -9,13 +9,14 @@ lifecycle changes.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import queue
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .node_common import NodeInfo
+from .node_common import IpAllocator, NodeInfo
 from .compute_node_manager import ComputeNodeAdder, PendingDrain
 from .storage_node_manager import StorageNodeAdder
 
@@ -56,6 +57,7 @@ class ScaleDownComputeAlert:
     network_id:     str
     container_name: str
     mac:            str
+    ip:             str
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,27 @@ class CleanupComputeAlert:
     mac: str
 
 
+# Alert dispatch priorities (lower number = higher priority).
+_PRIORITY_DATA_ALERT           = 1
+_PRIORITY_COMPUTE_ALERT        = 2
+_PRIORITY_CLEANUP_COMPUTE      = 3
+_PRIORITY_SCALEDOWN_DATA       = 4
+_PRIORITY_SCALEDOWN_COMPUTE    = 5
+
+# Tie-breaker: monotonically increasing sequence so alerts with the same
+# priority are processed in FIFO order.
+_alert_seq = itertools.count()
+
+# Type → priority lookup (covers all alert types)
+_ALERT_PRIORITY: dict[type, int] = {
+    DataAlert:             _PRIORITY_DATA_ALERT,
+    ComputeAlert:          _PRIORITY_COMPUTE_ALERT,
+    CleanupComputeAlert:   _PRIORITY_CLEANUP_COMPUTE,
+    ScaleDownDataAlert:    _PRIORITY_SCALEDOWN_DATA,
+    ScaleDownComputeAlert: _PRIORITY_SCALEDOWN_COMPUTE,
+}
+
+
 # ------------------------------------------------------------------
 # ElasticityManager
 # ------------------------------------------------------------------
@@ -85,19 +108,20 @@ class CleanupComputeAlert:
 class ElasticityManager:
     """Thread 3: the sole actor for infrastructure mutations.
 
-    Thread 2 calls ``submit_alert()``; this manager pops alerts off its queue
+    Thread 2 calls ``submit()``; this manager pops alerts off its queue
     and runs the appropriate NodeAdder lifecycle in a dedicated daemon thread.
     The calling thread is never blocked — the queue decouples detection from
     execution.
     """
 
     def __init__(self, topology_mixin: TopologyMixin) -> None:
-        self._queue:  queue.Queue = queue.Queue()
+        self._queue: queue.PriorityQueue = queue.PriorityQueue()
         self._compute_adder = ComputeNodeAdder()
         self._storage_adder = StorageNodeAdder()
         self._topo    = topology_mixin          # TopologyMixin reference
-        self._active: list[dict] = []           # audit trail (operation history)
+        self._operation_log: list[dict] = []    # audit trail (operation history)
         self._lock    = threading.Lock()
+        self._ip_allocs: dict[int, IpAllocator] = {}   # keyed by LAN number
 
         # Scale-down state — written by Thread 3, read by Thread 2
         self._busy: bool = False                # True while an operation is in progress
@@ -117,20 +141,18 @@ class ElasticityManager:
         self._thread.start()
         logger.info("[elasticity] manager started")
 
-    def submit_alert(self, alert: ComputeAlert | DataAlert) -> None:
-        """Thread-safe enqueue. Called by Thread 2's on_update callback."""
-        logger.info("[elasticity] alert submitted: %s", alert)
-        self._queue.put(alert)
-
     def submit(self, alert) -> None:
-        """Generic submit for any alert type (scale-up or scale-down)."""
-        logger.info("[elasticity] alert submitted: %s", alert)
-        self._queue.put(alert)
+        """Unified thread-safe enqueue for any alert type."""
+        priority = _ALERT_PRIORITY.get(type(alert))
+        if priority is None:
+            logger.warning("[elasticity] unknown alert type %s \u2014 using lowest priority", type(alert).__name__)
+            priority = _PRIORITY_SCALEDOWN_COMPUTE
+        logger.info("[elasticity] alert submitted (priority=%d): %s", priority, alert)
+        self._queue.put((priority, next(_alert_seq), alert))
 
     def submit_cleanup_compute(self, mac: str) -> None:
-        """Thread-safe enqueue of a Phase B cleanup alert (drain_complete event)."""
-        logger.info("[elasticity] CleanupComputeAlert submitted for mac=%s", mac)
-        self._queue.put(CleanupComputeAlert(mac=mac))
+        """Convenience: enqueue a CleanupComputeAlert by MAC."""
+        self.submit(CleanupComputeAlert(mac=mac))
 
     def is_busy(self) -> bool:
         """Thread-safe check: is an operation currently in progress?
@@ -150,19 +172,21 @@ class ElasticityManager:
     def consume_addition_completions(self) -> list[NodeInfo]:
         """Called by Thread 2 to collect NodeInfo records for newly added nodes."""
         with self._addition_complete_lock:
+            # Thread safe swap: return current list and reset to empty for next round of additions.
             result, self._addition_complete_infos = list(self._addition_complete_infos), []
         return result
 
     def consume_removal_completions(self) -> set[str]:
         """Called by Thread 2 to collect MACs of fully removed nodes."""
         with self._removal_complete_lock:
+            # Thread safe swap: return current set and reset to empty for next round of removals.
             result, self._removal_complete_macs = set(self._removal_complete_macs), set()
         return result
 
     def get_active_operations(self) -> list[dict]:
         """Return a snapshot of the operation audit trail (safe to call from any thread)."""
         with self._lock:
-            return list(self._active)
+            return list(self._operation_log)
 
     # ------------------------------------------------------------------
     # Private — runs exclusively in the elasticity daemon thread
@@ -171,7 +195,7 @@ class ElasticityManager:
     def _loop(self) -> None:
         while True:
             try:
-                alert = self._queue.get()
+                _priority, _seq, alert = self._queue.get()
                 self._busy = True
                 try:
                     if isinstance(alert, ComputeAlert):
@@ -193,11 +217,18 @@ class ElasticityManager:
             except Exception:  # noqa: BLE001
                 logger.exception("[elasticity] unhandled error in loop")
 
+    def _get_allocator(self, lan: int) -> IpAllocator:
+        """Lazy per-LAN allocator — created on first use."""
+        if lan not in self._ip_allocs:
+            self._ip_allocs[lan] = IpAllocator(lan)
+        return self._ip_allocs[lan]
+
     def _handle_compute(self, alert: ComputeAlert) -> None:
         name = self._next_name("edge_server", alert.network_id)
-        logger.info("[elasticity] compute: spawning %s on LAN %d", name, alert.lan)
+        ip, mac = self._get_allocator(alert.lan).allocate()
+        logger.info("[elasticity] compute: spawning %s on LAN %d (ip=%s mac=%s)", name, alert.lan, ip, mac)
 
-        result = self._compute_adder.add_edge_server(lan=alert.lan, name=name)
+        result = self._compute_adder.add_edge_server(lan=alert.lan, name=name, ip=ip, mac=mac)
         self._compute_adder.log_timings(result)
         self._record({"type": "compute", "alert": alert, "name": name, "result": result})
 
@@ -224,18 +255,21 @@ class ElasticityManager:
                     name, result.ip,
                 )
         else:
+            self._get_allocator(alert.lan).release(ip)
             logger.error("[elasticity] compute: failed to spawn %s", name)
 
     def _handle_data(self, alert: DataAlert) -> None:
         name = self._next_name("edge_storage", alert.network_id)
-        logger.info("[elasticity] data: spawning %s on LAN %d", name, alert.lan)
+        ip, mac = self._get_allocator(alert.lan).allocate()
+        logger.info("[elasticity] data: spawning %s on LAN %d (ip=%s mac=%s)", name, alert.lan, ip, mac)
 
         result = self._storage_adder.add_storage_node(
             lan=alert.lan,
             name=name,
             rs_name=alert.rs_name,
-            primary_container=alert.primary_container,
+            # primary_container=alert.primary_container,
             port=alert.port,
+            ip=ip, mac=mac,
         )
         self._storage_adder.log_timings(result)
         self._record({"type": "data", "alert": alert, "name": name, "result": result})
@@ -244,10 +278,14 @@ class ElasticityManager:
 
         if result.success and result.ip:
             if result.mac:
-                self._topo.add_storage_mac(result.mac, domain=f"n{alert.lan}")
+                # Pre-seed IP↔MAC table so Thread 1 has the mapping ready
+                # when the node eventually enters the VIP pool.
                 self._topo.register_backend_ip(result.mac, result.ip)
+
+                # Do NOT call add_storage_mac() here — the node is not SECONDARY yet.
+                # VIP registration is deferred until rs_secondary_ready arrives (Phase F).
                 logger.info(
-                    "[elasticity] data: %s online  ip=%s  mac=%s",
+                    "[elasticity] data: %s online  ip=%s  mac=%s  (VIP deferred until SECONDARY)",
                     name, result.ip, result.mac,
                 )
                 # Notify Thread 2 so it can track this MAC for scale-down
@@ -266,6 +304,7 @@ class ElasticityManager:
                     name, result.ip,
                 )
         else:
+            self._get_allocator(alert.lan).release(ip)
             logger.error("[elasticity] data: failed to spawn %s", name)
 
     def _handle_scale_down_compute(self, alert: ScaleDownComputeAlert) -> None:
@@ -285,17 +324,20 @@ class ElasticityManager:
             # Veth discovery failed — container netns already gone.
             # Treat as immediate cleanup with best-effort teardown.
             logger.warning("[elasticity] veth discovery failed for %s — attempting cleanup without veth", alert.container_name)
+            if alert.ip:
+                self._get_allocator(alert.lan).release(alert.ip)
             with self._removal_complete_lock:
                 self._removal_complete_macs.add(alert.mac)
             return
 
+        pending.ip = alert.ip
         self._pending_drains[alert.mac] = pending
         self._record({"type": "scale_down_compute_phase_a", "alert": alert, "pending": pending})
 
         if not pending.drain_signaled:
             # Drain HTTP call failed — container is dead.  Submit Phase B immediately.
             logger.info("[elasticity] drain failed for %s — submitting immediate CleanupComputeAlert", alert.container_name)
-            self._queue.put(CleanupComputeAlert(mac=alert.mac))
+            self.submit(CleanupComputeAlert(mac=alert.mac))
         else:
             logger.info("[elasticity] drain initiated for %s — waiting for drain_complete event", alert.container_name)
         # Thread 3 returns here; _busy is reset in _loop's finally block.
@@ -316,6 +358,10 @@ class ElasticityManager:
         self._record({"type": "scale_down_compute_phase_b", "alert": alert, "result": result})
 
         del self._pending_drains[alert.mac]
+
+        # Release IP only after container is fully torn down
+        if pending.ip:
+            self._get_allocator(pending.lan).release(pending.ip)
 
         # Notify Thread 2 that this MAC has been fully cleaned up.
         with self._removal_complete_lock:
@@ -345,6 +391,9 @@ class ElasticityManager:
         self._storage_adder.log_removal_timings(result)
         self._record({"type": "scale_down_data", "alert": alert, "result": result})
 
+        if result.success:
+            self._get_allocator(alert.lan).release(alert.ip)
+
         # Notify Thread 2 regardless of success so stale tracking is cleared.
         with self._removal_complete_lock:
             self._removal_complete_macs.add(alert.mac)
@@ -367,5 +416,5 @@ class ElasticityManager:
     def _record(self, entry: dict) -> None:
         # threading.Lock used as a context manager: acquired on enter, released on exit.
         with self._lock:
-            self._active.append(entry)
+            self._operation_log.append(entry)
         logger.debug("[elasticity] recorded operation: type=%s name=%s", entry.get("type"), entry.get("name"))

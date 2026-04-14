@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Install MongoDB + Python for the telemetry sidecar
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       ca-certificates curl gnupg iputils-ping net-tools iperf3 \
+       ca-certificates curl gnupg iputils-ping iproute2 net-tools iperf3 \
        python3 python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     # Add MongoDB GPG key and repo for Ubuntu 22.04 (jammy)

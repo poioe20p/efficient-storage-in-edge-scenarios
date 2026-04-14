@@ -1,48 +1,108 @@
 {
   "phases": [
     {
-      "name": "local_consumption",
-      "duration_s": 1000,
-      "rate_per_client": 2.0,
+      "name": "baseline",
+      "duration_s": 60,
+      "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "mix": {
-        "device_status": 0.6,
-        "dashboard": 0.3,
-        "anomalies": 0.1
+        "device_status": 0.35,
+        "dashboard": 0.35,
+        "anomalies": 0.30
+      }
+    },
+    {
+      "name": "local_moderate",
+      "duration_s": 95,
+      "rate_per_client": 5.0,
+      "cross_region_ratio": 0.0,
+      "mix": {
+        "device_status": 0.35,
+        "dashboard": 0.35,
+        "anomalies": 0.30
+      }
+    },
+    {
+      "name": "storage_stress",
+      "duration_s": 120,
+      "rate_per_client": 8.0,
+      "cross_region_ratio": 0.1,
+      "hotspot_direction": "lan2_to_lan1",
+      "mix": {
+        "device_status": 0.10,
+        "dashboard": 0.50,
+        "anomalies": 0.40
       }
     },
     {
       "name": "cross_region_hotspot",
-      "duration_s": 600,
-      "rate_per_client": 5.0,
+      "duration_s": 120,
+      "rate_per_client": 7.0,
       "cross_region_ratio": 0.7,
       "hotspot_direction": "lan2_to_lan1",
       "mix": {
-        "device_status": 0.8,
-        "dashboard": 0.1,
-        "anomalies": 0.1
+        "device_status": 0.55,
+        "dashboard": 0.25,
+        "anomalies": 0.20
+      }
+    },
+    {
+      "name": "reverse_hotspot",
+      "duration_s": 120,
+      "rate_per_client": 7.0,
+      "cross_region_ratio": 0.7,
+      "hotspot_direction": "lan1_to_lan2",
+      "mix": {
+        "device_status": 0.55,
+        "dashboard": 0.25,
+        "anomalies": 0.20
+      }
+    },
+    {
+      "name": "compute_ramp",
+      "duration_s": 120,
+      "rate_per_client": 9.0,
+      "cross_region_ratio": 0.2,
+      "hotspot_direction": "lan2_to_lan1",
+      "mix": {
+        "device_status": 0.25,
+        "dashboard": 0.50,
+        "anomalies": 0.25
       }
     },
     {
       "name": "compute_spike",
-      "duration_s": 600,
-      "rate_per_client": 10.0,
+      "duration_s": 180,
+      "rate_per_client": 17.0,
       "cross_region_ratio": 0.3,
+      "hotspot_direction": "lan2_to_lan1",
       "mix": {
-        "device_status": 0.5,
-        "dashboard": 0.3,
-        "anomalies": 0.2
+        "device_status": 0.30,
+        "dashboard": 0.55,
+        "anomalies": 0.15
+      }
+    },
+    {
+      "name": "sustained_plateau",
+      "duration_s": 120,
+      "rate_per_client": 8.0,
+      "cross_region_ratio": 0.15,
+      "hotspot_direction": "lan2_to_lan1",
+      "mix": {
+        "device_status": 0.35,
+        "dashboard": 0.35,
+        "anomalies": 0.30
       }
     },
     {
       "name": "demand_drop",
-      "duration_s": 300,
-      "rate_per_client": 2.0,
+      "duration_s": 130,
+      "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "mix": {
-        "device_status": 0.6,
-        "dashboard": 0.3,
-        "anomalies": 0.1
+        "device_status": 0.60,
+        "dashboard": 0.30,
+        "anomalies": 0.10
       }
     }
   ]

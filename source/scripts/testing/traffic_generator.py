@@ -15,7 +15,7 @@ Usage:
       --clients-lan2 test_client_4,test_client_5,test_client_6 \
       --snapshot-dir data/workload_snapshot \
       --output metrics/client_requests.csv \
-      [--vip 10.0.0.100:5000] \
+      [--vip 10.0.0.253:5000] \
       [--dry-run]
 """
 
@@ -59,6 +59,15 @@ class Snapshot:
             region = n["home_region"]
             snap.nodes_by_region.setdefault(region, []).append(n["_id"])
 
+        return snap
+
+    @classmethod
+    def mock(cls, n_devices: int = 50, n_nodes: int = 20) -> "Snapshot":
+        """Return synthetic snapshot data for dry-run testing without real files."""
+        snap = cls()
+        for region in ("lan1", "lan2"):
+            snap.devices_by_region[region] = [f"dev_{region}_{i}" for i in range(n_devices)]
+            snap.nodes_by_region[region] = [f"node_{region}_{i}" for i in range(n_nodes)]
         return snap
 
 
@@ -147,12 +156,16 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+_curl_warn_shown = False
+
+
 async def exec_curl(ns: str, url: str, dry_run: bool = False) -> tuple:
     """Execute curl inside a network namespace. Returns (http_status, latency_s)."""
+    global _curl_warn_shown
     cmd = [
         "ip", "netns", "exec", ns,
         "curl", "-s", "-o", "/dev/null",
-        "-w", "%{http_code} %{time_total}",
+        "-w", "\n%{http_code} %{time_total}",
         "--max-time", "10",
         url,
     ]
@@ -166,11 +179,27 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False) -> tuple:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, _ = await proc.communicate()
+    stdout, stderr = await proc.communicate()
 
-    parts = stdout.decode().strip().split()
+    output = stdout.decode().strip()
+    # -w output is on the last line (prefixed with \n to separate from any body leak)
+    last_line = output.split("\n")[-1].strip() if output else ""
+    parts = last_line.split()
+
     if len(parts) == 2:
-        return int(parts[0]), float(parts[1])
+        try:
+            return int(parts[0]), float(parts[1])
+        except ValueError:
+            pass
+
+    # Diagnostic: show why parsing failed (only first occurrence per client)
+    if not _curl_warn_shown:
+        _curl_warn_shown = True
+        err = stderr.decode().strip()[:200] if stderr else "(empty)"
+        print(f"  [DIAG] curl parse failed in {ns} (rc={proc.returncode})")
+        print(f"         stdout={output[:200]!r}")
+        print(f"         stderr={err!r}")
+
     return 0, 0.0
 
 
@@ -186,12 +215,16 @@ async def client_loop(
     snap: Snapshot,
     vip: str,
     csv_writer,
+    csv_file,
     csv_lock: asyncio.Lock,
     dry_run: bool,
 ):
     """One async task per client namespace for a single phase."""
     phase_end = time.monotonic() + phase.duration_s
     interval = 1.0 / phase.rate_per_client
+    request_count = 0
+    last_log = time.monotonic()
+    log_interval = 10  # seconds between progress logs
 
     while time.monotonic() < phase_end:
         t0 = time.monotonic()
@@ -201,6 +234,7 @@ async def client_loop(
         url = build_url(vip, req_type, target)
 
         http_status, latency_s = await exec_curl(ns, url, dry_run)
+        request_count += 1
 
         row = [
             datetime.now(timezone.utc).isoformat(),
@@ -216,10 +250,21 @@ async def client_loop(
         ]
         async with csv_lock:
             csv_writer.writerow(row)
+            csv_file.flush()
+
+        now = time.monotonic()
+        remaining = max(0, phase_end - now)
+        if now - last_log >= log_interval:
+            print(f"  [{ns}] {request_count} reqs sent, "
+                  f"{int(remaining)}s remaining, last status={http_status}")
+            last_log = now
 
         elapsed = time.monotonic() - t0
-        sleep_time = max(0.0, interval - elapsed + random.uniform(-0.05, 0.05))
-        await asyncio.sleep(sleep_time)
+        if dry_run:
+            await asyncio.sleep(0)
+        else:
+            sleep_time = max(0.0, interval - elapsed + random.uniform(-0.05, 0.05))
+            await asyncio.sleep(sleep_time)
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +277,14 @@ async def run(args):
         raw = json.load(f)
     phases = [PhaseConfig.from_dict(p) for p in raw["phases"]]
 
-    snap = Snapshot.load(args.snapshot_dir)
+    if args.dry_run:
+        try:
+            snap = Snapshot.load(args.snapshot_dir)
+        except FileNotFoundError:
+            snap = Snapshot.mock()
+            print("[DRY-RUN] Snapshot files not found — using synthetic data")
+    else:
+        snap = Snapshot.load(args.snapshot_dir)
     n_devices = sum(len(v) for v in snap.devices_by_region.values())
     n_nodes = sum(len(v) for v in snap.nodes_by_region.values())
     print(f"Snapshot: {n_devices} devices, {n_nodes} nodes")
@@ -249,12 +301,7 @@ async def run(args):
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    csv_file = open(args.output, "w", newline="")
-    writer = csv.writer(csv_file)
-    writer.writerow([
-        "timestamp", "phase", "client_ns", "client_lan", "endpoint",
-        "device_id", "node_id", "target_region", "http_status", "latency_s",
-    ])
+    base, ext = os.path.splitext(args.output)
     csv_lock = asyncio.Lock()
 
     total_s = sum(p.duration_s for p in phases)
@@ -263,29 +310,47 @@ async def run(args):
         print(f"  {p.name}: {p.duration_s}s @ {p.rate_per_client} req/s/client, "
               f"cross_region={p.cross_region_ratio}")
 
+    # Phase file: signals the current phase to sibling processes (e.g. resource stats collector)
+    phase_file = os.path.join(output_dir, "current_phase.txt") if output_dir else "current_phase.txt"
+
+    written_files = []
     for i, phase in enumerate(phases):
-        # Write phase boundary marker
-        writer.writerow([
-            datetime.now(timezone.utc).isoformat(),
-            f"PHASE_START:{phase.name}",
-            "", "", "", "", "", "", "", "",
-        ])
-        csv_file.flush()
+        phase_output = f"{base}_{phase.name}{ext}"
+        written_files.append(phase_output)
+
+        # Write current phase name so other processes can read it
+        with open(phase_file, "w") as pf:
+            pf.write(phase.name)
 
         print(f"\n{'='*60}")
         print(f"Phase {i + 1}/{len(phases)}: {phase.name} ({phase.duration_s}s)")
+        print(f"  Output: {phase_output}")
         print(f"{'='*60}")
+
+        csv_file = open(phase_output, "w", newline="")
+        writer = csv.writer(csv_file)
+        writer.writerow([
+            "timestamp", "phase", "client_ns", "client_lan", "endpoint",
+            "device_id", "node_id", "target_region", "http_status", "latency_s",
+        ])
 
         tasks = [
             asyncio.create_task(
-                client_loop(ns, lan, phase, snap, args.vip, writer, csv_lock, args.dry_run)
+                client_loop(ns, lan, phase, snap, args.vip, writer, csv_file,
+                            csv_lock, args.dry_run)
             )
             for ns, lan in all_clients
         ]
         await asyncio.gather(*tasks)
+        csv_file.close()
 
-    csv_file.close()
-    print(f"\nDone. Results written to {args.output}")
+    # Signal that all phases are complete
+    with open(phase_file, "w") as pf:
+        pf.write("idle")
+
+    print(f"\nDone. Results written to:")
+    for f in written_files:
+        print(f"  {f}")
 
 
 if __name__ == "__main__":
@@ -304,8 +369,8 @@ if __name__ == "__main__":
     parser.add_argument("--snapshot-dir", default="data/workload_snapshot", metavar="DIR")
     parser.add_argument("--output", default="metrics/client_requests.csv", metavar="FILE")
     parser.add_argument(
-        "--vip", default="10.0.0.100:5000",
-        help="VIP_SERVER address:port (default: 10.0.0.100:5000)"
+        "--vip", default="10.0.0.253:5000",
+        help="VIP_SERVER address:port (default: 10.0.0.253:5000)"
     )
     parser.add_argument(
         "--dry-run", action="store_true",

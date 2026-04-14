@@ -4,11 +4,20 @@ import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from enum import Enum, auto
 
 from flask import Flask, g, jsonify, request
 from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+from pymongo.errors import AutoReconnect, PyMongoError
 from telemetry import init_telemetry, ZmqMetricSender, _get_server_mac
+from compute import (
+    score_device_severity,
+    compute_trend,
+    score_anomaly_results,
+    score_dashboard_urgency,
+    compute_dashboard_summary,
+    TREND_WINDOW_SIZE,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +40,7 @@ DB_PORT:      int   = int(os.environ.get("DB_PORT", "27018"))
 MAX_IDLE_MS:  int   = int(os.environ.get("MAX_IDLE_MS",
                           str(int(os.environ.get("VIP_IDLE_TIMEOUT", "30")) * 1000)))
 TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "5000"))
+CIRCUIT_COOLDOWN_S: float = float(os.environ.get("CIRCUIT_COOLDOWN_S", "5"))
 
 # ---------------------------------------------------------------------------
 # Drain state — set by POST /drain, read by before_request and drain monitor
@@ -43,8 +53,8 @@ _SKIP_COUNTING = frozenset({"/health", "/drain"})
 
 vip_data_lock = threading.Lock()
 vip_data_per_domain = {
-    "lan1": "10.0.0.200",
-    "lan2": "10.0.1.200",
+    "lan1": "10.0.0.254",
+    "lan2": "10.0.1.254",
 }
 
 
@@ -69,8 +79,7 @@ def _get_client(lan: str) -> MongoClient:
             client = MongoClient(
                 url, maxPoolSize=1, maxIdleTimeMS=MAX_IDLE_MS,
                 serverSelectionTimeoutMS=3000,
-                connectTimeoutMS=2000,
-                socketTimeoutMS=5000,
+                socketTimeoutMS=15000,
                 directConnection=True,
             )
             _mongo_clients[lan] = client
@@ -78,16 +87,101 @@ def _get_client(lan: str) -> MongoClient:
         return client
 
 
+class _CircuitState(Enum):
+    CLOSED    = auto()
+    OPEN      = auto()
+    HALF_OPEN = auto()
+
+
+class _CircuitBreaker:
+    """Per-LAN circuit breaker for MongoDB connections."""
+
+    def __init__(self):
+        self.state = _CircuitState.CLOSED
+        self._opened_at: float = 0.0
+        self._lock = threading.Lock()
+
+    def check(self) -> bool:
+        """Return True if a request may proceed, False if circuit is OPEN."""
+        with self._lock:
+            if self.state is _CircuitState.CLOSED:
+                return True
+            if self.state is _CircuitState.OPEN:
+                if time.monotonic() - self._opened_at >= CIRCUIT_COOLDOWN_S:
+                    self.state = _CircuitState.HALF_OPEN
+                    log.info("Circuit \u2192 HALF_OPEN (cooldown elapsed)")
+                    return True  # allow one probe
+                return False
+            # HALF_OPEN \u2014 allow one probe, re-arm to block others
+            self.state = _CircuitState.OPEN
+            return True
+
+    def record_success(self):
+        with self._lock:
+            if self.state is _CircuitState.HALF_OPEN:
+                log.info("Circuit \u2192 CLOSED (probe succeeded)")
+            self.state = _CircuitState.CLOSED
+
+    def record_failure(self):
+        with self._lock:
+            self.state = _CircuitState.OPEN
+            self._opened_at = time.monotonic()
+
+
+class CircuitOpenError(PyMongoError):
+    """Raised when the circuit breaker for a LAN is open."""
+    pass
+
+
+_circuit_breakers: dict[str, _CircuitBreaker] = {}
+
+
+def _get_breaker(lan: str) -> _CircuitBreaker:
+    with _clients_lock:
+        breaker = _circuit_breakers.get(lan)
+        if breaker is None:
+            breaker = _CircuitBreaker()
+            _circuit_breakers[lan] = breaker
+        return breaker
+
+
 @contextmanager
 def timed_db(lan: str):
     """Yields a MongoDB database handle for the given LAN and accumulates
     elapsed time into ``g.time_db_elapsed`` so the telemetry layer can
-    report T_dados correctly."""
+    report T_dados correctly.
+
+    On a connection-level failure (e.g. RST after a DNAT rule change) the
+    stale client is evicted so the next request creates a fresh connection
+    to the VIP rather than retrying on the dead socket.
+
+    A per-LAN circuit breaker prevents threads from blocking on a known-dead
+    server: if the circuit is OPEN, a ``CircuitOpenError`` is raised immediately
+    instead of waiting for the 3 s server-selection timeout.
+    """
+    breaker = _get_breaker(lan)
+    if not breaker.check():
+        raise CircuitOpenError(f"circuit open for {lan}")
     t0 = time.monotonic()
     try:
-        yield _get_client(lan)[DB_NAME]
+        try:
+            yield _get_client(lan)[DB_NAME]
+            breaker.record_success()
+        except AutoReconnect:
+            breaker.record_failure()
+            with _clients_lock:
+                old = _mongo_clients.pop(lan, None)
+            if old is not None:
+                log.warning("timed_db: evicted stale MongoClient for %s after connection failure", lan)
+            raise
     finally:
-        g.time_db_elapsed = getattr(g, "time_db_elapsed", 0.0) + (time.monotonic() - t0)
+        elapsed = time.monotonic() - t0
+        g.time_db_elapsed = getattr(g, "time_db_elapsed", 0.0) + elapsed
+        per_lan = getattr(g, "time_db_per_lan", None)
+        if per_lan is None:
+            per_lan = {}
+            g.time_db_per_lan = per_lan
+        per_lan[lan] = per_lan.get(lan, 0.0) + elapsed
 
 
 # ---------------------------------------------------------------------------
@@ -214,10 +308,13 @@ def device_latest(device_id: str):
                     .get(dev_type)
                 )
 
-        # Evaluate alert state against threshold
+        # --- Compute: severity scoring ---
         value     = doc.get("payload", {}).get("value")
         threshold = threshold_override or doc.get("metadata", {}).get("alert_threshold")
-        alert     = bool(threshold is not None and value is not None and value >= threshold)
+        severity_result = score_device_severity(
+            value, threshold, doc.get("device_type", ""), device_id,
+        )
+        alert = severity_result["alert"]
 
         # Append query event — capture read latency before this write
         query_event = {
@@ -234,8 +331,26 @@ def device_latest(device_id: str):
         except PyMongoError as exc:
             log.warning("query_events insert failed: %s", exc)
 
-        doc["_id"]   = str(doc["_id"])
-        doc["alert"] = alert
+        # --- Compute: trend analysis from recent query_events ---
+        try:
+            with timed_db(LAN_ID) as db:
+                recent_events = list(
+                    db.query_events.find(
+                        {"device_id": device_id},
+                        {"latency_ms": 1, "timestamp": 1, "_id": 0},
+                    )
+                    .sort("timestamp", -1)
+                    .limit(TREND_WINDOW_SIZE)
+                )
+        except PyMongoError:
+            recent_events = []
+
+        trend_result = compute_trend(recent_events)
+
+        doc["_id"]       = str(doc["_id"])
+        doc["alert"]     = alert
+        doc["severity"]  = severity_result
+        doc["trend"]     = trend_result
         return jsonify(doc), 200
 
     except PyMongoError as exc:
@@ -285,7 +400,8 @@ def anomalies():
             with timed_db(lan) as db:
                 for d in db.sensor_reports.find(
                     {"_id": {"$in": ids}},
-                    {"payload.status": 1, "payload.value": 1, "device_type": 1, "tags": 1},
+                    {"payload.status": 1, "payload.value": 1, "device_type": 1, "tags": 1,
+                     "metadata.alert_threshold": 1},
                 ):
                     status_map[d["_id"]] = d
 
@@ -296,6 +412,10 @@ def anomalies():
             d["value"]       = status.get("payload", {}).get("value")
             d["device_type"] = status.get("device_type")
             d["tags"]        = status.get("tags", [])
+            d["threshold"]   = status.get("metadata", {}).get("alert_threshold")
+
+        # --- Compute: composite risk scoring ---
+        hot_devices = score_anomaly_results(hot_devices)
 
         return jsonify({"region": region, "window_hours": window_h, "results": hot_devices}), 200
 
@@ -332,28 +452,26 @@ def dashboard(node_id: str):
                     db.sensor_reports.find(
                         {"tags": {"$in": subscribed_tags}},
                         {"_id": 1, "device_type": 1, "tags": 1,
-                         "payload": 1, "metadata": 1, "region_origin": 1},
+                         "payload": 1, "metadata": 1, "region_origin": 1,
+                         "last_updated": 1},
                     )
                 )
 
-        # Sort descending by urgency: value / alert_threshold
-        def urgency(doc):
-            value     = doc.get("payload", {}).get("value")
-            threshold = doc.get("metadata", {}).get("alert_threshold")
-            if value is None or not threshold:
-                return 0.0
-            return value / threshold
-
-        devices.sort(key=urgency, reverse=True)
+        # --- Compute: multi-factor urgency scoring ---
+        devices = score_dashboard_urgency(devices)
         devices = devices[:limit]
+
+        # --- Compute: fleet summary statistics ---
+        summary = compute_dashboard_summary(devices)
 
         for d in devices:
             d["_id"] = str(d["_id"])
 
         return jsonify({
-            "node_id":        node_id,
+            "node_id":         node_id,
             "subscribed_tags": subscribed_tags,
             "devices":         devices,
+            "summary":         summary,
         }), 200
 
     except PyMongoError as exc:
@@ -365,15 +483,19 @@ def dashboard(node_id: str):
 
 @app.after_request
 def _check_tdados_threshold(response):
-    time_db_ms = getattr(g, "time_db_elapsed", 0.0) * 1000
-    if time_db_ms > TAU_DADOS_MS:
-        with _clients_lock:
-            evicted = list(_mongo_clients.keys())
-            _mongo_clients.clear()
-        log.debug(
-            "T_dados=%.1fms > \u03c4=%.1fms \u2014 evicted clients %s to force reconnection",
-            time_db_ms, TAU_DADOS_MS, evicted,
-        )
+    per_lan = getattr(g, "time_db_per_lan", None)
+    if not per_lan:
+        return response
+    for lan, elapsed in per_lan.items():
+        time_ms = elapsed * 1000
+        if time_ms > TAU_DADOS_MS:
+            with _clients_lock:
+                evicted = _mongo_clients.pop(lan, None)
+            if evicted is not None:
+                log.debug(
+                    "T_dados[%s]=%.1fms > \u03c4=%.1fms \u2014 evicted client to force reconnection",
+                    lan, time_ms, TAU_DADOS_MS,
+                )
     return response
 
 

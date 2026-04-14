@@ -34,13 +34,15 @@ FIELDNAMES = [
     "network_id",
     "window_end",
     "total_requests",
-    "avg_cpu_percent",
-    "avg_ram_used_mb",
-    "avg_storage_cpu_percent",
-    "avg_storage_ram_used_mb",
-    "avg_time_proc_ms",
-    "avg_time_db_ms",
-    "peak_time_total_ms",
+    "median_cpu_percent",
+    "median_ram_used_mb",
+    "median_storage_cpu_percent",
+    "median_storage_ram_used_mb",
+    "median_time_proc_ms",
+    "median_time_db_ms",
+    "median_time_total_ms",
+    "server_count",
+    "storage_count",
 ]
 
 # ---------------------------------------------------------------------------
@@ -169,21 +171,21 @@ def main():
                     # drain_complete mini-summaries carry no domain_summary — skip
                     continue
 
-                avg_ram, avg_storage_ram = _extract_domain_ram(summary)
-
                 row = {
-                    "timestamp":               time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    "phase":                   _read_phase(args.phase_file),
-                    "network_id":              summary.get("network_id", ""),
-                    "window_end":              summary.get("window_end", ""),
-                    "total_requests":          domain.get("total_requests", 0),
-                    "avg_cpu_percent":         domain.get("average_cpu_percent", ""),
-                    "avg_ram_used_mb":         avg_ram if avg_ram is not None else "",
-                    "avg_storage_cpu_percent": domain.get("avg_storage_cpu_percent", ""),
-                    "avg_storage_ram_used_mb": avg_storage_ram if avg_storage_ram is not None else "",
-                    "avg_time_proc_ms":        domain.get("avg_time_proc_ms", ""),
-                    "avg_time_db_ms":          domain.get("avg_time_db_ms", ""),
-                    "peak_time_total_ms":      domain.get("peak_time_total_ms", ""),
+                    "timestamp":                   time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "phase":                       _read_phase(args.phase_file),
+                    "network_id":                  summary.get("network_id", ""),
+                    "window_end":                  summary.get("window_end", ""),
+                    "total_requests":              domain.get("total_requests", 0),
+                    "median_cpu_percent":           domain.get("median_cpu_percent", ""),
+                    "median_ram_used_mb":           domain.get("median_ram_used_mb", ""),
+                    "median_storage_cpu_percent":   domain.get("median_storage_cpu_percent", ""),
+                    "median_storage_ram_used_mb":   domain.get("median_storage_ram_used_mb", ""),
+                    "median_time_proc_ms":          domain.get("median_time_proc_ms", ""),
+                    "median_time_db_ms":            domain.get("median_time_db_ms", ""),
+                    "median_time_total_ms":         domain.get("median_time_total_ms", ""),
+                    "server_count":                len(summary.get("servers", {})),
+                    "storage_count":               len(summary.get("storage_servers", {})),
                 }
                 writer.writerow(row)
                 csv_file.flush()

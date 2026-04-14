@@ -132,50 +132,53 @@ This is where MongoDB's aggregation framework earns its place — time-window gr
 ## 1. Device Status Read (Primary Data Gravity Driver)
 
 ```
-GET /device/<device_id>/latest
+GET /device/<device_id>/latest?node_id=<node_id>
 ```
 
 Edge server:
 
-- Fetch current `sensor_reports` document for `device_id` (via `VIP_Dados`)
-- Fetch requesting node's `device_registry` entry to apply alert thresholds
-- Evaluate alert state (lightweight compute: compare `payload.value` against threshold)
-- Render status response (JSON or HTML fragment)
-- Append to `query_events`
+- Fetch current `sensor_reports` document for `device_id` (via `VIP_Dados` for the device's LAN)
+- Fetch requesting node's `device_registry` entry (via `VIP_Dados` for the node's LAN) to get `alert_config.threshold_override`
+- Compute severity via `score_device_severity()`: multi-level classification (critical/warning/elevated/normal) using calibrated threshold ratio with per-device calibration hash and exponential weighting by device type
+- Append to `query_events` (captures read latency as `latency_ms`)
+- Fetch recent `query_events` for the same device (last 20 entries)
+- Compute trend via `compute_trend()`: linear regression over `latency_ms` vs `timestamp`, classifies as rising/falling/stable with mean and std
 
 This creates:
 
-- 2–3 DB reads per request (sensor_reports + device_registry + write to query_events)
-- Cross-region dependency when `device_id` region origin ≠ requesting node's region
-- Moderate compute cost (threshold evaluation)
-- Direct $T_{dados}$ amplification: each HTTP request generates at least two `VIP_Dados` queries
+- 4 DB operations per request (2 reads + 1 write + 1 trend read)
+- Cross-region dependency when `device_id` LAN prefix ≠ requesting node's LAN prefix
+- Non-trivial compute cost (severity scoring with hashing + exponential weighting, linear regression for trend)
+- Direct $T_{dados}$ amplification: each HTTP request generates multiple `VIP_Dados` queries across potentially different LANs
 
 ---
 
 ## 2. Anomaly Detection Query (Aggregation Driver)
 
 ```
-GET /anomalies?region=lan2&window=1h
+GET /anomalies?region=<region>&window=<hours>
 ```
 
-Edge server runs MongoDB aggregation on `query_events` and `sensor_reports`:
+Edge server runs a MongoDB aggregation pipeline on `query_events`, then enriches results from `sensor_reports`:
 
-- Match `query_events` within time window and `region_served = lan2`
-- Group by `device_id`, count queries
-- Join with `sensor_reports` to filter devices in `warning` or `critical` status
-- Sort by query count descending
-- Limit 10
+- `$match` `query_events` within time window and `region_served = region`
+- `$group` by `device_id`: `$sum` query count + `$avg` latency_ms
+- `$sort` by query_count descending
+- `$limit` 10
+- Separate `find` queries on `sensor_reports` (grouped by device LAN) to fetch status, value, device_type, tags, and alert_threshold for each hot device
+- Compute composite risk via `score_anomaly_results()`: z-score normalization of query counts and latencies, combined with threshold proximity into a weighted score (35% popularity + 30% latency + 35% proximity), then re-sorted by composite risk
 
 This stresses:
 
-- Aggregation pipeline with `$lookup` across collections
+- Aggregation pipeline on `query_events` (time-window grouping)
 - Index performance on `timestamp` + `region_served` compound index
-- Potentially large scans when event volume is high
+- Cross-LAN `sensor_reports` lookups (separate queries per device LAN origin)
+- CPU-side z-score normalization and composite ranking
 
 This validates MongoDB beyond replication:
 
-- Multi-collection aggregation pipeline
-- Time-window queries matching realistic IoT monitoring patterns
+- Aggregation pipeline with time-window grouping
+- Cross-collection enrichment from heterogeneous device documents
 - TTL indexes on `query_events` to bound collection size automatically
 
 ---
@@ -183,22 +186,26 @@ This validates MongoDB beyond replication:
 ## 3. Node Dashboard (Mixed Compute + Data)
 
 ```
-GET /dashboard/<node_id>
+GET /dashboard/<node_id>?limit=<N>
 ```
 
 Edge server:
 
-- Read `device_registry` for `node_id` to get `subscribed_tags` and `watched_devices`
-- Query `sensor_reports` where `tags` intersects `subscribed_tags` (array match)
-- Sort results by `metadata.alert_threshold` proximity to `payload.value` (descending urgency)
-- Limit N most urgent devices
-- Render summary dashboard
+- Read `device_registry` for `node_id` (via `VIP_Dados` for the node's LAN) to get `subscribed_tags`
+- Query `sensor_reports` across **all LANs** where `tags` intersects `subscribed_tags` (`$in` array match)
+- Compute urgency via `score_dashboard_urgency()`: 4-factor scoring per device
+  - Threshold proximity (40%): `(value / alert_threshold)^3` — exponential near threshold
+  - Tag priority (25%): average of per-tag weights (e.g. high-priority=2.0, industrial=1.3)
+  - Status severity (20%): critical=3.0, warning=2.0, elevated=1.5, normal=1.0
+  - Staleness decay (15%): exponential decay from `last_updated` with 300s half-life
+- Sort by urgency score descending, limit to N
+- Compute fleet summary via `compute_dashboard_summary()`: urgency mean/std/max and status distribution across returned devices
 
 This creates:
 
-- Multi-field queries with array intersection (`$in` on tags)
-- Index use on `tags` and `region_origin`
-- CPU-side ranking: urgency score computed per document before response is rendered
+- Multi-LAN queries: `sensor_reports` fetched from every region, not just the node's home LAN
+- Array intersection queries (`$in` on tags)
+- Significant CPU-side compute: 4-factor urgency scoring with exponential functions per device + fleet statistics
 
 ---
 

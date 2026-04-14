@@ -280,6 +280,38 @@ client with the new VIP address.
 See the [VIP Interception Plan — Per-LAN VIP_DATA Routing addendum](implementation/vip_interception_plan.md#addendum--per-lan-vip_data-routing-from-edge-server)
 for full implementation details.
 
+### Connection Failure Handling
+
+Two mechanisms protect edge servers from lingering connections to
+unreachable or overloaded storage nodes:
+
+**Per-LAN Circuit Breaker.** Each LAN's MongoDB path has an independent
+circuit breaker with three states:
+
+| State | Behaviour |
+|-------|-----------|
+| CLOSED | Normal operation — queries proceed to `_get_client()` |
+| OPEN | Fail-fast — `CircuitOpenError` raised immediately (no 3 s timeout) |
+| HALF_OPEN | One probe request allowed; success → CLOSED, failure → re-OPEN |
+
+The circuit trips on `AutoReconnect` and stays OPEN for `CIRCUIT_COOLDOWN_S`
+seconds (default 5).  Because `CircuitOpenError` inherits from `PyMongoError`,
+existing endpoint `except PyMongoError` handlers return 503 without code
+changes — but the response is near-instant instead of blocking 3 seconds.
+
+**Per-LAN Threshold Eviction.** The `_check_tdados_threshold` after-request
+hook tracks cumulative MongoDB time **per LAN** in each request.  Only the
+LAN(s) whose individual time exceeds `TAU_DADOS_MS` have their singleton
+client evicted; healthy LAN clients are preserved.  This replaces the previous
+blanket eviction that cleared all clients when the total exceeded the
+threshold.
+
+**Interaction with DNAT rules.** When a client is evicted (by either
+mechanism), the next query creates a fresh `MongoClient` → new TCP SYN →
+`packet_in` → the controller re-evaluates WSM and may select a different
+backend.  The circuit breaker prevents the edge server from repeatedly
+creating connections to the same dead backend during the cooldown window.
+
 ---
 
 ## Telemetry Integration
@@ -383,6 +415,8 @@ Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 | `LAN_ID`                   | `lan1`  | Edge server's home LAN (replaces `REGION`)         |
 | `DB_PORT`                  | `27018` | MongoDB port for VIP_DATA addresses                |
 | `MAX_IDLE_MS`              | `VIP_IDLE_TIMEOUT × 1000` | PyMongo `maxIdleTimeMS` — socket recycling window |
+| `CIRCUIT_COOLDOWN_S`       | `5`     | Per-LAN circuit breaker cooldown before probe (seconds) |
+| `TAU_DADOS_MS`             | `5000`  | Per-request DB time threshold for client eviction (ms)  |
 
 ---
 
@@ -391,7 +425,3 @@ Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 - **Staleness cost function** — an additional WSM dimension penalizing backends
   whose telemetry has gone stale, so idle or unresponsive nodes are
   deprioritized instead of frozen at their last known cost.
-- **Per-LAN VIP_DATA routing** — edge servers route each MongoDB query to the
-  correct VIP_DATA address based on the document `_id` LAN prefix, using
-  singleton clients with `maxIdleTimeMS` for DNAT coherence.
-  See [implementation plan](implementation/vip_interception_plan.md#addendum--per-lan-vip_data-routing-from-edge-server).

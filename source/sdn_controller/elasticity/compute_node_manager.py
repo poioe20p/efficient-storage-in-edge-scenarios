@@ -38,12 +38,13 @@ class PendingDrain:
     lan:            int
     initiated_ts:   float
     drain_signaled: bool = True    # False when drain HTTP call failed but veth is known
+    ip:             str  = ""      # for IP release in Phase B cleanup
 
 
 class ComputeNodeAdder(_BaseNodeAdder):
     """Stateless helper — each method is a self-contained, timed, idempotent lifecycle."""
 
-    def add_edge_server(self, lan: int, name: str) -> NodeResult:
+    def add_edge_server(self, lan: int, name: str, ip: str | None = None, mac: str | None = None) -> NodeResult:
         """Spawn an edge_server container and attach it to OVS LAN ``lan``.
 
         Steps:
@@ -66,9 +67,14 @@ class ComputeNodeAdder(_BaseNodeAdder):
         # ── Step 2: network attachment ────────────────────────────────────────
         logger.info("[node_add] step=attach_network container=%s lan=%d", name, lan)
         t0 = time.perf_counter()
+        script_args = ["--lan", str(lan), "--name", name]
+        if ip:
+            script_args += ["--ip", ip]
+        if mac:
+            script_args += ["--mac", mac]
         ok, ip, mac, stdout2, stderr2 = self._run_script(
             SCRIPTS_DIR / "add_network_node.sh",
-            ["--lan", str(lan), "--name", name],
+            script_args,
         )
         timings.network_attach_s = time.perf_counter() - t0
         timings.total_s = time.perf_counter() - t_total
@@ -179,6 +185,7 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "--network", "none",
             "--name", name,
             "-e", f"LAN_ID=lan{lan}",
+            "-e", f"CONTAINER_NAME={name}",
             "edge_server",
         ]
         return self._run_cmd(cmd)

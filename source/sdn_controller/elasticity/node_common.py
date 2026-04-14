@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import subprocess
+import bisect
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -180,3 +181,56 @@ class _BaseNodeAdder:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 logger.debug("[node_add] cleanup %s: %s", " ".join(cmd), result.stderr.strip())
+
+
+class IpAllocator:
+    """Per-LAN IP allocator for dynamic service nodes (.6–.55).
+
+    Suffixes 1–5 are reserved for static infrastructure on each LAN:
+        .1  router (default gateway)
+        .2  edge_server (compute)
+        .3  (reserved)
+        .4  edge_storage_server (MongoDB primary)
+        .5  local_state_server (aggregator)
+
+    Suffixes 56–105 are reserved for test clients (namespace-based).
+    Suffixes 253–254 are reserved for VIPs (VIP_SERVER, VIP_DATA).
+
+    Dynamic nodes start at suffix 6 to avoid IP collisions.
+
+    MAC addresses are derived deterministically:
+        00:00:00:00:{lan:02x}:{suffix:02x}
+    """
+
+    _MIN_SUFFIX = 6
+    _MAX_SUFFIX = 55
+
+    def __init__(self, lan: int) -> None:
+        self._lan = lan
+        self._subnet_prefix = f"10.0.{lan - 1}"   # lan1 → 10.0.0, lan2 → 10.0.1
+        self._free: list[int] = list(range(self._MIN_SUFFIX, self._MAX_SUFFIX + 1))
+        self._in_use: set[int] = set()
+
+    def allocate(self) -> tuple[str, str]:
+        """Return (ip, mac) for the next available suffix. Raises if exhausted."""
+        if not self._free:
+            raise RuntimeError(f"IP pool exhausted for LAN {self._lan}")
+        suffix = self._free.pop(0)
+        self._in_use.add(suffix)
+        ip  = f"{self._subnet_prefix}.{suffix}"
+        mac = f"00:00:00:00:{self._lan:02x}:{suffix:02x}"
+        return ip, mac
+
+    def release(self, ip: str) -> None:
+        """Return an IP to the free pool."""
+        suffix = int(ip.rsplit(".", 1)[1])
+        if suffix in self._in_use:
+            self._in_use.discard(suffix)
+            bisect.insort(self._free, suffix)
+
+    def mark_used(self, ip: str) -> None:
+        """Mark an IP as in-use (for static/pre-existing nodes)."""
+        suffix = int(ip.rsplit(".", 1)[1])
+        if suffix in self._free:
+            self._free.remove(suffix)
+        self._in_use.add(suffix)

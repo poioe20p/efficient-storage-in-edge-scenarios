@@ -35,41 +35,49 @@ class StorageNodeAdder(_BaseNodeAdder):
         lan: int,
         name: str,
         rs_name: str,
-        primary_container: str,
+        # primary_container: str,
         port: int = 27018,
+        ip: str | None = None,
+        mac: str | None = None,
     ) -> NodeResult:
         """Spawn an edge_storage_server container, attach it to OVS LAN ``lan``,
         and join the replica set via ``rs.add()``.
 
         Steps:
           1. ``docker run --network none edge_storage_server mongod --replSet ...``
-          2. ``add_network_storage_node.sh`` (veth + OVS + rs.add + SECONDARY wait)
+          2. ``add_network_node.sh`` (veth + OVS attach; RS join handled by sidecar)
         """
         timings = StepTimings()
         t_total = time.perf_counter()
 
+        # Derive primary IP from LAN topology convention:
+        #   lan1 → 10.0.0.4, lan2 → 10.0.1.4
+        primary_ip = f"10.0.{lan - 1}.4"
+        rs_seed_host = f"{primary_ip}:{port}"
+        logger.info("[node_add] RS seed host for lan%d: %s", lan, rs_seed_host)
+
         # ── Step 1: docker run ────────────────────────────────────────────────
         logger.info("[node_add] step=docker_run container=%s rs=%s", name, rs_name)
         t0 = time.perf_counter()
-        ok, stdout, stderr = self._docker_run_storage(name, rs_name, port, lan)
+        ok, stdout, stderr = self._docker_run_storage(name, rs_name, port, lan,
+                                                      rs_seed_host=rs_seed_host)
         timings.docker_run_s = time.perf_counter() - t0
 
         if not ok:
             timings.total_s = time.perf_counter() - t_total
             return NodeResult(False, name, None, None, timings, NodeOperationState.FAILED, stdout, stderr)
 
-        # ── Step 2: network attach + RS join (handled inside the script) ──────
-        logger.info("[node_add] step=attach_and_join container=%s lan=%d", name, lan)
+        # ── Step 2: network attach only (RS join handled by sidecar) ──────────
+        logger.info("[node_add] step=network_attach container=%s lan=%d", name, lan)
         t0 = time.perf_counter()
+        script_args = ["--lan", str(lan), "--name", name]
+        if ip:
+            script_args += ["--ip", ip]
+        if mac:
+            script_args += ["--mac", mac]
         ok, ip, mac, stdout2, stderr2 = self._run_script(
-            SCRIPTS_DIR / "add_network_storage_node.sh",
-            [
-                "--lan", str(lan),
-                "--name", name,
-                "--rs-name", rs_name,
-                "--primary", primary_container,
-                "--port", str(port),
-            ],
+            SCRIPTS_DIR / "add_network_node.sh",
+            script_args,
         )
         timings.network_attach_s = time.perf_counter() - t0
         timings.total_s = time.perf_counter() - t_total
@@ -158,14 +166,17 @@ class StorageNodeAdder(_BaseNodeAdder):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _docker_run_storage(self, name: str, rs_name: str, port: int, lan: int) -> tuple[bool, str, str]:
+    def _docker_run_storage(self, name: str, rs_name: str, port: int, lan: int,
+                            rs_seed_host: str | None = None) -> tuple[bool, str, str]:
         state = self._container_state(name)
         if state == "running":
             logger.info("[node_add] container %s already running — skipping docker run", name)
             return True, "", ""
-        # Always clean up: removes stale container (if any) AND orphaned volume
-        # whose replica-set ID would otherwise clash with rs.add().
-        self._cleanup_container(name)
+        if state is not None:
+            # Container exists in a non-running state — clean up stale remnants
+            logger.info("[node_add] removing stale container %s (state=%s)", name, state)
+            self._cleanup_container(name)
+        # else: container doesn't exist — nothing to clean up
         vol = f"{name}-data"
         cmd = [
             "docker", "run", "-dit",
@@ -175,8 +186,12 @@ class StorageNodeAdder(_BaseNodeAdder):
             "-e", f"LAN_ID=lan{lan}",
             "-e", f"MONGO_REPLSET={rs_name}",
             "-e", f"MONGO_PORT={port}",
-            "edge_storage_server",
+            "-e", f"CONTAINER_NAME={name}",
         ]
+        # If rs_seed_host is provided, the sidecar will self-join the RS
+        if rs_seed_host:
+            cmd += ["-e", "RS_ADD_SELF=true", "-e", f"RS_SEED_HOST={rs_seed_host}"]
+        cmd.append("edge_storage_server")
         return self._run_cmd(cmd)
 
     def _find_rs_primary(self, primary_container: str, port: int) -> str | None:

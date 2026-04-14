@@ -1,5 +1,7 @@
 # System-to-Thesis Proposal Mapping
 
+> **Framing note:** The thesis contribution is the **orchestration architecture** — the three-thread controller, Double-VIP routing, decoupled Compute/Data scaling, and Data Gravity tiers. The IoT edge monitoring platform described in the testing documentation is the **experimental workload** used to validate the architecture, not the contribution itself. The architecture observes latency ($T_{proc}$, $T_{dados}$) and resource metrics (CPU, RAM, connections, hop distance) — domain-agnostic signals that any containerized request/response service produces. The workload could be replaced with any service that exhibits measurable compute and data-access latency without changing the orchestration logic.
+
 How the implemented **Metadata-Driven Edge Orchestration** architecture — Double-VIP SDN routing, three-tier Data Gravity, decoupled Compute/Data Managers, and Selective Sync Nodes — maps to the promises made in the thesis proposal, where it fulfills them, and where gaps remain.
 
 | Proposal Concern                         | System Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status |

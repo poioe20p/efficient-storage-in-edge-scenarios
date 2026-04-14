@@ -12,6 +12,23 @@ This system implements **Topology-Aware Hierarchical Storage** coupled with **Se
 
 The orchestration mechanisms are **workload-agnostic**: they react to measured demand metadata ($T_{proc}$, $T_{dados}$), not to assumptions about read/write ratios or specific application profiles.
 
+### Why the Architecture Is Workload-Agnostic
+
+The system's decision signals are **latency measurements**, not application semantics:
+
+- **Routing** (Thread 1) observes CPU %, RAM, request count, active connections, replication lag, and hop distance — all generic resource metrics that any containerized service produces.
+- **Scaling** (Thread 3) observes $T_{proc}$ and $T_{dados}$ — decomposed processing and data-access latency that any request/response service exhibits.
+- **Tier transitions** respond to sustained $T_{dados}$ threshold breaches — a signal that depends only on data proximity, not on what the data represents.
+
+None of these signals encode knowledge of the application domain. The same architecture could orchestrate:
+
+- An **IoT edge monitoring platform** (the experimental workload used for validation)
+- A **video transcoding service** where $T_{proc}$ dominates and $T_{dados}$ reflects asset retrieval latency
+- A **recommendation engine** where $T_{dados}$ reflects cross-region user-profile lookups
+- A **geospatial query platform** where data gravity follows physical proximity of map tiles
+
+The architecture is the thesis contribution. The experimental workload — an IoT monitoring platform — is chosen because it naturally produces cross-domain data requests, heterogeneous compute demands, and phase-shifting access patterns that exercise all orchestration mechanisms. It is deliberately replaceable.
+
 **Core architectural principles:**
 
 1. **Independent replica sets per network.** Each network segment hosts its own single-node replica set (`rs_net1`, `rs_net2`, etc.). Data is partitioned by network origin, not by a shard key.

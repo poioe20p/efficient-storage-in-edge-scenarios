@@ -12,10 +12,10 @@ readonly OVS_CONTAINER="ovs"
 declare -A LAN_BRIDGE=( [1]="ovs-br0" [2]="ovs-br1" )
 declare -A LAN_SUBNET=( [1]="10.0.0" [2]="10.0.1" )
 declare -A LAN_GATEWAY=( [1]="10.0.0.1" [2]="10.0.1.1" )
-declare -A VETH_RANGE_START=( [1]=10 [2]=30 )
-declare -A VETH_RANGE_END=( [1]=19 [2]=49 )
-# .1 = gateway, .100 = VIP_Web, .200 = VIP_Data; test clients (namespace-based) use .30+
-declare -A RESERVED_SUFFIX=( [1]="1 100 200" [2]="1 100 200" )
+declare -A VETH_RANGE_START=( [1]=100 [2]=200 )
+declare -A VETH_RANGE_END=( [1]=149 [2]=249 )
+# .1 = gateway, .253 = VIP_SERVER, .254 = VIP_DATA; test clients (namespace-based) use .56+
+declare -A RESERVED_SUFFIX=( [1]="1 253 254" [2]="1 253 254" )
 
 LAN=""
 CONTAINER_NAME=""
@@ -198,16 +198,20 @@ main() {
 	echo "Attaching container '${CONTAINER_NAME}' to LAN ${LAN}"
 	echo "============================================================================"
 
-	if [[ -z "$IP" ]]; then
-		IP=$(auto_assign_ip)
-		echo "Auto-assigned IP: ${IP}"
+	if [[ -n "$IP" && -n "$MAC" ]]; then
+		echo "Using pre-assigned IP=${IP} MAC=${MAC} — skipping auto-assignment"
 	else
-		validate_ip_not_taken
-	fi
+		if [[ -z "$IP" ]]; then
+			IP=$(auto_assign_ip)
+			echo "Auto-assigned IP: ${IP}"
+		else
+			validate_ip_not_taken
+		fi
 
-	if [[ -z "$MAC" ]]; then
-		MAC=$(auto_generate_mac "$IP")
-		echo "Auto-generated MAC: ${MAC}"
+		if [[ -z "$MAC" ]]; then
+			MAC=$(auto_generate_mac "$IP")
+			echo "Auto-generated MAC: ${MAC}"
+		fi
 	fi
 
 	local veth_idx

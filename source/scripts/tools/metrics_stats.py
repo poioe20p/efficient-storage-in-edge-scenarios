@@ -119,12 +119,12 @@ def detect_mode(rows: list[dict]) -> str:
     headers = set(rows[0].keys())
     if "latency_s" in headers:
         return "latency"
-    if "avg_cpu_percent" in headers:
+    if "median_cpu_percent" in headers:
         return "resource"
     sys.exit(
         "Unrecognized file format.\n"
         "Expected a 'latency_s' column (client_requests) "
-        "or an 'avg_cpu_percent' column (resource_stats)."
+        "or a 'median_cpu_percent' column (resource_stats)."
     )
 
 
@@ -239,13 +239,15 @@ def run_latency(rows: list[dict], args, file_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 RESOURCE_COLS: list[tuple[str, str]] = [
-    ("avg_cpu_percent",         "%"),
-    ("avg_ram_used_mb",         "MB"),
-    ("avg_storage_cpu_percent", "%"),
-    ("avg_storage_ram_used_mb", "MB"),
-    ("avg_time_proc_ms",        "ms"),
-    ("avg_time_db_ms",          "ms"),
-    ("peak_time_total_ms",      "ms"),
+    ("median_cpu_percent",         "%"),
+    ("median_ram_used_mb",         "MB"),
+    ("median_storage_cpu_percent", "%"),
+    ("median_storage_ram_used_mb", "MB"),
+    ("median_time_proc_ms",        "ms"),
+    ("median_time_db_ms",          "ms"),
+    ("median_time_total_ms",       "ms"),
+    ("server_count",               ""),
+    ("storage_count",              ""),
 ]
 
 
@@ -332,7 +334,7 @@ def main() -> None:
         print(f"=== {path.name} ({len(rows)} rows) ===\n")
         mode = detect_mode(rows)
         if mode != "resource":
-            sys.exit(f"Expected resource_stats format (avg_cpu_percent column) in {path}")
+            sys.exit(f"Expected resource_stats format (median_cpu_percent column) in {path}")
         run_resource(rows, args, path)
     else:
         if not path.is_dir():

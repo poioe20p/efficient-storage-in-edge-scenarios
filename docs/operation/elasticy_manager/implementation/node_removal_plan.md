@@ -27,7 +27,7 @@ Two independent triggers can initiate removal:
 
 - **Telemetry timeout** — dynamic node absent from 10 consecutive telemetry
   windows → assumed dead.
-- **Underutilization** — CPU and latency metrics below scale-down thresholds for **9 consecutive windows** → healthy but idle.
+- **Underutilization** — CPU and latency metrics below scale-down thresholds for a sustained period (7-of-12 sliding window) → healthy but idle.
 
 Only **dynamically added** nodes are eligible — static servers and primary DB
 containers are never removed.
@@ -97,21 +97,28 @@ inherent to the workload.
 | ---------------------------------- | ------- | ---------------------------------------------------- |
 | `TAU_CPU_DOWN`                   | `20`  | Domain avg CPU % below → idle                       |
 | `TAU_PROC_DOWN_MS`               | `100` | Domain avg processing latency below → idle          |
-| `SCALE_DOWN_COMPUTE_CONSECUTIVE` | 9       | Consecutive windows below threshold (4.5× scale-up) |
+| `SCALE_DOWN_COMPUTE_WINDOW_SIZE` | `12`  | Sliding window size (compute)                        |
+| `SCALE_DOWN_COMPUTE_REQUIRED`    | `7`   | Required below-threshold windows to fire (compute)   |
+| `SCALE_DOWN_PROC_TIMEOUT_CEILING_MS` | `2000` | Proc latency above → indeterminate window      |
 
 ```python
-# Compute scale-down evaluation
-if (summary.domain.average_cpu_percent < self._tau_cpu_down
-        and summary.domain.avg_time_proc_ms < self._tau_proc_down_ms):
-    self._scale_down_compute_consecutive += 1
-else:
-    self._scale_down_compute_consecutive = 0
+# Compute scale-down evaluation (sliding window + timeout guard)
+def _evaluate_scale_down_compute(self, ds):
+    # Timeout guard — indeterminate window; skip without affecting the sliding window.
+    if ds.avg_time_proc_ms > _SCALE_DOWN_PROC_TIMEOUT_CEILING_MS:
+        return
 
-if self._scale_down_compute_consecutive >= self._scale_down_compute_required:
-    last = self._find_last_dynamic_compute_node()
-    if last is not None:
-        self._submit_scale_down_alert(last.mac)
-        self._scale_down_compute_consecutive = 0
+    below = (ds.average_cpu_percent < _TAU_CPU_DOWN
+             and ds.avg_time_proc_ms < _TAU_PROC_DOWN_MS)
+    self._scale_down_compute_window.append(below)  # deque(maxlen=WINDOW_SIZE)
+
+    if sum(self._scale_down_compute_window) >= _SCALE_DOWN_COMPUTE_REQUIRED:
+        last = self._find_last_dynamic_compute_node()
+        if last is not None:
+            self._scale_down_compute_window.clear()
+            self._submit_scale_down_alert(last.mac)
+        else:
+            self._scale_down_compute_window.clear()
 ```
 
 #### Storage scale-down
@@ -125,21 +132,28 @@ directly — no helper method needed.
 | ---------------------------------- | --------- | ---------------------------------------------------- |
 | `TAU_STORAGE_CPU_DOWN`           | `20`    | Domain avg storage CPU % below → idle               |
 | `TAU_DB_DOWN_MS`                 | `50000` | Domain avg DB latency below → idle                  |
-| `SCALE_DOWN_STORAGE_CONSECUTIVE` | 9         | Consecutive windows below threshold (4.5× scale-up) |
+| `SCALE_DOWN_STORAGE_WINDOW_SIZE` | `12`    | Sliding window size (storage)                        |
+| `SCALE_DOWN_STORAGE_REQUIRED`    | `7`     | Required below-threshold windows to fire (storage)   |
+| `SCALE_DOWN_DB_TIMEOUT_CEILING_MS` | `2000` | DB latency above → indeterminate window           |
 
 ```python
-# Storage scale-down evaluation
-if (summary.domain.avg_storage_cpu_percent < self._tau_storage_cpu_down
-        and summary.domain.avg_time_db_ms < self._tau_db_down_ms):
-    self._scale_down_storage_consecutive += 1
-else:
-    self._scale_down_storage_consecutive = 0
+# Storage scale-down evaluation (sliding window + timeout guard)
+def _evaluate_scale_down_storage(self, ds):
+    # Timeout guard — indeterminate window; skip without affecting the sliding window.
+    if ds.avg_time_db_ms > _SCALE_DOWN_DB_TIMEOUT_CEILING_MS:
+        return
 
-if self._scale_down_storage_consecutive >= self._scale_down_storage_required:
-    last = self._find_last_dynamic_storage_node()
-    if last is not None:
-        self._submit_scale_down_alert(last.mac)
-        self._scale_down_storage_consecutive = 0
+    below = (ds.avg_storage_cpu_percent < _TAU_STORAGE_CPU_DOWN
+             and ds.avg_time_db_ms < _TAU_DB_DOWN_MS)
+    self._scale_down_storage_window.append(below)  # deque(maxlen=WINDOW_SIZE)
+
+    if sum(self._scale_down_storage_window) >= _SCALE_DOWN_STORAGE_REQUIRED:
+        last = self._find_last_dynamic_storage_node()
+        if last is not None:
+            self._scale_down_storage_window.clear()
+            self._submit_scale_down_alert(last.mac)
+        else:
+            self._scale_down_storage_window.clear()
 ```
 
 **Constraints:**
@@ -156,28 +170,32 @@ timer**, relying instead on three interlocking mechanisms:
 
 - **`is_busy()`** freezes all scaling evaluation for the entire duration of
   an add/remove operation (30–180 s). No alerts can stack.
-- **Consecutive windows** force a sustained signal — 9 windows (90 s) for
-  scale-down, 2 windows (20 s) for scale-up — starting from a *fresh*
-  counter after any opposing event.
-- **Cross-direction reset** zeroes the opposing tier’s counter, so after a
-  scale-up the system needs 9 genuinely idle windows before scale-down can
-  fire, and vice versa.
+- **Sliding window** forces a sustained signal — 7-of-12 windows (120 s) for
+  scale-down, 2 consecutive windows (20 s) for scale-up — starting from an
+  *empty* window after any opposing event.
+- **Cross-direction reset** clears the opposing tier’s sliding window, so
+  after a scale-up the system needs 7 genuinely idle windows in a fresh
+  12-window span before scale-down can fire, and vice versa.
+- **Timeout ceiling** — windows where latency exceeds a configurable ceiling
+  (default 2 000 ms) are treated as indeterminate and excluded from the
+  sliding window entirely. This prevents RS elections, connectivity timeouts,
+  or other transient spikes from poisoning the scale-down signal.
 
 Together these make an explicit cooldown redundant:
 
 | Scenario                         | What happens                                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Scale-up → immediate scale-down | Counter was reset to 0 by the scale-up. Needs 9 fresh idle windows (90 s). Not a risk.                                                 |
-| Scale-down → immediate scale-up | Counter was reset to 0 by the scale-down. Needs 2 fresh saturated windows. If load is genuinely that high, scaling back up is correct. |
+| Scale-up → immediate scale-down | Sliding window was cleared by the scale-up. Needs 7 idle windows in a fresh 12-window span (120 s). Not a risk.                        |
+| Scale-down → immediate scale-up | Sliding window was cleared by the scale-down. Needs 2 fresh saturated windows. If load is genuinely that high, scaling back up is correct. |
 | Scale-up → another scale-up     | `is_busy()` blocks during the 30–60 s operation. Then needs 2 fresh windows. Only fires if load is genuinely still saturated.       |
 
 The remaining constraints:
 
 1. **Minimum node count** — never scale below the initial static nodes.
-2. **Consecutive windows** — scale-up requires 2 consecutive windows above
-   threshold before firing. Scale-down is always **4.5× the scale-up window**
-   = 9 consecutive windows below threshold. Each tier tracks its own
-   counter independently.
+2. **Sliding window** — scale-up requires 2 consecutive windows above
+   threshold before firing. Scale-down uses a **7-of-12 sliding window**:
+   it fires when at least 7 of the last 12 evaluation windows were below
+   threshold. Each tier tracks its own window independently.
 3. **Dual condition (CPU AND latency)** — both must be below threshold
    simultaneously. CPU captures capacity saturation; latency confirms user
    impact. Neither alone is sufficient (see truth table above).
@@ -188,14 +206,18 @@ The remaining constraints:
    Thread 3 is executing an operation. This is the same pattern as AWS Auto
    Scaling, which blocks new scaling activities while one is in progress.
    No conflicting decisions can stack in the queue.
-6. **Counter reset on opposing event or empty set** — when a scale-up alert
-   is submitted for a tier, that tier's `_scale_down_*_consecutive` counter
-   is reset to 0 (and vice versa). The system needs 9 *fresh* windows of
-   genuinely low metrics after the new node is integrated before considering
-   scale-down. Additionally, if the counter reaches the threshold but no
-   eligible dynamic node exists, the counter is also reset to 0 — there is
-   nothing to remove, so accumulated windows are discarded rather than
-   carried forward.
+6. **Window clear on opposing event or empty set** — when a scale-up alert
+   is submitted for a tier, that tier's `_scale_down_*_window` deque
+   is cleared (and vice versa). The system needs 7 *fresh* windows of
+   genuinely low metrics in a new 12-window span after the new node is
+   integrated before considering scale-down. Additionally, if the window
+   reaches the threshold but no eligible dynamic node exists, the window is
+   also cleared — there is nothing to remove, so accumulated samples are
+   discarded rather than carried forward.
+7. **Timeout ceiling** — windows where latency exceeds a configurable
+   ceiling (default 2 000 ms) are treated as indeterminate and excluded
+   from the sliding window. This prevents RS election timeouts or
+   connectivity issues from poisoning the scale-down signal.
 
 ### Scope Guards
 

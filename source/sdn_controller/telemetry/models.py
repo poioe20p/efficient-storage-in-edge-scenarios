@@ -28,6 +28,7 @@ class StorageServerSummary(BaseModel):
     avg_ram_used_mb: float
     sample_count: int
     last_report_ts: float = 0.0
+    member_state: str | None = None
 
 
 class DomainSummary(BaseModel):

@@ -16,10 +16,10 @@
 #
 # Examples:
 #   sudo bash trace_request.sh --ns lan1_client_1 \
-#     -- curl -s "http://10.0.0.100:5000/device/lan1::device::001/latest?node_id=lan1::node::001"
+#     -- curl -s "http://10.0.0.253:5000/device/lan1::device::001/latest?node_id=lan1::node::001"
 #
 #   sudo bash trace_request.sh --ns lan1_client_1 \
-#     -- curl -s http://10.0.0.100:5000/health
+#     -- curl -s http://10.0.0.253:5000/health
 #
 # See: docs/operation/testing/trace_request_plan.md
 # ============================================================================
@@ -54,7 +54,7 @@ Options:
 
 Example:
   sudo $SCRIPT_NAME --ns lan1_client_1 \\
-    -- curl -s "http://10.0.0.100:5000/device/lan1::device::001/latest?node_id=lan1::node::001"
+    -- curl -s "http://10.0.0.253:5000/device/lan1::device::001/latest?node_id=lan1::node::001"
 EOF
     exit 1
 }

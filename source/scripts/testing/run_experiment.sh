@@ -8,7 +8,9 @@
 #   1. Create test client namespaces (LAN 1 + LAN 2)
 #   2. Seed MongoDB: sensor_reports → device_registry → create_indexes
 #   3. Export workload snapshot (devices + nodes → JSON)
-#   4. Run traffic generator (phased HTTP load from namespaces)
+#   4. Start resource stats collector (ZMQ subscriber → CSV)
+#   5. Run traffic generator (phased HTTP load from namespaces)
+#   6. Stop resource stats collector
 #
 # Edit the configuration variables below to match your deployment.
 #
@@ -16,16 +18,18 @@
 #   sudo ./run_experiment.sh [--skip-clients] [--skip-seed] [--skip-snapshot]
 #
 # Flags (all optional):
-#   --skip-clients    Skip step 1 (test namespaces already created)
-#   --skip-seed       Skip step 2 (data already seeded)
-#   --skip-snapshot   Skip step 3 (snapshot already exported)
-#   --dry-run         Pass --dry-run to traffic_generator (no real requests)
+#   --skip-clients       Skip step 1 (test namespaces already created)
+#   --skip-seed          Skip step 2 (data already seeded)
+#   --skip-snapshot      Skip step 3 (snapshot already exported)
+#   --snapshot-dir DIR   Override snapshot directory (default: REPO_ROOT/data/workload_snapshot)
+#   --dry-run            Pass --dry-run to traffic_generator (no real requests)
 # ============================================================================
 
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+readonly RUN_ID="$(date +%Y%m%d_%H%M%S)"
 
 # ---------------------------------------------------------------------------
 # Configuration — edit these to match your experiment
@@ -34,9 +38,9 @@ readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Number of test client namespaces per LAN
 CLIENTS_PER_LAN=3
 
-# Namespace prefixes — produces lan1_client1, lan1_client2 … lan2_client1, lan2_client2 …
-PREFIX_LAN1="lan1_client"
-PREFIX_LAN2="lan2_client"
+# Namespace prefixes — produces lan1_client_1, lan1_client_2 … lan2_client_1, lan2_client_2 …
+PREFIX_LAN1="lan1_client_"
+PREFIX_LAN2="lan2_client_"
 
 # Number of devices and nodes to seed per region
 SEED_DEVICES=100
@@ -47,14 +51,31 @@ MONGO_LAN1="mongodb://10.0.0.4:27018/"
 MONGO_LAN2="mongodb://10.0.1.4:27018/"
 
 # Snapshot output directory
-SNAPSHOT_DIR="${REPO_ROOT}/data/workload_snapshot"
+SNAPSHOT_DIR="${SCRIPT_DIR}/data/workload_snapshot"
 
 # Traffic generator config and output
 PHASES_CONFIG="${SCRIPT_DIR}/phases.json"
-METRICS_OUTPUT="${REPO_ROOT}/metrics/client_requests.csv"
+METRICS_OUTPUT="${SCRIPT_DIR}/metrics/${RUN_ID}/client_requests.csv"
 
 # VIP_SERVER address
-VIP="10.0.0.100:5000"
+VIP="10.0.0.253:5000"
+
+# Resource stats collector — ZMQ PUB addresses of the two aggregators
+LAN1_PUB="tcp://10.0.0.5:5556"
+LAN2_PUB="tcp://10.0.1.5:5556"
+RESOURCE_STATS_OUTPUT="${SCRIPT_DIR}/metrics/${RUN_ID}/resource_stats.csv"
+PHASE_FILE="${SCRIPT_DIR}/metrics/${RUN_ID}/current_phase.txt"
+
+# Controller log capture — saved alongside resource stats
+CONTROLLER_LOG_LAN1="${SCRIPT_DIR}/metrics/${RUN_ID}/controller_lan1.log"
+CONTROLLER_LOG_LAN2="${SCRIPT_DIR}/metrics/${RUN_ID}/controller_lan2.log"
+
+# PID of the background stats collector (set by run_collect_stats)
+STATS_PID=""
+
+# PIDs for controller log capture (set by run_capture_controller_logs)
+CONTROLLER_LOG_PID1=""
+CONTROLLER_LOG_PID2=""
 
 # ---------------------------------------------------------------------------
 # Flags
@@ -65,21 +86,24 @@ SKIP_SEED=false
 SKIP_SNAPSHOT=false
 DRY_RUN=false
 
-for arg in "$@"; do
-    case "$arg" in
-        --skip-clients)  SKIP_CLIENTS=true  ;;
-        --skip-seed)     SKIP_SEED=true     ;;
-        --skip-snapshot) SKIP_SNAPSHOT=true ;;
-        --dry-run)       DRY_RUN=true       ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-clients)   SKIP_CLIENTS=true  ;;
+        --skip-seed)      SKIP_SEED=true     ;;
+        --skip-snapshot)  SKIP_SNAPSHOT=true ;;
+        --dry-run)        DRY_RUN=true       ;;
+        --snapshot-dir)   shift; SNAPSHOT_DIR="$1" ;;
+        --snapshot-dir=*) SNAPSHOT_DIR="${1#*=}" ;;
         -h|--help)
             sed -n '/^# Usage/,/^# -----/p' "$0" | grep '^#' | sed 's/^# *//'
             exit 0
             ;;
         *)
-            echo "ERROR: unknown flag: $arg" >&2
+            echo "ERROR: unknown flag: $1" >&2
             exit 1
             ;;
     esac
+    shift
 done
 
 # ---------------------------------------------------------------------------
@@ -152,7 +176,59 @@ run_snapshot() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4 — Run traffic generator
+# Step 4 — Resource stats collector
+# ---------------------------------------------------------------------------
+
+run_collect_stats() {
+    step "Starting resource stats collector"
+    echo "  LAN1 PUB : ${LAN1_PUB}"
+    echo "  LAN2 PUB : ${LAN2_PUB}"
+    echo "  Output   : ${RESOURCE_STATS_OUTPUT}"
+    python3 "${SCRIPT_DIR}/collect_resource_stats.py" \
+        --lan1-pub "$LAN1_PUB" \
+        --lan2-pub "$LAN2_PUB" \
+        --output   "$RESOURCE_STATS_OUTPUT" \
+        --phase-file "$PHASE_FILE" &
+    STATS_PID=$!
+    echo "  Collector PID: ${STATS_PID}"
+    sleep 1  # allow ZMQ subscriber handshake to complete before traffic starts
+}
+
+stop_collect_stats() {
+    [[ -z "${STATS_PID:-}" ]] && return 0
+    echo; echo "==> Stopping resource stats collector (PID ${STATS_PID})"
+    kill -TERM "$STATS_PID" 2>/dev/null || true
+    wait "$STATS_PID" 2>/dev/null || true
+    STATS_PID=""
+}
+
+# ---------------------------------------------------------------------------
+# Step 4b — Capture controller logs (docker logs -f)
+# ---------------------------------------------------------------------------
+
+run_capture_controller_logs() {
+    step "Capturing controller logs"
+    echo "  LAN1 → ${CONTROLLER_LOG_LAN1}"
+    echo "  LAN2 → ${CONTROLLER_LOG_LAN2}"
+    docker logs -f osken   > "$CONTROLLER_LOG_LAN1" 2>&1 &
+    CONTROLLER_LOG_PID1=$!
+    docker logs -f osken_2 > "$CONTROLLER_LOG_LAN2" 2>&1 &
+    CONTROLLER_LOG_PID2=$!
+    echo "  PIDs: ${CONTROLLER_LOG_PID1}, ${CONTROLLER_LOG_PID2}"
+}
+
+stop_capture_controller_logs() {
+    for pid_var in CONTROLLER_LOG_PID1 CONTROLLER_LOG_PID2; do
+        local pid="${!pid_var}"
+        [[ -z "${pid:-}" ]] && continue
+        kill -TERM "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        eval "$pid_var="
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Step 5 — Run traffic generator
 # ---------------------------------------------------------------------------
 
 run_traffic() {
@@ -189,14 +265,25 @@ echo " Devices/LAN : ${SEED_DEVICES}"
 echo " Nodes/LAN   : ${SEED_NODES}"
 echo " Snapshot    : ${SNAPSHOT_DIR}"
 echo " Output      : ${METRICS_OUTPUT}"
+echo " Resource    : ${RESOURCE_STATS_OUTPUT}"
+echo " Phase file  : ${PHASE_FILE}"
 echo " VIP         : ${VIP}"
 echo " Dry-run     : ${DRY_RUN}"
 echo "======================================================"
 
+# Stop the stats collector on any exit (normal, error, or signal)
+trap 'stop_capture_controller_logs; stop_collect_stats' EXIT
+
 "$SKIP_CLIENTS"  || run_create_clients
 "$SKIP_SEED"     || run_seed
 "$SKIP_SNAPSHOT" || run_snapshot
+run_collect_stats
+run_capture_controller_logs
 run_traffic
+stop_collect_stats
 
 step "Experiment complete"
-echo "Results: ${METRICS_OUTPUT}"
+echo "Results      : ${METRICS_OUTPUT}"
+echo "Resource stats: ${RESOURCE_STATS_OUTPUT}"
+echo "Controller logs: ${CONTROLLER_LOG_LAN1}"
+echo "              : ${CONTROLLER_LOG_LAN2}"

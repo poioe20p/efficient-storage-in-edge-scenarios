@@ -34,10 +34,11 @@ def _receive_loop() -> None:
     while True:
         event = pull.recv_json()
         logger.debug("Received event from server_id=%s event_type=%s", event.get("server_id"), event.get("event_type"))
-        if event.get("event_type") == "drain_complete":
-            # Forward drain_complete immediately as a mini-summary — do not
-            # buffer into the aggregation window.  The controller needs this
-            # signal as fast as possible to trigger Phase B cleanup.
+        etype = event.get("event_type")
+        if etype in ("drain_complete", "rs_secondary_ready"):
+            # Forward control events immediately as a mini-summary — do not
+            # buffer into the aggregation window.  The controller needs these
+            # signals as fast as possible.
             mini = {
                 "network_id":     NETWORK_ID,
                 "window_end":     time.time(),
@@ -45,7 +46,7 @@ def _receive_loop() -> None:
                 "storage_servers": {},
                 "control_events": [event],
             }
-            logger.info("drain_complete received for server_id=%s — publishing mini-summary", event.get("server_id"))
+            logger.info("%s received for server_id=%s — publishing mini-summary", etype, event.get("server_id"))
             pub.send_json(mini)
             continue  # do not also buffer into the window
         with _lock:
@@ -115,6 +116,7 @@ def _publish_loop() -> None:
                 "avg_ram_used_mb": statistics.mean([e["ram_used_mb"] for e in events]),
                 "sample_count":    len(events),
                 "last_report_ts":  last_seen.get(server_id, 0.0),
+                "member_state":    events[-1].get("member_state"),
             }
 
         # ── Heartbeat-only nodes (idle but alive) ─────────────────────────────
@@ -132,6 +134,7 @@ def _publish_loop() -> None:
                         "avg_ram_used_mb": hb.get("ram_used_mb", 0.0),
                         "sample_count":    0,
                         "last_report_ts":  last_seen[sid],
+                        "member_state":    hb.get("member_state"),
                     }
             else:                                     # edge server heartbeat
                 if sid not in servers:
@@ -148,13 +151,27 @@ def _publish_loop() -> None:
 
         # ── Domain summary (HTTP only) ────────────────────────────────────────
         if http_events:
-            avg_time_proc   = statistics.mean([e["time_total_ms"] - e["time_db_ms"] for e in http_events])
-            avg_time_db     = statistics.mean([e["time_db_ms"] for e in http_events])
-            avg_cpu_percent = statistics.mean([e["cpu_percent"] for e in http_events])
-            peak_time_total = max(e["time_total_ms"] for e in http_events)
+            time_procs_all  = [e["time_total_ms"] - e["time_db_ms"] for e in http_events]
+            time_dbs_all    = [e["time_db_ms"] for e in http_events]
+            cpus_all        = [e["cpu_percent"] for e in http_events]
+            time_totals_all = [e["time_total_ms"] for e in http_events]
+            rams_all        = [e["ram_used_mb"] for e in http_events]
+
+            avg_time_proc   = statistics.mean(time_procs_all)
+            avg_time_db     = statistics.mean(time_dbs_all)
+            avg_cpu_percent = statistics.mean(cpus_all)
+            peak_time_total = max(time_totals_all)
             total_requests  = len(http_events)
+
+            median_time_proc   = statistics.median(time_procs_all)
+            median_time_db     = statistics.median(time_dbs_all)
+            median_cpu_percent = statistics.median(cpus_all)
+            median_time_total  = statistics.median(time_totals_all)
+            median_ram_used_mb = statistics.median(rams_all)
         else:
             avg_time_proc = avg_time_db = avg_cpu_percent = peak_time_total = 0.0
+            median_time_proc = median_time_db = median_cpu_percent = 0.0
+            median_time_total = median_ram_used_mb = 0.0
             total_requests = 0
 
         # ── Domain-average storage CPU (across all storage server entries) ────
@@ -164,6 +181,14 @@ def _publish_loop() -> None:
             if ss.get("avg_cpu_percent") is not None
         ]
         avg_storage_cpu_percent = statistics.mean(storage_cpu_values) if storage_cpu_values else 0.0
+
+        storage_ram_values = [
+            ss["avg_ram_used_mb"]
+            for ss in storage_servers.values()
+            if ss.get("avg_ram_used_mb") is not None
+        ]
+        median_storage_cpu_percent = statistics.median(storage_cpu_values) if storage_cpu_values else 0.0
+        median_storage_ram_used_mb = statistics.median(storage_ram_values) if storage_ram_values else 0.0
 
         summary = {
             "network_id":      NETWORK_ID,
@@ -178,6 +203,13 @@ def _publish_loop() -> None:
                 "average_cpu_percent":     avg_cpu_percent,
                 "peak_time_total_ms":      peak_time_total,
                 "avg_storage_cpu_percent": avg_storage_cpu_percent,
+                "median_cpu_percent":          median_cpu_percent,
+                "median_ram_used_mb":          median_ram_used_mb,
+                "median_storage_cpu_percent":  median_storage_cpu_percent,
+                "median_storage_ram_used_mb":  median_storage_ram_used_mb,
+                "median_time_proc_ms":         median_time_proc,
+                "median_time_db_ms":           median_time_db,
+                "median_time_total_ms":        median_time_total,
             },
         }
         logger.info(

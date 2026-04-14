@@ -21,10 +21,10 @@ declare -A LAN_SUBNET=( [1]="10.0.0" [2]="10.0.1" )
 declare -A LAN_GATEWAY=( [1]="10.0.0.1" [2]="10.0.1.1" )
 declare -A LAN_DEFAULT_RS=( [1]="rs_net1" [2]="rs_net2" )
 declare -A LAN_DEFAULT_PRIMARY_CONTAINER=( [1]="edge_storage_server_n1" [2]="edge_storage_server_n2" )
-declare -A VETH_RANGE_START=( [1]=10 [2]=30 )
-declare -A VETH_RANGE_END=( [1]=19 [2]=49 )
-# .1 = gateway, .100 = VIP_Web, .200 = VIP_Data; test clients (namespace-based) use .30+
-declare -A RESERVED_SUFFIX=( [1]="1 100 200" [2]="1 100 200" )
+declare -A VETH_RANGE_START=( [1]=100 [2]=200 )
+declare -A VETH_RANGE_END=( [1]=149 [2]=249 )
+# .1 = gateway, .253 = VIP_SERVER, .254 = VIP_DATA; test clients (namespace-based) use .56+
+declare -A RESERVED_SUFFIX=( [1]="1 253 254" [2]="1 253 254" )
 
 LAN=""
 CONTAINER_NAME=""
@@ -221,19 +221,92 @@ try {
 	echo "$primary_host"  # e.g. 10.0.0.4:27018
 }
 
+# Remove a stale replica-set member that matches the target host:port, if any.
+# This is a no-op when the host:port is not already in the RS member list.
+# Needed because a failed prior spawn may have left a phantom member behind.
+rs_cleanup_stale_member() {
+	local new_host="${IP}:${PORT}"
+	local primary_host="$1"
+	local primary_ip="${primary_host%%:*}"
+	local primary_port="${primary_host##*:}"
+
+	echo "Checking for stale RS member ${new_host}..."
+	set +e
+	local output
+	output=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet \
+		--host "$primary_ip" --port "$primary_port" --eval "
+try {
+    var status = rs.status();
+    var member = status.members.find(m => m.name === '${new_host}');
+    if (member) {
+        print('FOUND:' + member.stateStr);
+    } else {
+        print('CLEAN');
+    }
+} catch(e) {
+    print('ERROR:' + e);
+}
+" 2>/dev/null | tr -d '\r\n')
+	set -e
+
+	case "$output" in
+		CLEAN)
+			echo "  No stale member for ${new_host} — proceeding."
+			return 0
+			;;
+		ERROR:*)
+			echo "  Warning: could not check for stale member: ${output}"
+			return 0
+			;;
+		FOUND:*)
+			local old_state="${output#FOUND:}"
+			echo "  Stale member found (state=${old_state}) — removing before re-add..."
+			;;
+		*)
+			echo "  Unexpected output: ${output} — proceeding anyway."
+			return 0
+			;;
+	esac
+
+	set +e
+	local rm_output
+	rm_output=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet \
+		--host "$primary_ip" --port "$primary_port" --eval "
+try {
+    var result = rs.remove('${new_host}');
+    print(JSON.stringify(result));
+} catch(e) {
+    print('ERROR:' + e);
+}
+" 2>/dev/null)
+	set -e
+
+	if echo "$rm_output" | grep -q '^ERROR:'; then
+		echo "  Warning: rs.remove('${new_host}') failed: ${rm_output}"
+		echo "  Continuing anyway — rs.add() may still succeed if the member was already removed."
+		return 0
+	fi
+
+	echo "  Stale member ${new_host} removed. Waiting briefly for RS reconfiguration..."
+	sleep 2
+}
+
 rs_add_member() {
 	local new_host="${IP}:${PORT}"
 	local primary_host="$1"   # host:port of current primary
 	local primary_ip="${primary_host%%:*}"
 	local primary_port="${primary_host##*:}"
 
-	echo "Running rs.add('${new_host}') via primary ${primary_host}..."
+	# Clean up any stale RS member with the same host:port before adding
+	rs_cleanup_stale_member "$primary_host"
+
+	echo "Running rs.add({host: '${new_host}', priority: 0}) via primary ${primary_host}..."
 	set +e
 	local output
 	output=$(docker exec -i "$PRIMARY_CONTAINER" mongosh --quiet \
 		--host "$primary_ip" --port "$primary_port" --eval "
 try {
-    var result = rs.add('${new_host}');
+    var result = rs.add({host: '${new_host}', priority: 0});
     print(JSON.stringify(result));
 } catch(e) {
     print('ERROR:' + e);
@@ -253,7 +326,7 @@ try {
 		die "rs.add('${new_host}') failed."
 	fi
 
-	echo "rs.add('${new_host}') succeeded."
+	echo "rs.add({host: '${new_host}', priority: 0}) succeeded."
 }
 
 ensure_rs_secondary() {
@@ -338,16 +411,20 @@ main() {
 	echo "Attaching storage container '${CONTAINER_NAME}' to LAN ${LAN}"
 	echo "============================================================================"
 
-	if [[ -z "$IP" ]]; then
-		IP=$(auto_assign_ip)
-		echo "Auto-assigned IP: ${IP}"
+	if [[ -n "$IP" && -n "$MAC" ]]; then
+		echo "Using pre-assigned IP=${IP} MAC=${MAC} — skipping auto-assignment"
 	else
-		validate_ip_not_taken
-	fi
+		if [[ -z "$IP" ]]; then
+			IP=$(auto_assign_ip)
+			echo "Auto-assigned IP: ${IP}"
+		else
+			validate_ip_not_taken
+		fi
 
-	if [[ -z "$MAC" ]]; then
-		MAC=$(auto_generate_mac "$IP")
-		echo "Auto-generated MAC: ${MAC}"
+		if [[ -z "$MAC" ]]; then
+			MAC=$(auto_generate_mac "$IP")
+			echo "Auto-generated MAC: ${MAC}"
+		fi
 	fi
 
 	local veth_idx
@@ -419,7 +496,7 @@ main() {
 
 	rs_add_member "$primary_host"
 
-	ensure_rs_secondary "$primary_host"
+	echo "rs.add() complete — SECONDARY detection deferred to sidecar"
 
 	local rs_members
 	rs_members=$(get_rs_members "$primary_host")

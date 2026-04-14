@@ -1,5 +1,7 @@
 import logging
 import os
+import time
+from collections import deque
 
 from os_ken.base import app_manager
 from os_ken.controller import ofp_event
@@ -27,22 +29,71 @@ _REQUIRED_APP = ['os_ken.topology.switches']
 
 logger = logging.getLogger('os_ken.main_n2')
 
-# Latency thresholds that trigger Thread 3 alerts — tunable via env vars.
-_TAU_PROC_MS  = float(os.environ.get("TAU_PROC_MS",  "2.3"))
-_TAU_DADOS_MS = float(os.environ.get("TAU_DADOS_MS", "50"))
+# ── Scale-up: weighted degradation score ────────────────────────────────
+#
+#  score = W_CPU * max(0, cpu - FLOOR) / SPAN  +  W_LAT * max(0, lat - FLOOR) / SPAN
+#
+# Score ≥ THRESHOLD for at least REQUIRED of the last WINDOW_SIZE windows triggers scale-up.
 
-# Scale-up thresholds (CPU component — latency thresholds reuse _TAU_PROC_MS/_TAU_DADOS_MS)
-_TAU_CPU_UP         = float(os.environ.get("TAU_CPU_UP",         "58"))
-_TAU_STORAGE_CPU_UP = float(os.environ.get("TAU_STORAGE_CPU_UP", "50"))
+# Storage score weights & normalisation
+_W_STORAGE_CPU  = float(os.environ.get("SCALEUP_W_STORAGE_CPU",  "0.3"))
+_W_T_DB         = float(os.environ.get("SCALEUP_W_T_DB",         "0.7"))
+_STORAGE_CPU_FLOOR = float(os.environ.get("SCALEUP_STORAGE_CPU_FLOOR", "50"))   # below this → 0 contribution
+_STORAGE_CPU_SPAN  = float(os.environ.get("SCALEUP_STORAGE_CPU_SPAN",  "35"))   # 50+35=85% → score component = 1.0
+_T_DB_FLOOR        = float(os.environ.get("SCALEUP_T_DB_FLOOR",        "15"))   # ms — baseline T_db
+_T_DB_SPAN         = float(os.environ.get("SCALEUP_T_DB_SPAN",         "75"))   # 15+75=90ms → score component = 1.0
+
+# Compute score weights & normalisation
+_W_CPU      = float(os.environ.get("SCALEUP_W_CPU",      "0.3"))
+_W_T_PROC   = float(os.environ.get("SCALEUP_W_T_PROC",   "0.7"))
+_CPU_FLOOR  = float(os.environ.get("SCALEUP_CPU_FLOOR",  "50"))   # below this → 0 contribution
+_CPU_SPAN   = float(os.environ.get("SCALEUP_CPU_SPAN",   "35"))   # 50+35=85% → score component = 1.0
+_T_PROC_FLOOR = float(os.environ.get("SCALEUP_T_PROC_FLOOR", "1"))   # ms — baseline T_proc
+_T_PROC_SPAN  = float(os.environ.get("SCALEUP_T_PROC_SPAN",  "11"))  # 1+11=12ms → score component = 1.0
+
+# Scale-up sliding window
+_SCALE_UP_SCORE_THRESHOLD  = float(os.environ.get("SCALEUP_SCORE_THRESHOLD", "0.40"))
+_SCALE_UP_WINDOW_SIZE      = int(os.environ.get("SCALEUP_WINDOW_SIZE",      "5"))
+_SCALE_UP_REQUIRED         = int(os.environ.get("SCALEUP_REQUIRED",         "2"))
+
+# Adaptive storage threshold (predictive — lower base, increment per node)
+_SCALEUP_STORAGE_BASE_THRESHOLD      = float(os.environ.get("SCALEUP_STORAGE_BASE_THRESHOLD", "0.25"))
+_SCALEUP_STORAGE_THRESHOLD_INCREMENT = float(os.environ.get("SCALEUP_STORAGE_THRESHOLD_INCREMENT", "0.10"))
+_SCALEUP_STORAGE_MAX_THRESHOLD       = float(os.environ.get("SCALEUP_STORAGE_MAX_THRESHOLD", "0.65"))
+_SCALEUP_STORAGE_WINDOW_SIZE         = int(os.environ.get("SCALEUP_STORAGE_WINDOW_SIZE", "5"))
+_SCALEUP_STORAGE_REQUIRED            = int(os.environ.get("SCALEUP_STORAGE_REQUIRED", "2"))
 
 # Scale-down thresholds
-_TAU_CPU_DOWN           = float(os.environ.get("TAU_CPU_DOWN",           "49"))
-_TAU_PROC_DOWN_MS       = float(os.environ.get("TAU_PROC_DOWN_MS",       "1.7"))
-_TAU_STORAGE_CPU_DOWN   = float(os.environ.get("TAU_STORAGE_CPU_DOWN",   "48"))
-_TAU_DB_DOWN_MS         = float(os.environ.get("TAU_DB_DOWN_MS",         "45"))
-_SCALE_DOWN_CONSECUTIVE = int(os.environ.get("SCALE_DOWN_COMPUTE_CONSECUTIVE", "9"))
-_SCALE_DOWN_STORAGE_CONSECUTIVE = int(os.environ.get("SCALE_DOWN_STORAGE_CONSECUTIVE", "9"))
+_TAU_CPU_DOWN           = float(os.environ.get("TAU_CPU_DOWN",           "65"))
+_TAU_PROC_DOWN_MS       = float(os.environ.get("TAU_PROC_DOWN_MS",       "5"))
+_TAU_STORAGE_CPU_DOWN   = float(os.environ.get("TAU_STORAGE_CPU_DOWN",   "60"))
+_TAU_DB_DOWN_MS         = float(os.environ.get("TAU_DB_DOWN_MS",         "100"))
 _TELEMETRY_TIMEOUT_WINDOWS = int(os.environ.get("TELEMETRY_TIMEOUT_WINDOWS", "10"))
+
+# Timeout ceiling — windows with latency above this are indeterminate (neither
+# increment nor reset the sliding window).  Prevents RS election / connectivity
+# timeouts from poisoning the scale-down signal.
+_SCALE_DOWN_PROC_TIMEOUT_CEILING_MS = float(os.environ.get("SCALE_DOWN_PROC_TIMEOUT_CEILING_MS", "5000"))
+_SCALE_DOWN_DB_TIMEOUT_CEILING_MS   = float(os.environ.get("SCALE_DOWN_DB_TIMEOUT_CEILING_MS",   "5000"))
+
+# Sliding window — scale-down fires when at least REQUIRED of the last
+# WINDOW_SIZE evaluation windows were below threshold.
+_SCALE_DOWN_COMPUTE_WINDOW_SIZE = int(os.environ.get("SCALE_DOWN_COMPUTE_WINDOW_SIZE", "12"))
+_SCALE_DOWN_COMPUTE_REQUIRED    = int(os.environ.get("SCALE_DOWN_COMPUTE_REQUIRED",    "7"))
+_SCALE_DOWN_STORAGE_WINDOW_SIZE = int(os.environ.get("SCALE_DOWN_STORAGE_WINDOW_SIZE", "15"))
+_SCALE_DOWN_STORAGE_REQUIRED    = int(os.environ.get("SCALE_DOWN_STORAGE_REQUIRED",    "9"))
+
+# Scale-down cooldown — suppress scale-down evaluation for a grace period
+# after scale-up to prevent thrashing (removing nodes before they're ready).
+_SCALEDOWN_STORAGE_COOLDOWN_S = float(os.environ.get("SCALEDOWN_STORAGE_COOLDOWN_S", "120"))
+_SCALEDOWN_COMPUTE_COOLDOWN_S = float(os.environ.get("SCALEDOWN_COMPUTE_COOLDOWN_S", "40"))
+
+# Scale-UP cooldown — suppress storage scale-up evaluation for a grace period
+# after a DataAlert is submitted, so the new node has time to join and absorb load.
+_SCALEUP_STORAGE_COOLDOWN_S = float(os.environ.get("SCALEUP_STORAGE_COOLDOWN_S", "120"))
+
+# Birth grace — skip absent-node detection for newly spawned nodes during bootstrap.
+_NODE_BIRTH_GRACE_S = float(os.environ.get("NODE_BIRTH_GRACE_S", "60"))
 
 
 class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
@@ -73,7 +124,15 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         ]
         logger.info("aggregator endpoints: %s", _aggregator_endpoints)
         logger.info("peer topology endpoints: %s", _peer_endpoints)
-        logger.info("thresholds: tau_proc=%.0fms  tau_dados=%.0fms", _TAU_PROC_MS, _TAU_DADOS_MS)
+        logger.info(
+            "scale-up: compute[\u03c4=%.2f window=%d/%d w_cpu=%.1f w_lat=%.1f]  "
+            "storage[\u03c4_base=%.2f incr=%.2f cap=%.2f window=%d/%d w_cpu=%.1f w_lat=%.1f cooldown=%.0fs]",
+            _SCALE_UP_SCORE_THRESHOLD, _SCALE_UP_REQUIRED, _SCALE_UP_WINDOW_SIZE,
+            _W_CPU, _W_T_PROC,
+            _SCALEUP_STORAGE_BASE_THRESHOLD, _SCALEUP_STORAGE_THRESHOLD_INCREMENT,
+            _SCALEUP_STORAGE_MAX_THRESHOLD, _SCALEUP_STORAGE_REQUIRED, _SCALEUP_STORAGE_WINDOW_SIZE,
+            _W_STORAGE_CPU, _W_T_DB, _SCALEUP_STORAGE_COOLDOWN_S,
+        )
 
         # Thread 3 — must be created before ZmqTelemetrySource so the
         # on_update callback can safely reference self._elasticity.
@@ -87,12 +146,21 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # Telemetry timeout: per-MAC absent-window counters
         self._absent_window_count: dict[str, int] = {}
 
-        # Underutilization: per-tier consecutive-window counters
-        self._scale_down_compute_consecutive: int = 0
-        self._scale_down_storage_consecutive: int = 0
-        # Scale-up counters (for cross-direction reset tracking)
-        self._scale_up_compute_consecutive:   int = 0
-        self._scale_up_storage_consecutive:   int = 0
+        # Birth grace: per-MAC monotonic timestamp of first tracking
+        self._birth_ts: dict[str, float] = {}
+
+        # Underutilization: per-tier sliding-window deques (True = below threshold)
+        self._scale_down_compute_window: deque[bool] = deque(maxlen=_SCALE_DOWN_COMPUTE_WINDOW_SIZE)
+        self._scale_down_storage_window: deque[bool] = deque(maxlen=_SCALE_DOWN_STORAGE_WINDOW_SIZE)
+        # Scale-up: per-tier sliding-window deques (True = score above threshold)
+        self._scale_up_compute_window: deque[bool] = deque(maxlen=_SCALE_UP_WINDOW_SIZE)
+        self._scale_up_storage_window: deque[bool] = deque(maxlen=_SCALEUP_STORAGE_WINDOW_SIZE)
+
+        # Per-tier cooldowns: suppress scale-down for a grace period after scale-up.
+        # Initialised to -inf so the cooldown condition is never true at startup
+        # (time.monotonic() starts from an arbitrary reference, often system boot).
+        self._last_storage_scale_up_ts: float = float('-inf')
+        self._last_compute_scale_up_ts: float = float('-inf')
 
         # Thread 2 — ZMQ subscriber for telemetry summaries and topology updates.
         self._telemetry = ZmqTelemetrySource(
@@ -110,13 +178,15 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         self._sync_node_tracking()
         self._process_drain_events(summary)
+        self._process_secondary_events(summary)
 
-        # Mini-summaries (drain_complete pass-throughs) have empty server dicts.
+        # Mini-summaries (control event pass-throughs) have empty server dicts.
         # A regular summary always has at least one server from heartbeats.
         if not summary.servers and not summary.storage_servers:
             return
 
         self._log_and_update_stats(summary)
+        self._promote_storage_from_telemetry(summary)
 
         try:
             lan = int(summary.network_id.replace("lan", ""))
@@ -132,8 +202,27 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         ds = summary.domain_summary
         self._evaluate_scale_up(ds, lan, summary.network_id)
-        self._evaluate_scale_down_compute(ds)
-        self._evaluate_scale_down_storage(ds)
+
+        now = time.monotonic()
+
+        compute_cooldown_remaining = _SCALEDOWN_COMPUTE_COOLDOWN_S - (now - self._last_compute_scale_up_ts)
+        if compute_cooldown_remaining > 0:
+            logger.debug(
+                "[scale-down] compute within %.0fs cooldown — skipping",
+                compute_cooldown_remaining,
+            )
+        else:
+            self._evaluate_scale_down_compute(ds)
+
+        storage_cooldown_remaining = _SCALEDOWN_STORAGE_COOLDOWN_S - (now - self._last_storage_scale_up_ts)
+        if storage_cooldown_remaining > 0:
+            logger.debug(
+                "[scale-down] storage within %.0fs cooldown — skipping",
+                storage_cooldown_remaining,
+            )
+        else:
+            self._evaluate_scale_down_storage(ds)
+
 
     def _sync_node_tracking(self) -> None:
         """Consume removal and addition completions from Thread 3 into local tracking state."""
@@ -141,11 +230,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             self._dynamic_node_macs.discard(mac)
             self._absent_window_count.pop(mac, None)
             self._active.pop(mac, None)
+            self._birth_ts.pop(mac, None)
             logger.info("[scale-down] removed MAC %s from dynamic tracking after cleanup", mac)
 
         for info in self._elasticity.consume_addition_completions():
             self._dynamic_node_macs.add(info.mac)
             self._active[info.mac] = info
+            self._birth_ts[info.mac] = time.monotonic()
             logger.info("[scale-down] tracking new dynamic %s node mac=%s name=%s",
                         info.node_type, info.mac, info.name)
 
@@ -157,6 +248,54 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 if mac and self._elasticity.has_pending_drain(mac):
                     logger.info("[scale-down] drain_complete received for mac=%s — submitting Phase B cleanup", mac)
                     self._elasticity.submit_cleanup_compute(mac)
+
+    def _process_secondary_events(self, summary: TelemetrySummary) -> None:
+        """Handle rs_secondary_ready control events — add storage node to VIP pool."""
+        for event in summary.control_events:
+            if event.get("event_type") == "rs_secondary_ready":
+                mac = event.get("server_id", None)
+                if not mac:
+                    continue
+                info = self._active.get(mac, None)
+                if info is None:
+                    logger.warning("[scale-up] rs_secondary_ready for unknown mac=%s — ignoring", mac)
+                    continue
+                if info.node_type != "storage":
+                    logger.warning("[scale-up] rs_secondary_ready for non-storage mac=%s — ignoring", mac)
+                    continue
+                self.add_storage_mac(mac, domain=f"n{info.lan}")
+                logger.info(
+                    "[scale-up] rs_secondary_ready received for mac=%s — "
+                    "added to VIP storage pool (ip=%s, name=%s)",
+                    mac, info.ip, info.name,
+                )
+
+    def _promote_storage_from_telemetry(self, summary: TelemetrySummary) -> None:
+        """Fallback VIP promotion: detect SECONDARY from regular telemetry.
+
+        If a storage node reports member_state=="SECONDARY" in its aggregated
+        telemetry but has not been added to the VIP pool yet (rs_secondary_ready
+        was lost or arrived before the socket was ready), promote it now.
+        """
+        for mac, ss in summary.storage_servers.items():
+            if ss.member_state != "SECONDARY":
+                continue
+            info = self._active.get(mac, None)
+            if info is None or info.node_type != "storage":
+                continue
+            domain = f"n{info.lan}"
+            already_in = (
+                mac in self._local_storage_macs_n1 if domain == "n1"
+                else mac in self._local_storage_macs_n2
+            )
+            if already_in:
+                continue
+            self.add_storage_mac(mac, domain=domain)
+            logger.info(
+                "[scale-up] promoting storage mac=%s via telemetry fallback "
+                "(member_state=SECONDARY, ip=%s, name=%s)",
+                mac, info.ip, info.name,
+            )
 
 
     def _log_and_update_stats(self, summary: TelemetrySummary) -> None:
@@ -175,7 +314,12 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
     def _detect_absent_nodes(self, summary: TelemetrySummary) -> None:
         """Detect dynamic nodes that have stopped reporting and trigger their removal."""
+        now = time.monotonic()
         for mac in list(self._dynamic_node_macs):
+            # Skip freshly spawned nodes that are still booting
+            if now - self._birth_ts.get(mac, float('-inf')) < _NODE_BIRTH_GRACE_S:
+                continue
+
             present = (mac in summary.servers) or (mac in summary.storage_servers)
             if present:
                 self._absent_window_count[mac] = 0
@@ -194,89 +338,171 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                         self._submit_scale_down_alert(mac)
 
 
-    def _evaluate_scale_up(self, ds: DomainSummary, lan: int, network_id: str) -> None:
-        """Evaluate scale-up thresholds for compute and storage tiers."""
-        if (ds.average_cpu_percent > _TAU_CPU_UP
-                and ds.avg_time_proc_ms > _TAU_PROC_MS):
-            logger.info(
-                "[threshold] cpu=%.1f%% > \u03c4=%.1f%% AND T_proc=%.1fms > \u03c4=%.1fms"
-                " on %s \u2014 submitting compute alert",
-                ds.average_cpu_percent, _TAU_CPU_UP,
-                ds.avg_time_proc_ms, _TAU_PROC_MS, network_id,
-            )
-            self._scale_up_compute_consecutive += 1
-            if self._scale_up_compute_consecutive >= 2:
-                self._scale_down_compute_consecutive = 0  # cross-direction reset
-                self._elasticity.submit_alert(
-                    ComputeAlert(lan=lan, network_id=network_id)
-                )
-                self._scale_up_compute_consecutive = 0
-        else:
-            self._scale_up_compute_consecutive = 0
+    @staticmethod
+    def _degradation_score(cpu: float, latency: float,
+                           w_cpu: float, w_lat: float,
+                           cpu_floor: float, cpu_span: float,
+                           lat_floor: float, lat_span: float) -> float:
+        """Compute a weighted degradation score in [0, +inf)."""
+        cpu_component = max(0.0, cpu - cpu_floor) / cpu_span if cpu_span else 0.0
+        lat_component = max(0.0, latency - lat_floor) / lat_span if lat_span else 0.0
+        return w_cpu * cpu_component + w_lat * lat_component
 
-        if (ds.avg_storage_cpu_percent > _TAU_STORAGE_CPU_UP
-                and ds.avg_time_db_ms > _TAU_DADOS_MS):
+    def _count_dynamic_storage_nodes(self) -> int:
+        """Count pending + active dynamic storage nodes for adaptive threshold."""
+        return sum(
+            1 for info in self._active.values()
+            if info.node_type == "storage"
+        )
+
+    def _evaluate_storage_scale_up(self, ds: DomainSummary, lan: int, network_id: str) -> None:
+        """Evaluate storage scale-up using adaptive threshold with a sliding window."""
+        storage_score = self._degradation_score(
+            ds.avg_storage_cpu_percent, ds.avg_time_db_ms,
+            _W_STORAGE_CPU, _W_T_DB,
+            _STORAGE_CPU_FLOOR, _STORAGE_CPU_SPAN,
+            _T_DB_FLOOR, _T_DB_SPAN,
+        )
+
+        # Adaptive threshold: increases with each dynamic storage node
+        dynamic_count = self._count_dynamic_storage_nodes()
+        effective_threshold = min(
+            _SCALEUP_STORAGE_BASE_THRESHOLD + dynamic_count * _SCALEUP_STORAGE_THRESHOLD_INCREMENT,
+            _SCALEUP_STORAGE_MAX_THRESHOLD,
+        )
+
+        above = storage_score >= effective_threshold
+        self._scale_up_storage_window.append(above)
+        logger.debug(
+            "[scale-up] storage score=%.2f (τ_eff=%.2f, base=%.2f +%d×%.2f) "
+            "cpu_s=%.1f%% T_db=%.1fms  window=%d/%d on %s",
+            storage_score, effective_threshold,
+            _SCALEUP_STORAGE_BASE_THRESHOLD, dynamic_count, _SCALEUP_STORAGE_THRESHOLD_INCREMENT,
+            ds.avg_storage_cpu_percent, ds.avg_time_db_ms,
+            sum(self._scale_up_storage_window), len(self._scale_up_storage_window),
+            network_id,
+        )
+        if sum(self._scale_up_storage_window) >= _SCALEUP_STORAGE_REQUIRED:
             logger.info(
-                "[threshold] storage_cpu=%.1f%% > \u03c4=%.1f%% AND T_dados=%.1fms > \u03c4=%.1fms"
-                " on %s \u2014 submitting data alert",
-                ds.avg_storage_cpu_percent, _TAU_STORAGE_CPU_UP,
-                ds.avg_time_db_ms, _TAU_DADOS_MS, network_id,
+                "[scale-up] storage triggered: %d/%d windows ≥ %.2f "
+                "(eff_τ=%.2f, dyn_nodes=%d, last score=%.2f, cpu_s=%.1f%%, T_db=%.1fms) on %s",
+                sum(self._scale_up_storage_window),
+                len(self._scale_up_storage_window),
+                effective_threshold, effective_threshold, dynamic_count,
+                storage_score, ds.avg_storage_cpu_percent, ds.avg_time_db_ms, network_id,
             )
-            self._scale_up_storage_consecutive += 1
-            if self._scale_up_storage_consecutive >= 2:
-                self._scale_down_storage_consecutive = 0  # cross-direction reset
-                self._elasticity.submit_alert(
-                    DataAlert(
-                        lan=lan,
-                        network_id=network_id,
-                        rs_name=f"rs_net{lan}",
-                        primary_container=f"edge_storage_server_n{lan}",
-                    )
+            self._scale_up_storage_window.clear()
+            self._scale_down_storage_window.clear()  # cross-direction reset
+            self._elasticity.submit(
+                DataAlert(
+                    lan=lan,
+                    network_id=network_id,
+                    rs_name=f"rs_net{lan}",
+                    primary_container=f"edge_storage_server_n{lan}",
                 )
-                self._scale_up_storage_consecutive = 0
+            )
+            self._last_storage_scale_up_ts = time.monotonic()
+
+    def _evaluate_scale_up(self, ds: DomainSummary, lan: int, network_id: str) -> None:
+        """Evaluate scale-up using weighted degradation scores with a sliding window."""
+        # ── Compute score ──
+        compute_score = self._degradation_score(
+            ds.average_cpu_percent, ds.avg_time_proc_ms,
+            _W_CPU, _W_T_PROC,
+            _CPU_FLOOR, _CPU_SPAN,
+            _T_PROC_FLOOR, _T_PROC_SPAN,
+        )
+        above = compute_score >= _SCALE_UP_SCORE_THRESHOLD
+        self._scale_up_compute_window.append(above)
+        logger.debug(
+            "[scale-up] compute score=%.2f (τ=%.2f) cpu=%.1f%% T_proc=%.1fms  "
+            "window=%d/%d on %s",
+            compute_score, _SCALE_UP_SCORE_THRESHOLD,
+            ds.average_cpu_percent, ds.avg_time_proc_ms,
+            sum(self._scale_up_compute_window), len(self._scale_up_compute_window),
+            network_id,
+        )
+        if sum(self._scale_up_compute_window) >= _SCALE_UP_REQUIRED:
+            logger.info(
+                "[scale-up] compute triggered: %d/%d windows ≥ %.2f "
+                "(last score=%.2f, cpu=%.1f%%, T_proc=%.1fms) on %s",
+                sum(self._scale_up_compute_window),
+                len(self._scale_up_compute_window),
+                _SCALE_UP_SCORE_THRESHOLD, compute_score,
+                ds.average_cpu_percent, ds.avg_time_proc_ms, network_id,
+            )
+            self._scale_up_compute_window.clear()
+            self._scale_down_compute_window.clear()  # cross-direction reset
+            self._elasticity.submit(
+                ComputeAlert(lan=lan, network_id=network_id)
+            )
+            self._last_compute_scale_up_ts = time.monotonic()
+
+        # ── Storage score ──
+        now = time.monotonic()
+        scaleup_storage_cooldown_remaining = _SCALEUP_STORAGE_COOLDOWN_S - (now - self._last_storage_scale_up_ts)
+        if scaleup_storage_cooldown_remaining > 0:
+            logger.debug(
+                "[scale-up] storage within %.0fs scale-up cooldown — skipping",
+                scaleup_storage_cooldown_remaining,
+            )
         else:
-            self._scale_up_storage_consecutive = 0
+            self._evaluate_storage_scale_up(ds, lan, network_id)
 
     def _evaluate_scale_down_compute(self, ds: DomainSummary) -> None:
         """Evaluate compute scale-down and remove the last added dynamic compute node if sustained."""
-        if (ds.average_cpu_percent < _TAU_CPU_DOWN
-                and ds.avg_time_proc_ms < _TAU_PROC_DOWN_MS):
-            self._scale_down_compute_consecutive += 1
-        else:
-            self._scale_down_compute_consecutive = 0
+        # Timeout guard — indeterminate window; skip without affecting the sliding window.
+        if ds.avg_time_proc_ms > _SCALE_DOWN_PROC_TIMEOUT_CEILING_MS:
+            logger.debug(
+                "[scale-down] compute: avg_time_proc_ms=%.1f exceeds timeout ceiling (%.0f) — skipping window",
+                ds.avg_time_proc_ms, _SCALE_DOWN_PROC_TIMEOUT_CEILING_MS,
+            )
+            return
 
-        if self._scale_down_compute_consecutive >= _SCALE_DOWN_CONSECUTIVE:
+        below = (ds.average_cpu_percent < _TAU_CPU_DOWN
+                 and ds.avg_time_proc_ms < _TAU_PROC_DOWN_MS)
+        self._scale_down_compute_window.append(below)
+
+        if sum(self._scale_down_compute_window) >= _SCALE_DOWN_COMPUTE_REQUIRED:
             last = self._find_last_dynamic_compute_node()
             if last is not None:
                 logger.info(
-                    "[scale-down] compute underutilisation: %d windows below threshold — removing %s",
-                    self._scale_down_compute_consecutive, last.name,
+                    "[scale-down] compute underutilisation: %d/%d windows below threshold — removing %s",
+                    sum(self._scale_down_compute_window),
+                    len(self._scale_down_compute_window), last.name,
                 )
-                self._scale_down_compute_consecutive = 0
+                self._scale_down_compute_window.clear()
                 self._submit_scale_down_alert(last.mac)
             else:
                 # No eligible node; discard accumulated windows
-                self._scale_down_compute_consecutive = 0
+                self._scale_down_compute_window.clear()
 
     def _evaluate_scale_down_storage(self, ds: DomainSummary) -> None:
         """Evaluate storage scale-down and remove the last added dynamic storage node if sustained."""
-        if (ds.avg_storage_cpu_percent < _TAU_STORAGE_CPU_DOWN
-                and ds.avg_time_db_ms < _TAU_DB_DOWN_MS):
-            self._scale_down_storage_consecutive += 1
-        else:
-            self._scale_down_storage_consecutive = 0
+        # Timeout guard — indeterminate window; skip without affecting the sliding window.
+        if ds.avg_time_db_ms > _SCALE_DOWN_DB_TIMEOUT_CEILING_MS:
+            logger.debug(
+                "[scale-down] storage: avg_time_db_ms=%.1f exceeds timeout ceiling (%.0f) — skipping window",
+                ds.avg_time_db_ms, _SCALE_DOWN_DB_TIMEOUT_CEILING_MS,
+            )
+            return
 
-        if self._scale_down_storage_consecutive >= _SCALE_DOWN_STORAGE_CONSECUTIVE:
+        below = (ds.avg_storage_cpu_percent < _TAU_STORAGE_CPU_DOWN
+                 and ds.avg_time_db_ms < _TAU_DB_DOWN_MS)
+        self._scale_down_storage_window.append(below)
+
+        if sum(self._scale_down_storage_window) >= _SCALE_DOWN_STORAGE_REQUIRED:
             last = self._find_last_dynamic_storage_node()
             if last is not None:
                 logger.info(
-                    "[scale-down] storage underutilisation: %d windows below threshold — removing %s",
-                    self._scale_down_storage_consecutive, last.name,
+                    "[scale-down] storage underutilisation: %d/%d windows below threshold — removing %s",
+                    sum(self._scale_down_storage_window),
+                    len(self._scale_down_storage_window), last.name,
                 )
-                self._scale_down_storage_consecutive = 0
+                self._scale_down_storage_window.clear()
                 self._submit_scale_down_alert(last.mac)
             else:
-                self._scale_down_storage_consecutive = 0
+                self._scale_down_storage_window.clear()
 
     def _find_last_dynamic_compute_node(self):
         """Return the NodeInfo for the most recently added dynamic compute node (LIFO)."""
@@ -312,6 +538,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 network_id=info.network_id,
                 container_name=info.name,
                 mac=mac,
+                ip=info.ip,
             )
         else:
             alert = ScaleDownDataAlert(

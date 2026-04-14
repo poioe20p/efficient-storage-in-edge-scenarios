@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram name="IoT Edge Monitoring Platform" id="iot-platform-overview">
-        <mxGraphModel dx="1962" dy="1284" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+        <mxGraphModel dx="2183" dy="1002" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -34,10 +34,10 @@
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="30" value="&lt;b style=&quot;font-size:14px;&quot;&gt;Region  net1  —  10.0.0.0/24&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=bottom;align=center;spacingBottom=10;fontSize=12;" parent="1" vertex="1">
-                    <mxGeometry x="20" y="380" width="790" height="780" as="geometry"/>
+                    <mxGeometry x="20" y="380" width="810" height="630" as="geometry"/>
                 </mxCell>
                 <mxCell id="31" value="&lt;b&gt;IoT Devices&lt;/b&gt;&lt;br&gt;temp · vibration · GPS&lt;br&gt;net1::device::*" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="55" y="430" width="220" height="120" as="geometry"/>
+                    <mxGeometry x="55" y="430" width="195" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="32" value="&lt;b&gt;OVS Switch&lt;/b&gt;" style="image;html=1;image=img/lib/clip_art/networking/Bridge_128x128.png;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="390" y="455" width="80" height="80" as="geometry"/>
@@ -49,10 +49,10 @@
                     <mxGeometry x="90" y="870" width="230" height="110" as="geometry"/>
                 </mxCell>
                 <mxCell id="40" value="&lt;b style=&quot;font-size:14px;&quot;&gt;Region  net2  —  10.0.1.0/24&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=bottom;align=center;spacingBottom=10;fontSize=12;" parent="1" vertex="1">
-                    <mxGeometry x="870" y="380" width="810" height="780" as="geometry"/>
+                    <mxGeometry x="880" y="380" width="800" height="640" as="geometry"/>
                 </mxCell>
                 <mxCell id="41" value="&lt;b&gt;IoT Devices&lt;/b&gt;&lt;br&gt;water · power · air quality&lt;br&gt;net2::device::*" style="rounded=1;dashed=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d6b656;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="1380" y="430" width="220" height="120" as="geometry"/>
+                    <mxGeometry x="1400" y="415" width="220" height="120" as="geometry"/>
                 </mxCell>
                 <mxCell id="42" value="&lt;b&gt;OVS Switch&lt;/b&gt;" style="image;html=1;image=img/lib/clip_art/networking/Bridge_128x128.png;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="1190" y="455" width="80" height="80" as="geometry"/>
@@ -90,7 +90,7 @@
                 <mxCell id="e1032" value="HTTP" style="html=1;endArrow=block;endFill=1;fontSize=10;" parent="1" source="10" target="32" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e1042" value="HTTP" style="html=1;endArrow=block;endFill=1;fontSize=10;" parent="1" source="10" target="42" edge="1">
+                <mxCell id="e1042" value="HTTP" style="html=1;endArrow=block;endFill=1;fontSize=10;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="10" target="42" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e3221" value="Packet-In / FlowMod" style="html=1;endArrow=block;endFill=1;startArrow=block;startFill=1;fontSize=10;" parent="1" source="32" target="21" edge="1">
@@ -109,10 +109,10 @@
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="35" value="&lt;b&gt;Aggregator&lt;/b&gt;&lt;div&gt;(Container)&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="340" y="755" width="150" height="50" as="geometry"/>
+                    <mxGeometry x="400" y="690" width="150" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="46" value="&lt;b&gt;Aggregator&lt;/b&gt;&lt;div&gt;(Container)&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="1150" y="755" width="150" height="50" as="geometry"/>
+                    <mxGeometry x="1030" y="680" width="150" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="ezm33" value="&lt;font color=&quot;#009900&quot;&gt;ZMQ PUSH&lt;/font&gt;" style="html=1;dashed=1;strokeColor=#009900;strokeWidth=2;endArrow=block;endFill=1;fontSize=10;curved=1;" parent="1" source="33" target="35" edge="1">
                     <mxGeometry relative="1" as="geometry"/>

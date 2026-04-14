@@ -17,8 +17,8 @@ readonly OVS_CONTAINER="ovs"
 
 declare -A LAN_BRIDGE=(     [1]="ovs-br0"  [2]="ovs-br1"  )
 # Test client veth range — must match create_test_clients.sh
-declare -A VETH_RANGE_START=( [1]=50 [2]=70 )
-declare -A VETH_RANGE_END=(   [1]=69 [2]=89 )
+declare -A VETH_RANGE_START=( [1]=150 [2]=250 )
+declare -A VETH_RANGE_END=(   [1]=199 [2]=299 )
 
 LAN=""
 PREFIX="test_client"
