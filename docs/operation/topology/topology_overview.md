@@ -61,7 +61,7 @@ source/sdn_controller/
 ### Local Discovery
 
 The `_topology_worker` greenthread runs every `_topology_interval` seconds
-(default 5, from `TOPOLOGY_INTERVAL` env var). Each iteration:
+(default 1, from `TOPOLOGY_INTERVAL` env var). Each iteration:
 
 1. Queries the OS-Ken topology API for current switches, hosts, and links.
 2. Filters out hosts whose MAC is in `_router_mac_blocklist` (derived from
@@ -195,8 +195,8 @@ socket using `send_string()`.
 
 Topology is published on three triggers:
 1. **Change** — the local view differs from the previous snapshot.
-2. **Heartbeat** — no change for `_topology_heartbeat_interval` seconds
-   (default 15, from `TOPOLOGY_HEARTBEAT_INTERVAL`).
+2. **Heartbeat** — every `TOPOLOGY_HEARTBEAT_TICKS` topology ticks with no
+   change (default 30 ticks × 1 s interval = 30 s).
 3. **Correction** — a stale peer view was detected in the incoming snapshot.
 
 ### Receiving
@@ -269,25 +269,21 @@ Higher-priority rules (100, 200) are installed by `VipRoutingMixin` — see the
 
 ## Environment Variables
 
-| Variable                       | Default | Purpose                                            |
-|--------------------------------|---------|----------------------------------------------------|
-| `TOPOLOGY_INTERVAL`           | `5`     | Seconds between topology worker polls              |
-| `TOPOLOGY_HEARTBEAT_INTERVAL` | `15`    | Seconds before publishing a heartbeat update       |
-| `SERVER_MACS`                 | —       | Comma-separated initial HTTP server MACs           |
-| `STORAGE_MACS_N1`             | —       | Comma-separated initial LAN 1 storage MACs         |
-| `STORAGE_MACS_N2`             | —       | Comma-separated initial LAN 2 storage MACs         |
-| `VIP_SERVER_IP`               | —       | Virtual IP for HTTP edge servers                   |
-| `VIP_SERVER_MAC`              | —       | Virtual MAC for VIP_SERVER                         |
-| `VIP_DATA_N1_IP`              | —       | Virtual IP for LAN 1 MongoDB storage               |
-| `VIP_DATA_N1_MAC`             | —       | Virtual MAC for VIP_DATA_N1                        |
-| `VIP_DATA_N2_IP`              | —       | Virtual IP for LAN 2 MongoDB storage               |
-| `VIP_DATA_N2_MAC`             | —       | Virtual MAC for VIP_DATA_N2                        |
-| `ROUTER_MAC_BLOCKLIST`        | —       | Comma-separated MACs to exclude from host discovery|
+| Variable                       | Default                      | Purpose                                            |
+|--------------------------------|------------------------------|----------------------------------------------------|
+| `LAN_ID`                      | `lan1`                       | Network identity for published topology snapshots  |
+| `TOPOLOGY_INTERVAL`           | `1`                          | Seconds between topology worker polls              |
+| `TOPOLOGY_HEARTBEAT_TICKS`    | `30`                         | Publish a heartbeat every N ticks with no change   |
+| `TOPOLOGY_PUB_PORT`           | `5557`                       | ZMQ PUB bind port for outgoing topology snapshots  |
+| `PEER_TOPOLOGY_ENDPOINTS`     | *(empty)*                    | Comma-separated peer controller PUB addresses      |
+| `SERVER_MACS`                 | *(empty)*                    | Comma-separated initial HTTP server MACs           |
+| `STORAGE_MACS_N1`             | *(empty)*                    | Comma-separated initial LAN 1 storage MACs         |
+| `STORAGE_MACS_N2`             | *(empty)*                    | Comma-separated initial LAN 2 storage MACs         |
+| `VIP_SERVER_IP`               | `10.0.0.253`                 | Virtual IP for HTTP edge servers                   |
+| `VIP_SERVER_MAC`              | `aa:bb:cc:dd:ee:01`          | Virtual MAC for VIP_SERVER                         |
+| `VIP_DATA_N1_IP`              | `10.0.0.254`                 | Virtual IP for LAN 1 MongoDB storage               |
+| `VIP_DATA_N1_MAC`             | `aa:bb:cc:dd:ee:02`          | Virtual MAC for VIP_DATA_N1                        |
+| `VIP_DATA_N2_IP`              | `10.0.1.254`                 | Virtual IP for LAN 2 MongoDB storage               |
+| `VIP_DATA_N2_MAC`             | `aa:bb:cc:dd:ee:03`          | Virtual MAC for VIP_DATA_N2                        |
 
----
 
-## Planned / Not Yet Implemented
-
-- **Scale-down topology updates** — when the elasticity manager removes a node,
-  propagate a topology correction so the peer controller stops routing traffic
-  to the removed backend.

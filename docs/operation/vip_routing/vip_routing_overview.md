@@ -64,11 +64,11 @@ Three virtual IP addresses are managed. The IPs and MACs are configured via
 environment variables and stored as attributes on `TopologyMixin` (see the
 [Topology Overview](../topology/topology_overview.md)):
 
-| VIP             | Env Vars (IP / MAC)                       | Purpose                                    |
-|-----------------|-------------------------------------------|--------------------------------------------|
-| **VIP_SERVER**  | `VIP_SERVER_IP`, `VIP_SERVER_MAC`         | HTTP edge servers (shared across domains)  |
-| **VIP_DATA_N1** | `VIP_DATA_N1_IP`, `VIP_DATA_N1_MAC`      | MongoDB storage on LAN 1                  |
-| **VIP_DATA_N2** | `VIP_DATA_N2_IP`, `VIP_DATA_N2_MAC`      | MongoDB storage on LAN 2                  |
+| VIP                   | Env Vars (IP / MAC)                     | Purpose                                   |
+| --------------------- | --------------------------------------- | ----------------------------------------- |
+| **VIP_SERVER**  | `VIP_SERVER_IP`, `VIP_SERVER_MAC`   | HTTP edge servers (shared across domains) |
+| **VIP_DATA_N1** | `VIP_DATA_N1_IP`, `VIP_DATA_N1_MAC` | MongoDB storage on LAN 1                  |
+| **VIP_DATA_N2** | `VIP_DATA_N2_IP`, `VIP_DATA_N2_MAC` | MongoDB storage on LAN 2                  |
 
 VIP_DATA is per-domain: edge servers on LAN 1 connect to `VIP_DATA_N1` to reach
 LAN 1's MongoDB replica set, and to `VIP_DATA_N2` to reach LAN 2's. This
@@ -130,7 +130,9 @@ processing.
 
 `select_server(client_mac)` picks the HTTP server with the lowest cost:
 
-$$Cost_j = w_{cpu} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram} \cdot \frac{RAM_j}{RAM_{max}} + w_{req} \cdot \frac{Req_j}{Req_{max}} + w_{hops} \cdot \frac{Hops_j}{Hops_{max}}$$
+$$
+Cost_j = w_{cpu} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram} \cdot \frac{RAM_j}{RAM_{max}} + w_{req} \cdot \frac{Req_j}{Req_{max}} + w_{hops} \cdot \frac{Hops_j}{Hops_{max}}
+$$
 
 Default weights: `W_CPU=0.2`, `W_RAM=0.2`, `W_REQUESTS=0.2`, `W_HOPS=0.4`.
 
@@ -139,7 +141,9 @@ Default weights: `W_CPU=0.2`, `W_RAM=0.2`, `W_REQUESTS=0.2`, `W_HOPS=0.4`.
 `select_storage(domain, client_mac)` picks the storage node with the lowest cost
 from the domain's pool (`vip_storage_pool_n1` or `vip_storage_pool_n2`):
 
-$$Cost_j = w_{cpu} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram} \cdot \frac{RAM_j}{RAM_{max}} + w_{conn} \cdot \frac{Conn_j}{Conn_{max}} + w_{lag} \cdot \frac{Lag_j}{Lag_{max}} + w_{hops} \cdot \frac{Hops_j}{Hops_{max}}$$
+$$
+Cost_j = w_{cpu} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram} \cdot \frac{RAM_j}{RAM_{max}} + w_{conn} \cdot \frac{Conn_j}{Conn_{max}} + w_{lag} \cdot \frac{Lag_j}{Lag_{max}} + w_{hops} \cdot \frac{Hops_j}{Hops_{max}}
+$$
 
 Default weights: `W_STORAGE_CPU=0.2`, `W_STORAGE_RAM=0.2`,
 `W_STORAGE_CONNECTIONS=0.1`, `W_STORAGE_LAG=0.2`, `W_STORAGE_HOPS=0.3`.
@@ -157,12 +161,12 @@ Default weights: `W_STORAGE_CPU=0.2`, `W_STORAGE_RAM=0.2`,
 
 Hops for each backend are resolved in priority order:
 
-| Condition                  | Hops assigned                              |
-|----------------------------|--------------------------------------------|
-| Path in `hop_cache`        | Real shortest-path length                  |
-| Local, no path yet         | `max(_avg_hop_count, 1.0)`                 |
-| Cross-network (peer)       | `max(_avg_hop_count, 1.0) + max(_peer_avg_hop_count, 1.0)` |
-| Truly unknown MAC          | `hops_max` (worst case)                    |
+| Condition             | Hops assigned                                                |
+| --------------------- | ------------------------------------------------------------ |
+| Path in `hop_cache` | Real shortest-path length                                    |
+| Local, no path yet    | `max(_avg_hop_count, 1.0)`                                 |
+| Cross-network (peer)  | `max(_avg_hop_count, 1.0) + max(_peer_avg_hop_count, 1.0)` |
+| Truly unknown MAC     | `hops_max` (worst case)                                    |
 
 The `_avg_hop_count` is computed by `TopologyMixin._rebuild_hop_cache()` and
 published in `TopologySnapshot.avg_hop_count`. The peer's value is stored as
@@ -176,10 +180,10 @@ zero values from making cross-network backends appear free.
 Once a backend is selected, `_install_vip_dnat_snat()` installs a flow rule
 pair and Packet-Outs the first packet:
 
-| Rule | Priority | Match | Actions |
-|------|----------|-------|---------|
-| **DNAT** | 200 | `eth_src=client_mac, eth_dst=VIP_MAC, ipv4_src=client_ip, ipv4_dst=VIP_IP, ip_proto` | `set_field(eth_dst=backend_mac, ipv4_dst=backend_ip)`, output to backend port |
-| **SNAT** | 200 | `eth_src=backend_mac, eth_dst=client_mac, ipv4_src=backend_ip, ipv4_dst=client_ip, ip_proto` | `set_field(eth_src=VIP_MAC, ipv4_src=VIP_IP)`, output to client port |
+| Rule           | Priority | Match                                                                                          | Actions                                                                         |
+| -------------- | -------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **DNAT** | 200      | `eth_src=client_mac, eth_dst=VIP_MAC, ipv4_src=client_ip, ipv4_dst=VIP_IP, ip_proto`         | `set_field(eth_dst=backend_mac, ipv4_dst=backend_ip)`, output to backend port |
+| **SNAT** | 200      | `eth_src=backend_mac, eth_dst=client_mac, ipv4_src=backend_ip, ipv4_dst=client_ip, ip_proto` | `set_field(eth_src=VIP_MAC, ipv4_src=VIP_IP)`, output to client port          |
 
 Both rules have configurable idle/hard timeouts (`VIP_IDLE_TIMEOUT=30s`,
 `VIP_HARD_TIMEOUT=120s`). When the DNAT rule expires, the priority-100 punt
@@ -223,10 +227,10 @@ the packet must traverse the inter-LAN router:
 
 ### Configuration
 
-| Variable         | Purpose                                                  |
-|------------------|----------------------------------------------------------|
-| `ROUTER_OVS_PORT`| OVS port number connected to the inter-LAN router (0 = disabled) |
-| `ROUTER_MAC`     | Router's LAN-side interface MAC (per controller)         |
+| Variable            | Purpose                                                          |
+| ------------------- | ---------------------------------------------------------------- |
+| `ROUTER_OVS_PORT` | OVS port number connected to the inter-LAN router (0 = disabled) |
+| `ROUTER_MAC`      | Router's LAN-side interface MAC (per controller)                 |
 
 Each controller receives its own `ROUTER_MAC` via `-e ROUTER_MAC=...` in the
 `docker run` command in `build_network_setup.sh`.
@@ -262,11 +266,11 @@ server at any time, consistent with the workload model.
 Device and node IDs follow `{lan}::{type}::{number}` — the LAN is
 `id.split("::")[0]`. Each workload route resolves the target LAN:
 
-| Route | `sensor_reports` / `device_registry` LAN | `query_events` LAN |
-|-------|------------------------------------------|--------------------|
-| `device_latest` | Parsed from `device_id` / `node_id` prefix | `LAN_ID` (local) |
-| `anomalies` | Grouped by `device_id` prefix per enrichment query | `LAN_ID` (local) |
-| `dashboard` | `node_id` prefix for registry; **both LANs** for sensor data | — |
+| Route             | `sensor_reports` / `device_registry` LAN                         | `query_events` LAN |
+| ----------------- | -------------------------------------------------------------------- | -------------------- |
+| `device_latest` | Parsed from `device_id` / `node_id` prefix                       | `LAN_ID` (local)   |
+| `anomalies`     | Grouped by `device_id` prefix per enrichment query                 | `LAN_ID` (local)   |
+| `dashboard`     | `node_id` prefix for registry; **both LANs** for sensor data | —                   |
 
 `query_events` always goes to the local `LAN_ID` because it tracks this edge
 server's activity, not the data's origin.
@@ -277,9 +281,6 @@ The `/vip_data` PUT route updates `vip_data_per_domain` and invalidates any
 cached singleton client whose LAN was changed, so the next query recreates the
 client with the new VIP address.
 
-See the [VIP Interception Plan — Per-LAN VIP_DATA Routing addendum](implementation/vip_interception_plan.md#addendum--per-lan-vip_data-routing-from-edge-server)
-for full implementation details.
-
 ### Connection Failure Handling
 
 Two mechanisms protect edge servers from lingering connections to
@@ -288,11 +289,11 @@ unreachable or overloaded storage nodes:
 **Per-LAN Circuit Breaker.** Each LAN's MongoDB path has an independent
 circuit breaker with three states:
 
-| State | Behaviour |
-|-------|-----------|
-| CLOSED | Normal operation — queries proceed to `_get_client()` |
-| OPEN | Fail-fast — `CircuitOpenError` raised immediately (no 3 s timeout) |
-| HALF_OPEN | One probe request allowed; success → CLOSED, failure → re-OPEN |
+| State     | Behaviour                                                            |
+| --------- | -------------------------------------------------------------------- |
+| CLOSED    | Normal operation — queries proceed to `_get_client()`             |
+| OPEN      | Fail-fast —`CircuitOpenError` raised immediately (no 3 s timeout) |
+| HALF_OPEN | One probe request allowed; success → CLOSED, failure → re-OPEN     |
 
 The circuit trips on `AutoReconnect` and stays OPEN for `CIRCUIT_COOLDOWN_S`
 seconds (default 5).  Because `CircuitOpenError` inherits from `PyMongoError`,
@@ -384,11 +385,11 @@ sequenceDiagram
 
 ## Flow Priority Summary
 
-| Priority | Rule                           | Trigger               |
-|----------|--------------------------------|-----------------------|
-| 100      | VIP ARP punt → controller      | Switch connect        |
-| 100      | VIP IP punt → controller       | Switch connect        |
-| 200      | DNAT/SNAT (per-client, timed)  | First VIP packet-in   |
+| Priority | Rule                          | Trigger             |
+| -------- | ----------------------------- | ------------------- |
+| 100      | VIP ARP punt → controller    | Switch connect      |
+| 100      | VIP IP punt → controller     | Switch connect      |
+| 200      | DNAT/SNAT (per-client, timed) | First VIP packet-in |
 
 Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 [Topology Overview](../topology/topology_overview.md).
@@ -397,26 +398,26 @@ Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 
 ## Environment Variables
 
-| Variable                    | Default | Purpose                                            |
-|-----------------------------|---------|----------------------------------------------------|
-| `W_CPU`                    | `0.2`   | Server WSM weight for CPU                          |
-| `W_RAM`                    | `0.2`   | Server WSM weight for RAM                          |
-| `W_REQUESTS`               | `0.2`   | Server WSM weight for request count                |
-| `W_HOPS`                   | `0.4`   | Server WSM weight for hop distance                 |
-| `W_STORAGE_CPU`            | `0.2`   | Storage WSM weight for CPU                         |
-| `W_STORAGE_RAM`            | `0.2`   | Storage WSM weight for RAM                         |
-| `W_STORAGE_CONNECTIONS`    | `0.1`   | Storage WSM weight for connection count            |
-| `W_STORAGE_LAG`            | `0.2`   | Storage WSM weight for replication lag             |
-| `W_STORAGE_HOPS`           | `0.3`   | Storage WSM weight for hop distance                |
-| `VIP_IDLE_TIMEOUT`         | `30`    | DNAT/SNAT idle timeout (seconds)                   |
-| `VIP_HARD_TIMEOUT`         | `120`   | DNAT/SNAT hard timeout (seconds)                   |
-| `ROUTER_OVS_PORT`          | `0`     | OVS port to inter-LAN router (0 = disabled)       |
-| `ROUTER_MAC`               | —       | Router LAN-side MAC for cross-network SNAT match   |
-| `LAN_ID`                   | `lan1`  | Edge server's home LAN (replaces `REGION`)         |
-| `DB_PORT`                  | `27018` | MongoDB port for VIP_DATA addresses                |
-| `MAX_IDLE_MS`              | `VIP_IDLE_TIMEOUT × 1000` | PyMongo `maxIdleTimeMS` — socket recycling window |
-| `CIRCUIT_COOLDOWN_S`       | `5`     | Per-LAN circuit breaker cooldown before probe (seconds) |
-| `TAU_DADOS_MS`             | `5000`  | Per-request DB time threshold for client eviction (ms)  |
+| Variable                  | Default                      | Purpose                                                 |
+| ------------------------- | ---------------------------- | ------------------------------------------------------- |
+| `W_CPU`                 | `0.2`                      | Server WSM weight for CPU                               |
+| `W_RAM`                 | `0.2`                      | Server WSM weight for RAM                               |
+| `W_REQUESTS`            | `0.2`                      | Server WSM weight for request count                     |
+| `W_HOPS`                | `0.4`                      | Server WSM weight for hop distance                      |
+| `W_STORAGE_CPU`         | `0.2`                      | Storage WSM weight for CPU                              |
+| `W_STORAGE_RAM`         | `0.2`                      | Storage WSM weight for RAM                              |
+| `W_STORAGE_CONNECTIONS` | `0.1`                      | Storage WSM weight for connection count                 |
+| `W_STORAGE_LAG`         | `0.2`                      | Storage WSM weight for replication lag                  |
+| `W_STORAGE_HOPS`        | `0.3`                      | Storage WSM weight for hop distance                     |
+| `VIP_IDLE_TIMEOUT`      | `30`                       | DNAT/SNAT idle timeout (seconds)                        |
+| `VIP_HARD_TIMEOUT`      | `120`                      | DNAT/SNAT hard timeout (seconds)                        |
+| `ROUTER_OVS_PORT`       | `0`                        | OVS port to inter-LAN router (0 = disabled)             |
+| `ROUTER_MAC`            | —                           | Router LAN-side MAC for cross-network SNAT match        |
+| `LAN_ID`                | `lan1`                     | Edge server's home LAN (replaces `REGION`)            |
+| `DB_PORT`               | `27018`                    | MongoDB port for VIP_DATA addresses                     |
+| `MAX_IDLE_MS`           | `VIP_IDLE_TIMEOUT × 1000` | PyMongo `maxIdleTimeMS` — socket recycling window    |
+| `CIRCUIT_COOLDOWN_S`    | `5`                        | Per-LAN circuit breaker cooldown before probe (seconds) |
+| `TAU_DADOS_MS`          | `5000`                     | Per-request DB time threshold for client eviction (ms)  |
 
 ---
 

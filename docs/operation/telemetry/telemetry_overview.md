@@ -116,13 +116,13 @@ Flask hooks emit a ZMQ PUSH event after every HTTP request:
 }
 ```
 
-| Field | Source |
-|-------|--------|
-| `time_total_ms` | Wall clock from `before_request` to `after_request` |
-| `time_db_ms` | Accumulated via the `timed_db()` context manager wrapping all MongoDB calls |
-| `cpu_percent` | `psutil.cpu_percent()` |
-| `ram_used_mb` | `psutil.virtual_memory().used / 1 MiB` |
-| `request_type` | `"write"` for POST/PUT/PATCH/DELETE, `"read"` otherwise |
+| Field             | Source                                                                        |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `time_total_ms` | Wall clock from `before_request` to `after_request`                       |
+| `time_db_ms`    | Accumulated via the `timed_db()` context manager wrapping all MongoDB calls |
+| `cpu_percent`   | `psutil.cpu_percent()`                                                      |
+| `ram_used_mb`   | `psutil.virtual_memory().used / 1 MiB`                                      |
+| `request_type`  | `"write"` for POST/PUT/PATCH/DELETE, `"read"` otherwise                   |
 
 `zmq.NOBLOCK` ensures the hook never blocks the HTTP response — events are
 silently dropped if the aggregator is temporarily unavailable.
@@ -185,17 +185,19 @@ When idle, a `heartbeat` event is sent every `HEARTBEAT_INTERVAL_S` (default
   "server_id":           "00:00:00:00:00:06",
   "ts":                  1742126400.0,
   "repl_lag_s":          1.2,
+  "member_state":        "SECONDARY",
   "connections_current": 4,
   "cpu_percent":         12.3,
   "ram_used_mb":         256.7
 }
 ```
 
-| Field | Source |
-|-------|--------|
-| `repl_lag_s` | `replSetGetStatus` — seconds behind primary. `0.0` if this IS the primary; `None` if standalone. |
-| `connections_current` | `serverStatus.connections.current` |
-| `cpu_percent` / `ram_used_mb` | `psutil` |
+| Field                             | Source                                                                                                                               |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `repl_lag_s`                    | `replSetGetStatus` — seconds behind primary. `0.0` if this IS the primary; `None` if standalone.                              |
+| `member_state`                  | `replSetGetStatus` — RS state string (e.g. `"SECONDARY"`, `"PRIMARY"`). Used by the controller's VIP promotion fallback path. |
+| `connections_current`           | `serverStatus.connections.current`                                                                                                 |
+| `cpu_percent` / `ram_used_mb` | `psutil`                                                                                                                           |
 
 ### Heartbeat Event
 
@@ -213,13 +215,13 @@ one-to-many summary publishing.
 
 ### Network Assignment
 
-| Property | LAN 1 | LAN 2 |
-|----------|-------|-------|
-| Container name | `aggregator_n1` | `aggregator_n2` |
-| Image | `local_state_server` | `local_state_server` |
-| IP | `10.0.0.5/24` | `10.0.1.5/24` |
-| ZMQ PULL | `:5555` | `:5555` |
-| ZMQ PUB | `:5556` | `:5556` |
+| Property       | LAN 1                  | LAN 2                  |
+| -------------- | ---------------------- | ---------------------- |
+| Container name | `aggregator_n1`      | `aggregator_n2`      |
+| Image          | `local_state_server` | `local_state_server` |
+| IP             | `10.0.0.5/24`        | `10.0.1.5/24`        |
+| ZMQ PULL       | `:5555`              | `:5555`              |
+| ZMQ PUB        | `:5556`              | `:5556`              |
 
 ### Windowed Aggregation
 
@@ -227,48 +229,46 @@ Events are collected into a buffer (thread-safe via `threading.Lock`).
 Every `WINDOW_S` seconds (default 10), the buffer is drained and processed:
 
 1. **Classify events** by `event_type`:
+
    - No `event_type` → HTTP event from edge servers
    - `"mongo_stats"` → storage sidecar activity
    - `"heartbeat"` → liveness signal (either type)
-
 2. **Per-server HTTP stats** — grouped by `server_id`, averaged over the window:
 
-   | Output Field | Computation |
-   |-------------|-------------|
-   | `avg_time_total_ms` | mean of `time_total_ms` |
-   | `avg_time_db_ms` | mean of `time_db_ms` |
-   | `avg_time_proc_ms` | mean of `time_total_ms - time_db_ms` |
-   | `request_count` | count of events |
-   | `error_rate` | fraction with `status_code >= 500` |
-   | `avg_cpu_percent` | mean of `cpu_percent` |
-   | `avg_ram_used_mb` | mean of `ram_used_mb` |
-   | `last_report_ts` | most recent `ts` from any event (including heartbeats) |
-
+   | Output Field          | Computation                                              |
+   | --------------------- | -------------------------------------------------------- |
+   | `avg_time_total_ms` | mean of `time_total_ms`                                |
+   | `avg_time_db_ms`    | mean of `time_db_ms`                                   |
+   | `avg_time_proc_ms`  | mean of `time_total_ms - time_db_ms`                   |
+   | `request_count`     | count of events                                          |
+   | `error_rate`        | fraction with `status_code >= 500`                     |
+   | `avg_cpu_percent`   | mean of `cpu_percent`                                  |
+   | `avg_ram_used_mb`   | mean of `ram_used_mb`                                  |
+   | `last_report_ts`    | most recent `ts` from any event (including heartbeats) |
 3. **Per-server storage stats** — grouped by `server_id` from `mongo_stats` events:
 
-   | Output Field | Computation |
-   |-------------|-------------|
-   | `avg_repl_lag_s` | mean of `repl_lag_s` (or `None` if all standalone) |
-   | `avg_connections` | mean of `connections_current` |
-   | `avg_cpu_percent` | mean of `cpu_percent` |
-   | `avg_ram_used_mb` | mean of `ram_used_mb` |
-   | `sample_count` | count of `mongo_stats` events |
-   | `last_report_ts` | most recent `ts` |
-
+   | Output Field        | Computation                                                              |
+   | ------------------- | ------------------------------------------------------------------------ |
+   | `avg_repl_lag_s`  | mean of `repl_lag_s` (or `None` if all standalone)                   |
+   | `avg_connections` | mean of `connections_current`                                          |
+   | `avg_cpu_percent` | mean of `cpu_percent`                                                  |
+   | `avg_ram_used_mb` | mean of `ram_used_mb`                                                  |
+   | `sample_count`    | count of `mongo_stats` events                                          |
+   | `last_report_ts`  | most recent `ts`                                                       |
+   | `member_state`    | latest RS state string (e.g.`"SECONDARY"`) from `mongo_stats` events |
 4. **Heartbeat-only nodes** — if a node sent only heartbeats (no data events)
    in the window, it still appears in the summary with `request_count=0` (HTTP)
    or `sample_count=0` (storage) and zero latency fields, so the controller
    knows it's alive.
-
 5. **Domain summary** — computed from HTTP events only:
 
-   | Output Field | Computation |
-   |-------------|-------------|
-   | `total_requests` | count of all HTTP events |
-   | `avg_time_proc_ms` | mean of `time_total_ms - time_db_ms` across all HTTP events |
-   | `avg_time_db_ms` | mean of `time_db_ms` across all HTTP events |
-   | `average_cpu_percent` | mean of `cpu_percent` across all HTTP events |
-   | `peak_time_total_ms` | max of `time_total_ms` across all HTTP events |
+   | Output Field            | Computation                                                   |
+   | ----------------------- | ------------------------------------------------------------- |
+   | `total_requests`      | count of all HTTP events                                      |
+   | `avg_time_proc_ms`    | mean of `time_total_ms - time_db_ms` across all HTTP events |
+   | `avg_time_db_ms`      | mean of `time_db_ms` across all HTTP events                 |
+   | `average_cpu_percent` | mean of `cpu_percent` across all HTTP events                |
+   | `peak_time_total_ms`  | max of `time_total_ms` across all HTTP events               |
 
 The aggregated summary is published as JSON on the ZMQ PUB socket.
 
@@ -288,7 +288,8 @@ TelemetrySummary
   ├── window_end: float
   ├── servers: dict[str, ServerSummary]
   ├── storage_servers: dict[str, StorageServerSummary]  (default: {})
-  └── domain_summary: DomainSummary
+  ├── domain_summary: DomainSummary | None        (absent in mini-summaries)
+  └── control_events: list[dict]                  (drain_complete, rs_secondary_ready, etc.)
 ```
 
 `last_report_ts: float = 0.0` is present on both `ServerSummary` and
@@ -318,6 +319,7 @@ ensures the OpenFlow event loop continues processing PacketIn events while
 waiting for the next telemetry summary.
 
 The source handles two message types on the same ZMQ channel:
+
 - **Telemetry summaries** (no `type` field) — parsed via
   `TelemetrySummary.model_validate()`, cached in `_latest`, and forwarded
   to `on_update` callback.
@@ -329,25 +331,31 @@ The source handles two message types on the same ZMQ channel:
 The controller subscribes to both aggregator endpoints plus any peer topology
 endpoints, configured via environment variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AGGREGATOR_ENDPOINTS` | `tcp://10.0.0.5:5556,tcp://10.0.1.5:5556` | Comma-separated aggregator PUB addresses |
-| `PEER_TOPOLOGY_ENDPOINTS` | *(empty)* | Comma-separated peer controller topology PUB addresses |
+| Variable                    | Default                                     | Description                                            |
+| --------------------------- | ------------------------------------------- | ------------------------------------------------------ |
+| `AGGREGATOR_ENDPOINTS`    | `tcp://10.0.0.5:5556,tcp://10.0.1.5:5556` | Comma-separated aggregator PUB addresses               |
+| `PEER_TOPOLOGY_ENDPOINTS` | *(empty)*                                 | Comma-separated peer controller topology PUB addresses |
 
 The `_on_telemetry_update` callback (Thread 2):
 
 1. Ignores summaries not matching this controller's `LAN_ID`.
-2. Logs latency/CPU metrics to stdout.
-3. Calls `update_server_stats(summary.servers)` and
+2. Processes control events (`drain_complete` → submit `CleanupComputeAlert`;
+   `rs_secondary_ready` → promote storage node to VIP pool).
+3. Synchronises node tracking (newly seen MACs, absent-node detection with
+   birth grace period).
+4. Calls `update_server_stats(summary.servers)` and
    `update_storage_stats(summary.storage_servers)` to feed Thread 1's VIP
    routing cost functions.
-4. Evaluates domain-level thresholds and submits alerts to Thread 3:
-   - `avg_time_db_ms > TAU_DADOS_MS` → `DataAlert`
-   - `avg_time_proc_ms > TAU_PROC_MS` → `ComputeAlert`
+5. Promotes storage nodes from telemetry when `member_state == "SECONDARY"`
+   (fallback path for VIP registration — see elasticity overview).
+6. Evaluates domain-level thresholds using a **weighted degradation score**
+   per tier (compute and storage separately) with configurable sliding
+   windows. See [`elasticy_manager/elasticity_overview.md`](../elasticy_manager/elasticity_overview.md)
+   for threshold parameters and anti-thrashing mechanisms.
 
 ---
 
-## Planned / Not Yet Implemented
+## Planned / Not Yet Implemented / Still to be developed as a concept
 
 ### Staleness Cost Function
 
@@ -357,10 +365,3 @@ plan will define weights (`W_STALENESS`, `W_STORAGE_STALENESS`, `STALENESS_MAX_S
 so that nodes that stop reporting are penalized in server selection.
 `last_report_ts = 0.0` will be treated as "not yet seen / cold start" with no
 penalty.
-
-### Scale-Down Telemetry Signals
-
-The node removal plan (see `elasticy_manager/elasticity_overview.md`) uses
-`connections_current` from storage telemetry to detect when a storage node is
-idle enough to be drained. This telemetry data is already available through the
-pipeline — the scale-down mechanism itself is not yet implemented.
