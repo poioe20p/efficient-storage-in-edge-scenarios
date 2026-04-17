@@ -18,7 +18,10 @@ from .scaling_config import (
     _W_CPU, _W_T_PROC,
     _CPU_FLOOR, _CPU_SPAN,
     _T_PROC_FLOOR, _T_PROC_SPAN,
-    _SCALE_UP_SCORE_THRESHOLD, _SCALE_UP_WINDOW_SIZE, _SCALE_UP_REQUIRED,
+    _SCALE_UP_WINDOW_SIZE, _SCALE_UP_REQUIRED,
+    _SCALEUP_COMPUTE_BASE_THRESHOLD, _SCALEUP_COMPUTE_THRESHOLD_INCREMENT,
+    _SCALEUP_COMPUTE_MAX_THRESHOLD, _SCALEUP_COMPUTE_COOLDOWN_S,
+    _SCALEUP_COMPUTE_PEER_RELIEF, _SCALEUP_COMPUTE_PEER_HEALTH_THRESHOLD,
     _SCALEUP_STORAGE_BASE_THRESHOLD, _SCALEUP_STORAGE_THRESHOLD_INCREMENT,
     _SCALEUP_STORAGE_MAX_THRESHOLD, _SCALEUP_STORAGE_WINDOW_SIZE,
     _SCALEUP_STORAGE_REQUIRED,
@@ -54,9 +57,14 @@ class ScalingPolicy:
         self._last_compute_scale_up_ts: float = float('-inf')
 
         logger.info(
-            "scale-up: compute[τ=%.2f window=%d/%d w_cpu=%.1f w_lat=%.1f]  "
+            "scale-up: compute[τ_base=%.2f incr=%.2f cap=%.2f window=%d/%d cooldown=%.0fs peer_relief=%.2f w_cpu=%.1f w_lat=%.1f]  "
             "storage[τ_base=%.2f incr=%.2f cap=%.2f window=%d/%d w_cpu=%.1f w_lat=%.1f cooldown=%.0fs]",
-            _SCALE_UP_SCORE_THRESHOLD, _SCALE_UP_REQUIRED, _SCALE_UP_WINDOW_SIZE,
+            _SCALEUP_COMPUTE_BASE_THRESHOLD,
+            _SCALEUP_COMPUTE_THRESHOLD_INCREMENT,
+            _SCALEUP_COMPUTE_MAX_THRESHOLD,
+            _SCALE_UP_REQUIRED, _SCALE_UP_WINDOW_SIZE,
+            _SCALEUP_COMPUTE_COOLDOWN_S,
+            _SCALEUP_COMPUTE_PEER_RELIEF,
             _W_CPU, _W_T_PROC,
             _SCALEUP_STORAGE_BASE_THRESHOLD, _SCALEUP_STORAGE_THRESHOLD_INCREMENT,
             _SCALEUP_STORAGE_MAX_THRESHOLD, _SCALEUP_STORAGE_REQUIRED, _SCALEUP_STORAGE_WINDOW_SIZE,
@@ -83,20 +91,31 @@ class ScalingPolicy:
     def storage_cooldown_remaining(self) -> float:
         return max(0.0, _SCALEDOWN_STORAGE_COOLDOWN_S - (time.monotonic() - self._last_storage_scale_up_ts))
 
+    def compute_scaleup_cooldown_remaining(self) -> float:
+        return max(0.0, _SCALEUP_COMPUTE_COOLDOWN_S - (time.monotonic() - self._last_compute_scale_up_ts))
+
     def storage_scaleup_cooldown_remaining(self) -> float:
         return max(0.0, _SCALEUP_STORAGE_COOLDOWN_S - (time.monotonic() - self._last_storage_scale_up_ts))
 
     # ── Scale-up evaluation ──────────────────────────────────────────────
 
     def evaluate_scale_up(self, ds: DomainSummary, lan: int, network_id: str,
-                          dynamic_storage_count: int) -> list[ComputeAlert | DataAlert]:
+                          dynamic_storage_count: int,
+                          dynamic_compute_count: int,
+                          peer_ds: DomainSummary | None = None) -> list[ComputeAlert | DataAlert]:
         """Evaluate Compute and Storage scale-up. Returns list of alerts to submit."""
         alerts: list[ComputeAlert | DataAlert] = []
 
         # ── Compute ──
-        compute_alert = self._evaluate_compute_scale_up(ds, lan, network_id)
-        if compute_alert:
-            alerts.append(compute_alert)
+        remaining = self.compute_scaleup_cooldown_remaining()
+        if remaining > 0:
+            logger.debug("[scale-up] compute within %.0fs scale-up cooldown — skipping", remaining)
+        else:
+            compute_alert = self._evaluate_compute_scale_up(
+                ds, lan, network_id, dynamic_compute_count, peer_ds
+            )
+            if compute_alert:
+                alerts.append(compute_alert)
 
         # ── Storage (with its own scale-up cooldown) ──
         remaining = self.storage_scaleup_cooldown_remaining()
@@ -109,31 +128,69 @@ class ScalingPolicy:
 
         return alerts
 
+    def _compute_peer_relief(self, peer_ds: DomainSummary | None) -> tuple[float, float | None]:
+        if peer_ds is None:
+            return 0.0, None
+
+        peer_score = self.degradation_score(
+            peer_ds.average_cpu_percent, peer_ds.avg_time_proc_ms,
+            _W_CPU, _W_T_PROC,
+            _CPU_FLOOR, _CPU_SPAN,
+            _T_PROC_FLOOR, _T_PROC_SPAN,
+        )
+        if peer_score <= _SCALEUP_COMPUTE_PEER_HEALTH_THRESHOLD:
+            return _SCALEUP_COMPUTE_PEER_RELIEF, peer_score
+        return 0.0, peer_score
+
     def _evaluate_compute_scale_up(self, ds: DomainSummary, lan: int,
-                                   network_id: str) -> ComputeAlert | None:
+                                   network_id: str,
+                                   dynamic_compute_count: int,
+                                   peer_ds: DomainSummary | None) -> ComputeAlert | None:
         compute_score = self.degradation_score(
             ds.average_cpu_percent, ds.avg_time_proc_ms,
             _W_CPU, _W_T_PROC,
             _CPU_FLOOR, _CPU_SPAN,
             _T_PROC_FLOOR, _T_PROC_SPAN,
         )
-        above = compute_score >= _SCALE_UP_SCORE_THRESHOLD
+
+        base_threshold = min(
+            _SCALEUP_COMPUTE_BASE_THRESHOLD
+            + dynamic_compute_count * _SCALEUP_COMPUTE_THRESHOLD_INCREMENT,
+            _SCALEUP_COMPUTE_MAX_THRESHOLD,
+        )
+        peer_relief, peer_score = self._compute_peer_relief(peer_ds)
+        effective_threshold = min(
+            base_threshold + peer_relief,
+            _SCALEUP_COMPUTE_MAX_THRESHOLD,
+        )
+
+        above = compute_score >= effective_threshold
         self._scale_up_compute_window.append(above)
+        peer_score_display = "n/a" if peer_score is None else f"{peer_score:.2f}"
+        window_hits = sum(self._scale_up_compute_window)
+        window_size = len(self._scale_up_compute_window)
         logger.debug(
-            "[scale-up] compute score=%.2f (τ=%.2f) cpu=%.1f%% T_proc=%.1fms  "
-            "window=%d/%d on %s",
-            compute_score, _SCALE_UP_SCORE_THRESHOLD,
+            "[scale-up] compute score=%.2f (τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d) "
+            "cpu=%.1f%% T_proc=%.1fms window=%d/%d on %s",
+            compute_score, effective_threshold, base_threshold, peer_relief,
+            peer_score_display, dynamic_compute_count,
             ds.average_cpu_percent, ds.avg_time_proc_ms,
-            sum(self._scale_up_compute_window), len(self._scale_up_compute_window),
+            window_hits, window_size,
             network_id,
         )
-        if sum(self._scale_up_compute_window) >= _SCALE_UP_REQUIRED:
+        if window_hits >= _SCALE_UP_REQUIRED:
             logger.info(
                 "[scale-up] compute triggered: %d/%d windows ≥ %.2f "
-                "(last score=%.2f, cpu=%.1f%%, T_proc=%.1fms) on %s",
-                sum(self._scale_up_compute_window),
-                len(self._scale_up_compute_window),
-                _SCALE_UP_SCORE_THRESHOLD, compute_score,
+                "(τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d, last score=%.2f, cpu=%.1f%%, T_proc=%.1fms) on %s",
+                window_hits,
+                window_size,
+                effective_threshold,
+                effective_threshold,
+                base_threshold,
+                peer_relief,
+                peer_score_display,
+                dynamic_compute_count,
+                compute_score,
                 ds.average_cpu_percent, ds.avg_time_proc_ms, network_id,
             )
             self._scale_up_compute_window.clear()

@@ -40,7 +40,7 @@ logger = logging.getLogger("os_ken.vip_routing")
 _W_CPU      = float(os.environ.get("W_CPU",      "0.2"))
 _W_RAM      = float(os.environ.get("W_RAM",      "0.2"))
 _W_REQUESTS = float(os.environ.get("W_REQUESTS", "0.2"))
-_W_HOPS     = float(os.environ.get("W_HOPS",     "0.4"))
+_W_HOPS     = float(os.environ.get("W_HOPS",     "0.28"))
 
 # --- Storage WSM weights ---
 _W_STORAGE_CPU         = float(os.environ.get("W_STORAGE_CPU",         "0.2"))

@@ -138,7 +138,19 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         # 6. Scale-up evaluation
         dynamic_storage_count = self._node_registry.count_dynamic("storage")
-        for alert in self._scaling_policy.evaluate_scale_up(ds, lan, summary.network_id, dynamic_storage_count):
+        dynamic_compute_count = self._node_registry.count_dynamic("compute")
+        peer_network_id = "lan2" if summary.network_id == "lan1" else "lan1"
+        peer_summary = self._telemetry.get_latest(peer_network_id)
+        peer_ds = peer_summary.domain_summary if peer_summary and peer_summary.domain_summary else None
+
+        for alert in self._scaling_policy.evaluate_scale_up(
+            ds,
+            lan,
+            summary.network_id,
+            dynamic_storage_count,
+            dynamic_compute_count,
+            peer_ds,
+        ):
             self._elasticity.submit(alert)
 
         # 7. Scale-down evaluation (with cooldown gating)

@@ -234,3 +234,4 @@ source/scripts/osken-controller.env
 source/scripts/testing/metrics/*
 source/scripts/testing/data/workload_snapshot/sensor_devices.json
 source/scripts/testing/data/workload_snapshot/device_registry.json
+source/scripts/testing/phases.json

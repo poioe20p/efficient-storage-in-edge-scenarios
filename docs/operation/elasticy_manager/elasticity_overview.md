@@ -30,8 +30,9 @@ Thread 2 (Observer/ZMQ)     Thread 3 (Elasticity Mgr)      Infrastructure
   L2 learning, and VIP routing. Never touches Thread 3 directly; it reads the
   shared VIP pool that Thread 3 mutates through `TopologyMixin`.
 - **Thread 2** (`ZmqTelemetrySource`) — subscribes to aggregator and peer
-  topology ZMQ endpoints, receives `TelemetrySummary` updates, evaluates
-  thresholds, and posts typed `Alert` objects to Thread 3's queue.
+  topology ZMQ endpoints, receives `TelemetrySummary` updates, caches the most
+  recent peer-domain summary, evaluates local thresholds, and posts typed
+  `Alert` objects to Thread 3's queue.
 - **Thread 3** (`ElasticityManager`) — a long-lived daemon thread blocking on a
   `queue.PriorityQueue`. Pops alerts in priority order (storage scale-up first)
   and dispatches them to the appropriate handler, which calls `NodeAdder` for
@@ -45,6 +46,9 @@ Thread 2 (Observer/ZMQ)     Thread 3 (Elasticity Mgr)      Infrastructure
 source/sdn_controller/
 ├── main_n1.py                    # Controller entry point — instantiates ElasticityManager,
 │                                 #   posts alerts from Thread 2 callback
+├── scaling_config.py             # Environment-backed compute/storage thresholds and cooldowns
+├── scaling_policy.py             # Thread 2 decision engine — sliding windows, adaptive thresholds, peer-aware compute bias
+├── vip_routing.py                # Thread 1 VIP_SERVER / VIP_DATA selection and DNAT/SNAT flow installation
 ├── elasticity/
 │   ├── __init__.py
 │   ├── elasticity.py             # ElasticityManager — Thread 3 queue/dispatch
@@ -71,7 +75,7 @@ by Thread 3.
 
 | Alert                     | Trigger                                          | Fields                                                                                                     |
 | ------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `ComputeAlert`          | Weighted compute score ≥ 0.40 (2-of-5 window)   | `lan`, `network_id`                                                                                    |
+| `ComputeAlert`          | Adaptive compute threshold with peer-aware bias (3-of-5 window, 45 s compute scale-up cooldown) | `lan`, `network_id`                                                                                    |
 | `DataAlert`             | Adaptive storage threshold (see below)           | `lan`, `network_id`, `rs_name`, `primary_container`, `port`                                      |
 | `ScaleDownComputeAlert` | Underutilisation (7-of-12 window) or timeout     | `lan`, `network_id`, `container_name`, `mac`, `ip`                                               |
 | `ScaleDownDataAlert`    | Underutilisation (9-of-15 window) or timeout     | `lan`, `network_id`, `container_name`, `mac`, `ip`, `rs_name`, `primary_container`, `port` |
@@ -88,14 +92,41 @@ Scale-up computes a weighted degradation score per tier:
 `score = 0.3 × cpu_component + 0.7 × latency_component`, where each component
 is normalised as `max(0, value − floor) / span`.
 
-**Compute** scale-up fires when the score is ≥ 0.40 in at least 2 of
-the last 5 evaluation windows.
+**Compute** now uses a **local-first adaptive threshold** with a small
+peer-health bias:
+
+`effective_τ_compute = min(base + dynamic_compute_count × increment + peer_relief, max_threshold)`
+
+with runtime defaults:
+
+- `base = 0.33`
+- `increment = 0.10`
+- `max_threshold = 0.70`
+- `peer_relief = 0.03` only when the cached peer compute score is `≤ 0.35`
+- `T_proc` scoring band recalibrated to `10–40 ms` (`floor=10`, `span=30`)
+- compute trigger requires **3 of the last 5** windows
+- after a compute scale-up, compute scale-up evaluation is suppressed for **45 s**
+
+If the peer `DomainSummary` is unavailable, `peer_relief = 0` and the decision
+falls back to purely local adaptive compute scaling.
 
 **Storage** scale-up uses a **predictive adaptive threshold** (see
 [§ Predictive Threshold](#predictive-adaptive-storage-threshold)):
 `effective_τ = min(0.25 + dynamic_storage_count × 0.10, 0.65)`,
-with a 2-of-5 sliding window. A 120 s cooldown suppresses further storage
+with a 1-of-3 sliding window in the live env. A 120 s cooldown suppresses further storage
 scale-up evaluation after each trigger.
+
+### Peer-aware compute scaling and VIP spillover
+
+The compute policy remains **per LAN** because the scale-up action is local:
+LAN1 spawns in LAN1 and LAN2 spawns in LAN2. The peer LAN is used only as a
+small threshold bias when it is healthy enough to act as a real spillover path.
+
+This scaling logic is paired with a VIP_SERVER routing recalibration in Thread 1.
+`vip_routing.py` reduces `W_HOPS` from `0.40` to `0.28`, making cross-LAN
+server selection more willing when the local server is clearly more loaded.
+Without that routing change, peer-aware compute relief would be much less useful
+because the local server would remain too sticky.
 
 ### Scale-Down Sliding Window
 
@@ -109,13 +140,14 @@ timeouts from poisoning the signal.
 
 ### Anti-Thrashing Mechanisms
 
-Five mechanisms prevent scale-up / scale-down thrashing:
+Six mechanisms prevent scale-up / scale-down thrashing:
 
 | Mechanism             | Description                                                             |
 | --------------------- | ----------------------------------------------------------------------- |
 | `is_busy()`         | Blocks all scaling evaluation while Thread 3 is executing any operation |
 | Sliding window        | Requires sustained signal (not single-window spikes)                    |
 | Cross-direction reset | Scale-up clears the scale-down window (and vice versa)                  |
+| Compute scale-up cooldown | After compute scale-up: suppress further compute scale-up evaluation for 45 s |
 | Per-tier cooldowns    | After scale-up: storage 120 s / compute 40 s before scale-down resumes  |
 | Birth grace           | Newly added nodes skip absent-node detection for 60 s during bootstrap  |
 
@@ -132,17 +164,22 @@ with `SCALEUP_` to avoid collision with VIP routing weights):
 | `SCALEUP_W_T_PROC`          | `0.7`  | Compute score: T_proc weight                                                                        |
 | `SCALEUP_CPU_FLOOR`         | `50`   | Compute CPU: below this → 0 contribution                                                           |
 | `SCALEUP_CPU_SPAN`          | `35`   | Compute CPU: normalisation range                                                                    |
-| `SCALEUP_T_PROC_FLOOR`      | `1`    | T_proc (ms): below this → 0 contribution                                                           |
-| `SCALEUP_T_PROC_SPAN`       | `11`   | T_proc (ms): normalisation range                                                                    |
+| `SCALEUP_T_PROC_FLOOR`      | `10`   | T_proc (ms): below this → 0 contribution                                                           |
+| `SCALEUP_T_PROC_SPAN`       | `30`   | T_proc (ms): main compute-latency scoring range                                                     |
+| `SCALEUP_COMPUTE_BASE_THRESHOLD` | `0.33` | Adaptive compute base threshold                                                                   |
+| `SCALEUP_COMPUTE_THRESHOLD_INCREMENT` | `0.10` | Per-dynamic-compute-node threshold increment                                                 |
+| `SCALEUP_COMPUTE_MAX_THRESHOLD` | `0.70` | Adaptive compute threshold cap                                                                    |
+| `SCALEUP_COMPUTE_COOLDOWN_S` | `45` | Post-scale-up compute cooldown before next compute scale-up evaluation (s)                           |
+| `SCALEUP_COMPUTE_PEER_RELIEF` | `0.03` | Extra threshold bias when the peer LAN is healthy enough to absorb spillover                      |
+| `SCALEUP_COMPUTE_PEER_HEALTH_THRESHOLD` | `0.35` | Peer compute score at or below this enables `peer_relief`                                  |
+| `SCALEUP_WINDOW_SIZE`       | `5`    | Sliding window size (compute only)                                                                  |
+| `SCALEUP_REQUIRED`          | `3`    | Required degraded windows (compute only)                                                            |
 | `SCALEUP_W_STORAGE_CPU`     | `0.3`  | Storage score: CPU weight                                                                           |
 | `SCALEUP_W_T_DB`            | `0.7`  | Storage score: T_db weight                                                                          |
 | `SCALEUP_STORAGE_CPU_FLOOR` | `50`   | Storage CPU: below this → 0 contribution                                                           |
 | `SCALEUP_STORAGE_CPU_SPAN`  | `35`   | Storage CPU: normalisation range                                                                    |
 | `SCALEUP_T_DB_FLOOR`        | `15`   | T_db (ms): below this → 0 contribution                                                             |
 | `SCALEUP_T_DB_SPAN`         | `75`   | T_db (ms): normalisation range                                                                      |
-| `SCALEUP_SCORE_THRESHOLD`   | `0.40` | Score ≥ this counts as "degraded"**(compute only — storage uses adaptive threshold below)** |
-| `SCALEUP_WINDOW_SIZE`       | `5`    | Sliding window size**(compute only)**                                                         |
-| `SCALEUP_REQUIRED`          | `2`    | Required degraded windows**(compute only)**                                                   |
 
 **Adaptive storage scale-up threshold** (see [§ Predictive Threshold](#predictive-adaptive-storage-threshold))
 
@@ -151,9 +188,18 @@ with `SCALEUP_` to avoid collision with VIP routing weights):
 | `SCALEUP_STORAGE_BASE_THRESHOLD`      | `0.25` | Adaptive base threshold for storage scale-up            |
 | `SCALEUP_STORAGE_THRESHOLD_INCREMENT` | `0.10` | Per-dynamic-storage-node increment                      |
 | `SCALEUP_STORAGE_MAX_THRESHOLD`       | `0.65` | Adaptive threshold cap                                  |
-| `SCALEUP_STORAGE_WINDOW_SIZE`         | `5`    | Sliding window size (storage only)                      |
-| `SCALEUP_STORAGE_REQUIRED`            | `2`    | Required degraded windows (storage only)                |
+| `SCALEUP_STORAGE_WINDOW_SIZE`         | `3`    | Sliding window size (storage only)                      |
+| `SCALEUP_STORAGE_REQUIRED`            | `1`    | Required degraded windows (storage only)                |
 | `SCALEUP_STORAGE_COOLDOWN_S`          | `120`  | Post-scale-up cooldown before next storage scale-up (s) |
+
+**VIP_SERVER routing weights**
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `W_CPU` | `0.3` | CPU contribution to VIP_SERVER backend cost |
+| `W_RAM` | `0.1` | RAM contribution to VIP_SERVER backend cost |
+| `W_REQUESTS` | `0.2` | Request-count contribution to VIP_SERVER backend cost |
+| `W_HOPS` | `0.28` | Hop-cost contribution to VIP_SERVER backend cost |
 
 **Scale-down**
 
@@ -434,7 +480,7 @@ remove_network_storage_node.sh --lan <1|2> --name <container> [--skip-rs] [--kee
 ## Predictive Adaptive Storage Threshold
 
 Storage scale-up uses a **predictive adaptive threshold** instead of the
-fixed compute threshold (τ=0.40). This detects degradation ~10 s earlier by
+adaptive compute policy described above. This detects degradation ~10 s earlier by
 starting with a low base threshold that increases per dynamic storage node,
 preventing pile-up.
 
@@ -454,7 +500,7 @@ Where `N` = number of pending + active dynamic storage nodes for that LAN.
 |       2       |     0.45     | Third node: ~current threshold level                  |
 |      4+      |     0.65     | Cap: only genuine saturation triggers more            |
 
-Storage sliding window: **2-of-5** with a 120 s scale-up cooldown after each
+Storage sliding window: **1-of-3** with a 120 s scale-up cooldown after each
 trigger, filtering transient spikes and preventing runaway scaling.
 
 **Future Improvement:** The threshold should also decrease as the number of nodes decrease.

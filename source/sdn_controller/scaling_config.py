@@ -23,21 +23,39 @@ _T_DB_FLOOR        = float(os.environ.get("SCALEUP_T_DB_FLOOR",        "15"))
 _T_DB_SPAN         = float(os.environ.get("SCALEUP_T_DB_SPAN",         "75"))
 
 # Compute score weights & normalisation
-_W_CPU        = float(os.environ.get("SCALEUP_W_CPU",      "0.3"))
-_W_T_PROC     = float(os.environ.get("SCALEUP_W_T_PROC",   "0.7"))
+_W_CPU        = float(os.environ.get("SCALEUP_W_CPU",      "0.40"))
+_W_T_PROC     = float(os.environ.get("SCALEUP_W_T_PROC",   "0.60"))
 _CPU_FLOOR    = float(os.environ.get("SCALEUP_CPU_FLOOR",  "50"))
 _CPU_SPAN     = float(os.environ.get("SCALEUP_CPU_SPAN",   "35"))
-_T_PROC_FLOOR = float(os.environ.get("SCALEUP_T_PROC_FLOOR", "1"))
-_T_PROC_SPAN  = float(os.environ.get("SCALEUP_T_PROC_SPAN",  "11"))
+_T_PROC_FLOOR = float(os.environ.get("SCALEUP_T_PROC_FLOOR", "10"))
+_T_PROC_SPAN  = float(os.environ.get("SCALEUP_T_PROC_SPAN",  "30"))
 
 # Compute scale-up sliding window
-_SCALE_UP_SCORE_THRESHOLD = float(os.environ.get("SCALEUP_SCORE_THRESHOLD", "0.40"))
-_SCALE_UP_WINDOW_SIZE     = int(os.environ.get("SCALEUP_WINDOW_SIZE",       "5"))
-_SCALE_UP_REQUIRED        = int(os.environ.get("SCALEUP_REQUIRED",          "2"))
+_SCALE_UP_WINDOW_SIZE = int(os.environ.get("SCALEUP_WINDOW_SIZE", "5"))
+_SCALE_UP_REQUIRED    = int(os.environ.get("SCALEUP_REQUIRED",    "3"))
+
+_SCALEUP_COMPUTE_BASE_THRESHOLD = float(
+	os.environ.get("SCALEUP_COMPUTE_BASE_THRESHOLD", "0.33")
+)
+_SCALEUP_COMPUTE_THRESHOLD_INCREMENT = float(
+	os.environ.get("SCALEUP_COMPUTE_THRESHOLD_INCREMENT", "0.10")
+)
+_SCALEUP_COMPUTE_MAX_THRESHOLD = float(
+	os.environ.get("SCALEUP_COMPUTE_MAX_THRESHOLD", "0.70")
+)
+_SCALEUP_COMPUTE_COOLDOWN_S = float(
+	os.environ.get("SCALEUP_COMPUTE_COOLDOWN_S", "45")
+)
+_SCALEUP_COMPUTE_PEER_RELIEF = float(
+	os.environ.get("SCALEUP_COMPUTE_PEER_RELIEF", "0.03")
+)
+_SCALEUP_COMPUTE_PEER_HEALTH_THRESHOLD = float(
+	os.environ.get("SCALEUP_COMPUTE_PEER_HEALTH_THRESHOLD", "0.33")
+)
 
 # Adaptive storage scale-up threshold (lower base, increment per dynamic node)
-_SCALEUP_STORAGE_BASE_THRESHOLD      = float(os.environ.get("SCALEUP_STORAGE_BASE_THRESHOLD",      "0.25"))
-_SCALEUP_STORAGE_THRESHOLD_INCREMENT = float(os.environ.get("SCALEUP_STORAGE_THRESHOLD_INCREMENT",  "0.10"))
+_SCALEUP_STORAGE_BASE_THRESHOLD      = float(os.environ.get("SCALEUP_STORAGE_BASE_THRESHOLD",      "0.35"))
+_SCALEUP_STORAGE_THRESHOLD_INCREMENT = float(os.environ.get("SCALEUP_STORAGE_THRESHOLD_INCREMENT",  "0.12"))
 _SCALEUP_STORAGE_MAX_THRESHOLD       = float(os.environ.get("SCALEUP_STORAGE_MAX_THRESHOLD",        "0.65"))
 _SCALEUP_STORAGE_WINDOW_SIZE         = int(os.environ.get("SCALEUP_STORAGE_WINDOW_SIZE",             "5"))
 _SCALEUP_STORAGE_REQUIRED            = int(os.environ.get("SCALEUP_STORAGE_REQUIRED",                "2"))

@@ -313,6 +313,7 @@ main() {
 	# ============================================================================
 	# Replica set removal (before stopping container)
 	# ============================================================================
+	local rs_members=""
 	if [[ "$SKIP_RS" == "false" ]]; then
 		echo
 		echo "============================================================================"
@@ -326,7 +327,6 @@ main() {
 		rs_remove_member "$member_host" "$primary_host"
 		ensure_rs_removed "$member_host" "$primary_host"
 
-		local rs_members
 		rs_members=$(get_rs_members "$primary_host")
 	else
 		echo "[--skip-rs] rs.remove() already handled by controller — skipping."

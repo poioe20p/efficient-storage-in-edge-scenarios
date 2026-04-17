@@ -25,12 +25,12 @@ VIP routing pipeline.
                                               │
          ┌────────────────────────────────────┘
          ▼
-  traffic_generator.py              phases.json (4-phase config)
+  traffic_generator.py              phases.json (9-phase config)
     ├─ reads snapshot + phases      ──────────────────────────────
-    ├─ spawns async tasks                Phase 1: Local Consumption
-    │   per client namespace             Phase 2: Cross-Region Hotspot
-    │   (ip netns exec curl)             Phase 3: Compute Spike
-    └─ writes CSV metrics                Phase 4: Demand Drop
+    ├─ spawns async tasks                baseline → local_moderate → storage_stress
+    │   per client namespace             → cross_region_hotspot → reverse_hotspot
+    │   (ip netns exec curl)             → compute_ramp → compute_spike
+    └─ writes CSV metrics                → sustained_plateau → demand_drop
          │
          ▼
   metrics/client_requests.csv    ←── one row per request (latency, status, phase)
@@ -56,9 +56,10 @@ Key decisions:
 - **Read-heavy, aggregation-rich** workload that justifies MongoDB beyond simple
   replication (flexible schema, `$lookup` pipelines, TTL indexes, array
   queries).
-- **4-phase demand shift** that exercises every elasticity pathway: local
-  baseline → cross-region data gravity → compute spike → demand drop and
-  scale-in.
+- **9-phase demand progression** that separates storage pressure from compute
+  pressure: early hotspot phases are strongly cross-region and data-gravity
+  biased, while the later compute phases reduce cross-region traffic and push
+  higher local request rates.
 - **Measurable outcomes**: time-to-replica, latency reduction after tier
   escalation, CPU distribution after scale-out, resource reclamation timing.
 
@@ -70,7 +71,7 @@ Implementation plan for the client-side experiment driver.
 |---|---|
 | `export_workload_snapshot.py` | Pre-exports device/node data from MongoDB to JSON — decouples traffic generation from live DB access |
 | `traffic_generator.py` | Async Python script: phases × clients → `curl` inside network namespaces through `VIP_SERVER` |
-| `phases.json` | Declarative 4-phase config (duration, rate, cross-region ratio, request mix) |
+| `phases.json` | Declarative 9-phase config (duration, rate, cross-region ratio, request mix) |
 
 Output: `metrics/client_requests.csv` with per-request timestamp, phase,
 endpoint, target region, HTTP status, and latency.
@@ -141,11 +142,11 @@ sudo bash source/scripts/testing/trace_request.sh \
 
 | # | Claim | How It Is Demonstrated |
 |---|---|---|
-| 1 | Storage deploys only when justified | Phase 2 cross-region hotspot triggers Data Manager; Phase 1/4 show no unnecessary replication |
-| 2 | Compute scales independently of storage | Phase 3 high RPS triggers Compute Manager without triggering data replication |
+| 1 | Storage deploys only when justified | `storage_stress`, `cross_region_hotspot`, and `reverse_hotspot` create sustained cross-region pressure that should justify storage expansion |
+| 2 | Compute scales independently of storage | `compute_ramp`, `compute_spike`, and `sustained_plateau` reduce cross-region demand and instead push higher local request rates |
 | 3 | Load distributes via WSM | Per-server request counts and CPU utilization converge after scale-out |
 | 4 | Latency recovers after scaling | $T_{total}$ returns toward baseline once new resources are active |
-| 5 | Resources are reclaimed on demand drop | Phase 4 observes over-provisioned state and (when implemented) scale-in |
+| 5 | Resources are reclaimed on demand drop | `demand_drop` observes the over-provisioned state and, when enabled, should trigger scale-in |
 
 ---
 

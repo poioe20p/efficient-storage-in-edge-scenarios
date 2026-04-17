@@ -265,6 +265,13 @@ images_cleanup() {
 	fi
 }
 
+list_dynamic_storage_volumes() {
+	local docker_cli="$1"
+	# Elasticity names dynamic storage nodes as edge_storage_lanX_dynY.
+	${docker_cli} volume ls --format '{{.Name}}' 2>/dev/null \
+		| grep -E '^edge_storage_lan[0-9]+_dyn[0-9]+-data$' || true
+}
+
 volumes_cleanup() {
 	log "🧹 Removing edge_storage_server volumes"
 	local DOCKER
@@ -288,12 +295,8 @@ volumes_cleanup() {
 			log "Volume not present, skipping: $vol"
 		fi
 	done
-	# Extra node volumes: naming convention is edge_storage_server_n<LAN>_<N>-data
-	# e.g. edge_storage_server_n1_1-data, edge_storage_server_n2_3-data
-	# Distinguished from base volumes (edge_storage_server_n1-data) by the underscore after the LAN digit.
 	local extra_vols
-	extra_vols=$(${DOCKER} volume ls --format '{{.Name}}' 2>/dev/null \
-		| grep -E '^edge_storage_server_n[0-9]_[0-9]' || true)
+	extra_vols=$(list_dynamic_storage_volumes "$DOCKER")
 	for vol in $extra_vols; do
 		if ${DOCKER} volume rm "$vol" >/dev/null 2>&1; then
 			log "Removed extra node volume: $vol"
@@ -345,10 +348,8 @@ reset_cleanup() {
 			log "Volume not present, skipping: $vol"
 		fi
 	done
-	# Extra node volumes: naming convention is edge_storage_server_n<LAN>_<N>-data
 	local extra_vols
-	extra_vols=$(${DOCKER} volume ls --format '{{.Name}}' 2>/dev/null \
-		| grep -E '^edge_storage_server_n[0-9]_[0-9]' || true)
+	extra_vols=$(list_dynamic_storage_volumes "$DOCKER")
 	for vol in $extra_vols; do
 		if ${DOCKER} volume rm -f "$vol" >/dev/null 2>&1; then
 			log "Removed extra node volume: $vol"

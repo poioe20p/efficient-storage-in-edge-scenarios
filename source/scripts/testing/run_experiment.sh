@@ -30,6 +30,7 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 readonly RUN_ID="$(date +%Y%m%d_%H%M%S)"
+readonly RUN_DIR="${SCRIPT_DIR}/metrics/${RUN_ID}"
 
 # ---------------------------------------------------------------------------
 # Configuration — edit these to match your experiment
@@ -55,7 +56,8 @@ SNAPSHOT_DIR="${SCRIPT_DIR}/data/workload_snapshot"
 
 # Traffic generator config and output
 PHASES_CONFIG="${SCRIPT_DIR}/phases.json"
-METRICS_OUTPUT="${SCRIPT_DIR}/metrics/${RUN_ID}/client_requests.csv"
+PHASES_SNAPSHOT_OUTPUT="${RUN_DIR}/phases_snapshot.json"
+METRICS_OUTPUT="${RUN_DIR}/client_requests.csv"
 
 # VIP_SERVER address
 VIP="10.0.0.253:5000"
@@ -63,12 +65,12 @@ VIP="10.0.0.253:5000"
 # Resource stats collector — ZMQ PUB addresses of the two aggregators
 LAN1_PUB="tcp://10.0.0.5:5556"
 LAN2_PUB="tcp://10.0.1.5:5556"
-RESOURCE_STATS_OUTPUT="${SCRIPT_DIR}/metrics/${RUN_ID}/resource_stats.csv"
-PHASE_FILE="${SCRIPT_DIR}/metrics/${RUN_ID}/current_phase.txt"
+RESOURCE_STATS_OUTPUT="${RUN_DIR}/resource_stats.csv"
+PHASE_FILE="${RUN_DIR}/current_phase.txt"
 
 # Controller log capture — saved alongside resource stats
-CONTROLLER_LOG_LAN1="${SCRIPT_DIR}/metrics/${RUN_ID}/controller_lan1.log"
-CONTROLLER_LOG_LAN2="${SCRIPT_DIR}/metrics/${RUN_ID}/controller_lan2.log"
+CONTROLLER_LOG_LAN1="${RUN_DIR}/controller_lan1.log"
+CONTROLLER_LOG_LAN2="${RUN_DIR}/controller_lan2.log"
 
 # PID of the background stats collector (set by run_collect_stats)
 STATS_PID=""
@@ -112,6 +114,15 @@ done
 
 step() { echo; echo "==> $*"; }
 die()  { echo "ERROR: $*" >&2; exit 1; }
+
+prepare_run_outputs() {
+    step "Preparing run output folder"
+    mkdir -p "$RUN_DIR"
+    [[ -f "$PHASES_CONFIG" ]] || die "Phase config not found: $PHASES_CONFIG"
+    cp "$PHASES_CONFIG" "$PHASES_SNAPSHOT_OUTPUT"
+    echo "  Run dir    : ${RUN_DIR}"
+    echo "  Phase copy : ${PHASES_SNAPSHOT_OUTPUT}"
+}
 
 # Build comma-separated namespace name lists for each LAN
 # LAN1: lan1_client1, lan1_client2, …
@@ -274,6 +285,7 @@ echo "======================================================"
 # Stop the stats collector on any exit (normal, error, or signal)
 trap 'stop_capture_controller_logs; stop_collect_stats' EXIT
 
+prepare_run_outputs
 "$SKIP_CLIENTS"  || run_create_clients
 "$SKIP_SEED"     || run_seed
 "$SKIP_SNAPSHOT" || run_snapshot
@@ -285,5 +297,6 @@ stop_collect_stats
 step "Experiment complete"
 echo "Results      : ${METRICS_OUTPUT}"
 echo "Resource stats: ${RESOURCE_STATS_OUTPUT}"
+echo "Phase config : ${PHASES_SNAPSHOT_OUTPUT}"
 echo "Controller logs: ${CONTROLLER_LOG_LAN1}"
 echo "              : ${CONTROLLER_LOG_LAN2}"
