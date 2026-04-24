@@ -37,6 +37,13 @@ def _discover_mac() -> str:
 SERVER_MAC: str = _discover_mac()
 
 HEARTBEAT_INTERVAL_S: float = float(os.environ.get("HEARTBEAT_INTERVAL_S", "60"))
+# Heartbeats are the only liveness signal for static nodes during quiet
+# periods. The default is disabled: dynamic nodes don't need heartbeats
+# (idleness is handled by scale-down, failure by the telemetry-window
+# absence timeout). Static containers opt in by setting
+# HEARTBEAT_ENABLED=1 in their docker run command. See
+# docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
+HEARTBEAT_ENABLED: bool = os.environ.get("HEARTBEAT_ENABLED", "0")
 
 
 def _get_server_mac() -> str:
@@ -94,12 +101,23 @@ def _heartbeat_loop(sender: MetricSender, last_sent: list[float]) -> None:
             sender.send(event)
 
 
-def _build_event(time_total_ms: float, time_db_ms: float, status_code: int, request_type: str) -> dict:
+def _build_event(
+    time_total_ms: float,
+    time_db_ms: float,
+    time_db_read_ms: float,
+    time_db_write_ms: float,
+    time_db_cmd_count: int,
+    status_code: int,
+    request_type: str,
+) -> dict:
     return {
         "server_id": _get_server_mac(),
         "ts": time.time(),
         "time_total_ms": time_total_ms,
         "time_db_ms": time_db_ms,
+        "time_db_read_ms": time_db_read_ms,
+        "time_db_write_ms": time_db_write_ms,
+        "time_db_cmd_count": time_db_cmd_count,
         "status_code": status_code,
         "request_type": request_type,
         "cpu_percent": psutil.cpu_percent(),
@@ -110,13 +128,21 @@ def _build_event(time_total_ms: float, time_db_ms: float, status_code: int, requ
 def init_telemetry(app: Flask, sender: MetricSender | None = None) -> None:
     _sender = sender or ZmqMetricSender()
 
-    _last_sent: list[float] = [time.monotonic()]
-    threading.Thread(target=_heartbeat_loop, args=(_sender, _last_sent), daemon=True).start()
+    if HEARTBEAT_ENABLED:
+        _last_sent: list[float] = [time.monotonic()]
+        threading.Thread(target=_heartbeat_loop, args=(_sender, _last_sent), daemon=True).start()
 
     @app.before_request
     def _start_timer() -> None:
         g.time_start = time.monotonic()
         g.time_db_elapsed = 0.0
+        g.time_db_read_s = 0.0
+        g.time_db_write_s = 0.0
+        g.time_db_cmd_count = 0
+        # Populated by platform_cache._CachedCollection on each wrapped call.
+        # Pre-initialised so downstream handlers can append without nil-checks.
+        g.access_records: list[dict] = [] # [{"owner_lan": str, "collection": str, "doc_id": str}]
+        g.op_counts: dict[str, dict[str, dict[str, int]]] = {} # {owner_lan: {collection: {op_type: count}}}
 
     @app.after_request
     def _emit_metric(response):
@@ -124,9 +150,21 @@ def init_telemetry(app: Flask, sender: MetricSender | None = None) -> None:
         event = _build_event(
             time_total_ms=time_total,
             time_db_ms=g.time_db_elapsed * 1000,
+            time_db_read_ms=getattr(g, "time_db_read_s", 0.0) * 1000,
+            time_db_write_ms=getattr(g, "time_db_write_s", 0.0) * 1000,
+            time_db_cmd_count=getattr(g, "time_db_cmd_count", 0),
             status_code=response.status_code,
             request_type="write" if request.method in ("POST", "PUT", "PATCH", "DELETE") else "read",
         )
+        # Tier 1 selective-sync signal. Empty/{} when
+        # the request never touched a wrapped collection — zero-cost for
+        # control-plane and non-DB routes.
+        event["time_db_ms_per_lan"] = {
+            lan: elapsed_s * 1000.0
+            for lan, elapsed_s in getattr(g, "time_db_per_lan", {}).items()
+        }
+        event["access_records"] = getattr(g, "access_records", [])
+        event["op_counts"] = getattr(g, "op_counts", {})
         print(f"Sending telemetry event: {event}")
         _sender.send(event)
         _last_sent[0] = time.monotonic()

@@ -100,6 +100,7 @@ docker run -dit --name edge_server_n1 --network none \
   -e LAN_ID=lan1 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
   -e LOG_LEVEL=INFO \
+  -e HEARTBEAT_ENABLED=1 \
   edge_server
 
 echo "Starting edge_storage_server_n1 container..."
@@ -111,6 +112,7 @@ docker run -dit --name edge_storage_server_n1 --network none \
   -e MONGO_PORT=27018 \
   -e TELEMETRY_INTERVAL_S=10 \
   -e LOG_LEVEL=INFO \
+  -e HEARTBEAT_ENABLED=1 \
   -v edge_storage_server_n1-data:/data/db edge_storage_server
 
 echo "Starting aggregator_n1 container..."

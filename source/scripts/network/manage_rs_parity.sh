@@ -30,7 +30,7 @@ declare -A LAN_PRIMARY=(      [1]="edge_storage_server_n1" [2]="edge_storage_ser
 declare -A LAN_ARBITER_NAME=( [1]="arbiter_rs_net1"        [2]="arbiter_rs_net2"        )
 declare -A LAN_ARBITER_VETH=( [1]="vetharb1"               [2]="vetharb2"               )
 declare -A LAN_ARBITER_PEER=( [1]="vetharb1p"              [2]="vetharb2p"              )
-declare -A RESERVED_SUFFIX=(  [1]="1 100"                  [2]="1 100"                  )
+declare -A RESERVED_SUFFIX=(  [1]="1 253 254"              [2]="1 253 254"              )
 
 LAN=""
 PRIMARY_CONTAINER=""

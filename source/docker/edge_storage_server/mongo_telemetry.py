@@ -49,6 +49,13 @@ AGGREGATOR_PULL_ADDR = os.environ.get("AGGREGATOR_PULL_ADDR", "") or _aggregator
 MONGO_URI            = os.environ.get("MONGO_URI", "mongodb://localhost:27018/")
 INTERVAL_S           = float(os.environ.get("TELEMETRY_INTERVAL_S", "0.5"))
 HEARTBEAT_INTERVAL_S = float(os.environ.get("HEARTBEAT_INTERVAL_S", "60"))
+# Heartbeats are the only liveness signal for the static primary DB during
+# quiet periods. The default is disabled: dynamic storage secondaries don't
+# need heartbeats (idleness is handled by scale-down, failure by the
+# telemetry-window absence timeout). Static containers opt in by setting
+# HEARTBEAT_ENABLED=1 in their docker run command. See
+# docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
+HEARTBEAT_ENABLED    = os.environ.get("HEARTBEAT_ENABLED", "0")
 LOG_LEVEL            = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -157,7 +164,7 @@ def _push_stats() -> None:
 
     if activity:
         event_type = "mongo_stats"
-    elif now - _last_send_ts >= HEARTBEAT_INTERVAL_S:
+    elif HEARTBEAT_ENABLED and now - _last_send_ts >= HEARTBEAT_INTERVAL_S:
         event_type = "heartbeat"
     else:
         logger.debug("No client activity — skipping telemetry push")

@@ -187,6 +187,10 @@ class StorageNodeAdder(_BaseNodeAdder):
             "-e", f"MONGO_REPLSET={rs_name}",
             "-e", f"MONGO_PORT={port}",
             "-e", f"CONTAINER_NAME={name}",
+            # Dynamic secondaries inherit HEARTBEAT_ENABLED=0 (image default).
+            # Lifecycle is handled by scale-down (graceful) + telemetry-window
+            # absence timeout (failure). See
+            # docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
         ]
         # If rs_seed_host is provided, the sidecar will self-join the RS
         if rs_seed_host:

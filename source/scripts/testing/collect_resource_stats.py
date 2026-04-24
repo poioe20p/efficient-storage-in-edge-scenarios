@@ -43,6 +43,20 @@ FIELDNAMES = [
     "median_time_total_ms",
     "server_count",
     "storage_count",
+    # --- appended columns ---
+    "avg_repl_lag_ms",
+    "avg_time_db_read_ms",
+    "avg_time_db_write_ms",
+    "avg_time_db_cmd_count",
+]
+
+PER_NODE_FIELDNAMES = [
+    "timestamp", "phase", "network_id", "window_end",
+    "server_id", "role", "request_count",
+    "cpu_percent", "ram_used_mb",
+    "avg_time_proc_ms", "avg_time_db_ms",
+    "avg_time_db_read_ms", "avg_time_db_write_ms", "avg_time_db_cmd_count",
+    "avg_repl_lag_s", "member_state", "last_report_ts",
 ]
 
 # ---------------------------------------------------------------------------
@@ -67,6 +81,47 @@ signal.signal(signal.SIGINT, _handle_signal)
 def _mean_or_none(values):
     clean = [v for v in values if v is not None]
     return statistics.mean(clean) if clean else None
+
+
+def _domain_avg_repl_lag_ms(storage: dict) -> float:
+    """Compute mean replication lag in milliseconds across storage nodes."""
+    lags = [s.get("avg_repl_lag_s") for s in storage.values()
+            if s.get("avg_repl_lag_s") is not None]
+    return (statistics.mean(lags) * 1000.0) if lags else 0.0
+
+
+def _emit_per_node_rows(writer, summary: dict, phase: str, ts: str,
+                        network_id: str, window_end) -> None:
+    """Write one row per compute and storage container to the per-node CSV."""
+    for sid, s in summary.get("servers", {}).items():
+        writer.writerow({
+            "timestamp": ts, "phase": phase, "network_id": network_id,
+            "window_end": window_end, "server_id": sid, "role": "compute",
+            "request_count":         s.get("request_count", 0),
+            "cpu_percent":           s.get("avg_cpu_percent", ""),
+            "ram_used_mb":           s.get("avg_ram_used_mb", ""),
+            "avg_time_proc_ms":      s.get("avg_time_proc_ms", ""),
+            "avg_time_db_ms":        s.get("avg_time_db_ms", ""),
+            "avg_time_db_read_ms":   s.get("avg_time_db_read_ms", ""),
+            "avg_time_db_write_ms":  s.get("avg_time_db_write_ms", ""),
+            "avg_time_db_cmd_count": s.get("avg_time_db_cmd_count", ""),
+            "avg_repl_lag_s":        "", "member_state": "",
+            "last_report_ts":        s.get("last_report_ts", ""),
+        })
+    for sid, s in summary.get("storage_servers", {}).items():
+        writer.writerow({
+            "timestamp": ts, "phase": phase, "network_id": network_id,
+            "window_end": window_end, "server_id": sid, "role": "storage",
+            "request_count":         s.get("sample_count", 0),
+            "cpu_percent":           s.get("avg_cpu_percent", ""),
+            "ram_used_mb":           s.get("avg_ram_used_mb", ""),
+            "avg_time_proc_ms":      "", "avg_time_db_ms": "",
+            "avg_time_db_read_ms":   "", "avg_time_db_write_ms": "",
+            "avg_time_db_cmd_count": "",
+            "avg_repl_lag_s":        s.get("avg_repl_lag_s", ""),
+            "member_state":          s.get("member_state", "") or "",
+            "last_report_ts":        s.get("last_report_ts", ""),
+        })
 
 
 def _extract_domain_ram(summary: dict) -> tuple:
@@ -151,6 +206,12 @@ def main():
     writer.writeheader()
     csv_file.flush()
 
+    per_node_path = os.path.join(output_dir or ".", "per_node_stats.csv")
+    per_node_file = open(per_node_path, "w", newline="")
+    per_node_writer = csv.DictWriter(per_node_file, fieldnames=PER_NODE_FIELDNAMES)
+    per_node_writer.writeheader()
+    per_node_file.flush()
+
     try:
         while _running:
             # 500 ms poll timeout so SIGTERM is handled promptly
@@ -186,12 +247,25 @@ def main():
                     "median_time_total_ms":         domain.get("median_time_total_ms", ""),
                     "server_count":                len(summary.get("servers", {})),
                     "storage_count":               len(summary.get("storage_servers", {})),
+                    "avg_repl_lag_ms":             _domain_avg_repl_lag_ms(summary.get("storage_servers", {})),
+                    "avg_time_db_read_ms":         domain.get("avg_time_db_read_ms", ""),
+                    "avg_time_db_write_ms":        domain.get("avg_time_db_write_ms", ""),
+                    "avg_time_db_cmd_count":       domain.get("avg_time_db_cmd_count", ""),
                 }
                 writer.writerow(row)
                 csv_file.flush()
 
+                ts_str = row["timestamp"]
+                _emit_per_node_rows(
+                    per_node_writer, summary,
+                    phase=row["phase"], ts=ts_str,
+                    network_id=row["network_id"], window_end=row["window_end"],
+                )
+                per_node_file.flush()
+
     finally:
         csv_file.close()
+        per_node_file.close()
         sub1.close()
         sub2.close()
         ctx.destroy(linger=0)

@@ -1,0 +1,270 @@
+<mxfile host="65bd71144e">
+    <diagram id="vip-server-routing" name="VIP_SERVER Routing">
+        <mxGraphModel dx="1373" dy="543" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="VIP_SERVER ROUTING" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="20" width="600" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="HTTP client → VIP_SERVER → edge_server backend · reactive ARP, WSM-selected DNAT/SNAT rule pair, cross-network via inter-LAN router" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#555555;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="56" width="1500" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph1" value="1 · ARP for VIP_SERVER" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="260" y="100" width="300" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph2" value="2 · FIRST DATA PACKET (packet_in)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="580" y="100" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph3" value="3 · WSM SELECTION + DNAT/SNAT INSTALL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="100" width="440" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph4" value="4 · STEADY STATE (flow-matched)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1400" y="100" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph5" value="5 · TIMEOUT → re-elect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1760" y="100" width="220" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="sep1" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="570" y="140" as="sourcePoint"/>
+                        <mxPoint x="570" y="1050" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep2" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="930" y="140" as="sourcePoint"/>
+                        <mxPoint x="930" y="1050" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep3" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1390" y="140" as="sourcePoint"/>
+                        <mxPoint x="1390" y="1050" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep4" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1750" y="140" as="sourcePoint"/>
+                        <mxPoint x="1750" y="1050" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="lane_client" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f6fff4;strokeColor=#82b366;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="140" width="1740" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_client_hdr" value="&lt;b&gt;External HTTP client&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#2d5a2d&quot;&gt;speaks to VIP_SERVER_IP&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="180" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_ovs" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffef2;strokeColor=#d6b656;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="290" width="1740" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_ovs_hdr" value="&lt;b&gt;OVS switch&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;flow tables&lt;/span&gt;" style="shape=mxgraph.cisco19.l2_switch;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="345" width="70" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_ctrl" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff7f6;strokeColor=#b85450;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="480" width="1740" height="500" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_ctrl_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;Thread 1 — packet_in_handler&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;VipRoutingMixin&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="600" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_backend" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f2f7ff;strokeColor=#6c8ebf;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="230" y="1000" width="1740" height="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_backend_hdr" value="&lt;b&gt;edge_server backend(s)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;VIP_SERVER pool — in-memory dict&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;local + cross-network (peer LAN)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="1080" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_client_arp" value="&lt;b&gt;ARP WHO-HAS&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;arp_tpa = VIP_SERVER_IP&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="190" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_arp_punt" value="&lt;b&gt;ARP punt rule&lt;/b&gt; (prio 100)&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;eth_type=0x0806, arp_tpa=VIP_SERVER_IP&lt;br/&gt;→ output: CONTROLLER&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="310" width="260" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_reply_arp" value="&lt;b&gt;_reply_vip_arp()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;craft ARP reply&lt;br/&gt;sha = VIP_SERVER_MAC&lt;br/&gt;spa = VIP_SERVER_IP&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="510" width="260" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_snoop" value="&lt;b&gt;snoop_arp()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;learn client IP ↔ MAC&lt;br/&gt;_ip_to_mac · _mac_to_ip&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="700" width="260" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_client_syn" value="&lt;b&gt;TCP SYN&lt;/b&gt; (or first data packet)&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;eth_dst = VIP_SERVER_MAC&lt;br/&gt;ipv4_dst = VIP_SERVER_IP&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="185" width="260" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_vip_punt" value="&lt;b&gt;VIP punt rule&lt;/b&gt; (prio 100)&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;eth_type=0x0800, ipv4_dst=VIP_SERVER_IP&lt;br/&gt;ip_proto ∈ {1, 6, 17}&lt;br/&gt;→ output: CONTROLLER&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="305" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_handle_vip" value="&lt;b&gt;handle_vip_packet_in()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;match ipv4_dst == VIP_SERVER_IP&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="495" width="300" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_select" value="&lt;b&gt;select_server(client_mac)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;iterate VIP_SERVER pool&lt;br/&gt;read _server_stats (written by Thread 2)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="490" width="300" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_cost" value="&lt;b&gt;WSM cost function&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;Cost_j = W_CPU·CPÛ + W_RAM·RAM̂&lt;br/&gt;       + W_REQ·Req̂ + W_HOPS·Hopŝ&lt;br/&gt;defaults: 0.2 / 0.2 / 0.2 / 0.4&lt;br/&gt;unknown stats → 1.0 (worst case)&lt;br/&gt;ties → round-robin counter&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="640" width="300" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_hops" value="&lt;b&gt;Hops estimation&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;text-align:left&quot;&gt;hop_cache (shortest path) ▸&lt;br/&gt;local no path → max(_avg_hop, 1.0) ▸&lt;br/&gt;cross-LAN → local + _peer_avg_hop ▸&lt;br/&gt;unknown → hops_max&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="1340" y="530" width="110" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_install" value="&lt;b&gt;_install_vip_dnat_snat()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;install flow pair (prio 200)&lt;br/&gt;idle=VIP_IDLE_TIMEOUT (30 s)&lt;br/&gt;hard=VIP_HARD_TIMEOUT (120 s)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="960" y="800" width="420" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_dnat_rule" value="&lt;b&gt;DNAT rule&lt;/b&gt; (prio 200)&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;match: eth_src=client_mac, eth_dst=VIP_SERVER_MAC,&lt;br/&gt;ipv4_src=client_ip, ipv4_dst=VIP_SERVER_IP, ip_proto&lt;br/&gt;actions: set_field(eth_dst=backend_mac, ipv4_dst=backend_ip),&lt;br/&gt;output=backend_port&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="950" y="290" width="420" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_snat_rule" value="&lt;b&gt;SNAT rule&lt;/b&gt; (prio 200, reverse)&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;match: eth_src=backend_mac(or ROUTER_MAC), eth_dst=client_mac,&lt;br/&gt;ipv4_src=backend_ip, ipv4_dst=client_ip, ip_proto&lt;br/&gt;actions: set_field(eth_src=VIP_SERVER_MAC, ipv4_src=VIP_SERVER_IP),&lt;br/&gt;output=client_port&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=6;" parent="1" vertex="1">
+                    <mxGeometry x="950" y="385" width="420" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_first_po" value="&lt;b&gt;Packet-Out (first packet)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;apply DNAT actions to in-flight packet&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="960" y="920" width="420" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_client_req" value="&lt;b&gt;subsequent packets&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;same 5-tuple (source port omitted from match)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1410" y="175" width="320" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ovs_match" value="&lt;b&gt;flow hit (prio 200)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;DNAT/SNAT applied in datapath · controller bypassed&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1410" y="302.5" width="320" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_localhop" value="&lt;b&gt;Local backend&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;eth_dst = backend_mac&lt;br/&gt;output via get_next_hop_port&lt;br/&gt;(fallback host_attachment)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1400" y="1010" width="155" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_crosshop" value="&lt;b&gt;Cross-LAN backend&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;eth_dst = &lt;b&gt;ROUTER_MAC&lt;/b&gt;&lt;br/&gt;output = ROUTER_OVS_PORT&lt;br/&gt;→ inter-LAN router (L3 hop)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1575" y="1010" width="155" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_return_note" value="&lt;b&gt;return path&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;backend → OVS → SNAT rule rewrites&lt;br/&gt;eth_src → VIP_SERVER_MAC&lt;br/&gt;ipv4_src → VIP_SERVER_IP&lt;br/&gt;→ client sees VIP as source&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eaf5ea;strokeColor=#4d8b4d;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1390" y="1120" width="320" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_timeout" value="&lt;b&gt;idle/hard timeout&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;DNAT/SNAT rule evicted&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1670" y="397.5" width="180" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_resume_punt" value="&lt;b&gt;prio 100 punt rule resumes&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;next packet → controller&lt;br/&gt;→ fresh WSM selection&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1780" y="510" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_next_client" value="&lt;b&gt;next client request&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;may land on different backend&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eaeaff;strokeColor=#9673a6;fontSize=10;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="1780" y="180" width="180" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_stats_feed" value="&lt;b&gt;_server_stats&lt;/b&gt; (in-memory dict)&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;CPU, RAM, request_count, error_rate&lt;br/&gt;written by Thread 2 (telemetry) → read here&lt;br/&gt;no lock (eventlet cooperative switching)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="620" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_pool" value="&lt;b&gt;VIP_SERVER pool&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#666&quot;&gt;in-memory dict: mac → entry&lt;br/&gt;maintained by TopologyMixin / elasticity&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="740" width="300" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_arp_1" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.808;entryY=-0.014;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_client_arp" target="n_arp_punt" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="520" y="215"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_arp_2" value="PacketIn" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;entryX=0.654;entryY=0.01;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_arp_punt" target="n_reply_arp" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_arp_3" value="PacketOut&#xa;(ARP reply)" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_reply_arp" target="n_client_arp" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="280" y="440"/>
+                            <mxPoint x="280" y="320"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_snoop" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=1;dashed=1;" parent="1" source="n_reply_arp" target="n_snoop" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_syn_1" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;" parent="1" source="n_client_syn" target="n_vip_punt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_syn_2" value="PacketIn" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_vip_punt" target="n_handle_vip" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dispatch" value="dispatch" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_handle_vip" target="n_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_select_cost" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;entryX=0.467;entryY=0.015;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" target="n_cost" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1122" y="550" as="sourcePoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_cost_hops" value="uses" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_cost" target="n_hops" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_stats_read" value="read" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_stats_feed" target="n_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pool_read" value="iterate" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=0.885;exitY=0.057;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="n_pool" target="n_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_select_install" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;entryX=0.402;entryY=0.078;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_cost" target="n_install" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_install_dnat" value="FlowMod" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;entryX=1;entryY=1;entryDx=0;entryDy=0;" parent="1" source="n_install" target="n_dnat_rule" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1520" y="680"/>
+                            <mxPoint x="1520" y="440"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_install_snat" value="FlowMod" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;entryX=1;entryY=1;entryDx=0;entryDy=0;" parent="1" source="n_install" target="n_snat_rule" edge="1">
+                    <mxGeometry x="-0.482" y="-2" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1480" y="640"/>
+                            <mxPoint x="1480" y="520"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_install_po" value="PacketOut" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_install" target="n_first_po" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_steady_1" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;" parent="1" source="n_client_req" target="n_ovs_match" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_steady_local" value="local" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;exitX=0.582;exitY=0.926;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="n_ovs_match" target="n_localhop" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_steady_cross" value="cross-LAN" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=0.593;exitY=0.948;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="n_ovs_match" target="n_crosshop" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_return" value="SNAT on return" style="endArrow=classic;html=1;strokeColor=#4d8b4d;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_localhop" target="n_return_note" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_to_timeout" value="idle &gt; 30 s or hard &gt; 120 s" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_ovs_match" target="n_timeout" edge="1">
+                    <mxGeometry x="0.1967" y="3" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_timeout_resume" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="n_timeout" target="n_resume_punt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_resume_next" value="triggers" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_resume_punt" target="n_next_client" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_next_loop" value="re-enters phase 2" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_next_client" target="n_client_syn" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1750" y="160"/>
+                            <mxPoint x="1340" y="160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend_box" value="Legend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=11;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="1460" width="1940" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_client" value="External client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="1462" width="130" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_ovs" value="OVS (flow tables)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="1462" width="140" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_ctrl" value="SDN Controller (Thread 1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="1462" width="180" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_back" value="edge_server backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="630" y="1462" width="160" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_state" value="in-memory state (dict)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="1462" width="160" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_note" value="solid = packet/message path · dashed = read-only reference or async / timeout · yellow edges = OVS datapath events" style="text;html=1;align=left;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="990" y="1462" width="960" height="18" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

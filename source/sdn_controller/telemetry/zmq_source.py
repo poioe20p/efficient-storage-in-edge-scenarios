@@ -80,5 +80,5 @@ class ZmqTelemetrySource(TelemetryEventSource):
                         "telemetry full summary: %s",
                         summary.model_dump_json(indent=2)
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  
                 logger.warning("telemetry receive error: %s", exc)

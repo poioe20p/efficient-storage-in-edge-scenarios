@@ -1,0 +1,236 @@
+<mxfile host="65bd71144e">
+    <diagram id="storage-scale-down" name="Storage Scale-Down">
+        <mxGraphModel dx="816" dy="651" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1000" background="#FFFFFF" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="lane_infra" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffef2;strokeColor=#d6b656;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="560" width="1690" height="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="title" value="STORAGE SCALE-DOWN" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="600" y="20" width="600" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="Reclaim an idle MongoDB secondary via synchronous four-step teardown: isolate → rs.remove() → script cleanup → release IP" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#555555;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="56" width="1200" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph1" value="1 · DETECT (idle)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="260" y="100" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph2" value="2 · ISOLATE (VIP_DATA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="620" y="100" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph3" value="3 · RS DETACH (rs.remove)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="100" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph4" value="4 · CLEANUP (script + IP release)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1400" y="100" width="360" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="sep1" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="610" y="140" as="sourcePoint"/>
+                        <mxPoint x="610" y="960" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep2" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="970" y="140" as="sourcePoint"/>
+                        <mxPoint x="970" y="960" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep3" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1390" y="140" as="sourcePoint"/>
+                        <mxPoint x="1390" y="960" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="lane_agg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffef2;strokeColor=#d6b656;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="140" width="1720" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_agg_hdr" value="&lt;b&gt;Aggregator&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;container · per LAN&lt;/span&gt;" style="shape=mxgraph.cisco.servers.standard_host;html=1;pointerEvents=1;dashed=0;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="155" width="60" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f2f7ff;strokeColor=#6c8ebf;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="250" width="1720" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t2_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;Thread 2 — Observer&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;(ScalingPolicy)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="275" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff7f6;strokeColor=#b85450;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="390" width="1720" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t3_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;Thread 3 — Elasticity Manager&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;(StorageNodeAdder · synchronous)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="425" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_infra_hdr" value="&lt;b&gt;Infrastructure&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;MongoDB RS · Docker · OVS&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;scripts&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="615" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f6fff4;strokeColor=#82b366;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="770" width="1680" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t1_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#2d5a2d&quot;&gt;Thread 1 — Scheduler&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#2d5a2d&quot;&gt;(VIP routing + TopologyMixin)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="820" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_agg_pub" value="&lt;b&gt;TelemetrySummary&lt;/b&gt;&lt;br/&gt;(CPU, T_db, ~10 s window)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="160" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t2_idle" value="&lt;b&gt;AND-gate idle&lt;/b&gt;&lt;br/&gt;CPU &lt; τ  &amp;  T_db &lt; τ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="290" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t2_window" value="&lt;b&gt;Sustained idle&lt;/b&gt;&lt;br/&gt;7-of-12 window · cooldown 120 s&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;keep ≥ 1 dynamic secondary&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="285" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_alert" value="&lt;b&gt;ScaleDownDataAlert&lt;/b&gt;&lt;br/&gt;(mac, ip, lan, rs_name,&lt;br/&gt;primary, container_name, port)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="285" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_queue" value="&lt;b&gt;PriorityQueue&lt;/b&gt;&lt;br/&gt;storage scale-down · priority 4" style="shape=document;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="430" width="240" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_handler" value="&lt;b&gt;_handle_scale_down_data&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;remove_storage_mac() · StorageNodeAdder.remove_storage_node()&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="620" y="440" width="320" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_rscmd" value="&lt;b&gt;rs.remove(member_host)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;find primary · mongosh via primary&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1020" y="425" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_wait" value="&lt;b&gt;_wait_rs_member_removed&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;poll rs.status() · ≤10× · 3 s delay&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1310" y="430" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_scriptcmd" value="&lt;b&gt;remove_network_storage_node.sh&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;--skip-rs (rs.remove already done)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1610" y="430" width="300" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_primary_lbl" value="&lt;b&gt;RS PRIMARY&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;member removed from config&lt;/span&gt;" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="920" y="700" width="160" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_dbset" value="" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/database.svg;" parent="1" vertex="1">
+                    <mxGeometry x="930" y="603" width="150" height="112" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_leaving_lbl" value="&lt;b&gt;edge_storage_server (leaving)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;detached from RS&lt;/span&gt;" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1200" y="715" width="160" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ovs" value="" style="shape=mxgraph.cisco19.l2_switch;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1490" y="665" width="70" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ovs_lbl" value="&lt;b&gt;OVS switch&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;flow flush · del-port · veth del&lt;/span&gt;" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1440" y="715" width="170" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_script_steps" value="&lt;b&gt;Script teardown&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;DNAT flow flush → docker stop → OVS del-port → veth del → docker rm&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1400" y="580" width="350" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ip_release" value="&lt;b&gt;IpAllocator&lt;/b&gt;&lt;br/&gt;release IP + MAC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1770" y="670" width="170" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_vip_pool" value="&lt;b&gt;VIP_DATA pool&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#666&quot;&gt;in-memory dict&lt;/span&gt;&lt;br/&gt;− backend removed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="660" y="805" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_wsm" value="&lt;b&gt;Packet-in&lt;/b&gt; → WSM picks from remaining secondaries&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;stale DNAT flows flushed by cleanup script&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eaf5ea;strokeColor=#4d8b4d;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1030" y="817.5" width="400" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_goal" value="&lt;b&gt;CAPACITY RECLAIMED&lt;/b&gt;&lt;br/&gt;RS consistent · no read dropped" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4d8b4d;fontColor=#ffffff;strokeColor=#2d5a2d;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1730" y="170" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pub" value="&lt;div&gt;&lt;span style=&quot;background-color: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));&quot;&gt;ZMQ PUB/SUB&lt;/span&gt;&lt;/div&gt;" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_agg_pub" target="n_t2_idle" edge="1">
+                    <mxGeometry x="0.5" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_score" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" source="n_t2_idle" target="n_t2_window" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_post" value="post()" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_t2_window" target="n_alert" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_enqueue" value="enqueue" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_alert" target="n_t3_queue" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pop" value="pop" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_t3_queue" target="n_t3_handler" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_demote" value="remove_storage_mac()" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_t3_handler" target="n_vip_pool" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_rscmd" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;" parent="1" source="n_t3_handler" target="n_t3_rscmd" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_rsexec" value="via primary" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="n_t3_rscmd" target="n_dbset" edge="1">
+                    <mxGeometry x="0.4994" y="-2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_wait" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;" parent="1" source="n_t3_rscmd" target="n_t3_wait" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_scriptcmd" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;" parent="1" source="n_t3_wait" target="n_t3_scriptcmd" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_script_runs" value="runs" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_t3_scriptcmd" target="n_script_steps" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_script_ovs" value="flushes / del" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_script_steps" target="n_ovs" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_script_stop" value="docker stop/rm" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" parent="1" source="n_script_steps" target="2" edge="1">
+                    <mxGeometry x="0.1932" relative="1" as="geometry">
+                        <mxPoint x="1303.6599999999999" y="655.4212148987585" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="1340" y="610"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_release" value="release()" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_script_steps" target="n_ip_release" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_wsm" value="next packet-in" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_vip_pool" target="n_wsm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_goal" style="endArrow=classic;html=1;strokeColor=#4d8b4d;strokeWidth=3;" parent="1" source="n_ip_release" target="n_goal" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1940" y="450"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_feedback" value="telemetry feedback — member removed" style="endArrow=classic;html=1;dashed=1;strokeColor=#888888;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="n_goal" target="n_agg_pub" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1000" y="195"/>
+                            <mxPoint x="510" y="195"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend_box" value="Legend — who does what" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=11;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="940" width="1710" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_agg" value="Aggregator (infra)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="960" width="130" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_t2" value="Thread 2 — Observer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="960" width="150" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_t3" value="Thread 3 — Elasticity Mgr" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="960" width="170" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_infra2" value="Mongo RS / Docker / OVS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="960" width="170" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_t1" value="Thread 1 — Scheduler" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="950" y="960" width="160" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_state" value="in-memory state (dict)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1130" y="960" width="160" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_cmd" value="dashed red = T3 command · dashed grey = feedback · synchronous single-pass" style="text;html=1;align=left;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="1310" y="960" width="490" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_primary" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.webicons.mongodb;gradientColor=#DFDEDE" parent="1" vertex="1">
+                    <mxGeometry x="972.5" y="645" width="65" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/database.svg;" parent="1" vertex="1">
+                    <mxGeometry x="1230" y="641.59" width="105" height="78.41" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.webicons.mongodb;gradientColor=#DFDEDE" parent="1" vertex="1">
+                    <mxGeometry x="1260" y="670" width="45" height="35" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
