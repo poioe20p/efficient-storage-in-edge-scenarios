@@ -138,11 +138,11 @@ sequenceDiagram
 
 ---
 
-## Scenario 4 — Data Gravity Lifecycle (Tier 0 → 2 → 0; Tier 1 planned)
+## Scenario 4 — Data Gravity Lifecycle (Tier 0 → 1 → 2 → 0)
 
 Each network starts with only its own primary. As cross-network demand grows, Thread 3 deploys a cache, then a full secondary. When demand drops, resources are removed.
 
-> **Note:** Tier 1 (Selective Sync Node) is planned but not yet implemented. Only the Tier 0 → Tier 2 → Tier 0 lifecycle is currently operational. The Tier 1 diagrams below show the planned design.
+> **Note:** Tier 1 (Selective Sync Node) is implemented and feature-flagged behind `SS_ENABLED` (default `0`). With the flag off, only the Tier 0 → Tier 2 → Tier 0 lifecycle is exercised.
 
 **Tier 0 — Base State:** Two isolated primaries, no replication, no caching.
 
@@ -222,7 +222,7 @@ graph LR
 
 ## Scenario 5 — Tier Transition Map
 
-> **Note:** Tier 1 transitions are planned but not yet implemented. Currently only Tier 0 ↔ Tier 2 transitions are operational.
+> **Note:** Tier 1 transitions require `SS_ENABLED=1`; with the default flag off, only Tier 0 ↔ Tier 2 transitions occur.
 
 Which metric triggers which transition, and what Thread 1 does to `VIP_DATA_N*` on each.
 
@@ -293,9 +293,9 @@ sequenceDiagram
 
 ---
 
-## Scenario 8 — Selective Sync Node Layout [Planned — Not Yet Implemented]
+## Scenario 8 — Selective Sync Node Layout
 
-> **Note:** This scenario describes the planned Tier 1 (Selective Sync Node) design. It is not yet implemented. See `system_mechanisms.md` §1.6 for the planned specification.
+> **Note:** Tier 1 is feature-flagged behind `SS_ENABLED`. See `system_mechanisms.md` §1.6 and [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md) for the implementation.
 
 A standalone `mongod` (not a replica set member) is deployed as the Selective Sync Node. Hot collections are identified by an access tracking script that tails `system.profile` on Local MongoDB, seeded via `mongodump | mongorestore`, and kept current by one Change Stream per hot collection opened on the remote primary. A Change Stream consumer script writes incoming documents with a `ttl_expires` field; MongoDB's TTL index handles expiry. The OVS switch applies the `VIP_DATA_N*` DNAT rule to route queries to the node.
 
@@ -324,9 +324,9 @@ graph LR
 
 ---
 
-## Scenario 9 — Selective Sync Node Deployment Sequence [Planned — Not Yet Implemented]
+## Scenario 9 — Selective Sync Node Deployment Sequence
 
-> **Note:** This scenario describes the planned Tier 1 (Selective Sync Node) design. It is not yet implemented. See `system_mechanisms.md` §1.6 for the planned specification.
+> **Note:** Tier 1 is feature-flagged behind `SS_ENABLED`. See `system_mechanisms.md` §1.6 and [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md) for the implementation.
 
 Thread 3 (Data Manager) deploys the Selective Sync Node: identifies hot collections via an access tracking script that tails `system.profile` on Local MongoDB, seeds them from the remote primary using `mongodump | mongorestore`, opens one Change Stream per hot collection via the Change Stream consumer, attaches the node to the network, and signals Thread 1 to switch the `VIP_DATA_N*` DNAT rule.
 
@@ -465,7 +465,7 @@ sequenceDiagram
 
 ---
 
-## Scenario 15 — SSR: Edge-Based (Tier 2 active; Tier 1 planned)
+## Scenario 15 — SSR: Edge-Based (Tier 2 active; Tier 1 feature-flagged)
 
 A `GET /view/profile` request triggers two `VIP_DATA_N*` queries (template + data). Both are served locally because the SDN DNAT rule routes `VIP_DATA_N*` to a local cache or secondary. $T_{dados} \approx 2 \times \text{LAN latency}$.
 

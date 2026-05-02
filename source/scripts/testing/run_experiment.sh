@@ -3,7 +3,7 @@
 # ============================================================================
 # run_experiment.sh
 #
-# Full experiment orchestration for the 4-phase edge IoT workload.
+# Full experiment orchestration for the phased edge IoT workload.
 # Runs in order:
 #   1. Create test client namespaces (LAN 1 + LAN 2)
 #   2. Seed MongoDB: sensor_reports → device_registry → create_indexes
@@ -15,9 +15,10 @@
 # Edit the configuration variables below to match your deployment.
 #
 # Usage:
-#   sudo ./run_experiment.sh [--skip-clients] [--skip-seed] [--skip-snapshot]
+#   sudo ./run_experiment.sh [--run-label c0] [--skip-clients] [--skip-seed] [--skip-snapshot]
 #
 # Flags (all optional):
+#   --run-label LABEL    Append a config label to the metrics folder name (example: 20260501_153012_c0)
 #   --skip-clients       Skip step 1 (test namespaces already created)
 #   --skip-seed          Skip step 2 (data already seeded)
 #   --skip-snapshot      Skip step 3 (snapshot already exported)
@@ -28,9 +29,10 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-readonly RUN_ID="$(date +%Y%m%d_%H%M%S)"
-readonly RUN_DIR="${SCRIPT_DIR}/metrics/${RUN_ID}"
+readonly CONTROLLER_ENV_SOURCE="${SCRIPTS_DIR}/osken-controller.env"
+readonly RUN_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # ---------------------------------------------------------------------------
 # Configuration — edit these to match your experiment
@@ -54,23 +56,21 @@ MONGO_LAN2="mongodb://10.0.1.4:27018/"
 # Snapshot output directory
 SNAPSHOT_DIR="${SCRIPT_DIR}/data/workload_snapshot"
 
-# Traffic generator config and output
-PHASES_CONFIG="${SCRIPT_DIR}/phases.json"
-PHASES_SNAPSHOT_OUTPUT="${RUN_DIR}/phases_snapshot.json"
-METRICS_OUTPUT="${RUN_DIR}/client_requests.csv"
-
 # VIP_SERVER address
 VIP="10.0.0.253:5000"
 
 # Resource stats collector — ZMQ PUB addresses of the two aggregators
 LAN1_PUB="tcp://10.0.0.5:5556"
 LAN2_PUB="tcp://10.0.1.5:5556"
-RESOURCE_STATS_OUTPUT="${RUN_DIR}/resource_stats.csv"
-PHASE_FILE="${RUN_DIR}/current_phase.txt"
+# SDN controller coordinator-state PUB endpoints (mirrors
+# COORDINATOR_STATE_PUB_PORT in build_network_setup.sh: 5561=lan1, 5562=lan2).
+# Both controllers run with --network host so 127.0.0.1 reaches them.
+LAN1_COORD_PUB="tcp://127.0.0.1:5561"
+LAN2_COORD_PUB="tcp://127.0.0.1:5562"
 
-# Controller log capture — saved alongside resource stats
-CONTROLLER_LOG_LAN1="${RUN_DIR}/controller_lan1.log"
-CONTROLLER_LOG_LAN2="${RUN_DIR}/controller_lan2.log"
+# Container life-cycle poller (diff-based docker ps)
+CONTAINER_EVENTS_INTERVAL="${CONTAINER_EVENTS_INTERVAL:-1.0}"
+CONTAINER_EVENTS_FILTER="${CONTAINER_EVENTS_FILTER:-^(edge_|sel_sync_|nat-router|osken|local_state_)}"
 
 # PID of the background stats collector (set by run_collect_stats)
 STATS_PID=""
@@ -78,6 +78,9 @@ STATS_PID=""
 # PIDs for controller log capture (set by run_capture_controller_logs)
 CONTROLLER_LOG_PID1=""
 CONTROLLER_LOG_PID2=""
+
+# PID of the container event poller (set by run_poll_container_events)
+CONTAINER_EVENTS_PID=""
 
 # ---------------------------------------------------------------------------
 # Flags
@@ -87,9 +90,12 @@ SKIP_CLIENTS=false
 SKIP_SEED=false
 SKIP_SNAPSHOT=false
 DRY_RUN=false
+RUN_LABEL=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --run-label)     shift; RUN_LABEL="$1"  ;;
+        --run-label=*)   RUN_LABEL="${1#*=}"    ;;
         --skip-clients)   SKIP_CLIENTS=true  ;;
         --skip-seed)      SKIP_SEED=true     ;;
         --skip-snapshot)  SKIP_SNAPSHOT=true ;;
@@ -108,6 +114,31 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+if [[ -n "$RUN_LABEL" ]] && [[ ! "$RUN_LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+    echo "ERROR: invalid --run-label '$RUN_LABEL' (allowed: letters, numbers, '_' and '-')" >&2
+    exit 1
+fi
+
+readonly RUN_ID="${RUN_TIMESTAMP}${RUN_LABEL:+_${RUN_LABEL}}"
+readonly RUN_DIR="${SCRIPT_DIR}/metrics/${RUN_ID}"
+readonly CONTROLLER_ENV_SNAPSHOT_OUTPUT="${RUN_DIR}/controller_env_snapshot.env"
+
+# Traffic generator config and output
+PHASES_CONFIG="${SCRIPT_DIR}/phases.json"
+PHASES_SNAPSHOT_OUTPUT="${RUN_DIR}/phases_snapshot.json"
+METRICS_OUTPUT="${RUN_DIR}/client_requests.csv"
+
+# Resource stats collector outputs
+RESOURCE_STATS_OUTPUT="${RUN_DIR}/resource_stats.csv"
+PHASE_FILE="${RUN_DIR}/current_phase.txt"
+
+# Container life-cycle poller (diff-based docker ps)
+CONTAINER_EVENTS_OUTPUT="${RUN_DIR}/container_events.csv"
+
+# Controller log capture — saved alongside resource stats
+CONTROLLER_LOG_LAN1="${RUN_DIR}/controller_lan1.log"
+CONTROLLER_LOG_LAN2="${RUN_DIR}/controller_lan2.log"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -119,9 +150,13 @@ prepare_run_outputs() {
     step "Preparing run output folder"
     mkdir -p "$RUN_DIR"
     [[ -f "$PHASES_CONFIG" ]] || die "Phase config not found: $PHASES_CONFIG"
+    [[ -f "$CONTROLLER_ENV_SOURCE" ]] || die "Controller env not found: $CONTROLLER_ENV_SOURCE"
     cp "$PHASES_CONFIG" "$PHASES_SNAPSHOT_OUTPUT"
+    cp "$CONTROLLER_ENV_SOURCE" "$CONTROLLER_ENV_SNAPSHOT_OUTPUT"
     echo "  Run dir    : ${RUN_DIR}"
+    echo "  Run label  : ${RUN_LABEL:-<none>}"
     echo "  Phase copy : ${PHASES_SNAPSHOT_OUTPUT}"
+    echo "  Env copy   : ${CONTROLLER_ENV_SNAPSHOT_OUTPUT}"
 }
 
 # Build comma-separated namespace name lists for each LAN
@@ -194,10 +229,14 @@ run_collect_stats() {
     step "Starting resource stats collector"
     echo "  LAN1 PUB : ${LAN1_PUB}"
     echo "  LAN2 PUB : ${LAN2_PUB}"
+    echo "  LAN1 coord: ${LAN1_COORD_PUB}"
+    echo "  LAN2 coord: ${LAN2_COORD_PUB}"
     echo "  Output   : ${RESOURCE_STATS_OUTPUT}"
     python3 "${SCRIPT_DIR}/collect_resource_stats.py" \
         --lan1-pub "$LAN1_PUB" \
         --lan2-pub "$LAN2_PUB" \
+        --lan1-coord-pub "$LAN1_COORD_PUB" \
+        --lan2-coord-pub "$LAN2_COORD_PUB" \
         --output   "$RESOURCE_STATS_OUTPUT" \
         --phase-file "$PHASE_FILE" &
     STATS_PID=$!
@@ -236,6 +275,32 @@ stop_capture_controller_logs() {
         wait "$pid" 2>/dev/null || true
         eval "$pid_var="
     done
+}
+
+# ---------------------------------------------------------------------------
+# Step 4c — Container life-cycle poller (diff-based docker ps)
+# ---------------------------------------------------------------------------
+
+run_poll_container_events() {
+    step "Starting container event poller"
+    echo "  Interval : ${CONTAINER_EVENTS_INTERVAL}s"
+    echo "  Filter   : ${CONTAINER_EVENTS_FILTER}"
+    echo "  Output   : ${CONTAINER_EVENTS_OUTPUT}"
+    python3 "${SCRIPT_DIR}/poll_container_events.py" \
+        --interval     "$CONTAINER_EVENTS_INTERVAL" \
+        --filter-regex "$CONTAINER_EVENTS_FILTER" \
+        --phase-file   "$PHASE_FILE" \
+        --output       "$CONTAINER_EVENTS_OUTPUT" &
+    CONTAINER_EVENTS_PID=$!
+    echo "  Poller PID: ${CONTAINER_EVENTS_PID}"
+}
+
+stop_poll_container_events() {
+    [[ -z "${CONTAINER_EVENTS_PID:-}" ]] && return 0
+    echo; echo "==> Stopping container event poller (PID ${CONTAINER_EVENTS_PID})"
+    kill -TERM "$CONTAINER_EVENTS_PID" 2>/dev/null || true
+    wait "$CONTAINER_EVENTS_PID" 2>/dev/null || true
+    CONTAINER_EVENTS_PID=""
 }
 
 # ---------------------------------------------------------------------------
@@ -283,7 +348,7 @@ echo " Dry-run     : ${DRY_RUN}"
 echo "======================================================"
 
 # Stop the stats collector on any exit (normal, error, or signal)
-trap 'stop_capture_controller_logs; stop_collect_stats' EXIT
+trap 'stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats' EXIT
 
 prepare_run_outputs
 "$SKIP_CLIENTS"  || run_create_clients
@@ -291,12 +356,15 @@ prepare_run_outputs
 "$SKIP_SNAPSHOT" || run_snapshot
 run_collect_stats
 run_capture_controller_logs
+run_poll_container_events
 run_traffic
+stop_poll_container_events
 stop_collect_stats
 
 step "Experiment complete"
-echo "Results      : ${METRICS_OUTPUT}"
-echo "Resource stats: ${RESOURCE_STATS_OUTPUT}"
-echo "Phase config : ${PHASES_SNAPSHOT_OUTPUT}"
+echo "Results        : ${METRICS_OUTPUT}"
+echo "Resource stats : ${RESOURCE_STATS_OUTPUT}"
+echo "Container events: ${CONTAINER_EVENTS_OUTPUT}"
+echo "Phase config   : ${PHASES_SNAPSHOT_OUTPUT}"
 echo "Controller logs: ${CONTROLLER_LOG_LAN1}"
-echo "              : ${CONTROLLER_LOG_LAN2}"
+echo "               : ${CONTROLLER_LOG_LAN2}"

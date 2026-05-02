@@ -155,6 +155,41 @@ performs a wholesale replacement of the peer MAC sets from the snapshot's
 `server_macs`, `storage_macs_n1`, and `storage_macs_n2` fields. This ensures
 both controllers converge on the same global view.
 
+### Storage RS Roles (`storage_roles`)
+
+`TopologySnapshot` also carries a `storage_roles: dict[str, str]` map from MAC
+to replica-set role string — one of `"primary"`, `"secondary"`, or `""`
+(unknown / not an RS member). It is published alongside `storage_macs_n*` and
+used by [Tier 1 Selective Sync](../selective_sync/selective_sync_overview.md) to
+discover the peer RS primary endpoint.
+
+- **Population** — each controller calls `sync_storage_roles(summary.storage_servers)`
+  from `_on_telemetry_update` after every window. It rebuilds the local roles
+  dict fresh from `TelemetrySummary.storage_servers[*].member_state` (mapping
+  `PRIMARY` → `"primary"`, `SECONDARY` → `"secondary"`, anything else
+  — including `STANDALONE_CACHE` for Tier 1 containers — → `""`).
+- **Why fresh-rebuild each window** — RS re-elections mean the primary MAC
+  can change between windows. Merging would keep a stale `"primary"` entry
+  alive. Fresh rebuilds cost `O(members_in_lan)` and correctly reflect the
+  latest telemetry snapshot.
+- **Incorporation** — `on_topology_update` copies the peer snapshot's
+  `storage_roles` into `self._peer_storage_roles`; the local map is kept in
+  `self._local_storage_roles`. Selective-sync containers never appear with a
+  non-empty role so they are never advertised as RS members.
+
+### `resolve_peer_primary(peer_network_id) -> tuple[str, str] | None`
+
+Returns `(rs_name, "ip:27017")` for the peer LAN's current RS primary, or
+`None` if no primary is known. Used by the Tier 1 `PromotionCoordinator` to
+build the remote Change Stream URI before spawning an `edge_selective_storage`
+container.
+
+- Joins the peer storage MAC set for the requested LAN
+  (`storage_macs_n{1,2}`) with `_peer_storage_roles` and `peer_hosts` to find
+  the MAC whose role is `"primary"` and whose IP is known.
+- Returns `(f"rs_net{n}", f"{ip}:27017")` if found; otherwise `None`. The
+  coordinator handles `None` by deferring promotion for one window.
+
 ---
 
 ## VIP Pool Rebuild
@@ -267,6 +302,42 @@ Higher-priority rules (100, 200) are installed by `VipRoutingMixin` — see the
 
 ---
 
+## WAN Emulation (Inter-LAN Latency)
+
+The two LANs are bridged by the `nat-router` container (separate netns). Same-LAN
+traffic stays inside an OVS bridge and is unaffected; **inter-LAN traffic** —
+including cross-region MongoDB reads driving the Tier 1 selective-sync gate —
+transits `eth1` (LAN 1 side) and `eth2` (LAN 2 side) of the router. Without
+shaping, that path measures only ~5–15 ms and is too cheap to exercise the
+`TAU_DADOS_MS=65 ms` breach predicate.
+
+A `tc netem` qdisc is therefore attached to both router interfaces during
+bringup. The shaping parameters live in [`source/scripts/wan.env`](../../../source/scripts/wan.env)
+and are applied by [`source/scripts/network/inject_wan_latency.sh`](../../../source/scripts/network/inject_wan_latency.sh),
+invoked at the tail of [`build_router.sh`](../../../source/scripts/network/build_router.sh).
+The injector splits the configured RTT into two equal one-way delays and is
+idempotent (re-running clears any prior root qdisc first). To re-tune at
+runtime without restarting the testbed, use
+[`source/scripts/tools/wan_set.sh`](../../../source/scripts/tools/wan_set.sh).
+
+**Profiles** (override `WAN_RTT_MS` in `wan.env`):
+
+| Profile             | `WAN_RTT_MS` | Use case                                                     |
+|---------------------|-------------:|--------------------------------------------------------------|
+| `lab`               | `0`          | Disable shaping (raw veth latency, baseline measurements)    |
+| `metro` (default)   | `10`         | Same-city edge ↔ edge — clears `TAU_DADOS_MS=65 ms` tail without inflating compute-tier `t_total` |
+| `regional`          | `40`         | Cross-region within a continent                              |
+| `inter-continental` | `150`        | Trans-oceanic edge ↔ remote storage                          |
+
+> **Caveat — Internet uplink.** Only `eth1` and `eth2` (inter-LAN) are shaped.
+> The router's `eth3` Internet uplink is left untouched so that container DNS,
+> apt, and image pulls during bringup are unaffected.
+
+OVS QoS cannot inject latency (only rate/queueing), which is why this is done
+on the Linux netns with `tc netem` rather than at the bridge.
+
+---
+
 ## Environment Variables
 
 | Variable                       | Default                      | Purpose                                            |
@@ -285,5 +356,9 @@ Higher-priority rules (100, 200) are installed by `VipRoutingMixin` — see the
 | `VIP_DATA_N1_MAC`             | `aa:bb:cc:dd:ee:02`          | Virtual MAC for VIP_DATA_N1                        |
 | `VIP_DATA_N2_IP`              | `10.0.1.254`                 | Virtual IP for LAN 2 MongoDB storage               |
 | `VIP_DATA_N2_MAC`             | `aa:bb:cc:dd:ee:03`          | Virtual MAC for VIP_DATA_N2                        |
+| `WAN_RTT_MS`                  | `10`                         | Inter-LAN round-trip delay injected by `tc netem` on the nat-router (split into two one-way halves on `eth1`/`eth2`); see [WAN Emulation](#wan-emulation-inter-lan-latency) |
+| `WAN_JITTER_MS`               | `0`                          | netem jitter (normal distribution) added to each one-way delay |
+| `WAN_LOSS_PCT`                | `0`                          | netem packet loss percentage on inter-LAN links    |
+| `WAN_RATE_KBIT`               | `0`                          | netem rate cap on inter-LAN links (`0` = uncapped) |
 
 

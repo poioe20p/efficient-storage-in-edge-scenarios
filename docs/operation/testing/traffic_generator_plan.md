@@ -1,6 +1,6 @@
 # Traffic Generator — Implementation Plan
 
-This document specifies the implementation of the HTTP traffic generator that drives the 4-phase experiment described in [testing_workloads.md](testing_workloads.md). All three edge server endpoints (`/device/<id>/latest`, `/anomalies`, `/dashboard/<node_id>`) are already implemented in the [edge server](../../../source/docker/edge_server/source/app.py). The missing piece is client-side request generation with phase orchestration.
+This document specifies the implementation of the HTTP traffic generator that drives the current 9-phase long-cycle experiment described in [testing_workloads.md](testing_workloads.md). All three edge server endpoints (`/device/<id>/latest`, `/anomalies`, `/dashboard/<node_id>`) are already implemented in the [edge server](../../../source/docker/edge_server/source/app.py). The missing piece is client-side request generation with phase orchestration.
 
 ---
 
@@ -9,15 +9,15 @@ This document specifies the implementation of the HTTP traffic generator that dr
 Two new scripts:
 
 | Script | Purpose |
-|---|---|
+| --- | --- |
 | `export_workload_snapshot.py` | Pre-export device/node data from MongoDB to JSON — decouples the traffic generator from a live database |
 | `traffic_generator.py` | Async Python script that sends phased HTTP traffic from test client namespaces through `VIP_SERVER` |
 
 One new config file:
 
 | File | Purpose |
-|---|---|
-| `phases.json` | Defines the 4-phase experiment parameters (duration, rate, mix, cross-region ratio) |
+| --- | --- |
+| `phases.json` | Defines the current 9-phase long-cycle experiment parameters (duration, rate, mix, cross-region ratio) |
 
 **Location:** all new files go in `source/scripts/testing/`.
 
@@ -34,7 +34,7 @@ Before running the traffic generator, the following must be ready:
 
 Execution order:
 
-```
+```text
 sensor_reports.py → device_registry.py → create_indexes.py → export_workload_snapshot.py → traffic_generator.py
 ```
 
@@ -159,10 +159,10 @@ if __name__ == "__main__":
 
 ## Step 2 — `phases.json`
 
-The JSON config file drives the 4-phase demand shift. Each phase defines:
+The JSON config file drives the 9-phase demand shift. Each phase defines:
 
 | Field | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `name` | string | Human-readable phase label (logged in CSV) |
 | `duration_s` | int | Phase duration in seconds |
 | `rate_per_client` | float | Target requests/second per client namespace |
@@ -176,21 +176,44 @@ The JSON config file drives the 4-phase demand shift. Each phase defines:
 {
   "phases": [
     {
-      "name": "local_consumption",
-      "duration_s": 300,
-      "rate_per_client": 2.0,
+            "name": "baseline",
+            "duration_s": 60,
+            "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "mix": {
-        "device_status": 0.6,
-        "dashboard": 0.3,
-        "anomalies": 0.1
+                "device_status": 0.35,
+                "dashboard": 0.35,
+                "anomalies": 0.30
+            }
+        },
+        {
+            "name": "local_moderate",
+            "duration_s": 90,
+            "rate_per_client": 5.0,
+            "cross_region_ratio": 0.0,
+            "mix": {
+                "device_status": 0.35,
+                "dashboard": 0.35,
+                "anomalies": 0.30
+            }
+        },
+        {
+            "name": "storage_stress",
+            "duration_s": 240,
+            "rate_per_client": 7.0,
+            "cross_region_ratio": 0.5,
+            "hotspot_direction": "lan2_to_lan1",
+            "mix": {
+                "device_status": 0.8,
+                "dashboard": 0.1,
+                "anomalies": 0.1
       }
     },
     {
       "name": "cross_region_hotspot",
-      "duration_s": 600,
-      "rate_per_client": 5.0,
-      "cross_region_ratio": 0.7,
+            "duration_s": 300,
+            "rate_per_client": 8.0,
+            "cross_region_ratio": 0.85,
       "hotspot_direction": "lan2_to_lan1",
       "mix": {
         "device_status": 0.8,
@@ -199,20 +222,57 @@ The JSON config file drives the 4-phase demand shift. Each phase defines:
       }
     },
     {
-      "name": "compute_spike",
-      "duration_s": 600,
-      "rate_per_client": 10.0,
-      "cross_region_ratio": 0.3,
+            "name": "reverse_hotspot",
+            "duration_s": 300,
+            "rate_per_client": 8.0,
+            "cross_region_ratio": 0.85,
+            "hotspot_direction": "lan1_to_lan2",
       "mix": {
-        "device_status": 0.5,
-        "dashboard": 0.3,
-        "anomalies": 0.2
+                "device_status": 0.8,
+                "dashboard": 0.1,
+                "anomalies": 0.1
+            }
+        },
+        {
+            "name": "compute_ramp",
+            "duration_s": 120,
+            "rate_per_client": 11.0,
+            "cross_region_ratio": 0.05,
+            "hotspot_direction": "lan2_to_lan1",
+            "mix": {
+                "device_status": 0.7,
+                "dashboard": 0.2,
+                "anomalies": 0.1
+            }
+        },
+        {
+            "name": "compute_spike",
+            "duration_s": 150,
+            "rate_per_client": 17.0,
+            "cross_region_ratio": 0.05,
+            "hotspot_direction": "lan2_to_lan1",
+            "mix": {
+                "device_status": 0.75,
+                "dashboard": 0.2,
+                "anomalies": 0.05
+            }
+        },
+        {
+            "name": "sustained_plateau",
+            "duration_s": 120,
+            "rate_per_client": 10.0,
+            "cross_region_ratio": 0.05,
+            "hotspot_direction": "lan2_to_lan1",
+            "mix": {
+                "device_status": 0.7,
+                "dashboard": 0.2,
+                "anomalies": 0.1
       }
     },
     {
       "name": "demand_drop",
-      "duration_s": 300,
-      "rate_per_client": 2.0,
+            "duration_s": 300,
+            "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "mix": {
         "device_status": 0.6,
@@ -224,14 +284,27 @@ The JSON config file drives the 4-phase demand shift. Each phase defines:
 }
 ```
 
+This default schedule totals 1680 s, about 28 minutes.
+
+`cross_region_ratio` applies only to `device_status` requests. Because only the
+source side of `hotspot_direction` emits those remote reads, the effective
+whole-workload cross-region share is lower than the raw ratio. `storage_stress`
+therefore uses a lower ratio than the full hotspot phases so Tier 2 can trigger
+during buildup instead of only after the strongest cross-region window begins.
+
 ### Rationale per Phase
 
 | Phase | Why this config |
-|---|---|
-| **Phase 1 — Local Consumption** | Baseline: each region queries its own data at low rate. No cross-region pressure. Establishes Tier 0 steady state. |
-| **Phase 2 — Cross-Region Hotspot** | 70% of LAN2 `device_status` requests target LAN1 device IDs. This creates $T_{dados}$ pressure that should trigger the Data Manager (Thread 3) to deploy a Tier 2 replica. Rate increases to 5 req/s to ensure threshold breach. |
-| **Phase 3 — Compute Spike** | High rate (10 req/s) with 30% dashboard requests (CPU-heavy: urgency sorting across all matching devices). Should trigger the Compute Manager to spawn additional web servers. |
-| **Phase 4 — Demand Drop** | Returns to Phase 1 config. Observe over-provisioned state (extra containers still running). Measures latency stability and resource consumption when demand recedes. |
+| --- | --- |
+| `baseline` | Establishes Tier 0 steady state with no cross-region pressure. |
+| `local_moderate` | Warms the system locally before any storage-sensitive phase begins. |
+| `storage_stress` | First sustained storage-pressure window. Lower cross-region ratio than the hotspot phases so it acts as buildup instead of duplicating the hotspot. |
+| `cross_region_hotspot` | Long observation window after the initial trigger, intended to show whether Tier 2 helps once a new secondary is actually ready. |
+| `reverse_hotspot` | Repeats the hotspot test in the opposite direction to expose asymmetry between LANs. |
+| `compute_ramp` | Reduces cross-region pressure while raising total rate so compute behavior can be evaluated with less storage confounding. |
+| `compute_spike` | Peak compute demand with the same low cross-region ratio. |
+| `sustained_plateau` | Holds compute pressure after the spike to observe post-scale stabilization. |
+| `demand_drop` | Stays low long enough to expose cooldown-gated storage and compute scale-down. |
 
 ---
 
@@ -723,10 +796,10 @@ All clients run concurrently within a phase (reflecting realistic multi-user loa
 |---|---|---|
 | 1 | Run `export_workload_snapshot.py` after seeding | Two JSON files with 200 devices + 80 nodes (default counts) |
 | 2 | Run `traffic_generator.py --dry-run` | Printed curl commands show correct URLs; no subprocesses spawned |
-| 3 | Smoke test (Phase 1 only, 30s, 1 client/LAN) | CSV has rows with `http_status=200`, `latency_s` between 0.01–1.0 |
-| 4 | Phase 2 cross-region check (30s) | ~70% of LAN2 client `device_status` rows have `device_id` starting with `lan1::` |
-| 5 | Rate accuracy (Phase 3, 60s, 1 client) | Total rows ≈ `10 × 60 = 600` (±10%) |
-| 6 | Phase marker rows present | CSV contains `PHASE_START:local_consumption`, `PHASE_START:cross_region_hotspot`, etc. |
+| 3 | Smoke test (`baseline` only, 30s, 1 client/LAN) | CSV has rows with `http_status=200`, `latency_s` between 0.01–1.0 |
+| 4 | `cross_region_hotspot` cross-region check (30s) | For the source LAN of `hotspot_direction`, most `device_status` rows target peer-region device IDs |
+| 5 | Rate accuracy (`compute_spike`, 60s, 1 client) | Total rows ≈ `17 × 60 = 1020` (±10%) |
+| 6 | Per-phase outputs present | Run directory contains `client_requests_<phase>.csv` files plus `current_phase.txt` |
 
 ---
 
@@ -735,7 +808,7 @@ All clients run concurrently within a phase (reflecting realistic multi-user loa
 ### Included
 
 - Snapshot export script
-- Traffic generator with 4-phase support
+- Traffic generator with 9-phase long-cycle support
 - CSV per-request metrics
 - Dry-run mode
 - Default `phases.json`

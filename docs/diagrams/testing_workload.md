@@ -5,8 +5,8 @@ graph LR
         ES1["Edge Server\nDocker container"]
         DB1[("MongoDB Primary\nsensor_reports\ndevice_registry\nquery_events")]
 
-        C1 -->|"HTTP to VIP_SERVER\n10.0.0.100:5000"| ES1
-        ES1 -->|"VIP_DATA\n10.0.0.200:27018"| DB1
+        C1 -->|"HTTP to VIP_SERVER\n10.0.0.253:5000"| ES1
+        ES1 -->|"VIP_DATA\n10.0.0.254:27018"| DB1
     end
 
     subgraph LAN2["Region LAN2 - 10.0.1.0/24"]
@@ -14,12 +14,12 @@ graph LR
         ES2["Edge Server\nDocker container"]
         DB2[("MongoDB Primary\nsensor_reports\ndevice_registry\nquery_events")]
 
-        C2 -->|"HTTP to VIP_SERVER\n10.0.0.100:5000"| ES2
-        ES2 -->|"VIP_DATA\n10.0.1.200:27018"| DB2
+        C2 -->|"HTTP to VIP_SERVER\n10.0.0.253:5000"| ES2
+        ES2 -->|"VIP_DATA\n10.0.1.254:27018"| DB2
     end
 
-    ES2 -.->|"cross-region\nVIP_DATA 10.0.0.200"| DB1
-    ES1 -.->|"cross-region\nVIP_DATA 10.0.1.200"| DB2
+    ES2 -.->|"cross-region\nVIP_DATA 10.0.0.254"| DB1
+    ES1 -.->|"cross-region\nVIP_DATA 10.0.1.254"| DB2
 
     R1["/device/device_id/latest?node_id=X\nreads sensor_reports + device_registry\nwrites query_events"]
     R2["/dashboard/node_id?limit=N\nreads device_registry + sensor_reports"]

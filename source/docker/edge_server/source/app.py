@@ -9,7 +9,12 @@ from enum import Enum, auto
 from flask import Flask, g, jsonify, request
 from pymongo import MongoClient
 from pymongo.errors import AutoReconnect, PyMongoError
+from db_monitor import register as _register_db_monitor
+from platform_cache import _owner_lan, cached_collection, set_tier1_manifest
 from telemetry import init_telemetry, ZmqMetricSender, _get_server_mac
+
+# Register the pymongo CommandListener before any MongoClient is created.
+_register_db_monitor()
 from compute import (
     score_device_severity,
     compute_trend,
@@ -39,8 +44,11 @@ DATA_TIER:   str = os.environ.get("DATA_TIER", "0")
 DB_PORT:      int   = int(os.environ.get("DB_PORT", "27018"))
 MAX_IDLE_MS:  int   = int(os.environ.get("MAX_IDLE_MS",
                           str(int(os.environ.get("VIP_IDLE_TIMEOUT", "30")) * 1000)))
-TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "5000"))
+TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "65"))
 CIRCUIT_COOLDOWN_S: float = float(os.environ.get("CIRCUIT_COOLDOWN_S", "5"))
+MONGO_CLIENT_RETIRE_GRACE_S: float = float(
+    os.environ.get("MONGO_CLIENT_RETIRE_GRACE_S", "30")
+)
 
 # ---------------------------------------------------------------------------
 # Drain state — set by POST /drain, read by before_request and drain monitor
@@ -67,9 +75,54 @@ vip_data_per_domain = {
 
 _clients_lock = threading.Lock()
 _mongo_clients: dict[str, MongoClient] = {}
+_retired_clients: list[tuple[float, str, MongoClient]] = [] # [retired_ts, lan, client]
+
+
+def _close_retired_clients() -> None:
+    cutoff = time.monotonic() - MONGO_CLIENT_RETIRE_GRACE_S
+    ready: list[tuple[str, MongoClient]] = []
+    with _clients_lock:
+        still_retired: list[tuple[float, str, MongoClient]] = []
+        for retired_ts, lan, client in _retired_clients:
+            if retired_ts <= cutoff:
+                ready.append((lan, client))
+            else:
+                still_retired.append((retired_ts, lan, client))
+        _retired_clients[:] = still_retired
+
+    for lan, client in ready:
+        try:
+            client.close()
+        except Exception as exc:  # pragma: no cover - defensive close path
+            log.warning("retired MongoClient close failed for %s: %s", lan, exc)
+
+
+def _retire_client(lan: str) -> None:
+    retired = False
+    with _clients_lock:
+        old = _mongo_clients.pop(lan, None)
+        if old is not None:
+            _retired_clients.append((time.monotonic(), lan, old))
+            retired = True
+
+    if retired:
+        log.info(
+            "Retired MongoClient for %s; future requests will reconnect after %.0fs grace",
+            lan,
+            MONGO_CLIENT_RETIRE_GRACE_S,
+        )
+    _close_retired_clients()
+
+
+def _retired_client_sweeper() -> None:
+    sweep_interval = max(1.0, min(MONGO_CLIENT_RETIRE_GRACE_S / 2.0, 5.0))
+    while True:
+        time.sleep(sweep_interval)
+        _close_retired_clients()
 
 
 def _get_client(lan: str) -> MongoClient:
+    _close_retired_clients()
     with _clients_lock:
         client = _mongo_clients.get(lan)
         if client is None:
@@ -162,6 +215,10 @@ def timed_db(lan: str):
     breaker = _get_breaker(lan)
     if not breaker.check():
         raise CircuitOpenError(f"circuit open for {lan}")
+    # Tag every wrapped cached_collection() access made inside this block
+    # with the owning LAN. Token is returned by set() and restored in finally
+    # so nested timed_db() calls unwind correctly.
+    owner_token = _owner_lan.set(lan)
     t0 = time.monotonic()
     try:
         try:
@@ -169,12 +226,11 @@ def timed_db(lan: str):
             breaker.record_success()
         except AutoReconnect:
             breaker.record_failure()
-            with _clients_lock:
-                old = _mongo_clients.pop(lan, None)
-            if old is not None:
-                log.warning("timed_db: evicted stale MongoClient for %s after connection failure", lan)
+            _retire_client(lan)
+            log.warning("timed_db: retired stale MongoClient for %s after connection failure", lan)
             raise
     finally:
+        _owner_lan.reset(owner_token)
         elapsed = time.monotonic() - t0
         g.time_db_elapsed = getattr(g, "time_db_elapsed", 0.0) + elapsed
         per_lan = getattr(g, "time_db_per_lan", None)
@@ -251,10 +307,33 @@ def set_vip_data():
     body = request.get_json(silent=True) or {}
     with vip_data_lock:
         vip_data_per_domain.update(body)
-    with _clients_lock:
-        for lan in body:
-            _mongo_clients.pop(lan, None)
+    for lan in body:
+        _retire_client(lan)
     return jsonify({"message": "VIP data updated", "vip_data": vip_data_per_domain}), 200
+
+
+@app.route("/tier1_manifest", methods=["PUT"])
+def tier1_manifest():
+    """Install / replace / revoke the Tier 1 manifest for an ``owner_lan``.
+
+    Body shape:
+        {
+          "owner_lan":   "lan1",
+          "host":        "10.0.1.10:27018"  | null,
+          "collections": {"sensor_reports": ["lan1::dev-7", ...], ...} | {}
+        }
+    ``host=null`` or empty ``collections`` revokes the manifest.
+    """
+    body = request.get_json(force=True) or {}
+    owner_lan = body.get("owner_lan")
+    if not owner_lan:
+        return jsonify({"error": "'owner_lan' is required"}), 400
+    set_tier1_manifest(
+        owner_lan=owner_lan,
+        host=body.get("host"),
+        collections=body.get("collections"),
+    )
+    return jsonify({"ok": True}), 200
 
 
 @app.route("/wait_time", methods=["POST"])
@@ -287,7 +366,7 @@ def device_latest(device_id: str):
 
     try:
         with timed_db(device_lan) as db:
-            doc = db.sensor_reports.find_one({"_id": device_id})
+            doc = cached_collection(db, "sensor_reports").find_one({"_id": device_id})
 
         if doc is None:
             return jsonify({"error": "device not found", "device_id": device_id}), 404
@@ -296,7 +375,7 @@ def device_latest(device_id: str):
         if node_id != "unknown":
             node_lan = node_id.split("::")[0]
             with timed_db(node_lan) as db:
-                registry = db.device_registry.find_one(
+                registry = cached_collection(db, "device_registry").find_one(
                     {"_id": node_id},
                     {"alert_config.threshold_override": 1},
                 )
@@ -327,7 +406,7 @@ def device_latest(device_id: str):
         }
         try:
             with timed_db(LAN_ID) as db:
-                db.query_events.insert_one(query_event)
+                cached_collection(db, "query_events").insert_one(query_event)
         except PyMongoError as exc:
             log.warning("query_events insert failed: %s", exc)
 
@@ -335,7 +414,7 @@ def device_latest(device_id: str):
         try:
             with timed_db(LAN_ID) as db:
                 recent_events = list(
-                    db.query_events.find(
+                    cached_collection(db, "query_events").find(
                         {"device_id": device_id},
                         {"latency_ms": 1, "timestamp": 1, "_id": 0},
                     )
@@ -388,7 +467,7 @@ def anomalies():
                 {"$sort":  {"query_count": -1}},
                 {"$limit": 10},
             ]
-            hot_devices = list(db.query_events.aggregate(pipeline))
+            hot_devices = list(cached_collection(db, "query_events").aggregate(pipeline))
 
         device_ids = [d["_id"] for d in hot_devices]
         ids_by_lan: dict[str, list[str]] = {}
@@ -398,7 +477,7 @@ def anomalies():
         status_map: dict[str, dict] = {}
         for lan, ids in ids_by_lan.items():
             with timed_db(lan) as db:
-                for d in db.sensor_reports.find(
+                for d in cached_collection(db, "sensor_reports").find(
                     {"_id": {"$in": ids}},
                     {"payload.status": 1, "payload.value": 1, "device_type": 1, "tags": 1,
                      "metadata.alert_threshold": 1},
@@ -438,7 +517,7 @@ def dashboard(node_id: str):
 
     try:
         with timed_db(node_lan) as db:
-            registry = db.device_registry.find_one({"_id": node_id})
+            registry = cached_collection(db, "device_registry").find_one({"_id": node_id})
 
         if registry is None:
             return jsonify({"error": "node not found", "node_id": node_id}), 404
@@ -449,7 +528,7 @@ def dashboard(node_id: str):
         for lan in vip_data_per_domain:
             with timed_db(lan) as db:
                 devices.extend(
-                    db.sensor_reports.find(
+                    cached_collection(db, "sensor_reports").find(
                         {"tags": {"$in": subscribed_tags}},
                         {"_id": 1, "device_type": 1, "tags": 1,
                          "payload": 1, "metadata": 1, "region_origin": 1,
@@ -489,13 +568,11 @@ def _check_tdados_threshold(response):
     for lan, elapsed in per_lan.items():
         time_ms = elapsed * 1000
         if time_ms > TAU_DADOS_MS:
-            with _clients_lock:
-                evicted = _mongo_clients.pop(lan, None)
-            if evicted is not None:
-                log.debug(
-                    "T_dados[%s]=%.1fms > \u03c4=%.1fms \u2014 evicted client to force reconnection",
-                    lan, time_ms, TAU_DADOS_MS,
-                )
+            _retire_client(lan)
+            log.debug(
+                "T_dados[%s]=%.1fms > \u03c4=%.1fms \u2014 retired client to force reconnection",
+                lan, time_ms, TAU_DADOS_MS,
+            )
     return response
 
 
@@ -506,6 +583,11 @@ def _check_tdados_threshold(response):
 # Shared sender: reused by telemetry and drain monitor so both emit through
 # the same ZMQ PUSH connection.
 _metric_sender = ZmqMetricSender()
+threading.Thread(
+    target=_retired_client_sweeper,
+    daemon=True,
+    name="mongo-client-sweeper",
+).start()
 
 
 def _drain_monitor() -> None:

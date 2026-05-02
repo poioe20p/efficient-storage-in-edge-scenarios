@@ -25,6 +25,8 @@ import time
 
 import zmq
 
+from tier1_stats import TIER1_ALL_COLUMNS, build_tier1_row, peer_lan
+
 # ---------------------------------------------------------------------------
 # CSV columns
 # ---------------------------------------------------------------------------
@@ -48,7 +50,7 @@ FIELDNAMES = [
     "avg_time_db_read_ms",
     "avg_time_db_write_ms",
     "avg_time_db_cmd_count",
-]
+] + TIER1_ALL_COLUMNS
 
 PER_NODE_FIELDNAMES = [
     "timestamp", "phase", "network_id", "window_end",
@@ -161,6 +163,14 @@ def main():
     parser.add_argument("--lan1-pub", default="tcp://10.0.0.5:5556", metavar="ADDR")
     parser.add_argument("--lan2-pub", default="tcp://10.0.1.5:5556", metavar="ADDR")
     parser.add_argument(
+        "--lan1-coord-pub", default="tcp://127.0.0.1:5561", metavar="ADDR",
+        help="LAN1 SDN controller coordinator-state PUB endpoint",
+    )
+    parser.add_argument(
+        "--lan2-coord-pub", default="tcp://127.0.0.1:5562", metavar="ADDR",
+        help="LAN2 SDN controller coordinator-state PUB endpoint",
+    )
+    parser.add_argument(
         "--output", default="metrics/resource_stats.csv", metavar="FILE"
     )
     parser.add_argument(
@@ -188,14 +198,32 @@ def main():
     sub2.connect(args.lan2_pub)
     sub2.setsockopt_string(zmq.SUBSCRIBE, "")
 
+    # Coordinator-state subscribers (one per LAN). The controllers publish
+    # one frame per telemetry window after evaluate(); we keep the most
+    # recent frame per network_id and merge it into outgoing rows.
+    coord_sub1 = ctx.socket(zmq.SUB)
+    coord_sub1.connect(args.lan1_coord_pub)
+    coord_sub1.setsockopt_string(zmq.SUBSCRIBE, "")
+
+    coord_sub2 = ctx.socket(zmq.SUB)
+    coord_sub2.connect(args.lan2_coord_pub)
+    coord_sub2.setsockopt_string(zmq.SUBSCRIBE, "")
+
+    # Latest coordinator frame keyed by network_id. Empty until first PUB.
+    coord_state_by_lan: dict[str, dict] = {}
+
     poller = zmq.Poller()
     poller.register(sub1, zmq.POLLIN)
     poller.register(sub2, zmq.POLLIN)
+    poller.register(coord_sub1, zmq.POLLIN)
+    poller.register(coord_sub2, zmq.POLLIN)
 
     print(
         f"[collect_resource_stats] Subscribing to:\n"
         f"  LAN1: {args.lan1_pub}\n"
         f"  LAN2: {args.lan2_pub}\n"
+        f"  LAN1 coord: {args.lan1_coord_pub}\n"
+        f"  LAN2 coord: {args.lan2_coord_pub}\n"
         f"  Output: {args.output}\n"
         f"  Phase file: {args.phase_file}",
         flush=True,
@@ -216,6 +244,20 @@ def main():
         while _running:
             # 500 ms poll timeout so SIGTERM is handled promptly
             socks = dict(poller.poll(timeout=500))
+
+            # Drain coordinator-state frames first so the next aggregator
+            # row sees the freshest snapshot.
+            for coord_sock in (coord_sub1, coord_sub2):
+                if socks.get(coord_sock) != zmq.POLLIN:
+                    continue
+                try:
+                    raw = coord_sock.recv_string(flags=zmq.NOBLOCK)
+                    frame = json.loads(raw)
+                except (zmq.ZMQError, json.JSONDecodeError):
+                    continue
+                lan = frame.get("network_id")
+                if lan:
+                    coord_state_by_lan[lan] = frame
 
             for sock in (sub1, sub2):
                 if socks.get(sock) != zmq.POLLIN:
@@ -252,6 +294,12 @@ def main():
                     "avg_time_db_write_ms":        domain.get("avg_time_db_write_ms", ""),
                     "avg_time_db_cmd_count":       domain.get("avg_time_db_cmd_count", ""),
                 }
+                network_id = summary.get("network_id", "")
+                coord_lan = peer_lan(network_id) if network_id in ("lan1", "lan2") else network_id
+                row.update(build_tier1_row(
+                    summary,
+                    coord_state_by_lan.get(coord_lan, {}),
+                ))
                 writer.writerow(row)
                 csv_file.flush()
 
@@ -268,6 +316,8 @@ def main():
         per_node_file.close()
         sub1.close()
         sub2.close()
+        coord_sub1.close()
+        coord_sub2.close()
         ctx.destroy(linger=0)
         print("[collect_resource_stats] Stopped. Output: " + args.output, flush=True)
 

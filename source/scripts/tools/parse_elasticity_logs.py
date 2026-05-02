@@ -35,6 +35,13 @@ _TS = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})"
 PATTERNS: list[tuple[re.Pattern, callable]] = []
 
 
+def _maybe_float(value: str):
+    value = value.strip().lower()
+    if value in {"n/a", "none", "null"}:
+        return None
+    return float(value)
+
+
 def _pat(pattern: str):
     """Decorator that registers a regex pattern and its builder."""
     compiled = re.compile(pattern)
@@ -61,18 +68,32 @@ def _row(ts, controller, event_type, node_type="", container="", mac="", ip="", 
 
 # --- Scale-up triggers ---
 
-@_pat(_TS + r" INFO .+\[scale-up\] storage triggered: (\d+)/(\d+) windows ≥ ([\d.]+) "
-      r"\(last score=([\d.]+), cpu_s=([\d.]+)%, T_db=([\d.]+)ms\) on (\S+)")
+@_pat(_TS + r" (?:INFO|DEBUG) .+\[scale-up\] storage triggered: (\d+)/(\d+) windows ≥ ([\d.]+) "
+      r"\(eff_τ=([\d.]+), dyn_nodes=(\d+), last score=([\d.]+), cpu_s=([\d.]+)%, T_db=([\d.]+)ms\) on (\S+)")
 def _scaleup_storage_triggered(m, ctrl):
     return _row(m.group(1), ctrl, "scale_up_triggered", "storage", detail={
         "windows_hit": int(m.group(2)), "windows_total": int(m.group(3)),
-        "threshold": float(m.group(4)), "score": float(m.group(5)),
-        "cpu_pct": float(m.group(6)), "t_db_ms": float(m.group(7)),
-        "network": m.group(8),
+        "threshold": float(m.group(4)), "effective_threshold": float(m.group(5)),
+        "dyn_nodes": int(m.group(6)), "score": float(m.group(7)),
+        "cpu_pct": float(m.group(8)), "t_db_ms": float(m.group(9)),
+        "network": m.group(10),
     })
 
 
-@_pat(_TS + r" INFO .+\[scale-up\] compute triggered: (\d+)/(\d+) windows ≥ ([\d.]+) "
+@_pat(_TS + r" (?:INFO|DEBUG) .+\[scale-up\] compute triggered: (\d+)/(\d+) windows ≥ ([\d.]+) "
+      r"\(τ_eff=([\d.]+), τ_base=([\d.]+), peer_relief=([\d.]+), peer_score=([^,]+), dyn=(\d+), last score=([\d.]+), cpu=([\d.]+)%, T_proc=([\d.]+)ms\) on (\S+)")
+def _scaleup_compute_triggered_peer_aware(m, ctrl):
+    return _row(m.group(1), ctrl, "scale_up_triggered", "compute", detail={
+        "windows_hit": int(m.group(2)), "windows_total": int(m.group(3)),
+        "threshold": float(m.group(4)), "effective_threshold": float(m.group(5)),
+        "base_threshold": float(m.group(6)), "peer_relief": float(m.group(7)),
+        "peer_score": _maybe_float(m.group(8)), "dyn_nodes": int(m.group(9)),
+        "score": float(m.group(10)), "cpu_pct": float(m.group(11)),
+        "t_proc_ms": float(m.group(12)), "network": m.group(13),
+    })
+
+
+@_pat(_TS + r" (?:INFO|DEBUG) .+\[scale-up\] compute triggered: (\d+)/(\d+) windows ≥ ([\d.]+) "
       r"\(last score=([\d.]+), cpu=([\d.]+)%, T_proc=([\d.]+)ms\) on (\S+)")
 def _scaleup_compute_triggered(m, ctrl):
     return _row(m.group(1), ctrl, "scale_up_triggered", "compute", detail={
@@ -85,18 +106,34 @@ def _scaleup_compute_triggered(m, ctrl):
 
 # --- Scale-up score (window entry, not yet triggered) ---
 
-@_pat(_TS + r" INFO .+\[scale-up\] storage score=([\d.]+) \(τ=([\d.]+)\) "
+@_pat(_TS + r" (?:INFO|DEBUG) .+\[scale-up\] storage score=([\d.]+) \(τ_eff=([\d.]+), base=([\d.]+) \+(\d+)×([\d.]+)\) "
       r"cpu_s=([\d.]+)% T_db=([\d.]+)ms  window=(\d+)/(\d+) on (\S+)")
 def _scaleup_storage_score(m, ctrl):
     return _row(m.group(1), ctrl, "scale_up_score", "storage", detail={
-        "score": float(m.group(2)), "threshold": float(m.group(3)),
-        "cpu_pct": float(m.group(4)), "t_db_ms": float(m.group(5)),
-        "window_pos": int(m.group(6)), "window_total": int(m.group(7)),
-        "network": m.group(8),
+        "score": float(m.group(2)), "effective_threshold": float(m.group(3)),
+        "base_threshold": float(m.group(4)), "dyn_nodes": int(m.group(5)),
+        "threshold_increment": float(m.group(6)),
+        "cpu_pct": float(m.group(7)), "t_db_ms": float(m.group(8)),
+        "window_pos": int(m.group(9)), "window_total": int(m.group(10)),
+        "network": m.group(11),
     })
 
 
-@_pat(_TS + r" INFO .+\[scale-up\] compute score=([\d.]+) \(τ=([\d.]+)\) "
+@_pat(_TS + r" (?:INFO|DEBUG) .+\[scale-up\] compute score=([\d.]+) "
+      r"\(τ_eff=([\d.]+), τ_base=([\d.]+), peer_relief=([\d.]+), peer_score=([^,]+), dyn=(\d+)\) "
+      r"cpu=([\d.]+)% T_proc=([\d.]+)ms window=(\d+)/(\d+) on (\S+)")
+def _scaleup_compute_score_peer_aware(m, ctrl):
+    return _row(m.group(1), ctrl, "scale_up_score", "compute", detail={
+        "score": float(m.group(2)), "effective_threshold": float(m.group(3)),
+        "base_threshold": float(m.group(4)), "peer_relief": float(m.group(5)),
+        "peer_score": _maybe_float(m.group(6)), "dyn_nodes": int(m.group(7)),
+        "cpu_pct": float(m.group(8)), "t_proc_ms": float(m.group(9)),
+        "window_pos": int(m.group(10)), "window_total": int(m.group(11)),
+        "network": m.group(12),
+    })
+
+
+@_pat(_TS + r" (?:INFO|DEBUG) .+\[scale-up\] compute score=([\d.]+) \(τ=([\d.]+)\) "
       r"cpu=([\d.]+)% T_proc=([\d.]+)ms  window=(\d+)/(\d+) on (\S+)")
 def _scaleup_compute_score(m, ctrl):
     return _row(m.group(1), ctrl, "scale_up_score", "compute", detail={

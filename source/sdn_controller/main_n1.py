@@ -13,13 +13,19 @@ from os_ken.ofproto import ofproto_v1_3
 from os_ken import cfg
 
 from .elasticity.elasticity import ElasticityManager
+from .elasticity.elasticity import DataAlert
+from .selective_sync.promotion import PromotionCoordinator
+from .selective_sync.state_publisher import CoordinatorStatePublisher
 from .telemetry.models import TelemetrySummary
 from .telemetry.zmq_source import ZmqTelemetrySource
 from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
 from .scaling_policy import ScalingPolicy
+from .scaling_config import _VIP_DATA_WARM_REFRESH_TARGETS
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
+
+import requests
 
 # Required so os-ken's app manager loads os_ken.topology.switches.
 # topology.py imports os_ken.topology.api (which calls require_app with api_style=True),
@@ -68,6 +74,29 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._scaling_policy = ScalingPolicy()
         self._node_registry = DynamicNodeRegistry()
         self._control_events = ControlEventDispatcher()
+        self._pending_vip_data_refresh: dict[str, tuple[str, str]] = {} # [mac] -> (domain, owner_lan)
+        self._vip_data_refresh_cursor = 0
+
+        # ── Tier 1 selective-sync coordinator wiring ──
+        # The coordinator needs a live reference to the elasticity manager
+        # (for ``submit``), so we build it here and inject it back via the
+        # elasticity manager's late-attach setters.
+        self._selective_sync_coordinator = PromotionCoordinator(
+            my_lan=self._lan_id,
+            elasticity=self._elasticity,
+            broadcast_tier1_manifest=self._broadcast_tier1_manifest,
+            resolve_owner_primary=self._resolve_owner_primary,
+        )
+        self._elasticity.attach_selective_sync_coordinator(
+            self._selective_sync_coordinator)
+        self._elasticity.attach_tier1_broadcaster(
+            self._broadcast_tier1_manifest)
+
+        # Coordinator-state PUB socket — emits one frame per window after
+        # evaluate(). No-op when COORDINATOR_STATE_PUB_PORT=0. Subscribed
+        # by collect_resource_stats.py to populate resource_stats.csv
+        # coord_* columns.
+        self._coordinator_state_publisher = CoordinatorStatePublisher()
 
         # Thread 2 — ZMQ subscriber
         self._telemetry = ZmqTelemetrySource(
@@ -76,6 +105,99 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             on_topology_update=self.on_topology_update,
         )
         self._telemetry.start()
+
+    # ------------------------------------------------------------------
+    # Tier 1 coordinator closures
+    # ------------------------------------------------------------------
+
+    def _resolve_owner_primary(self, owner_lan: str) -> tuple[str, str] | None:
+        """Look up ``(rs_name, "host:port")`` for the peer-LAN RS primary.
+
+        Thin wrapper around :meth:`TopologyMixin.resolve_peer_primary` that
+        maps a consumer-facing ``owner_lan`` (e.g. ``"lan1"``) to the peer
+        network id used by the topology fabric (``"lan1"``/``"lan2"``).
+        Returns ``None`` until the peer controller has published role info.
+        """
+        return self.resolve_peer_primary(owner_lan)
+
+    def _broadcast_tier1_manifest(self, network_id: str, manifest: dict) -> None:
+        """PUT ``/tier1_manifest`` on every compute node in ``network_id``.
+
+        Resolves IPs from the topology mixin's ``_mac_to_ip`` map, filtered
+        by ``_local_server_macs`` so only edge-server nodes receive the
+        manifest (storage / selective-storage / OS-Ken / OVS nodes don't
+        run the edge Flask app).
+        """
+        for mac in list(self._local_server_macs):
+            ip = self._mac_to_ip.get(mac)
+            if not ip:
+                continue
+            url = f"http://{ip}:5000/tier1_manifest"
+            try:
+                requests.put(url, json=manifest, timeout=2.0)
+            except requests.RequestException as exc:
+                logger.warning("[tier1] manifest PUT %s failed: %s", url, exc)
+
+    def _promote_storage_backend(self, mac: str, domain: str) -> None:
+        self.add_storage_mac(mac, domain)
+        self.mark_storage_backend_warm(mac, domain)
+        owner_lan = "lan1" if domain == "n1" else "lan2"
+        self._pending_vip_data_refresh[mac] = (domain, owner_lan)
+        logger.info(
+            "[vip_data] promoted storage mac=%s domain=%s owner_lan=%s",
+            mac,
+            domain,
+            owner_lan,
+        )
+
+    def _select_vip_data_refresh_targets(self) -> list[str]:
+        eligible = sorted(mac for mac in self._local_server_macs if mac in self._mac_to_ip)
+        if not eligible:
+            return []
+        # Round-robin among eligible servers, with a limit on how many 
+        # to refresh per window to avoid thundering herd. 
+        # The cursor is advanced even if the selected servers are stale 
+        # (e.g. due to a long-running refresh or slow Flask response) to ensure 
+        # forward progress and eventual consistency.
+        limit = max(1, min(_VIP_DATA_WARM_REFRESH_TARGETS, len(eligible)))
+        start = self._vip_data_refresh_cursor % len(eligible)
+        ordered = eligible[start:] + eligible[:start]
+        picked = ordered[:limit]
+        self._vip_data_refresh_cursor = (start + limit) % len(eligible)
+        return picked
+
+    def _refresh_vip_data_clients(self, owner_lan: str) -> None:
+        targets = self._select_vip_data_refresh_targets()
+        if not targets:
+            logger.info("[vip_data] no eligible local refresh targets for %s", owner_lan)
+            return
+
+        payload = {
+            owner_lan: self.vip_data_n1_ip if owner_lan == "lan1" else self.vip_data_n2_ip
+        }
+        for mac in targets:
+            ip = self._mac_to_ip.get(mac)
+            if not ip:
+                continue
+            url = f"http://{ip}:5000/vip_data"
+            try:
+                requests.put(url, json=payload, timeout=2.0)
+            except requests.RequestException as exc:
+                logger.warning("[vip_data] refresh PUT %s failed: %s", url, exc)
+
+    def _refresh_pending_storage(self) -> None:
+        for mac, (domain, owner_lan) in list(self._pending_vip_data_refresh.items()):
+            pool = self.vip_storage_pool_n1 if domain == "n1" else self.vip_storage_pool_n2
+            if mac not in pool or mac not in self._mac_to_ip:
+                continue
+            self._refresh_vip_data_clients(owner_lan)
+            del self._pending_vip_data_refresh[mac]
+            logger.info(
+                "[vip_data] resolved pending refresh for mac=%s domain=%s owner_lan=%s",
+                mac,
+                domain,
+                owner_lan,
+            )
 
     def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
         """Thread 2 callback — thin mediator that orchestrates composed components."""
@@ -90,8 +212,9 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # 2. Dispatch control events
         self._control_events.process_drain_events(summary, self._elasticity)
         self._control_events.process_secondary_events(
-            summary, self._node_registry, self.add_storage_mac,
+            summary, self._node_registry, self._promote_storage_backend,
         )
+        self._refresh_pending_storage()
 
         # Mini-summaries (control event pass-throughs) have empty server dicts.
         if not summary.servers and not summary.storage_servers:
@@ -106,12 +229,24 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # 3. Observability
         self._log_and_update_stats(summary)
 
+        # 3b. Sync local RS roles from this window's storage telemetry so the
+        #     next topology snapshot advertises accurate ``storage_roles``,
+        #     and run the Tier 1 promotion coordinator.
+        self.sync_storage_roles(summary.storage_servers)
+        self._selective_sync_coordinator.evaluate(summary)
+        self._coordinator_state_publisher.publish(
+            summary.network_id,
+            summary.window_end,
+            self._selective_sync_coordinator.snapshot(),
+        )
+
         # 4. Fallback VIP promotion
         self._control_events.promote_storage_from_telemetry(
             summary, self._node_registry,
             self._local_storage_macs_n1, self._local_storage_macs_n2,
-            self.add_storage_mac,
+            self._promote_storage_backend,
         )
+        self._refresh_pending_storage()
 
         try:
             lan = int(summary.network_id.replace("lan", ""))
@@ -122,17 +257,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # 5. Absent node detection → alert submission
         for mac in self._node_registry.detect_absent(summary):
             if self._elasticity.has_pending_drain(mac):
-                logger.info("[scale-down] pending drain for mac=%s — submitting CleanupComputeAlert", mac)
-                self._elasticity.submit_cleanup_compute(mac)
+                logger.info("[scale-down] pending drain for mac=%s — submitting Phase B cleanup", mac)
+                self._elasticity.submit_cleanup(mac)
             else:
                 alert = self._node_registry.build_scale_down_alert(mac)
                 if alert:
                     logger.info("[scale-down] submitting alert: %s", alert)
                     self._elasticity.submit(alert)
-
-        if self._elasticity.is_busy():
-            logger.debug("[scale-down] elasticity manager is busy — skipping scaling evaluation")
-            return
 
         ds = summary.domain_summary
 
@@ -143,15 +274,43 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         peer_summary = self._telemetry.get_latest(peer_network_id)
         peer_ds = peer_summary.domain_summary if peer_summary and peer_summary.domain_summary else None
 
-        for alert in self._scaling_policy.evaluate_scale_up(
-            ds,
-            lan,
-            summary.network_id,
-            dynamic_storage_count,
-            dynamic_compute_count,
-            peer_ds,
-        ):
-            self._elasticity.submit(alert)
+        compute_blocked = self._elasticity.blocks_compute_scale_up()
+        storage_blocked = self._elasticity.blocks_storage_scale_up()
+
+        if self._elasticity.has_active_operation():
+            logger.debug("[scale-up] elasticity manager is busy — skipping")
+        else:
+            if compute_blocked:
+                logger.debug("[scale-up] compute blocked by pending compute drain — skipping")
+            if storage_blocked:
+                logger.debug("[scale-up] storage blocked by pending storage drain — skipping")
+
+            for alert in self._scaling_policy.evaluate_scale_up(
+                ds,
+                lan,
+                summary.network_id,
+                dynamic_storage_count,
+                dynamic_compute_count,
+                peer_ds,
+                allow_compute=not compute_blocked,
+                allow_storage=not storage_blocked,
+            ):
+                # Dormant Tier 2 supersede hook. Drains any active Tier 1 for the
+                # same (owner_lan → consumer_lan) direction *before* the Tier 2
+                # alert lands. Today ``DataAlert`` is always same-LAN (adds a
+                # secondary to ``rs_net{lan}``) and leaves ``cross_lan_rs=False``,
+                # so this branch is never taken. See
+                # docs/operation/elasticy_manager/implementation/tier1_selective_sync/event_protocol.md §2.4.
+                if (isinstance(alert, DataAlert)
+                        and getattr(alert, "cross_lan_rs", False)
+                        and getattr(alert, "owner_lan", None) is not None):
+                    self._selective_sync_coordinator.drain(
+                        alert.owner_lan, reason="tier2_supersedes")
+                self._elasticity.submit(alert)
+
+        if self._elasticity.is_busy():
+            logger.debug("[scale-down] elasticity manager is busy — skipping scaling evaluation")
+            return
 
         # 7. Scale-down evaluation (with cooldown gating)
         remaining = self._scaling_policy.compute_cooldown_remaining()

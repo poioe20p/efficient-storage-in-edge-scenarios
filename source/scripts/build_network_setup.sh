@@ -6,11 +6,21 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OSKEN1_PORT=${OSKEN1_PORT:-6653}
 OSKEN2_PORT=${OSKEN2_PORT:-6654}
 OSKEN_ENV_FILE=${OSKEN_ENV_FILE:-"${SCRIPT_DIR}/osken-controller.env"}
+WAN_ENV_FILE=${WAN_ENV_FILE:-"${SCRIPT_DIR}/wan.env"}
 
 if [[ ! -f "${OSKEN_ENV_FILE}" ]]; then
     echo "Missing controller env file: ${OSKEN_ENV_FILE}" >&2
     echo "Expected at: ${SCRIPT_DIR}/osken-controller.env" >&2
     exit 1
+fi
+
+# Source WAN-emulation knobs (consumed by network/inject_wan_latency.sh from
+# build_router.sh). All variables default to 0 if the file is absent.
+if [[ -f "${WAN_ENV_FILE}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${WAN_ENV_FILE}"
+    set +a
 fi
 
 
@@ -344,6 +354,7 @@ docker run -dit --name osken --network host \
     -e LAN_ID=lan1 \
     -e TOPOLOGY_PUB_PORT=5559 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5560 \
+    -e COORDINATOR_STATE_PUB_PORT=5561 \
     -e SERVER_MACS="00:00:00:00:00:02" \
     -e ROUTER_MAC="00:00:00:00:00:AA" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
@@ -358,6 +369,7 @@ docker run -dit --name osken_2 --network host \
     -e LAN_ID=lan2 \
     -e TOPOLOGY_PUB_PORT=5560 \
     -e PEER_TOPOLOGY_ENDPOINTS=tcp://127.0.0.1:5559 \
+    -e COORDINATOR_STATE_PUB_PORT=5562 \
     -e SERVER_MACS="00:00:00:00:00:05" \
     -e ROUTER_MAC="00:00:00:00:00:CC" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \

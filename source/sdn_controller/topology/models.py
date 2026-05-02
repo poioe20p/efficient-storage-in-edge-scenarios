@@ -36,3 +36,12 @@ class TopologySnapshot(BaseModel):
     server_macs:     list[str] = []
     storage_macs_n1: list[str] = []
     storage_macs_n2: list[str] = []
+    # MAC → RS role ("primary" / "secondary" / "") for the publishing LAN's
+    # own storage nodes. Consumed by ``resolve_peer_primary`` on the receiver
+    # so a consumer controller can look up the peer LAN's primary IP for
+    # Tier 1 Change Stream cursors (see Stage 2 in
+    # ``docs/operation/elasticy_manager/implementation/tier1_selective_sync/``).
+    # Selective-sync containers carry ``member_state="STANDALONE_CACHE"`` on
+    # the telemetry side and are mapped to ``""`` here — they must never be
+    # advertised as RS members.
+    storage_roles:   dict[str, str] = {}

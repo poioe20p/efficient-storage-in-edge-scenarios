@@ -177,7 +177,7 @@ EDGE_IP=$(echo "$CTRL_LOGS" \
 
 # --- Section 3: VIP_DATA routing ---
 VIP_DATA_LINES=$(echo "$CTRL_LOGS" | filter_or_fallback \
-    "select_storage\(|vip_data\(|dnat/snat installed:.*10\.0\.[01]\.200" \
+    "select_storage\(|warm-selected=|vip_data\(|awaiting ARP from backend|dnat/snat installed:.*10\.0\.[01]\.200" \
     "(no VIP_DATA routing — DNAT flow may already be installed)")
 
 # --- Section 4: Cross-LAN routing (if applicable) ---
@@ -185,7 +185,7 @@ CROSS_LAN_LINES=""
 if echo "$CTRL_LOGS" | grep -qE "cross-network" 2>/dev/null; then
     PEER_LOGS=$(collect_logs "$PEER_CONTROLLER")
     CROSS_LAN_LINES=$(echo "$PEER_LOGS" \
-        | grep -E "vip_data\(|select_storage\(|dnat/snat" || true)
+    | grep -E "vip_data\(|select_storage\(|warm-selected=|awaiting ARP from backend|dnat/snat" || true)
 fi
 
 # ── Phase 5: Formatted output ──────────────────────────────────────────────

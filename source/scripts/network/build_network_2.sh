@@ -98,7 +98,7 @@ docker run -dit --name edge_server_n2 --network none \
   -e LAN_ID=lan2 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.1.5:5555 \
   -e LOG_LEVEL=INFO \
-  -e HEARTBEAT_ENABLED=1 \
+  -e HEARTBEAT_ENABLED=true \
   edge_server
 
 # Review as each network will have its own mongodb shard
@@ -112,7 +112,7 @@ docker run -dit --name edge_storage_server_n2 --network none \
   -e MONGO_PORT=27018 \
   -e TELEMETRY_INTERVAL_S=10 \
   -e LOG_LEVEL=INFO \
-  -e HEARTBEAT_ENABLED=1 \
+  -e HEARTBEAT_ENABLED=true \
   -v edge_storage_server_n2-data:/data/db edge_storage_server
 
 echo "Starting aggregator_n2 container..."

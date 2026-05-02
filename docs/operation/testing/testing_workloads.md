@@ -1,5 +1,3 @@
-Good. That goal narrows things properly.
-
 You want to demonstrate:
 
 1. Elastic resource adaptation (compute + storage)
@@ -211,7 +209,7 @@ This creates:
 
 # Why This Is Ideal
 
-## It creates all required stresses:
+## It creates all required stresses
 
 | Component             | Trigger                                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------------------ |
@@ -226,70 +224,51 @@ This creates:
 
 ## Phase-Based Demand Shift
 
-### Phase 1 — Local Consumption
+The implemented default workload is now a 9-phase long-cycle schedule aligned to
+the current controller timing budget. The storage-sensitive phases are long
+enough to let Tier 2 trigger, complete replica-set join, and still be observed
+under active hotspot load; `demand_drop` is intentionally long enough to expose
+cooldown-gated scale-down.
 
-- lan1 edge nodes query lan1 device data
-- lan2 edge nodes query lan2 device data
-- Expect: no cross-region replication; both regions served from their own primary at Tier 0
+`cross_region_ratio` is not the fraction of all requests that go remote. In the
+traffic generator it applies only to `device_status` requests, and only clients
+on the source side of `hotspot_direction` emit those cross-region reads. The
+effective whole-workload cross-region share is therefore lower than the raw
+ratio, which is why `storage_stress` intentionally uses a lower ratio than the
+hotspot phases.
 
-### Phase 2 — Cross-Region Device Hotspot
+| Phase | Duration | Rate/client | `cross_region_ratio` | Mix (`device_status / dashboard / anomalies`) | Role |
+| --- | ---: | ---: | ---: | --- | --- |
+| `baseline` | 60 s | 1.0 | 0.00 | `0.35 / 0.35 / 0.30` | Tier 0 control |
+| `local_moderate` | 90 s | 5.0 | 0.00 | `0.35 / 0.35 / 0.30` | Local warm-up without cross-region pressure |
+| `storage_stress` | 240 s | 7.0 | 0.50 | `0.80 / 0.10 / 0.10` | Tier 2 pressure build-up; deliberately milder than full hotspot |
+| `cross_region_hotspot` | 300 s | 8.0 | 0.85 | `0.80 / 0.10 / 0.10` | Observe Tier 2 benefit after readiness on `lan2_to_lan1` |
+| `reverse_hotspot` | 300 s | 8.0 | 0.85 | `0.80 / 0.10 / 0.10` | Same observation window in the opposite direction |
+| `compute_ramp` | 120 s | 11.0 | 0.05 | `0.70 / 0.20 / 0.10` | Shift emphasis from data gravity toward server-side work |
+| `compute_spike` | 150 s | 17.0 | 0.05 | `0.75 / 0.20 / 0.05` | Peak compute stress |
+| `sustained_plateau` | 120 s | 10.0 | 0.05 | `0.70 / 0.20 / 0.10` | Hold compute pressure after spike |
+| `demand_drop` | 300 s | 1.0 | 0.00 | `0.60 / 0.30 / 0.10` | Observe cooldown-gated scale-in |
 
-Simulate:
+Expected signatures:
 
-- A cluster of lan1 industrial sensors enters warning state
-- lan2 edge nodes begin polling lan1 device data heavily
-- 70% of lan2 traffic issues `/device/<lan1::device::*>/latest` requests
-
-Expected:
-
-- $T_{dados}$ increases in lan2 (queries crossing the inter-region link)
-- Data Manager detects sustained $T_{dados} > \tau_{dados}$
-- Data Manager deploys a Selective Sync Node in lan2 for the lan1 device data subset
-- After synchronization, lan2 queries are served locally; $T_{dados}$ decreases
-
-Measure:
-
-- Time from threshold breach to replica availability
-- Latency reduction after tier escalation (Tier 0 → Tier 1)
-- Inter-region link traffic reduction
-
----
-
-### Phase 3 — Compute Spike
-
-Increase the request rate uniformly across both regions (simulating a monitoring surge — all nodes polling all devices at high frequency).
-
-Expected:
-
-- $T_{proc}$ increases across web servers (alert evaluation + dashboard rendering under load)
-- Compute Manager detects sustained $T_{proc} > \tau_{proc}$
-- Compute Manager spawns additional web server containers via `docker run`
-- WSM re-routes traffic; load redistributes across old and new servers
-
-Measure:
-
-- Per-server request distribution before and after scale-out
-- CPU utilization distribution across servers
-- $T_{proc}$ and $T_{total}$ stabilization time after new servers become active
-
----
-
-### Phase 4 — Demand Drop
-
-The lan1 device cluster returns to normal state. Traffic returns to baseline: lan2 nodes stop issuing cross-region queries; request rate drops uniformly.
-
-Expected:
-
-- Selective Sync Node TTL cache cools down; hit-count drops; cold documents self-evict
-- Data Manager detects $T_{dados}$ back below threshold; removes the lan2 Selective Sync Node (Tier 1 → Tier 0)
-- Compute Manager detects idle web servers; removes excess containers (scale-in)
-- Resource usage returns to baseline
+- `baseline` and `local_moderate` should remain stable at Tier 0 with no
+  elasticity.
+- `storage_stress` should create the first sustained storage-pressure window and
+  is the phase most likely to trip the initial Tier 2 alert.
+- `cross_region_hotspot` and `reverse_hotspot` are long observation windows:
+  if Tier 2 helps, latency should improve within the same phase after
+  `rs_secondary_ready`, not only after the hotspot has already ended.
+- `compute_ramp`, `compute_spike`, and `sustained_plateau` keep cross-region
+  traffic low so compute behavior is not confounded by peak data-gravity load.
+- `demand_drop` remains low for 300 s so storage and compute scale-down can arm
+  after their respective cooldowns.
 
 Measure:
 
-- Time from demand drop to Selective Sync Node removal
-- Time from demand drop to web server scale-in
-- Latency stability during infrastructure removal (no disruption to active connections)
+- Time from first storage alert to `rs_secondary_ready`
+- Latency delta before and after readiness within the hotspot phases
+- Whether `demand_drop` is long enough to trigger storage and compute scale-in
+- Latency stability during infrastructure removal
 
 ---
 
@@ -297,23 +276,23 @@ Measure:
 
 This workload lets you demonstrate:
 
-### 1. Flexible schema
+## 1. Flexible schema
 
 Device payload schemas differ entirely by `device_type` — a temperature sensor, a vibration sensor, a GPS tracker, a humidity sensor, a power meter, and a proximity sensor (9 types total) have nothing structurally in common. MongoDB ingests all of them into one collection without schema migrations.
 
-### 2. Aggregation framework
+## 2. Aggregation framework
 
 Anomaly detection queries use `$match` (time window + region), `$group` (by `device_id`), `$lookup` (join to `sensor_reports`), `$sort`, `$limit`. These are not achievable with simple key-value lookups.
 
-### 3. TTL indexes
+## 3. TTL indexes
 
 Expire old `query_events` automatically after a retention window (e.g., 24h). This bounds collection growth in a resource-constrained edge node and mirrors how real IoT systems handle event log retention.
 
-### 4. Secondary reads
+## 4. Secondary reads
 
 When replica deployed, reads served locally.
 
-### 5. Nested documents & arrays
+## 5. Nested documents & arrays
 
 Device `tags`, `metadata`, and alert `threshold_override` maps are natural fits. Querying `where tags ∈ subscribed_tags` with `$in` on an array field is precisely the kind of multi-valued attribute matching that document databases handle natively.
 

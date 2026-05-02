@@ -24,13 +24,18 @@ class ControlEventDispatcher:
 
     def process_drain_events(self, summary: TelemetrySummary,
                              elasticity: ElasticityManager) -> None:
-        """Handle drain_complete control events forwarded by the aggregator."""
+        """Handle drain_complete control events forwarded by the aggregator.
+
+        Routes on ``PendingDrain.node_type`` via
+        :meth:`ElasticityManager.submit_cleanup` so compute and Tier 1
+        selective-sync drains share the same dispatch path.
+        """
         for event in summary.control_events:
             if event.get("event_type") == "drain_complete":
                 mac = event.get("server_id")
                 if mac and elasticity.has_pending_drain(mac):
                     logger.info("[control] drain_complete received for mac=%s — submitting Phase B cleanup", mac)
-                    elasticity.submit_cleanup_compute(mac)
+                    elasticity.submit_cleanup(mac)
 
     def process_secondary_events(
         self,

@@ -217,6 +217,7 @@ IMAGES=(
 	"ubuntu-nat-router:ubuntu-nat-router"
 	"edge_server:edge_server"
 	"edge_storage_server:edge_storage_server"
+	"edge_selective_storage:edge_selective_storage"
 	"os-ken:osken-controller"
 	"local_state_server:local_state_server"
 )

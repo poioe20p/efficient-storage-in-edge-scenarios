@@ -31,14 +31,23 @@ logger = logging.getLogger("os_ken.node_manager")
 
 @dataclass
 class PendingDrain:
-    """In-progress drain record. Created in Phase A, consumed in Phase B."""
+    """In-progress drain record. Created in Phase A, consumed in Phase B.
+
+    Shared between compute (``node_type="compute"``) and Tier 1 selective-sync
+    (``node_type="selective_storage"``) drain flows. Phase B dispatch in
+    ``ElasticityManager.submit_cleanup`` routes on ``node_type``. Tier 1
+    drains have no OVS veth attached to a DNAT/VIP pool, so ``veth`` is left
+    empty for selective nodes and the script teardown path skips DNAT flush.
+    """
     mac:            str
-    veth:           str            # OVS-side veth name; "unknown" only if discovery failed
+    veth:           str            # OVS-side veth name; "unknown" only if discovery failed, "" for selective
     container_name: str
     lan:            int
     initiated_ts:   float
     drain_signaled: bool = True    # False when drain HTTP call failed but veth is known
     ip:             str  = ""      # for IP release in Phase B cleanup
+    node_type:      str  = "compute"   # "compute" | "selective_storage"
+    owner_lan:      str | None = None   # selective only; source LAN whose data is mirrored
 
 
 class ComputeNodeAdder(_BaseNodeAdder):
@@ -186,6 +195,10 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "--name", name,
             "-e", f"LAN_ID=lan{lan}",
             "-e", f"CONTAINER_NAME={name}",
+            # Dynamic nodes inherit HEARTBEAT_ENABLED=0 (the image default).
+            # Lifecycle is handled by scale-down (graceful) + telemetry-window
+            # absence timeout (failure). See
+            # docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
             "edge_server",
         ]
         return self._run_cmd(cmd)

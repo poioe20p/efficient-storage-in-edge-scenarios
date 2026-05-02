@@ -53,6 +53,13 @@ class TopologyMixin:
         self._peer_storage_macs_n1: set[str] = set()
         self._peer_storage_macs_n2: set[str] = set()
 
+        # RS role maps (MAC → "primary" / "secondary" / ""). Populated from
+        # the local TelemetrySummary via ``update_storage_role`` each window;
+        # peer side cached wholesale from incoming topology snapshots. Used
+        # by ``resolve_peer_primary`` for Tier 1 Change Stream targeting.
+        self._local_storage_roles: dict[str, str] = {} # MAC -> role for this controller's LAN
+        self._peer_storage_roles:  dict[str, str] = {} # MAC -> role for peer LAN
+
         logger.info(
             "topology mixin init: network=%s interval=%ds heartbeat=%d ticks "
             "server_macs=%s storage_macs_n1=%s storage_macs_n2=%s",
@@ -151,6 +158,72 @@ class TopologyMixin:
         self._rebuild_hop_cache()
 
     # ------------------------------------------------------------------
+    # Storage RS role tracking (Tier 1 selective-sync primary resolution)
+    # ------------------------------------------------------------------
+
+    def update_storage_role(self, mac: str, member_state: str | None) -> None:
+        """Map a storage node's telemetry ``member_state`` to an RS role entry.
+
+        Called from the Thread 2 telemetry callback for every storage server
+        in the local ``TelemetrySummary``. The resulting ``_local_storage_roles``
+        map is advertised in the next topology snapshot so the peer controller
+        can discover the LAN's current RS primary.
+
+        ``"STANDALONE_CACHE"`` (selective-sync containers) maps to ``""`` —
+        it is important these are **never** advertised as RS members so a
+        consumer never points another Tier 1 cursor at them.
+        """
+        if member_state == "PRIMARY":
+            role = "primary"
+        elif member_state == "SECONDARY":
+            role = "secondary"
+        else:
+            role = ""
+        self._local_storage_roles[mac] = role
+
+    def sync_storage_roles(self, storage_servers: dict) -> None:
+        """Rebuild ``_local_storage_roles`` from a ``TelemetrySummary.storage_servers`` map.
+
+        Called once per telemetry window. Clears any entries whose MAC is no
+        longer in the summary (stale after scale-down or container removal),
+        then calls ``update_storage_role`` for each live entry.
+        """
+        self._local_storage_roles = {}
+        for mac, ss in storage_servers.items():
+            self.update_storage_role(mac, getattr(ss, "member_state", None))
+
+    def forget_storage_role(self, mac: str) -> None:
+        """Drop role tracking for ``mac`` (called on node removal)."""
+        self._local_storage_roles.pop(mac, None)
+
+    def resolve_peer_primary(self, peer_network_id: str) -> tuple[str, str] | None:
+        """Return ``(rs_name, "ip:27018")`` for the primary of the peer LAN's RS.
+
+        Joins the peer topology snapshot's cached ``peer_hosts`` (MAC → IP)
+        with ``_peer_storage_roles`` (MAC → role) and the peer-LAN storage MAC
+        set. Returns ``None`` when no peer primary is known — e.g. the peer
+        controller hasn't published yet, an election is in progress, or the
+        peer is a selective-sync-only LAN.
+
+        ``peer_network_id`` is a LAN id like ``"lan1"`` or ``"lan2"``; the
+        result's ``rs_name`` is ``f"rs_net{N}"`` where N is the LAN number.
+        """
+        try:
+            n = peer_network_id.replace("lan", "")
+            int(n)  # validate
+        except (ValueError, AttributeError):
+            return None
+        peer_macs = (self._peer_storage_macs_n1
+                     if n == "1" else self._peer_storage_macs_n2)
+        for mac in peer_macs:
+            if self._peer_storage_roles.get(mac) == "primary":
+                host = self.peer_hosts.get(mac, {}) or {}
+                ip = host.get("ip")
+                if ip:
+                    return (f"rs_net{n}", f"{ip}:27018")
+        return None
+
+    # ------------------------------------------------------------------
     # Query helpers (used by Thread 1 scheduling)
     # ------------------------------------------------------------------
 
@@ -208,6 +281,7 @@ class TopologyMixin:
         self._peer_server_macs     = set(snapshot.server_macs)
         self._peer_storage_macs_n1 = set(snapshot.storage_macs_n1)
         self._peer_storage_macs_n2 = set(snapshot.storage_macs_n2)
+        self._peer_storage_roles   = dict(snapshot.storage_roles)
         self._peer_avg_hop_count = snapshot.avg_hop_count
         logger.debug(
             "peer topology updated from %s: %d hosts; peer server_macs=%s storage_n1=%s storage_n2=%s peer_avg_hops=%.2f",
@@ -506,6 +580,7 @@ class TopologyMixin:
             server_macs=list(self._local_server_macs),
             storage_macs_n1=list(self._local_storage_macs_n1),
             storage_macs_n2=list(self._local_storage_macs_n2),
+            storage_roles=dict(self._local_storage_roles),
             avg_hop_count=self._avg_hop_count,
         )
         try:

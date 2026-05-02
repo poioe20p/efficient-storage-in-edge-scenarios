@@ -19,31 +19,31 @@
                 <mxCell id="col_hdr_backend" value="Backend Pool" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#e65100;" parent="1" vertex="1">
                     <mxGeometry x="1385" y="30" width="250" height="28" as="geometry"/>
                 </mxCell>
-                <mxCell id="bg_web" value="&lt;b&gt;VIP_WEB Path — 10.0.0.100:80  (HTTP load balancing)&lt;/b&gt;" style="text;html=1;strokeColor=#e65100;fillColor=#fff8e1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
+                <mxCell id="bg_web" value="&lt;b&gt;VIP_WEB Path — 10.0.0.253:80  (HTTP load balancing)&lt;/b&gt;" style="text;html=1;strokeColor=#e65100;fillColor=#fff8e1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
                     <mxGeometry x="20" y="60" width="1860" height="450" as="geometry"/>
                 </mxCell>
-                <mxCell id="bg_data" value="&lt;b&gt;VIP_DATA Path — 10.0.X.200:27018  (MongoDB routing)&lt;/b&gt;" style="text;html=1;strokeColor=#b71c1c;fillColor=#fce4ec;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
+                <mxCell id="bg_data" value="&lt;b&gt;VIP_DATA Path — 10.0.X.254:27018  (MongoDB routing)&lt;/b&gt;" style="text;html=1;strokeColor=#b71c1c;fillColor=#fce4ec;align=left;verticalAlign=top;spacingTop=8;spacingLeft=12;rounded=1;fontSize=14;fontStyle=1;arcSize=3;" parent="1" vertex="1">
                     <mxGeometry x="20" y="530" width="1860" height="455" as="geometry"/>
                 </mxCell>
                 <mxCell id="ovs_outer" value="&lt;b&gt;OVS Bridge  (ovs-br0)&lt;/b&gt;&lt;br&gt;&lt;i&gt;same physical switch for both paths&lt;/i&gt;" style="text;html=1;strokeColor=#1b5e20;fillColor=#f1f8e9;align=center;verticalAlign=top;spacingTop=8;rounded=1;fontSize=13;fontStyle=1;arcSize=2;strokeWidth=2;" parent="1" vertex="1">
                     <mxGeometry x="490" y="70" width="315" height="905" as="geometry"/>
                 </mxCell>
-                <mxCell id="ovs_arp_web" value="&lt;b&gt;ARP Proactive Rule&lt;/b&gt;&lt;br&gt;match: arp_tpa = 10.0.0.100&lt;br&gt;action: ARP Reply, dl_src = VIP_WEB_MAC&lt;br&gt;&lt;i&gt;installed on switch connect — no controller&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#4caf50;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
+                <mxCell id="ovs_arp_web" value="&lt;b&gt;ARP Proactive Rule&lt;/b&gt;&lt;br&gt;match: arp_tpa = 10.0.0.253&lt;br&gt;action: ARP Reply, dl_src = VIP_WEB_MAC&lt;br&gt;&lt;i&gt;installed on switch connect — no controller&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#4caf50;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
                     <mxGeometry x="522.5" y="144" width="270" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="ovs_punt_web" value="&lt;b&gt;Punt Rule — priority 100&lt;/b&gt;&lt;br&gt;match: eth_type=0x0800, nw_dst=10.0.0.100&lt;br&gt;action: OUTPUT:CONTROLLER (Packet-In)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
+                <mxCell id="ovs_punt_web" value="&lt;b&gt;Punt Rule — priority 100&lt;/b&gt;&lt;br&gt;match: eth_type=0x0800, nw_dst=10.0.0.253&lt;br&gt;action: OUTPUT:CONTROLLER (Packet-In)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
                     <mxGeometry x="520" y="280" width="270" height="72" as="geometry"/>
                 </mxCell>
-                <mxCell id="ovs_dnat_web" value="&lt;b&gt;DNAT + SNAT Rules — priority 200&lt;/b&gt;&lt;br&gt;DNAT: nw_dst=10.0.0.100 → set(nw_dst=ws_ip, eth_dst=ws_mac), out→ws_port&lt;br&gt;SNAT: nw_src=ws_ip → set(nw_src=10.0.0.100, eth_src=VIP_WEB_MAC), out→client_port&lt;br&gt;&lt;i&gt;installed reactively by Thread 1 after Packet-In&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontSize=11;align=left;spacingLeft=8;" parent="1" vertex="1">
+                <mxCell id="ovs_dnat_web" value="&lt;b&gt;DNAT + SNAT Rules — priority 200&lt;/b&gt;&lt;br&gt;DNAT: nw_dst=10.0.0.253 → set(nw_dst=ws_ip, eth_dst=ws_mac), out→ws_port&lt;br&gt;SNAT: nw_src=ws_ip → set(nw_src=10.0.0.253, eth_src=VIP_WEB_MAC), out→client_port&lt;br&gt;&lt;i&gt;installed reactively by Thread 1 after Packet-In&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontSize=11;align=left;spacingLeft=8;" parent="1" vertex="1">
                     <mxGeometry x="512.5" y="400" width="267.5" height="90" as="geometry"/>
                 </mxCell>
-                <mxCell id="ovs_arp_data" value="&lt;b&gt;ARP Proactive Rule&lt;/b&gt;&lt;br&gt;match: arp_tpa = 10.0.X.200&lt;br&gt;action: ARP Reply, dl_src = VIP_DATA_MAC&lt;br&gt;&lt;i&gt;installed on switch connect — no controller&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#4caf50;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
+                <mxCell id="ovs_arp_data" value="&lt;b&gt;ARP Proactive Rule&lt;/b&gt;&lt;br&gt;match: arp_tpa = 10.0.X.254&lt;br&gt;action: ARP Reply, dl_src = VIP_DATA_MAC&lt;br&gt;&lt;i&gt;installed on switch connect — no controller&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#4caf50;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
                     <mxGeometry x="522.5" y="593" width="270" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="ovs_punt_data" value="&lt;b&gt;Punt Rule — priority 100&lt;/b&gt;&lt;br&gt;match: eth_type=0x0800, nw_dst=10.0.X.200&lt;br&gt;action: OUTPUT:CONTROLLER (Packet-In)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
+                <mxCell id="ovs_punt_data" value="&lt;b&gt;Punt Rule — priority 100&lt;/b&gt;&lt;br&gt;match: eth_type=0x0800, nw_dst=10.0.X.254&lt;br&gt;action: OUTPUT:CONTROLLER (Packet-In)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=12;align=left;spacingLeft=8;" parent="1" vertex="1">
                     <mxGeometry x="518.75" y="716" width="270" height="72" as="geometry"/>
                 </mxCell>
-                <mxCell id="ovs_dnat_data" value="&lt;b&gt;DNAT + SNAT Rules — priority 200&lt;/b&gt;&lt;br&gt;DNAT: nw_dst=10.0.X.200 + nw_src=ws_ip → set(nw_dst=mongo_ip, eth_dst=mongo_mac), out→mongo_port&lt;br&gt;SNAT: nw_src=mongo_ip → set(nw_src=10.0.X.200, eth_src=VIP_DATA_MAC), out→ws_port&lt;br&gt;&lt;i&gt;match includes nw_src=ws_ip (no src_port — covers all concurrent connections)&lt;/i&gt;&lt;br&gt;&lt;i&gt;installed reactively by Thread 1 after Packet-In&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontSize=11;align=left;spacingLeft=8;" parent="1" vertex="1">
+                <mxCell id="ovs_dnat_data" value="&lt;b&gt;DNAT + SNAT Rules — priority 200&lt;/b&gt;&lt;br&gt;DNAT: nw_dst=10.0.X.254 + nw_src=ws_ip → set(nw_dst=mongo_ip, eth_dst=mongo_mac), out→mongo_port&lt;br&gt;SNAT: nw_src=mongo_ip → set(nw_src=10.0.X.254, eth_src=VIP_DATA_MAC), out→ws_port&lt;br&gt;&lt;i&gt;match includes nw_src=ws_ip (no src_port — covers all concurrent connections)&lt;/i&gt;&lt;br&gt;&lt;i&gt;installed reactively by Thread 1 after Packet-In&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontSize=11;align=left;spacingLeft=8;" parent="1" vertex="1">
                     <mxGeometry x="512.5" y="822" width="280" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="client_web" value="&lt;b&gt;Client&lt;/b&gt;&lt;br&gt;IP: 10.0.0.2&lt;br&gt;(any src port)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=13;" parent="1" vertex="1">
@@ -115,17 +115,17 @@
                 <mxCell id="leg_note" value="Both paths share the same Thread 1 and the same OVS bridge." style="text;html=1;strokeColor=none;fillColor=none;fontColor=#333333;align=left;fontSize=11;fontStyle=2;" parent="1" vertex="1">
                     <mxGeometry x="1928" y="798" width="228" height="36" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_arp_req_web" value="① ARP: Who has 10.0.0.100?" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_web" target="ovs_arp_web" edge="1">
+                <mxCell id="e_arp_req_web" value="① ARP: Who has 10.0.0.253?" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_web" target="ovs_arp_web" edge="1">
                     <mxGeometry x="0.0624" y="-7" relative="1" as="geometry">
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_arp_rep_web" value="② ARP Reply: 10.0.0.100 is-at VIP_WEB_MAC  [no controller involved]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" parent="1" source="ovs_arp_web" target="client_web" edge="1">
+                <mxCell id="e_arp_rep_web" value="② ARP Reply: 10.0.0.253 is-at VIP_WEB_MAC  [no controller involved]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" parent="1" source="ovs_arp_web" target="client_web" edge="1">
                     <mxGeometry x="-0.1016" y="7" relative="1" as="geometry">
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_syn_web" value="③ TCP SYN  dst=10.0.0.100:80" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;fontSize=11;fontColor=#e65100;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_web" target="ovs_punt_web" edge="1">
+                <mxCell id="e_syn_web" value="③ TCP SYN  dst=10.0.0.253:80" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;fontSize=11;fontColor=#e65100;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_web" target="ovs_punt_web" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_pkt_in_web" value="④ Packet-In  [prio-100 punt triggered]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;fontSize=11;fontColor=#e65100;strokeWidth=2;fontStyle=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="ovs_punt_web" target="ctrl_web" edge="1">
@@ -144,20 +144,20 @@
                         <mxPoint y="-1" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_forward_web" value="⑥ Forward first packet  [DNAT: dst=10.0.0.100 → ws_ip]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d32;fontSize=11;fontColor=#2e7d32;strokeWidth=2;fontStyle=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="ovs_dnat_web" target="ws_pool_box" edge="1">
+                <mxCell id="e_forward_web" value="⑥ Forward first packet  [DNAT: dst=10.0.0.253 → ws_ip]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d32;fontSize=11;fontColor=#2e7d32;strokeWidth=2;fontStyle=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="ovs_dnat_web" target="ws_pool_box" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_arp_req_data" value="① ARP: Who has 10.0.X.200?" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_data" target="ovs_arp_data" edge="1">
+                <mxCell id="e_arp_req_data" value="① ARP: Who has 10.0.X.254?" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_data" target="ovs_arp_data" edge="1">
                     <mxGeometry x="0.1696" y="-6" relative="1" as="geometry">
                         <mxPoint y="-1" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_arp_rep_data" value="② ARP Reply: 10.0.X.200 is-at VIP_DATA_MAC  [no controller involved]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" parent="1" source="ovs_arp_data" target="client_data" edge="1">
+                <mxCell id="e_arp_rep_data" value="② ARP Reply: 10.0.X.254 is-at VIP_DATA_MAC  [no controller involved]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9e9e9e;dashed=1;fontSize=11;fontColor=#616161;strokeWidth=1;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" parent="1" source="ovs_arp_data" target="client_data" edge="1">
                     <mxGeometry x="-0.1962" y="-4" relative="1" as="geometry">
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_syn_data" value="③ TCP SYN  dst=10.0.X.200:27018  (src=ws_ip, domain-mapped)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;fontSize=11;fontColor=#e65100;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_data" target="ovs_punt_data" edge="1">
+                <mxCell id="e_syn_data" value="③ TCP SYN  dst=10.0.X.254:27018  (src=ws_ip, domain-mapped)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;fontSize=11;fontColor=#e65100;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="client_data" target="ovs_punt_data" edge="1">
                     <mxGeometry x="-0.0768" y="-30" relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="245" y="810"/>
@@ -180,7 +180,7 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_forward_data" value="⑥ Forward first packet  [DNAT: dst=10.0.X.200 → mongo_tier1_ip]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d32;fontSize=11;fontColor=#2e7d32;strokeWidth=2;fontStyle=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="ovs_dnat_data" target="mongo_t1" edge="1">
+                <mxCell id="e_forward_data" value="⑥ Forward first packet  [DNAT: dst=10.0.X.254 → mongo_tier1_ip]" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2e7d32;fontSize=11;fontColor=#2e7d32;strokeWidth=2;fontStyle=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="ovs_dnat_data" target="mongo_t1" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
             </root>

@@ -4,10 +4,89 @@ import subprocess
 import time
 import logging
 
-import psutil
 import zmq
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
+
+
+# --- Container resource accounting (cgroup-based) -----------------------
+# psutil.cpu_percent() and psutil.virtual_memory() read /proc, which is NOT
+# namespaced inside Docker — they report host-wide values. We instead read
+# the container's cgroup files, which are populated by the kernel for this
+# container's cgroup only. Supports cgroup v2 (preferred) and v1 fallback.
+
+_CGROUP_ROOT = "/sys/fs/cgroup"
+_cpu_state: dict[str, float | None] = {"usec": None, "mono": None}
+
+
+def _is_cgroup_v2() -> bool:
+    return os.path.exists(f"{_CGROUP_ROOT}/cgroup.controllers")
+
+
+def _read_cpu_usage_usec() -> int | None:
+    try:
+        if _is_cgroup_v2():
+            with open(f"{_CGROUP_ROOT}/cpu.stat") as f:
+                for line in f:
+                    if line.startswith("usage_usec"):
+                        return int(line.split()[1])
+        else:
+            with open(f"{_CGROUP_ROOT}/cpuacct/cpuacct.usage") as f:
+                return int(f.read().strip()) // 1000  # ns → µs
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _effective_cpu_count() -> float:
+    try:
+        if _is_cgroup_v2():
+            with open(f"{_CGROUP_ROOT}/cpu.max") as f:
+                quota, period = f.read().split()
+            if quota != "max":
+                return int(quota) / int(period)
+        else:
+            with open(f"{_CGROUP_ROOT}/cpu/cpu.cfs_quota_us") as f:
+                quota = int(f.read().strip())
+            if quota > 0:
+                with open(f"{_CGROUP_ROOT}/cpu/cpu.cfs_period_us") as f:
+                    period = int(f.read().strip())
+                return quota / period
+    except (OSError, ValueError):
+        pass
+    return float(os.cpu_count() or 1)
+
+
+def container_cpu_percent() -> float:
+    """CPU% normalised to the container's quota (100% = full quota).
+    First call returns 0.0 (no baseline yet). Polled periodically by the
+    telemetry loop so no extra caching layer is needed here."""
+    now_t = time.monotonic()
+    now_u = _read_cpu_usage_usec()
+    if now_u is None:
+        return 0.0
+    last_u = _cpu_state["usec"]
+    last_t = _cpu_state["mono"]
+    _cpu_state["usec"] = float(now_u)
+    _cpu_state["mono"] = now_t
+    if last_u is None or last_t is None:
+        return 0.0
+    elapsed_us = (now_t - last_t) * 1_000_000
+    if elapsed_us <= 0:
+        return 0.0
+    cpus = _effective_cpu_count() or 1.0
+    return min(100.0 * (now_u - last_u) / (elapsed_us * cpus), 100.0)
+
+
+def container_ram_used_mb() -> float:
+    try:
+        if _is_cgroup_v2():
+            with open(f"{_CGROUP_ROOT}/memory.current") as f:
+                return int(f.read().strip()) / 1_048_576
+        with open(f"{_CGROUP_ROOT}/memory/memory.usage_in_bytes") as f:
+            return int(f.read().strip()) / 1_048_576
+    except (OSError, ValueError):
+        return 0.0
 
 def _aggregator_addr_from_lan() -> str:
     """Derive the aggregator ZMQ PULL address from the LAN_ID env var (e.g. "lan1")."""
@@ -53,9 +132,11 @@ HEARTBEAT_INTERVAL_S = float(os.environ.get("HEARTBEAT_INTERVAL_S", "60"))
 # quiet periods. The default is disabled: dynamic storage secondaries don't
 # need heartbeats (idleness is handled by scale-down, failure by the
 # telemetry-window absence timeout). Static containers opt in by setting
-# HEARTBEAT_ENABLED=1 in their docker run command. See
+# HEARTBEAT_ENABLED=true in their docker run command. See
 # docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
-HEARTBEAT_ENABLED    = os.environ.get("HEARTBEAT_ENABLED", "0")
+HEARTBEAT_ENABLED = (
+    os.environ.get("HEARTBEAT_ENABLED", "false").strip().lower() == "true"
+)
 LOG_LEVEL            = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -76,6 +157,7 @@ def _get_server_mac() -> str:
 
 _prev_opcounters: dict | None = None
 _last_send_ts: float = 0.0
+_sent_secondary_bootstrap = False
 
 
 def _has_client_activity(current: dict, previous: dict | None) -> bool:
@@ -135,8 +217,8 @@ def _repl_lag_and_state(client: MongoClient) -> tuple[float | None, str | None]:
     return max(lag, 0.0), my_state
 
 
-def _push_stats() -> None:
-    global _prev_opcounters, _last_send_ts
+def _push_stats(*, force_bootstrap_secondary: bool = False) -> None:
+    global _prev_opcounters, _last_send_ts, _sent_secondary_bootstrap
 
     logger.debug("Connecting to MongoDB at %s", MONGO_URI)
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
@@ -162,7 +244,10 @@ def _push_stats() -> None:
 
     now = time.time()
 
-    if activity:
+    if force_bootstrap_secondary and member_state == "SECONDARY" and not _sent_secondary_bootstrap:
+        event_type = "mongo_stats"
+        _sent_secondary_bootstrap = True
+    elif activity:
         event_type = "mongo_stats"
     elif HEARTBEAT_ENABLED and now - _last_send_ts >= HEARTBEAT_INTERVAL_S:
         event_type = "heartbeat"
@@ -177,8 +262,8 @@ def _push_stats() -> None:
         "repl_lag_s":          repl_lag,
         "member_state":        member_state,
         "connections_current": connections_current,
-        "cpu_percent":         psutil.cpu_percent(interval=None),
-        "ram_used_mb":         psutil.virtual_memory().used / 1_048_576,
+        "cpu_percent":         container_cpu_percent(),
+        "ram_used_mb":         container_ram_used_mb(),
     }
     logger.debug("cpu=%.1f%% ram=%.1f MB", event["cpu_percent"], event["ram_used_mb"])
     logger.info("Pushing %s event for mac=%s", event_type, _get_server_mac())
@@ -430,6 +515,7 @@ def main() -> None:
             _get_server_mac(),
         )
         _sock.send_json(event, zmq.NOBLOCK)
+        _push_stats(force_bootstrap_secondary=True)
     elif state_str == "PRIMARY":
         logger.info("PRIMARY detected — skipping rs_secondary_ready event")
     else:

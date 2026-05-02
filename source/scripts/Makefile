@@ -20,6 +20,7 @@ SKIP_CLIENTS  ?= 1
 SKIP_SEED     ?= 1
 SKIP_SNAPSHOT ?= 1
 DRY_RUN       ?=
+RUN_LABEL     ?=
 
 
 .PHONY: setup_network \
@@ -91,8 +92,10 @@ export_snapshot:
 ##   make run_experiment SKIP_SEED=1      # data already seeded
 ##   make run_experiment SKIP_SNAPSHOT=1  # snapshot already exported
 ##   make run_experiment DRY_RUN=1        # no real HTTP requests
+##   make run_experiment RUN_LABEL=c0     # metrics folder becomes <timestamp>_c0
 run_experiment:
 	sudo bash testing/run_experiment.sh \
+	  $(if $(strip $(RUN_LABEL)),--run-label "$(strip $(RUN_LABEL))") \
 	  --snapshot-dir $(abspath $(SNAPSHOT_DIR)) \
 	  $(if $(filter-out 0 false,$(SKIP_CLIENTS)),--skip-clients) \
 	  $(if $(filter-out 0 false,$(SKIP_SEED)),--skip-seed) \

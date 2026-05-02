@@ -1,0 +1,233 @@
+<mxfile host="65bd71144e">
+    <diagram id="tier1-scale-up" name="Tier1 Scale-Up">
+        <mxGraphModel dx="816" dy="651" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1000" background="#FFFFFF" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="TIER 1 SCALE-UP" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="600" y="20" width="600" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="Localize hot cross-LAN reads by promoting a selective-sync cache in the consumer LAN and broadcasting a Tier 1 manifest to edge servers" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#555555;" parent="1" vertex="1">
+                    <mxGeometry x="260" y="56" width="1280" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph1" value="1 · DETECT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="260" y="100" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph2" value="2 · DECIDE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="620" y="100" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph3" value="3 · PROVISION" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="100" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph4" value="4 · INTEGRATE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1400" y="100" width="360" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="sep1" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="610" y="140" as="sourcePoint"/>
+                        <mxPoint x="610" y="960" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep2" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="970" y="140" as="sourcePoint"/>
+                        <mxPoint x="970" y="960" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep3" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1390" y="140" as="sourcePoint"/>
+                        <mxPoint x="1390" y="960" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="lane_agg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffef2;strokeColor=#d6b656;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="140" width="1560" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_agg_hdr" value="&lt;b&gt;Aggregator&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;container · per LAN&lt;/span&gt;" style="shape=mxgraph.cisco.servers.standard_host;html=1;pointerEvents=1;dashed=0;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="160" width="60" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f2f7ff;strokeColor=#6c8ebf;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="260" width="1560" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t2_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;Thread 2 — Observer&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;(PromotionCoordinator)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="295" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff7f6;strokeColor=#b85450;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="420" width="1560" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t3_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;Thread 3 — Elasticity Manager&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;(SelectiveStorageNodeAdder)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="445" width="180" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_infra" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffef2;strokeColor=#d6b656;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="570" width="1560" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_infra_hdr" value="&lt;b&gt;Infrastructure&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;Docker · OVS · remote owner RS&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="630" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_edge" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f6fff4;strokeColor=#82b366;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="240" y="780" width="1560" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_edge_hdr" value="&lt;b&gt;Consumer Edge Servers&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#2d5a2d&quot;&gt;platform_cache + /tier1_manifest&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="815" width="190" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_agg_pub" value="&lt;b&gt;TelemetrySummary&lt;/b&gt;&lt;br/&gt;p95 T_db per owner LAN + access counters" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="165" width="250" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t2_eval" value="&lt;b&gt;PromotionCoordinator.evaluate()&lt;/b&gt;&lt;br/&gt;merge hot docs by owner_lan + collection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="290" width="250" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t2_gate" value="&lt;b&gt;Promotion eligible&lt;/b&gt;&lt;br/&gt;2-of-5 breach + xregion footprint + cooldown clear" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="355" width="250" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_alert" value="&lt;b&gt;SelectiveSyncAlert&lt;/b&gt;&lt;br/&gt;(owner_lan, owner_primary, collections)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="300" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_queue" value="&lt;b&gt;PriorityQueue&lt;/b&gt;&lt;br/&gt;Tier 1 scale-up · priority 2" style="shape=document;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="440" width="230" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_dispatch" value="&lt;b&gt;Dispatch&lt;/b&gt;&lt;br/&gt;→ SelectiveStorageNodeAdder" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="860" y="445" width="140" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_cmd1" value="docker run&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;edge_selective_storage&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1030" y="440" width="130" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_cmd2" value="add_selective_network_node.sh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1190" y="440" width="180" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_result" value="&lt;b&gt;NodeResult&lt;/b&gt;&lt;br/&gt;ip · mac · timings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1295" y="495" width="150" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_t3_activate" value="&lt;b&gt;on_spawned()&lt;/b&gt;&lt;br/&gt;ACTIVE + broadcast first manifest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1460" y="435" width="220" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_new_lbl" value="&lt;b&gt;new edge_selective_storage&lt;/b&gt;&lt;br/&gt;standalone mongod + supervisor" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="720" width="180" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ovs_lbl" value="&lt;b&gt;OVS switch&lt;/b&gt;&lt;br/&gt;veth · IP · MAC" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1125" y="635" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_owner_lbl" value="&lt;b&gt;owner RS primary&lt;/b&gt;&lt;br/&gt;remote LAN" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1450" y="720" width="150" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_forwarder" value="&lt;b&gt;ForwarderWorker(s)&lt;/b&gt;&lt;br/&gt;Change Streams + $match&lt;br/&gt;resume tokens on disk" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="650" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_manifest" value="&lt;b&gt;PUT /tier1_manifest&lt;/b&gt;&lt;br/&gt;owner_lan · host · collections" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1260" y="810" width="210" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_registry" value="&lt;b&gt;Tier 1 manifest registry&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#666&quot;&gt;owner_lan → host + hot_doc_ids&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1510" y="800" width="250" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_readpath" value="&lt;b&gt;Point lookup&lt;/b&gt; → hot doc uses local Tier 1&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;cold reads still fall through to VIP_DATA → owner primary&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eaf5ea;strokeColor=#4d8b4d;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1430" y="520" width="350" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_goal" value="&lt;b&gt;CROSS-LAN READS OFFLOADED&lt;/b&gt;&lt;br/&gt;hot docs local · T_db ↓ · peer path stabilized" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4d8b4d;fontColor=#ffffff;strokeColor=#2d5a2d;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1500" y="175" width="230" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pub" value="ZMQ PUB/SUB" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_agg_pub" target="n_t2_eval" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_eval" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;" parent="1" source="n_t2_eval" target="n_t2_gate" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_post" value="submit()" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_t2_gate" target="n_alert" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_enqueue" value="enqueue" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_alert" target="n_t3_queue" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pop" value="pop" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_t3_queue" target="n_t3_dispatch" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cmd1" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;" parent="1" source="n_t3_dispatch" target="n_t3_cmd1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cmd2" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;" parent="1" source="n_t3_cmd1" target="n_t3_cmd2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_docker" value="spawns" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;entryX=0.65;entryY=0.02;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_t3_cmd1" target="db_local" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="925" y="620" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_attach" value="attaches to" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_t3_cmd2" target="n_ovs" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_result" value="returns" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_ovs" target="n_t3_result" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_activate" value="coordinator callback" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_t3_result" target="n_t3_activate" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_manifest" value="PUT /tier1_manifest" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_t3_activate" target="n_manifest" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_registry" value="set_tier1_manifest()" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_manifest" target="n_registry" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_readpath" value="next lookup" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_registry" target="n_readpath" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_goal" style="endArrow=classic;html=1;strokeColor=#4d8b4d;strokeWidth=3;" parent="1" source="n_readpath" target="n_goal" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_sync" value="async sync path" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="db_local" target="n_forwarder" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_stream" value="Change Streams + $match" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_forwarder" target="db_owner" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_feedback" value="telemetry feedback — peer p95 T_db recovers" style="endArrow=classic;html=1;dashed=1;strokeColor=#888888;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="n_goal" target="n_agg_pub" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="990" y="200"/>
+                            <mxPoint x="530" y="200"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend_box" value="Legend — who does what" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=11;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="940" width="1710" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_agg" value="Aggregator (infra)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="960" width="130" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_t2" value="Thread 2 — Observer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="960" width="150" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_t3" value="Thread 3 — Elasticity Mgr" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="960" width="170" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_infra" value="Docker / OVS / owner RS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="960" width="170" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_edge" value="Consumer edge servers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="950" y="960" width="170" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_state" value="in-memory state (dict)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1140" y="960" width="160" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_cmd" value="dashed red = controller command · dashed yellow = async forwarder" style="text;html=1;align=left;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="1320" y="960" width="320" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_fb" value="dashed grey = feedback loop" style="text;html=1;align=left;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="1640" y="960" width="180" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="db_local" value="" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/database.svg;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="620" width="148.65" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="mongo_local" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.webicons.mongodb;gradientColor=#DFDEDE" parent="1" vertex="1">
+                    <mxGeometry x="864" y="650" width="60" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ovs" value="" style="shape=mxgraph.cisco19.l2_switch;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1140" y="585" width="70" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="db_owner" value="" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/database.svg;" parent="1" vertex="1">
+                    <mxGeometry x="1450" y="620" width="148.65" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="mongo_owner" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.webicons.mongodb;gradientColor=#DFDEDE" parent="1" vertex="1">
+                    <mxGeometry x="1494" y="650" width="60" height="50" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

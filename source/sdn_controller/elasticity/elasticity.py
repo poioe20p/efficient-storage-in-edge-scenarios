@@ -14,11 +14,12 @@ import logging
 import queue
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional
 
 from .node_common import IpAllocator, NodeInfo
 from .compute_node_manager import ComputeNodeAdder, PendingDrain
 from .storage_node_manager import StorageNodeAdder
+from .selective_storage_manager import SelectiveStorageNodeAdder
 
 if TYPE_CHECKING:
     from ..topology.topology import TopologyMixin
@@ -48,6 +49,16 @@ class DataAlert:
     rs_name:           str   # e.g. "rs_net1"
     primary_container: str   # container to run rs.add() against
     port:              int = 27018
+    # ── Tier 2 cross-LAN RS extension (dormant hook) ───────────────────
+    # When a future ``DataAlert`` variant represents a cross-LAN replica-set
+    # extension (owner RS secondary placed in a consumer LAN), set
+    # ``cross_lan_rs=True`` and populate ``owner_lan`` with the source RS
+    # owner's LAN id. Today all ``DataAlert``s are same-LAN (adds a secondary
+    # to ``rs_net{lan}``) so these defaults keep the Tier 1 supersede hook
+    # in ``scaling_policy.py`` inert. See
+    # ``docs/operation/elasticy_manager/implementation/tier1_selective_sync/event_protocol.md`` §2.4.
+    cross_lan_rs:      bool = False
+    owner_lan:         str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,12 +91,79 @@ class CleanupComputeAlert:
     mac: str
 
 
-# Alert dispatch priorities (lower number = higher priority).
-_PRIORITY_DATA_ALERT           = 1
-_PRIORITY_COMPUTE_ALERT        = 2
-_PRIORITY_CLEANUP_COMPUTE      = 3
-_PRIORITY_SCALEDOWN_DATA       = 4
-_PRIORITY_SCALEDOWN_COMPUTE    = 5
+# ── Tier 1 selective-sync alerts ──────────────────────────────────────────
+
+@dataclass(frozen=True)
+class SelectiveSyncAlert:
+    """Raised by the consumer-side ``PromotionCoordinator`` once its local
+    promotion predicate (sustained QoE breach + cross-region footprint +
+    read-heavy op mix) fires for a ``(owner_lan, collections)`` pair.
+
+    Triggers :class:`SelectiveStorageNodeAdder.add_selective_storage_node`
+    and, on success, a single manifest broadcast via the optional
+    ``on_spawned`` coordinator hook.
+    """
+    lan:           int                             # consumer LAN (this controller's LAN)
+    network_id:    str                             # e.g. "lan2"
+    owner_lan:     str                             # "lan1" — source region for replicated data
+    owner_rs:      str                             # "rs_net1"
+    owner_primary: str                             # "10.0.0.4:27018" — RS primary resolved from node_registry
+    collections:   Mapping[str, tuple[str, ...]]   # {collection: hot_doc_ids}
+    max_ttl_s:     int
+
+
+@dataclass(frozen=True)
+class SelectiveSyncReconfigureAlert:
+    """Live update to an already-running Tier 1 container.
+
+    Rebroadcasts the manifest and POSTs the new forwarder config to
+    ``/forwarder_config``. Manifest-first ordering stops edge traffic on
+    dropped collections before the forwarder closes their Change Streams.
+    """
+    lan:            int
+    network_id:     str
+    container_name: str
+    container_ip:   str
+    owner_lan:      str
+    collections:    Mapping[str, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class ScaleDownSelectiveAlert:
+    """Phase A teardown of a Tier 1 node. Mirrors :class:`ScaleDownComputeAlert`.
+
+    The elasticity manager is the single revocation site for the manifest
+    (``host: null`` broadcast), then POSTs ``/drain`` to the container and
+    records a ``PendingDrain``. Phase B runs on ``drain_complete`` or the
+    existing telemetry timeout fallback.
+    """
+    lan:            int
+    network_id:     str
+    owner_lan:      str
+    container_name: str
+    mac:            str
+    ip:             str
+
+
+@dataclass(frozen=True)
+class CleanupSelectiveAlert:
+    """Phase B trigger for Tier 1 teardown. Mirrors :class:`CleanupComputeAlert`."""
+    mac: str
+
+
+# ── Alert dispatch priorities ──────────────────────────────────────────────
+# Lower number = higher priority.  Tier 2 keeps top priority; Tier 1 sits
+# just below.  Cleanup alerts sit beside their paired scale-down alerts so a
+# pending Phase B wins over fresh scale-down submissions of the same tier.
+_PRIORITY_DATA_ALERT                 = 1   # Tier 2 — supersedes Tier 1
+_PRIORITY_SELECTIVE_SYNC             = 2   # Tier 1 promotion
+_PRIORITY_SELECTIVE_SYNC_RECONFIGURE = 3   # Tier 1 live reconfigure
+_PRIORITY_COMPUTE_ALERT              = 4
+_PRIORITY_CLEANUP_COMPUTE            = 5
+_PRIORITY_CLEANUP_SELECTIVE          = 6   # Tier 1 Phase B
+_PRIORITY_SCALEDOWN_DATA             = 7
+_PRIORITY_SCALEDOWN_SELECTIVE        = 8   # Tier 1 teardown Phase A
+_PRIORITY_SCALEDOWN_COMPUTE          = 9
 
 # Tie-breaker: monotonically increasing sequence so alerts with the same
 # priority are processed in FIFO order.
@@ -93,11 +171,15 @@ _alert_seq = itertools.count()
 
 # Type → priority lookup (covers all alert types)
 _ALERT_PRIORITY: dict[type, int] = {
-    DataAlert:             _PRIORITY_DATA_ALERT,
-    ComputeAlert:          _PRIORITY_COMPUTE_ALERT,
-    CleanupComputeAlert:   _PRIORITY_CLEANUP_COMPUTE,
-    ScaleDownDataAlert:    _PRIORITY_SCALEDOWN_DATA,
-    ScaleDownComputeAlert: _PRIORITY_SCALEDOWN_COMPUTE,
+    DataAlert:                      _PRIORITY_DATA_ALERT,
+    SelectiveSyncAlert:             _PRIORITY_SELECTIVE_SYNC,
+    SelectiveSyncReconfigureAlert:  _PRIORITY_SELECTIVE_SYNC_RECONFIGURE,
+    ComputeAlert:                   _PRIORITY_COMPUTE_ALERT,
+    CleanupComputeAlert:            _PRIORITY_CLEANUP_COMPUTE,
+    CleanupSelectiveAlert:          _PRIORITY_CLEANUP_SELECTIVE,
+    ScaleDownDataAlert:             _PRIORITY_SCALEDOWN_DATA,
+    ScaleDownSelectiveAlert:        _PRIORITY_SCALEDOWN_SELECTIVE,
+    ScaleDownComputeAlert:          _PRIORITY_SCALEDOWN_COMPUTE,
 }
 
 
@@ -114,10 +196,36 @@ class ElasticityManager:
     execution.
     """
 
-    def __init__(self, topology_mixin: TopologyMixin) -> None:
+    def __init__(
+        self,
+        topology_mixin: TopologyMixin,
+        *,
+        selective_sync_coordinator: Any = None,
+        broadcast_tier1_manifest: Optional[Callable[[str, dict], None]] = None,
+    ) -> None:
+        """Initialise the manager.
+
+        Parameters
+        ----------
+        topology_mixin
+            The owning controller; used for VIP pool mutations.
+        selective_sync_coordinator
+            Optional ``PromotionCoordinator`` providing ``on_spawned(...)``
+            and ``drain(owner_lan, reason)``. When ``None`` the selective-sync
+            handlers still perform container / registry work but skip the
+            coordinator state-machine hooks (scaffolded until the
+            coordinator lands — see tier1_selective_sync/event_protocol.md).
+        broadcast_tier1_manifest
+            Optional ``(network_id, manifest_dict) -> None`` callback that
+            fans out ``PUT /tier1_manifest`` to edge servers in the given
+            LAN. When ``None`` manifest broadcasts are logged and skipped.
+        """
         self._queue: queue.PriorityQueue = queue.PriorityQueue()
         self._compute_adder = ComputeNodeAdder()
         self._storage_adder = StorageNodeAdder()
+        self._selective_adder = SelectiveStorageNodeAdder()
+        self._coordinator = selective_sync_coordinator
+        self._broadcast_tier1_manifest_fn = broadcast_tier1_manifest
         self._topo    = topology_mixin          # TopologyMixin reference
         self._operation_log: list[dict] = []    # audit trail (operation history)
         self._lock    = threading.Lock()
@@ -141,6 +249,22 @@ class ElasticityManager:
         self._thread.start()
         logger.info("[elasticity] manager started")
 
+    # ------------------------------------------------------------------
+    # Late wiring — called from ``main_n*.py`` after ``PromotionCoordinator``
+    # is instantiated. The coordinator's constructor needs a reference to
+    # this manager (for ``submit``), so attachment is two-phase.
+    # ------------------------------------------------------------------
+
+    def attach_selective_sync_coordinator(self, coordinator) -> None:
+        """Inject the Tier 1 ``PromotionCoordinator`` after construction."""
+        self._coordinator = coordinator
+
+    def attach_tier1_broadcaster(
+        self, broadcast_tier1_manifest: Callable[[str, dict], None],
+    ) -> None:
+        """Inject the manifest-broadcast closure after construction."""
+        self._broadcast_tier1_manifest_fn = broadcast_tier1_manifest
+
     def submit(self, alert) -> None:
         """Unified thread-safe enqueue for any alert type."""
         priority = _ALERT_PRIORITY.get(type(alert))
@@ -150,20 +274,58 @@ class ElasticityManager:
         logger.info("[elasticity] alert submitted (priority=%d): %s", priority, alert)
         self._queue.put((priority, next(_alert_seq), alert))
 
-    def submit_cleanup_compute(self, mac: str) -> None:
-        """Convenience: enqueue a CleanupComputeAlert by MAC."""
-        self.submit(CleanupComputeAlert(mac=mac))
+    def submit_cleanup(self, mac: str) -> None:
+        """Phase B dispatcher: routes on ``PendingDrain.node_type``.
+
+        Compute → :class:`CleanupComputeAlert`; selective storage →
+        :class:`CleanupSelectiveAlert`. Unknown MACs fall back to
+        :class:`CleanupComputeAlert` with a warning so a stray
+        ``drain_complete`` event can't wedge the queue.
+        """
+        pending = self._pending_drains.get(mac)
+        if pending is None:
+            logger.warning("[elasticity] submit_cleanup for unknown mac=%s — submitting CleanupComputeAlert", mac)
+            self.submit(CleanupComputeAlert(mac=mac))
+            return
+        if pending.node_type == "selective_storage":
+            self.submit(CleanupSelectiveAlert(mac=mac))
+        else:
+            self.submit(CleanupComputeAlert(mac=mac))
+
+    def has_active_operation(self) -> bool:
+        """Return True while Thread 3 is actively executing a handler."""
+        return self._busy
 
     def is_busy(self) -> bool:
-        """Thread-safe check: is an operation currently in progress?
+        """Thread-safe check: is an operation currently blocking general evaluation?
 
         Returns True while Thread 3 is executing any add/remove handler, or
-        while a Phase A drain is pending (compute cleanup not yet completed).
-        Thread 2 skips ALL scaling evaluation when this returns True.
-        ``_busy`` is a plain bool written only by Thread 3 and read by Thread 2;
-        Python's GIL guarantees atomic reads/writes of bool.
+        while a Phase A drain is pending. Thread 2 uses this stricter gate for
+        scale-down and other general checks. ``_busy`` is a plain bool written
+        only by Thread 3 and read by Thread 2; Python's GIL guarantees atomic
+        reads/writes of bool.
         """
-        return self._busy or bool(self._pending_drains)
+        if self._busy:
+            return True
+        return bool(self._pending_drains)
+
+    def blocks_compute_scale_up(self) -> bool:
+        """Return True when compute scale-up should be skipped."""
+        if self._busy:
+            return True
+        return any(
+            pending.node_type == "compute"
+            for pending in self._pending_drains.values()
+        )
+
+    def blocks_storage_scale_up(self) -> bool:
+        """Return True when storage scale-up should be skipped."""
+        if self._busy:
+            return True
+        return any(
+            pending.node_type == "storage"
+            for pending in self._pending_drains.values()
+        )
 
     def has_pending_drain(self, mac: str) -> bool:
         """Check if a MAC has an in-progress drain (Phase A done, Phase B pending)."""
@@ -208,13 +370,21 @@ class ElasticityManager:
                         self._handle_scale_down_data(alert)
                     elif isinstance(alert, CleanupComputeAlert):
                         self._handle_cleanup_compute(alert)
+                    elif isinstance(alert, SelectiveSyncAlert):
+                        self._handle_selective_sync(alert)
+                    elif isinstance(alert, SelectiveSyncReconfigureAlert):
+                        self._handle_selective_sync_reconfigure(alert)
+                    elif isinstance(alert, ScaleDownSelectiveAlert):
+                        self._handle_scale_down_selective(alert)
+                    elif isinstance(alert, CleanupSelectiveAlert):
+                        self._handle_cleanup_selective(alert)
                     else:
                         logger.warning("[elasticity] unknown alert type: %s", type(alert))
                 finally:
                     # CleanupComputeAlert is Phase B — keep _busy False only
                     # after it finishes (pending_drains already cleared inside handler).
                     self._busy = False
-            except Exception:  # noqa: BLE001
+            except Exception:  
                 logger.exception("[elasticity] unhandled error in loop")
 
     def _get_allocator(self, lan: int) -> IpAllocator:
@@ -236,8 +406,13 @@ class ElasticityManager:
 
         if result.success and result.ip:
             if result.mac:
-                self._topo.add_server_mac(result.mac)
-                self._topo.register_backend_ip(result.mac, result.ip)
+                # Verify that re
+                register_backend = getattr(self._topo, "register_new_server_backend", None)
+                if callable(register_backend):
+                    register_backend(result.mac, result.ip)
+                else:
+                    self._topo.add_server_mac(result.mac)
+                    self._topo.register_backend_ip(result.mac, result.ip)
                 logger.info(
                     "[elasticity] compute: %s online  ip=%s  mac=%s",
                     name, result.ip, result.mac,
@@ -402,6 +577,222 @@ class ElasticityManager:
             logger.info("[elasticity] scale_down_data done: container=%s", alert.container_name)
         else:
             logger.error("[elasticity] scale_down_data FAILED: container=%s", alert.container_name)
+
+    # ------------------------------------------------------------------
+    # Tier 1 selective-sync handlers
+    # ------------------------------------------------------------------
+
+    def _broadcast_tier1_manifest(self, network_id: str, manifest: dict) -> None:
+        """Dispatch manifest fan-out via the injected broadcast callable, if any."""
+        if self._broadcast_tier1_manifest_fn is None:
+            logger.info(
+                "[tier1] manifest broadcast skipped (no broadcaster configured) network=%s manifest=%s",
+                network_id, manifest,
+            )
+            return
+        try:
+            self._broadcast_tier1_manifest_fn(network_id, manifest)
+        except Exception:  
+            logger.exception("[tier1] manifest broadcast failed network=%s", network_id)
+
+    def _handle_selective_sync(self, alert: SelectiveSyncAlert) -> None:
+        """Spawn a Tier 1 container and register it. Coordinator (if any) drives
+        the ``SPAWNING -> ACTIVE`` flip and the first manifest broadcast."""
+        name = self._next_name("sel_sync", alert.network_id)
+        ip, mac = self._get_allocator(alert.lan).allocate()
+        logger.info(
+            "[elasticity] tier1: spawning %s on LAN %d (ip=%s mac=%s owner_lan=%s)",
+            name, alert.lan, ip, mac, alert.owner_lan,
+        )
+
+        result = self._selective_adder.add_selective_storage_node(
+            lan=alert.lan,
+            name=name,
+            primary_host=alert.owner_primary,
+            collections=alert.collections,
+            max_ttl_s=alert.max_ttl_s,
+            ip=ip, mac=mac,
+        )
+        self._selective_adder.log_timings(result)
+        self._record({"type": "selective_sync", "alert": alert, "name": name, "result": result})
+
+        if not (result.success and result.ip and result.mac):
+            self._get_allocator(alert.lan).release(ip)
+            logger.error("[elasticity] tier1: failed to spawn %s", name)
+            # Tell the coordinator (if any) so its entry exits SPAWNING.
+            if self._coordinator is not None:
+                try:
+                    self._coordinator.drain(alert.owner_lan, reason="spawn_failed")
+                except Exception:  
+                    logger.exception("[tier1] coordinator.drain(spawn_failed) raised")
+            return
+
+        # Register the node so absence detection and scale-down tracking work.
+        info = NodeInfo(
+            mac=result.mac, lan=alert.lan, network_id=alert.network_id,
+            name=name, ip=result.ip, node_type="selective_storage",
+            owner_lan=alert.owner_lan,
+        )
+        with self._addition_complete_lock:
+            self._addition_complete_infos.append(info)
+
+        # Hand off to the coordinator for SPAWNING -> ACTIVE + manifest broadcast.
+        # Single broadcast site on the add path.
+        if self._coordinator is not None:
+            try:
+                self._coordinator.on_spawned(
+                    owner_lan=alert.owner_lan,
+                    container=name,
+                    mac=result.mac,
+                    ip=result.ip,
+                )
+            except Exception:  
+                logger.exception("[tier1] coordinator.on_spawned raised")
+        else:
+            # No coordinator — best-effort broadcast so Tier 1 can still be exercised
+            # end-to-end via direct alert submission.
+            self._broadcast_tier1_manifest(alert.network_id, {
+                "owner_lan":   alert.owner_lan,
+                "host":        f"{result.ip}:27018",
+                "collections": {c: list(ids) for c, ids in alert.collections.items()},
+            })
+        logger.info("[elasticity] tier1: %s online ip=%s mac=%s", name, result.ip, result.mac)
+
+    def _handle_selective_sync_reconfigure(self, alert: SelectiveSyncReconfigureAlert) -> None:
+        """Live update. Manifest first so edges stop traffic on dropped
+        collections before the forwarder closes their Change Streams."""
+        logger.info(
+            "[elasticity] tier1: reconfigure %s collections=%d",
+            alert.container_name, len(alert.collections),
+        )
+        self._broadcast_tier1_manifest(alert.network_id, {
+            "owner_lan":   alert.owner_lan,
+            "host":        f"{alert.container_ip}:27018",
+            "collections": {c: list(ids) for c, ids in alert.collections.items()},
+        })
+        ok = self._selective_adder.reconfigure(
+            container_name=alert.container_name,
+            ip=alert.container_ip,
+            collections=alert.collections,
+        )
+        self._record({"type": "selective_sync_reconfigure", "alert": alert, "ok": ok})
+
+    def _handle_scale_down_selective(self, alert: ScaleDownSelectiveAlert) -> None:
+        """Phase A: revoke manifest, POST /drain, record PendingDrain, return.
+
+        Mirrors :meth:`_handle_scale_down_compute`. Phase B
+        (:meth:`_handle_cleanup_selective`) runs on the ``drain_complete``
+        ZMQ event dispatched by :class:`ControlEventDispatcher`, or on the
+        existing telemetry-window timeout fallback.
+        """
+        if alert.mac in self._pending_drains:
+            logger.info(
+                "[elasticity] selective drain already pending for %s (%s) — ignoring duplicate request",
+                alert.container_name,
+                alert.mac,
+            )
+            return
+
+        if not self._selective_adder.container_is_present(alert.container_name):
+            logger.info(
+                "[elasticity] selective node %s already absent — finalizing cleanup state",
+                alert.container_name,
+            )
+            self._get_allocator(alert.lan).release(alert.ip)
+            with self._removal_complete_lock:
+                self._removal_complete_macs.add(alert.mac)
+            if self._coordinator and alert.owner_lan:
+                self._coordinator.on_cleanup_complete(alert.owner_lan)
+            return
+
+        logger.info(
+            "[elasticity] scale_down_selective: removing %s (mac=%s owner_lan=%s)",
+            alert.container_name, alert.mac, alert.owner_lan,
+        )
+
+        # Single revocation site for the manifest. host=None stops edges from
+        # routing reads to this container BEFORE the forwarder closes its
+        # Change Streams.
+        self._broadcast_tier1_manifest(alert.network_id, {
+            "owner_lan":   alert.owner_lan,
+            "host":        None,
+            "collections": {},
+        })
+
+        pending = self._selective_adder.initiate_drain(
+            lan=alert.lan,
+            container_name=alert.container_name,
+            mac=alert.mac,
+            ip=alert.ip,
+            owner_lan=alert.owner_lan,
+        )
+        if pending is None:
+            logger.info(
+                "[elasticity] tier1 drain could not create pending cleanup for %s",
+                alert.container_name,
+            )
+            return
+
+        self._pending_drains[alert.mac] = pending
+        self._record({"type": "scale_down_selective_phase_a", "alert": alert, "pending": pending})
+
+        if not pending.drain_signaled:
+            logger.info(
+                "[elasticity] tier1 drain failed for %s \u2014 immediate cleanup",
+                alert.container_name,
+            )
+            self.submit(CleanupSelectiveAlert(mac=alert.mac))
+            return
+
+        logger.info(
+            "[elasticity] tier1 drain initiated for %s \u2014 waiting for drain_complete",
+            alert.container_name,
+        )
+
+    def _handle_cleanup_selective(self, alert: CleanupSelectiveAlert) -> None:
+        """Phase B: OVS teardown + docker rm. Triggered by drain_complete or timeout fallback."""
+        pending = self._pending_drains.get(alert.mac)
+        if pending is None:
+            logger.warning(
+                "[elasticity] CleanupSelectiveAlert for unknown mac=%s \u2014 ignoring",
+                alert.mac,
+            )
+            return
+
+        logger.info(
+            "[elasticity] cleanup_selective: container=%s mac=%s",
+            pending.container_name, alert.mac,
+        )
+        result = self._selective_adder.remove_selective_storage_node(
+            lan=pending.lan,
+            name=pending.container_name,
+            mac=pending.mac,
+            ip=pending.ip,
+            veth=pending.veth,
+        )
+        self._selective_adder.log_removal_timings(result)
+        self._record({"type": "scale_down_selective_phase_b", "alert": alert, "result": result})
+
+        del self._pending_drains[alert.mac]
+
+        if pending.ip:
+            self._get_allocator(pending.lan).release(pending.ip)
+
+        with self._removal_complete_lock:
+            self._removal_complete_macs.add(alert.mac)
+
+        if result.success:
+            if self._coordinator is not None and pending.owner_lan:
+                try:
+                    self._coordinator.on_cleanup_complete(pending.owner_lan)
+                except Exception:
+                    logger.exception(
+                        "[tier1] coordinator.on_cleanup_complete raised owner=%s",
+                        pending.owner_lan,
+                    )
+            logger.info("[elasticity] cleanup_selective done: container=%s", pending.container_name)
+        else:
+            logger.error("[elasticity] cleanup_selective FAILED: container=%s", pending.container_name)
 
     # ------------------------------------------------------------------
     # Helpers

@@ -9,6 +9,27 @@ tooling needed to seed data, generate phased HTTP traffic, add realistic CPU
 work to edge server endpoints, and trace individual requests through the full
 VIP routing pipeline.
 
+## Experiment Operator Workflow
+
+For long VM-backed experiment campaigns, use the custom agent
+[`experiment-runner-edge.agent.md`](../../../.github/agents/experiment-runner-edge.agent.md)
+together with the durable campaign brief
+[`experiment_campaign_brief.md`](experiment_campaign_brief.md).
+
+1. State the campaign objective, the intended run delta, the live checkpoint
+  plan, and any allowed between-run edit scope.
+2. The agent enters the VM with `ssh vm-tese`, changes to
+  `/media/sf_shared/scripts`, launches the experiment, and handles the single
+  `sudo` password prompt.
+3. During the run, the agent performs only the predeclared read-only checks
+  against the active run folder unless the live plan explicitly allows
+  snapshot-based analysis outside that folder.
+4. If the campaign brief defines stop or restart criteria, the agent may halt
+  or relaunch the run when the observed evidence matches those criteria.
+5. After the run, the agent follows the repository summary workflow from
+  [`metrics-run-summary`](../../../.github/skills/metrics-run-summary/SKILL.md)
+  and updates the campaign brief before any next run.
+
 ---
 
 ## Architecture: Experiment Data Flow
@@ -56,10 +77,11 @@ Key decisions:
 - **Read-heavy, aggregation-rich** workload that justifies MongoDB beyond simple
   replication (flexible schema, `$lookup` pipelines, TTL indexes, array
   queries).
-- **9-phase demand progression** that separates storage pressure from compute
-  pressure: early hotspot phases are strongly cross-region and data-gravity
-  biased, while the later compute phases reduce cross-region traffic and push
-  higher local request rates.
+- **9-phase long-cycle demand progression** that separates storage pressure
+  from compute pressure: `storage_stress` acts as a Tier 2 buildup window,
+  `cross_region_hotspot` and `reverse_hotspot` are long post-trigger
+  observation phases, the compute phases keep cross-region traffic low, and
+  `demand_drop` is long enough to expose cooldown-gated scale-in.
 - **Measurable outcomes**: time-to-replica, latency reduction after tier
   escalation, CPU distribution after scale-out, resource reclamation timing.
 
@@ -75,6 +97,12 @@ Implementation plan for the client-side experiment driver.
 
 Output: `metrics/client_requests.csv` with per-request timestamp, phase,
 endpoint, target region, HTTP status, and latency.
+
+Current default schedule: `baseline` 60 s, `local_moderate` 90 s,
+`storage_stress` 240 s, `cross_region_hotspot` 300 s,
+`reverse_hotspot` 300 s, `compute_ramp` 120 s, `compute_spike` 150 s,
+`sustained_plateau` 120 s, `demand_drop` 300 s. Total duration: about
+28 minutes.
 
 ### 3. Edge Server Compute Load — [`edge_server_compute_load_plan.md`](edge_server_compute_load_plan.md)
 
@@ -105,9 +133,94 @@ CLIENT (namespace) → VIP_SERVER (SDN selects edge server)
 Collects `docker logs` from controllers and edge servers within the request's
 time window and formats a color-coded trace showing each routing decision.
 
+### 5. Run Analysis Toolchain — [`analysis_toolchain_plan.md`](analysis_toolchain_plan.md)
+
+Offline package that ingests a run directory and emits phase-aligned plots and
+diagnostic tables. Read-only — does not modify telemetry, scaling, or the
+traffic generator.
+
+| CLI | Purpose |
+|---|---|
+| `cli_overview` | One-page dashboard: request rate, CPU, T_proc, T_db (read/write stacked), node counts with phase shading and elasticity-event overlays |
+| `cli_cpu_drivers` | Per-node CPU vs request-count; old-vs-new node CPU table to detect load-balance failures |
+| `cli_scale_down` | Reconstructs the scale-down predicate from CSV and cross-checks against controller log lines |
+| `cli_tdb_drivers` | OLS regression `T_db_write ~ a + b·storage_count + c·cross_region_ratio` to falsify the "more storage = slower writes" hypothesis |
+
+Consumes `resource_stats.csv` (domain), `per_node_stats.csv` (per-container),
+`client_requests_<phase>.csv`, `phases_snapshot.json`, and the controller
+log files. Missing fields on older runs degrade gracefully with warnings.
+
+### 6. Ablation Batch Results — [`elasticity_ablation_batch1_results.md`](elasticity_ablation_batch1_results.md)
+
+Records the first completed `C0-C4` comparison batch for the elasticity
+ablation matrix. It synthesizes the per-run summaries into mechanism-level
+findings for Tier 1, Tier 2, compute elasticity, and overall run health, and
+serves as the stable Batch 1 reference if later reruns are produced.
+
+### 7. Ablation Batch 2 Results — [`elasticity_ablation_batch2_results.md`](elasticity_ablation_batch2_results.md)
+
+Records the long-cycle rerun of the same `C0-C4` matrix. It compares the second
+batch against Batch 1 and captures the key reversal in the results: Tier 2
+becomes the strongest positive mechanism once the storage-sensitive phases are
+long enough, while Tier 1 and the combined Tier 1 plus Tier 2 path remain
+defect-prone in the rerun artifacts.
+
+#### `resource_stats.csv` — Tier 1 columns
+
+The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/collect_resource_stats.py)) appends 15 Tier 1 observability columns derived by [`tier1_stats.py`](../../../source/scripts/testing/tier1_stats.py). The first eleven come from each aggregator's `TelemetrySummary`; the last four from the controller's coordinator-state PUB ([`state_publisher.py`](../../../source/sdn_controller/selective_sync/state_publisher.py)).
+
+| Column | Source | Maps to |
+|---|---|---|
+| `total_reads` | `op_counters` (find + find_one) | Workload denominator |
+| `cross_region_reads` | `access[*].cross_region_hits` | Footprint numerator |
+| `cross_region_ratio` | derived (Σ over all owner_lans/colls) | Aggregate read mix; **diluted** by same-region collections — diagnostic only |
+| `max_per_owner_coll_xratio` | max of `cross_region_hits / total_hits` over `(owner_lan, coll)` | Mirrors the actual `SS_PROMOTION_CROSS_REGION_THRESHOLD` gate |
+| `t_db_p95_ms_owner_lan` | max of `t_db_p95_ms_per_lan[my_lan]` | Local p95 |
+| `t_db_p95_ms_peer_lan` | max of `t_db_p95_ms_per_lan[peer_lan]` | Drives breach gate (`TAU_DADOS_MS`) |
+| `top_hot_doc_hits` | max over `access[*].top_docs` | Hottest single doc |
+| `tier1_active_count` | storage_servers with non-null `selective_sync_per_collection` | Tier 1 supply count |
+| `avg_tier1_lag_s` | mean of forwarder `lag_s` | Replication freshness |
+| `max_tier1_resume_token_age_s` | max of `resume_token_age_s` | Change Stream health |
+| `tier1_hot_doc_total` | sum of `hot_doc_count` | Footprint size |
+| `coord_state_owner_lan` | `Tier1OwnerState.state` | NONE / SPAWNING / ACTIVE / DRAINING |
+| `coord_breach_fill_pct` | `breach_ring_filled / capacity * 100` | M-of-N progress toward firing |
+| `coord_cooldown_remaining_s` | `Tier1OwnerState.cooldown_remaining_s` | Why a re-promotion is suppressed |
+| `coord_hot_doc_total` | `Tier1OwnerState.hot_doc_total` | Hot set size held by coordinator |
+
+Empty/baseline rows (no telemetry, `SS_ENABLED=0`) yield zeros and `coord_state_owner_lan="NONE"`.
+
+#### `container_events.csv` — container life-cycle audit
+
+A second background process, [`poll_container_events.py`](../../../source/scripts/testing/poll_container_events.py), runs `docker ps -a` once per second and emits a CSV row whenever a tracked container appears, disappears, or changes state. This is the authoritative ground truth for *what was actually running* during the experiment — independent of telemetry liveness, controller logs, or scaling decisions; it also captures crashes and Docker-restart loops the other artifacts miss.
+
+Default name filter: `^(edge_|sel_sync_|nat-router|osken|local_state_)` (override with `CONTAINER_EVENTS_FILTER` / `CONTAINER_EVENTS_INTERVAL` before invoking [`run_experiment.sh`](../../../source/scripts/testing/run_experiment.sh)). This includes Tier 1 selective-sync containers (`sel_sync_*`) alongside the existing compute, storage, controller, and router containers. Namespace-based test clients are created separately and are not visible to the `docker ps` poller.
+
+| Column | Meaning |
+|---|---|
+| `timestamp_iso` | Wall-clock time of the diff (UTC, millisecond precision) |
+| `monotonic_s` | Seconds since the poller started — robust to wall-clock skew |
+| `phase` | Current workload phase from `current_phase.txt` (same source as `resource_stats.csv`) |
+| `event` | `initial` (first tick), `added`, `removed`, `state_change`, or `final` (shutdown snapshot) |
+| `container` | Container name, e.g. `edge_server_lan1_dyn1` |
+| `image` | Image tag from `docker ps` |
+| `state` / `status` | Docker `State` (e.g. `running`, `exited`) and `Status` (e.g. `Up 12 minutes`) |
+| `prev_state` | Previous `State` for `state_change` and `removed` rows; empty otherwise |
+| `container_id` | Full container ID (useful for cross-referencing `docker inspect`) |
+
+Lifetime reconstruction: a container's lifetime begins at its first `initial` or `added` row and ends at the matching `removed` row (or the trailing `final` row if it was still up at shutdown).
+
 ---
 
 ## Execution Order
+
+> **Prerequisite — WAN emulation.** Tier 1 experiments rely on the breach gate
+> `t_db_p95_ms_peer_lan ≥ TAU_DADOS_MS` (default `65 ms`). Without inter-LAN
+> latency injection the raw veth path measures ~5–15 ms and the gate never
+> fires. The bringup applies the `metro` profile (`WAN_RTT_MS=10`) by default;
+> override per run via [`source/scripts/wan.env`](../../../source/scripts/wan.env)
+> or at runtime with [`wan_set.sh`](../../../source/scripts/tools/wan_set.sh).
+> See [Topology — WAN Emulation](../topology/topology_overview.md#wan-emulation-inter-lan-latency)
+> for the four available profiles.
 
 ```bash
 # 1. Seed data
@@ -130,6 +243,12 @@ sudo python3 source/scripts/testing/traffic_generator.py \
   --clients-lan2 test_client_4,test_client_5,test_client_6 \
   --output metrics/client_requests.csv
 
+# 5. Generate analysis artifacts from the run directory
+python -m source.scripts.testing.analysis.cli_overview    --run-dir metrics/<ts>
+python -m source.scripts.testing.analysis.cli_cpu_drivers --run-dir metrics/<ts>
+python -m source.scripts.testing.analysis.cli_scale_down  --run-dir metrics/<ts>
+python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir metrics/<ts>
+
 # (optional) Trace a single request for debugging
 sudo bash source/scripts/testing/trace_request.sh \
   --ns lan1_client_1 \
@@ -142,11 +261,31 @@ sudo bash source/scripts/testing/trace_request.sh \
 
 | # | Claim | How It Is Demonstrated |
 |---|---|---|
-| 1 | Storage deploys only when justified | `storage_stress`, `cross_region_hotspot`, and `reverse_hotspot` create sustained cross-region pressure that should justify storage expansion |
+| 1 | Storage deploys only when justified | `storage_stress` provides the buildup window, while `cross_region_hotspot` and `reverse_hotspot` provide long post-trigger observation windows that should justify and then measure storage expansion |
 | 2 | Compute scales independently of storage | `compute_ramp`, `compute_spike`, and `sustained_plateau` reduce cross-region demand and instead push higher local request rates |
 | 3 | Load distributes via WSM | Per-server request counts and CPU utilization converge after scale-out |
 | 4 | Latency recovers after scaling | $T_{total}$ returns toward baseline once new resources are active |
-| 5 | Resources are reclaimed on demand drop | `demand_drop` observes the over-provisioned state and, when enabled, should trigger scale-in |
+| 5 | Resources are reclaimed on demand drop | `demand_drop` deliberately lasts long enough to observe the over-provisioned state through cooldown and, when enabled, should trigger scale-in |
+
+### Planned — `tier1_hotspot` scenario
+
+A new workload phase targeting the Tier 1 selective-sync path. Design:
+
+- Pin a small subset of documents (e.g. 30 hot device ids on LAN 1) and
+  generate sustained cross-region read traffic from LAN 2 clients with a
+  write ratio below `SS_WRITE_RATIO_MAX` and read count above
+  `SS_MIN_READS_PER_WINDOW`.
+- Run with `SS_ENABLED=1` and again with `SS_ENABLED=0` as the control.
+- Measure: per-LAN `T_db` p95 across the ramp, the timestamp of
+  `SelectiveSyncAlert` emission, manifest broadcast latency, and Change
+  Stream `lag_s` throughout the `ACTIVE` window. The expected signature is a
+  `T_db`-p95 drop on LAN 2 within ~1–2 telemetry windows after promotion.
+- Teardown path is exercised by tailing off the hotspot below
+  `SS_SCALEDOWN_THRESHOLD` for `SS_SCALEDOWN_WINDOW` consecutive windows and
+  asserting a single `ScaleDownSelectiveAlert` (Phase A) followed by
+  `CleanupSelectiveAlert` (Phase B) on `drain_complete`.
+
+Overview docs: [`selective_sync/selective_sync_overview.md`](../selective_sync/selective_sync_overview.md).
 
 ---
 
@@ -156,7 +295,8 @@ sudo bash source/scripts/testing/trace_request.sh \
 
 Full 9-phase workload (baseline → local_moderate → storage_stress →
 cross_region_hotspot → reverse_hotspot → compute_ramp → compute_spike →
-sustained_plateau → demand_drop). Total duration ~22 min.
+sustained_plateau → demand_drop) using the shorter pre-Batch 2 schedule.
+Total duration ~22 min.
 
 ### Observations by Phase
 
@@ -230,5 +370,20 @@ docs/operation/testing/
 ├── testing_workloads.md             ← workload design & phase definitions
 ├── traffic_generator_plan.md        ← traffic generator implementation plan
 ├── edge_server_compute_load_plan.md ← compute.py & app.py changes
-└── trace_request_plan.md            ← trace_request.sh implementation plan
+├── trace_request_plan.md            ← trace_request.sh implementation plan
+└── analysis_toolchain_plan.md       ← offline run analysis package (NEW)
+
+source/scripts/testing/
+├── collect_resource_stats.py    ← now also writes per_node_stats.csv
+└── analysis/                    ← NEW — offline analysis package
+    ├── __init__.py
+    ├── loader.py
+    ├── events.py
+    ├── phase_window.py
+    ├── plots.py
+    ├── cli_overview.py
+    ├── cli_cpu_drivers.py
+    ├── cli_scale_down.py
+    ├── cli_tdb_drivers.py
+    └── requirements.txt
 ```

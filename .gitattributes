@@ -1,3 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-*.sh text eol=lf
+
+# Files consumed by Linux containers / shells must always use LF, even when
+# edited or checked out on Windows (e.g. via VirtualBox shared folders).
+*.sh        text eol=lf
+*.env       text eol=lf
+Dockerfile  text eol=lf
+Makefile    text eol=lf
+*.bash      text eol=lf
+entrypoint* text eol=lf

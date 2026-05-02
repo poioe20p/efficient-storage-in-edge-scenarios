@@ -11,7 +11,12 @@ import logging
 import time
 
 from .scaling_config import _TELEMETRY_TIMEOUT_WINDOWS, _NODE_BIRTH_GRACE_S
-from .elasticity.elasticity import ElasticityManager, ScaleDownComputeAlert, ScaleDownDataAlert
+from .elasticity.elasticity import (
+    ElasticityManager,
+    ScaleDownComputeAlert,
+    ScaleDownDataAlert,
+    ScaleDownSelectiveAlert,
+)
 from .elasticity.node_common import NodeInfo
 from .telemetry.models import TelemetrySummary
 
@@ -97,7 +102,7 @@ class DynamicNodeRegistry:
 
     # ── Alert building ───────────────────────────────────────────────────
 
-    def build_scale_down_alert(self, mac: str) -> ScaleDownComputeAlert | ScaleDownDataAlert | None:
+    def build_scale_down_alert(self, mac: str) -> ScaleDownComputeAlert | ScaleDownDataAlert | ScaleDownSelectiveAlert | None:
         """Build the appropriate scale-down alert from NodeInfo. Returns None if MAC not tracked."""
         if mac not in self._dynamic_node_macs:
             logger.warning("[registry] mac=%s not in dynamic_node_macs — ignoring", mac)
@@ -111,6 +116,15 @@ class DynamicNodeRegistry:
             return ScaleDownComputeAlert(
                 lan=info.lan,
                 network_id=info.network_id,
+                container_name=info.name,
+                mac=mac,
+                ip=info.ip,
+            )
+        elif info.node_type == "selective_storage":
+            return ScaleDownSelectiveAlert(
+                lan=info.lan,
+                network_id=info.network_id,
+                owner_lan=info.owner_lan,
                 container_name=info.name,
                 mac=mac,
                 ip=info.ip,

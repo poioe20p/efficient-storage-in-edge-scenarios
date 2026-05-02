@@ -34,7 +34,7 @@ The architecture is the thesis contribution. The experimental workload — an Io
 1. **Independent replica sets per network.** Each network segment hosts its own single-node replica set (`rs_net1`, `rs_net2`, etc.). Data is partitioned by network origin, not by a shard key.
 2. **Data placement hierarchy.** Cross-network data demand is addressed progressively:
    - **Tier 0 — Direct routing:** Low demand is served by routing packets to the remote primary via SDN.
-   - **Tier 1 — Selective Sync Node** *(future work — not yet implemented):* Burst demand would trigger a standalone `mongod` seeded with only hot collections identified by local access tracking, kept current via per-collection Change Streams. See [§1.6](#16-future-work-selective-sync-node-tier-1) for the planned design.
+   - **Tier 1 — Selective Sync Node:** Burst demand triggers a standalone `mongod` seeded with only the hot collections identified by client-side access tracking, kept current via one Change Stream per collection. Feature-flagged behind `SS_ENABLED` (default off). See [§1.6](#16-tier-1-selective-sync-node) for the implemented design.
    - **Tier 2 — Full replica:** Sustained high demand triggers `rs.add()` to place a full secondary in the requesting network. Removed when demand subsides.
 3. **Write-path isolation.** Writes always go to the local primary of the originating network.
 4. **Double-VIP model.** Two VIP types cleanly separate the traffic planes: `VIP_SERVER` for client-to-server HTTP traffic and `VIP_DATA` (per-domain: `VIP_DATA_N1`, `VIP_DATA_N2`) for server-to-MongoDB traffic.
@@ -74,9 +74,9 @@ Thread 1 handles two independent traffic planes via `VipRoutingMixin`:
 
 | VIP | Default Address | Traffic Plane | Selection Logic |
 | :-- | :-------------- | :------------ | :-------------- |
-| **VIP_SERVER** | `10.0.0.100` (env: `VIP_SERVER_IP`) | Client → Web Server | Multi-dimensional WSM cost: CPU utilization, RAM usage, request count, and hop distance |
-| **VIP_DATA_N1** | `10.0.0.200` (env: `VIP_DATA_N1_IP`) | Web Server → MongoDB (LAN 1) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
-| **VIP_DATA_N2** | `10.0.1.200` (env: `VIP_DATA_N2_IP`) | Web Server → MongoDB (LAN 2) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
+| **VIP_SERVER** | `10.0.0.253` (env: `VIP_SERVER_IP`) | Client → Web Server | Multi-dimensional WSM cost: CPU utilization, RAM usage, request count, and hop distance |
+| **VIP_DATA_N1** | `10.0.0.254` (env: `VIP_DATA_N1_IP`) | Web Server → MongoDB (LAN 1) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
+| **VIP_DATA_N2** | `10.0.1.254` (env: `VIP_DATA_N2_IP`) | Web Server → MongoDB (LAN 2) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
 
 Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_N1_MAC`, `VIP_DATA_N2_MAC`) configured via environment variables, used for ARP replies and DNAT/SNAT rewriting.
 
@@ -95,65 +95,18 @@ $$
 Cost_j^{web} = w_{cpu} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram} \cdot \frac{RAM_j}{RAM_{max}} + w_{req} \cdot \frac{Req_j}{Req_{max}} + w_{hops} \cdot \frac{Hops_j}{Hops_{max}}
 $$
 
-Per-dimension weights are configurable via environment variables:
+Per-dimension weights (configurable via `W_CPU`, `W_RAM`, `W_REQUESTS`, `W_HOPS`):
 
-| Env Var | Default | Dimension | Rationale |
-| :--- | :---: | :--- | :--- |
-| `W_CPU` | `0.2` | CPU utilization % | Leading indicator of compute saturation |
-| `W_RAM` | `0.2` | RAM usage (MB) | Memory pressure / swapping risk |
-| `W_REQUESTS` | `0.2` | Request count (current window) | Active load / queuing pressure |
-| `W_HOPS` | `0.4` | Network hop distance | Spatial locality — dominates when resource metrics are similar |
+| Dimension | Default Weight | Rationale |
+| :--- | :---: | :--- |
+| CPU utilization % | `0.3` | Leading indicator of compute saturation |
+| RAM usage (MB) | `0.1` | Memory pressure / swapping risk |
+| Request count (current window) | `0.2` | Active load / queuing pressure |
+| Network hop distance | `0.28` | Spatial locality — lowered to allow cross-LAN spillover when the peer LAN is healthy enough to absorb traffic |
 
 - **Unknown telemetry:** backends without stats are assigned worst-case normalized scores (`1.0`) across all resource dimensions, preventing unmeasured nodes from being accidentally preferred over measured ones.
 - **Round-robin tie-breaking:** when multiple candidates share the same lowest cost (common during cold start when same-hop servers all score identically), a monotonic counter (`_rr_server_idx`) cycles through tied candidates instead of always picking the first dict entry.
-- `select_server()` iterates over `vip_server_pool`, scores each candidate, collects ties, and round-robin picks among them.
-
-```python
-def select_server(self, client_mac: str) -> dict | None:
-    pool = self.vip_server_pool
-    if not pool:
-        return None
-
-    pool_stats = [self._server_stats[m] for m in pool if m in self._server_stats]
-    cpu_max = max((s.avg_cpu_percent for s in pool_stats), default=0.0) or 1.0
-    ram_max = max((s.avg_ram_used_mb  for s in pool_stats), default=0.0) or 1.0
-    req_max = max((s.request_count    for s in pool_stats), default=0)   or 1
-    hops_max = max(self._hop_cache_max, 1)
-
-    best_cost = float("inf")
-    tied: list[dict] = []
-
-    for mac, entry in pool.items():
-        stats = self._server_stats.get(mac)
-
-        cpu_norm = (stats.avg_cpu_percent / cpu_max) if stats else 1.0
-        ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else 1.0
-        req_norm = (stats.request_count    / req_max) if stats else 1.0
-
-        hops = (self.hop_cache.get(client_mac) or {}).get(mac)
-        if hops is None:
-            if mac in self.peer_hosts:
-                hops = max(self._avg_hop_count, 1.0) + max(self._peer_avg_hop_count, 1.0)
-            elif mac in self.host_attachment:
-                hops = max(self._avg_hop_count, 1.0)
-            else:
-                hops = hops_max
-        hop_norm = hops / hops_max
-
-        cost = (_W_CPU * cpu_norm + _W_RAM * ram_norm
-                + _W_REQUESTS * req_norm + _W_HOPS * hop_norm)
-        if cost < best_cost:
-            best_cost = cost
-            tied = [entry]
-        elif cost == best_cost:
-            tied.append(entry)
-
-    if not tied:
-        return None
-    chosen = tied[self._rr_server_idx % len(tied)]
-    self._rr_server_idx += 1
-    return chosen
-```
+- `select_server()` iterates over `vip_server_pool`, scores each candidate, collects ties, and round-robin picks among them. See the [VIP Routing Overview](vip_routing/vip_routing_overview.md) for the full implementation.
 
 ##### Storage Cost Function
 
@@ -161,68 +114,19 @@ $$
 Cost_j^{data} = w_{cpu}^{s} \cdot \frac{CPU_j}{CPU_{max}} + w_{ram}^{s} \cdot \frac{RAM_j}{RAM_{max}} + w_{conn}^{s} \cdot \frac{Conn_j}{Conn_{max}} + w_{lag}^{s} \cdot \frac{Lag_j}{Lag_{max}} + w_{hops}^{s} \cdot \frac{Hops_j}{Hops_{max}}
 $$
 
-| Env Var | Default | Dimension | Rationale |
-| :--- | :---: | :--- | :--- |
-| `W_STORAGE_CPU` | `0.2` | CPU utilization % | mongod compute saturation |
-| `W_STORAGE_RAM` | `0.2` | RAM usage (MB) | WiredTiger cache pressure |
-| `W_STORAGE_CONNECTIONS` | `0.1` | Active connections | Connection pool exhaustion risk |
-| `W_STORAGE_LAG` | `0.2` | Replication lag (s) | Data freshness for secondaries |
-| `W_STORAGE_HOPS` | `0.3` | Network hop distance | Data locality |
+Per-dimension weights (configurable via `W_STORAGE_CPU`, `W_STORAGE_RAM`, `W_STORAGE_CONNECTIONS`, `W_STORAGE_LAG`, `W_STORAGE_HOPS`):
+
+| Dimension | Default Weight | Rationale |
+| :--- | :---: | :--- |
+| CPU utilization % | `0.2` | mongod compute saturation |
+| RAM usage (MB) | `0.2` | WiredTiger cache pressure |
+| Active connections | `0.1` | Connection pool exhaustion risk |
+| Replication lag (s) | `0.2` | Data freshness for secondaries |
+| Network hop distance | `0.3` | Data locality |
 
 - `select_storage(domain, client_mac)` iterates over the domain's storage pool, scores each entry, collects ties, and round-robin picks among them.
-- **Round-robin tie-breaking:** identical to `select_server`, but uses a per-domain counter (`_rr_storage_idx[domain]`) so that N1 and N2 storage pools cycle independently.
-- **Unknown telemetry:** backends without stats are assigned worst-case normalized scores (`1.0`) across all resource dimensions. Same-hop candidates are round-robin'd.
-
-```python
-def select_storage(self, domain: str, client_mac: str) -> dict | None:
-    pool = self.vip_storage_pool_n1 if domain == "n1" else self.vip_storage_pool_n2
-    if not pool:
-        return None
-
-    pool_stats = [self._storage_stats[m] for m in pool if m in self._storage_stats]
-    cpu_max  = max((s.avg_cpu_percent   for s in pool_stats), default=0.0) or 1.0
-    ram_max  = max((s.avg_ram_used_mb    for s in pool_stats), default=0.0) or 1.0
-    conn_max = max((s.avg_connections     for s in pool_stats), default=0.0) or 1.0
-    lag_max  = max((s.avg_repl_lag_s or 0 for s in pool_stats), default=0.0) or 1.0
-    hops_max = max(self._hop_cache_max, 1)
-
-    best_cost = float("inf")
-    tied: list[dict] = []
-
-    for mac, entry in pool.items():
-        stats = self._storage_stats.get(mac)
-
-        cpu_norm  = (stats.avg_cpu_percent      / cpu_max)  if stats else 1.0
-        ram_norm  = (stats.avg_ram_used_mb       / ram_max)  if stats else 1.0
-        conn_norm = (stats.avg_connections        / conn_max) if stats else 1.0
-        lag_norm  = ((stats.avg_repl_lag_s or 0) / lag_max)  if stats else 1.0
-
-        hops = (self.hop_cache.get(client_mac) or {}).get(mac)
-        if hops is None:
-            if mac in self.peer_hosts:
-                hops = max(self._avg_hop_count, 1.0) + max(self._peer_avg_hop_count, 1.0)
-            elif mac in self.host_attachment:
-                hops = max(self._avg_hop_count, 1.0)
-            else:
-                hops = hops_max
-        hop_norm = hops / hops_max
-
-        cost = (_W_STORAGE_CPU * cpu_norm + _W_STORAGE_RAM * ram_norm
-                + _W_STORAGE_CONNECTIONS * conn_norm
-                + _W_STORAGE_LAG * lag_norm + _W_STORAGE_HOPS * hop_norm)
-        if cost < best_cost:
-            best_cost = cost
-            tied = [entry]
-        elif cost == best_cost:
-            tied.append(entry)
-
-    if not tied:
-        return None
-    rr_idx = self._rr_storage_idx.get(domain, 0)
-    chosen = tied[rr_idx % len(tied)]
-    self._rr_storage_idx[domain] = rr_idx + 1
-    return chosen
-```
+- **Round-robin tie-breaking:** identical to `select_server`, but uses a per-domain counter so that N1 and N2 storage pools cycle independently.
+- **Unknown telemetry:** backends without stats are assigned worst-case normalized scores (`1.0`) across all resource dimensions.
 
 #### VIP Packet-In Flow
 
@@ -310,207 +214,193 @@ Because the DNAT'd packet carries the real destination IP (and the router resolv
 The telemetry path is fully ZeroMQ-based. There is no database in the telemetry pipeline.
 
 ```
-Edge Servers ──(ZMQ PUSH)──► Aggregator (per network) ──(ZMQ PUB)──► Controller (ZMQ SUB)
-                                                                        ├─ _latest dict (Thread 1 reads)
-                                                                        └─ on_update callback (→ Thread 3 queue)
+Edge Servers ──(ZMQ PUSH)──┐
+                            ├──► Aggregator (per network) ──(ZMQ PUB)──► Controller (ZMQ SUB)
+Storage Sidecars ─(PUSH)───┘                                              ├─ _latest dict (Thread 1 reads)
+                                                                           └─ on_update callback (→ Thread 3 queue)
 ```
 
 The implementation uses a `TelemetryEventSource` abstract interface with a single concrete implementation — `ZmqTelemetrySource`:
 
-- **`TelemetryEventSource` (ABC):** Exposes `start()` and `get_latest(network_id) -> TelemetrySummary | None`. Transport-agnostic — the controller never calls `receive()` or manages sockets directly.
-- **`ZmqTelemetrySource`:** Owns a `zmq.green` SUB socket that subscribes to aggregator PUB endpoints. A background eventlet greenthread (via `hub.spawn`) runs `_receive_loop()`, parsing each incoming JSON into a Pydantic `TelemetrySummary` model and caching the latest per `network_id`. Uses `zmq.green` (pyzmq's eventlet backend) so `recv_json()` yields cooperatively instead of blocking the OS-Ken event loop.
+- **`TelemetryEventSource` (ABC):** Exposes `start()` and `get_latest(network_id) -> TelemetrySummary | None`. Transport-agnostic — the controller never manages sockets directly.
+- **`ZmqTelemetrySource`:** Owns a ZMQ SUB socket that subscribes to aggregator PUB endpoints. A background eventlet greenthread (via `hub.spawn`) runs the receive loop, using `eventlet.tpool.execute(self._socket.recv_json)` to bridge blocking ZMQ recv into eventlet's cooperative scheduler — this ensures the OpenFlow event loop continues processing PacketIn events while waiting for the next telemetry summary.
 
-Both controllers subscribe to **both** aggregators because `VIP_SERVER` selection is cross-domain — a controller may route a client to a server in the peer network, so it needs $T_{proc}$ values for all servers.
+Both controllers subscribe to **both** aggregators because `VIP_SERVER` selection is cross-domain — a controller may route a client to a server in the peer network, so it needs telemetry for all servers.
 
 The same ZMQ SUB socket also receives **topology snapshots** from the peer controller (disambiguated by a `"type": "topology"` field in the JSON payload — see §1.4).
 
-#### Telemetry Payload (from aggregator)
+#### Telemetry Events
 
-The aggregator publishes windowed summaries conforming to the `TelemetrySummary` Pydantic model:
+Each container identifies itself by its **MAC address**, discovered from `/sys/class/net/eth0/address` (or the first non-loopback interface). The MAC is used as `server_id` throughout the pipeline and matches the key in the controller's VIP pool — no separate ID-to-MAC mapping is needed.
 
-```json
-{
-  "network_id": "net1",
-  "window_end": 1742300400.0,
-  "servers": {
-    "server-1": {
-      "avg_time_total_ms": 44.0,
-      "avg_time_db_ms": 11.5,
-      "avg_time_proc_ms": 32.5,
-      "request_count": 120,
-      "error_rate": 0.0,
-      "avg_cpu_percent": 22.4,
-      "avg_ram_used_mb": 310.0
-    }
-  },
-  "domain_summary": {
-    "total_requests": 360,
-    "avg_time_proc_ms": 33.1,
-    "avg_time_db_ms": 12.1,
-    "average_cpu_percent": 21.8,
-    "peak_time_total_ms": 98.3
-  }
-}
-```
+**Per-request events** are emitted via ZMQ PUSH after every HTTP request using Flask `before_request`/`after_request` hooks. Each event includes `time_total_ms`, `time_db_ms`, `cpu_percent`, `ram_used_mb`, `status_code`, and `request_type`. The `time_db_ms` field is accumulated via a `timed_db()` context manager wrapping all MongoDB calls. `zmq.NOBLOCK` ensures the hook never blocks the HTTP response — events are silently dropped if the aggregator is temporarily unavailable.
 
-**Latency decomposition:**
+**Heartbeat events** are sent by a daemon thread every 60 s when the server is idle. The countdown resets after every request-driven event, so a busy server never sends redundant heartbeats. These carry CPU and RAM and serve primarily as liveness signals. **Only static nodes** (`edge_server_n{1,2}`, `edge_storage_server_n{1,2}`) emit periodic heartbeats: the image default is `HEARTBEAT_ENABLED=false`, and static containers opt in explicitly with `HEARTBEAT_ENABLED=true` in their docker run commands. Dynamic nodes keep the default disabled and emit nothing while idle — their lifecycle is handled by scale-down plus the telemetry-window absence timeout — see [other/heartbeat_dynamic_node_gate_plan.md](other/heartbeat_dynamic_node_gate_plan.md). Each dynamic edge server still sends one bootstrap `heartbeat`-shape sample after MAC discovery, and each storage sidecar sends one bootstrap `mongo_stats` sample on first `SECONDARY`, so newly added backends become visible without reviving periodic idle heartbeats.
+
+**MongoDB sidecar events** (`mongo_stats`) are pushed by the `mongo_telemetry.py` sidecar in each storage container. The sidecar uses opcounter delta tracking to detect real client activity — only CRUD opcounters (`insert`, `query`, `update`, `delete`, `getmore`) are checked; the `command` opcounter is ignored because internal replica set heartbeats inflate it every cycle even when idle. The first poll captures a baseline without reporting, preventing the sidecar's own admin connections from producing a spurious event. Each `mongo_stats` event includes `repl_lag_s`, `member_state` (RS state string, e.g. `"SECONDARY"`, `"PRIMARY"`), `connections_current`, `cpu_percent`, and `ram_used_mb`.
+
+#### Aggregator — Windowed Summaries
+
+One aggregator container runs per network. It collects events via ZMQ PULL, drains them into a per-window buffer every `WINDOW_S` seconds (default 10), and publishes a `TelemetrySummary` via ZMQ PUB. The summary contains:
+
+- **Per-server HTTP stats** — averaged over the window: `avg_time_total_ms`, `avg_time_db_ms`, `avg_time_proc_ms` (derived), `request_count`, `error_rate`, `avg_cpu_percent`, `avg_ram_used_mb`, `last_report_ts`.
+- **Per-server storage stats** — latest snapshot per `server_id`: `avg_repl_lag_s`, `avg_connections`, `avg_cpu_percent`, `avg_ram_used_mb`, `member_state`.
+- **Domain summary** — across all HTTP events: `total_requests`, `avg_time_proc_ms`, `avg_time_db_ms`, `p95_time_db_ms`, `average_cpu_percent`, `peak_time_total_ms`.
+- **Control events** — forwarded from container sidecars (e.g. `drain_complete`, `rs_secondary_ready`), consumed by Thread 3 for lifecycle management.
+- **Heartbeat-only nodes** — static nodes that sent only heartbeats (no data events) still appear with `request_count=0`, so the controller knows they are alive. Dynamic nodes do not emit periodic heartbeats (keep the default `HEARTBEAT_ENABLED=false`); an idle dynamic node is reclaimed via the scale-down path (graceful) or, on crash, via the 180 s absence timeout.
+
+All per-node dicts are keyed by MAC address. Pydantic validates the incoming JSON at the transport boundary — invalid messages are caught and logged before reaching controller logic.
+
+#### Latency Decomposition
 
 $$
 T_{proc} = T_{total} - T_{dados}
 $$
 
 - $T_{total}$ (`avg_time_total_ms`): wall-clock time from HTTP request receipt to response sent.
-- $T_{dados}$ (`avg_time_db_ms`): time the web server spent blocked waiting for MongoDB to reply.
+- $T_{dados}$ (`avg_time_db_ms`): mean time the web server spent blocked waiting for MongoDB to reply. Storage scale-up also tracks the tail with `p95_time_db_ms` and scores against `max(avg_time_db_ms, p95_time_db_ms)` so Tier 2 can react before the mean fully catches up.
 - $T_{proc}$ (`avg_time_proc_ms`): the residual — compute work (template rendering, serialisation, application logic).
 
-#### Threshold Evaluation and Alert Routing
+#### Feeding Thread 1 and Thread 3
 
-The telemetry `on_update` callback evaluates two independent threshold conditions (configurable via `TAU_PROC_MS` and `TAU_DADOS_MS` environment variables) and submits typed alerts to the `ElasticityManager` queue:
+The telemetry `on_update` callback performs two functions:
 
-- **Compute alert** → triggered when `avg_time_proc_ms > TAU_PROC_MS`. Submits a `ComputeAlert`.
-- **Data alert** → triggered when `avg_time_db_ms > TAU_DADOS_MS`. Submits a `DataAlert`.
+1. **Routing (Thread 1):** Calls `update_server_stats()` and `update_storage_stats()` to store per-server summaries keyed by MAC. Thread 1 reads these for the WSM cost functions.
+2. **Scaling (Thread 3):** Evaluates domain-level degradation scores using adaptive thresholds with configurable sliding windows, and submits typed alerts to the `ElasticityManager` queue. Also processes control events (`drain_complete` → cleanup alert, `rs_secondary_ready` → storage VIP promotion) and tracks node liveness for absent-node detection with a birth grace period for newly added nodes.
 
-Thread 1 reads the `_server_stats` and `_storage_stats` dicts (updated by `VipRoutingMixin.update_server_stats()` and `update_storage_stats()` on each telemetry arrival) for the multi-dimensional WSM cost functions.
-
-**Telemetry → Routing vs Scaling split:**
-
-| Metric | Used by Thread 1 (Routing) | Used by Thread 3 (Scaling) |
+| Metric | Thread 1 (Routing) | Thread 3 (Scaling) |
 | :--- | :---: | :---: |
-| `avg_cpu_percent` | ✅ Server + Storage WSM | — |
-| `avg_ram_used_mb` | ✅ Server + Storage WSM | — |
-| `request_count` | ✅ Server WSM | — |
-| `avg_connections` | ✅ Storage WSM | — |
-| `avg_repl_lag_s` | ✅ Storage WSM | — |
-| `avg_time_proc_ms` ($T_{proc}$) | — | ✅ ComputeAlert threshold |
-| `avg_time_db_ms` ($T_{dados}$) | — | ✅ DataAlert threshold |
+| CPU %, RAM | ✅ Server + Storage WSM | Part of degradation score |
+| Request count | ✅ Server WSM | — |
+| Connections, replication lag | ✅ Storage WSM | — |
+| $T_{proc}$ | — | ✅ Compute degradation score |
+| $T_{dados}$ | — | ✅ Storage degradation score |
 | Hop distance | ✅ Server + Storage WSM | — |
-
-#### Server-ID ↔ MAC Mapping
-
-Telemetry payloads identify servers by `server_id` (container name, e.g. `"edge_server_n1"`), but VIP pools are keyed by MAC address. A bidirectional mapping (`_id_to_mac` / `_mac_to_id`) bridges these two namespaces:
-
-- **Static nodes:** parsed from `SERVER_ID_MAP` env var at boot (e.g. `"edge_server_n1=aa:bb:cc:dd:ee:ff,mongo_n1=11:22:33:44:55:66"`).
-- **Dynamic nodes:** registered by `ElasticityManager` when Thread 3 adds a container — it knows both the container name and the MAC from the `NodeResult`.
-
-```python
-# VipRoutingMixin.__init__
-self._id_to_mac: dict[str, str] = {}   # server_id -> mac
-self._mac_to_id: dict[str, str] = {}   # mac -> server_id
-
-# Seed from env var for static nodes
-for pair in os.environ.get("SERVER_ID_MAP", "").split(","):
-    if "=" in pair:
-        sid, mac = pair.strip().split("=", 1)
-        self._id_to_mac[sid.strip()] = mac.strip()
-        self._mac_to_id[mac.strip()] = sid.strip()
-```
-
-`update_server_stats()` resolves each `server_id` → MAC before storing the full `ServerSummary`:
-
-```python
-def update_server_stats(self, servers: dict[str, ServerSummary]) -> None:
-    for server_id, summary in servers.items():
-        mac = self._id_to_mac.get(server_id)
-        if mac is None:
-            logger.warning("server stats: no MAC mapping for %s", server_id)
-            continue
-        self._server_stats[mac] = summary
-```
-
-The same pattern applies to `update_storage_stats()` for `StorageServerSummary` objects.
 
 ```mermaid
 sequenceDiagram
-    participant Servers as Edge Server Containers
+    participant Servers as Edge Containers
     participant Agg as Aggregator (ZMQ PULL→PUB)
     participant T2 as ZmqTelemetrySource (SUB)
     participant Memory as In-Memory State
     participant T3 as ElasticityManager Queue
 
-    Servers->>Agg: ZMQ PUSH per-request metric<br/>{T_total_ms, T_dados_ms, cpu, ram}
+    Servers->>Agg: ZMQ PUSH per-request/sidecar metrics
     Note over Agg: Window aggregation (10 s)
     Agg-->>T2: ZMQ PUB: TelemetrySummary
-    T2->>Memory: _latest[network_id] = summary
-    T2->>T2: update_server_stats → _server_stats[mac]<br/>update_storage_stats → _storage_stats[mac]
-    Note over Memory: Thread 1 reads _server_stats<br/>and _storage_stats for Cost_j formulas
-    T2->>T2: Evaluate: avg_time_proc_ms > τ_proc?<br/>(scaling — Thread 3 only)
-    opt Compute threshold breached
-        T2->>T3: submit_alert(ComputeAlert)
-    end
-    T2->>T2: Evaluate: avg_time_db_ms > τ_dados?<br/>(scaling — Thread 3 only)
-    opt Data threshold breached
-        T2->>T3: submit_alert(DataAlert)
+    T2->>Memory: update_server_stats / update_storage_stats
+    Note over Memory: Thread 1 reads stats for WSM cost formulas
+    T2->>T2: Process control events<br/>(drain_complete, rs_secondary_ready)
+    T2->>T2: Evaluate degradation scores<br/>against adaptive thresholds
+    opt Scale-up or scale-down threshold breached
+        T2->>T3: submit_alert(typed alert)
     end
 ```
 
-> **Not yet implemented:** OVS per-port byte/packet counter polling via `OFPPortStatsRequest` / `OFPPortStatsReply`.
-
-> See [telemetry_event_source_plan.md](implementation_plans/telemetry_event_source_plan.md) and [telemetry_aggregator_integration_plan.md](implementation_plans/telemetry_aggregator_integration_plan.md) for the full implementation.
+> For full telemetry pipeline details, see the [Telemetry Overview](telemetry/telemetry_overview.md).
 
 ---
 
 ### 1.3 Thread 3 — Elasticity & Placement Manager (Slow Path)
 
-**Purpose:** Mutate the infrastructure by adding/removing server containers and MongoDB data resources when the telemetry callback detects a threshold breach. Thread 3 is implemented as the `ElasticityManager` class — a long-lived daemon thread that blocks on a `threading.Queue`, receiving typed alert objects.
+**Purpose:** Mutate the infrastructure by adding/removing server containers and MongoDB data resources in response to sustained threshold breaches or underutilisation signals. Thread 3 is implemented as the `ElasticityManager` class — a long-lived daemon thread blocking on a `queue.PriorityQueue`, receiving typed alert objects from Thread 2.
 
-Thread 3 responds to two independent alert types:
+This decoupling between compute and data is a key architectural property: a compute bottleneck does not entail a data placement change, and a data locality problem does not entail spawning more web servers. The two concerns operate independently, driven by the latency signal most relevant to each domain.
 
-- **`ComputeAlert`** — responds to $T_{proc} > \tau_{proc}$. Spawns a new `edge_server` container.
-- **`DataAlert`** — responds to $T_{dados} > \tau_{dados}$. Spawns a new `edge_storage_server` container and joins it to the replica set.
+#### Alert Types and Priority
 
-This decoupling is a key architectural property: a compute bottleneck does not entail a data placement change, and a data locality problem does not entail spawning more web servers. The two concerns operate independently, driven by the latency signal most relevant to each domain.
+Thread 2 (storage / compute scaling policy) and the consumer-side `PromotionCoordinator` (Tier 1) both feed the same priority queue consumed by Thread 3. The table below follows `_ALERT_PRIORITY` in [`elasticity.py`](../../source/sdn_controller/elasticity/elasticity.py) — lower numbers win.
 
-> **Future work:** The current threshold evaluation is a simple breach check. A more sophisticated **Multi-Dimensional Best-Fit Decreasing (MBFD)** heuristic could be layered on top to evaluate multi-dimensional resource vectors (CPU, RAM, latency) when making placement decisions.
+| Priority | Alert | Trigger | Action |
+| :---: | :--- | :--- | :--- |
+| 1 | `DataAlert` | Adaptive storage degradation threshold (2-of-5 sliding window) | Spawn `edge_storage_server`, async RS join (Tier 2) |
+| 2 | `SelectiveSyncAlert` | `PromotionCoordinator` M-of-N sustained QoE breach + cross-region footprint + read-heavy op mix | Spawn `edge_selective_storage`, start Change-Stream forwarders, broadcast first Tier 1 manifest |
+| 3 | `SelectiveSyncReconfigureAlert` | Coordinator detects growth / shrink in the hot doc set | Manifest-first rebroadcast, then live `POST /forwarder_config` on the supervisor |
+| 4 | `ComputeAlert` | Adaptive compute degradation threshold with peer-aware bias (3-of-5 sliding window) | Spawn `edge_server` |
+| 5 | `CleanupComputeAlert` | `drain_complete` ZMQ event or telemetry timeout (compute) | Teardown drained compute node |
+| 5 | `CleanupSelectiveAlert` | `drain_complete` event (Tier 1 supervisor) or telemetry timeout | OVS teardown + `docker rm` of the drained Tier 1 container (Phase B) |
+| 6 | `ScaleDownDataAlert` | Storage underutilisation (7-of-12 sliding window) or telemetry timeout | Remove storage node from RS and teardown |
+| 6 | `ScaleDownSelectiveAlert` | Coordinator: cold set, staleness, or (dormant) Tier 2 supersede of a cross-LAN `DataAlert` | Phase A drain — revoke manifest, `POST /drain`, record `PendingDrain` |
+| 7 | `ScaleDownComputeAlert` | Compute underutilisation (7-of-12 sliding window) or telemetry timeout | Drain and teardown compute node |
 
-#### Node Addition Lifecycle — `NodeAdder`
+Tie-breaking within the same priority uses a monotonic sequence counter (FIFO). Full alert-lifecycle write-up: [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md#elasticity-alerts).
 
-The `NodeAdder` class provides per-step, timed, idempotent lifecycle methods. Each method produces a `NodeResult` with full timing and state tracking:
+#### Scale-Up — Weighted Degradation Score
 
-**Compute node (`add_edge_server`):**
-1. `docker run --network none --name <name> edge_server` → `RUNNING_CONTAINER`
-2. `add_network_node.sh --lan <N> --name <name>` (veth pair + OVS port + IP/MAC config) → `ATTACHING_NETWORK`
-3. Returns `NodeResult` → `DONE`
+Scale-up decisions use a **weighted degradation score** per tier that combines CPU and latency:
 
-**Storage node (`add_storage_node`):**
-1. `docker run --network none --name <name> edge_storage_server mongod --replSet <rs>` → `RUNNING_CONTAINER`
-2. `add_network_storage_node.sh --lan <N> --name <name> --rs-name <rs> --primary <primary>` (veth + OVS + `rs.add()` + wait for SECONDARY) → `ATTACHING_NETWORK` / `JOINING_RS`
-3. Returns `NodeResult` → `DONE`
+$$
+score = 0.3 \times cpu_{component} + 0.7 \times latency_{component}
+$$
 
-Each step has idempotency guards: if the container already exists and is running, `docker run` is skipped; if stopped, it is cleaned up and recreated. The shell scripts check for pre-existing veth pairs and OVS ports.
+where each component is normalised as $\max(0, \text{value} - \text{floor}) / \text{span}$.
 
-Both shell scripts emit machine-readable lines (`RESULT_IP=<ip>`, `RESULT_MAC=<mac>`) at the end of a successful run; `NodeAdder._run_script()` parses these via regex to populate `NodeResult.ip` and `NodeResult.mac`. On a successful result, `ElasticityManager` calls `TopologyMixin.add_server_mac()` or `add_storage_mac()` and `register_backend_ip()` — which updates the VIP pool that Thread 1 reads on the next Packet-In.
+**Compute scaling** uses a **local-first adaptive threshold** with a small peer-health bias:
 
-#### Observability — `StepTimings` and `NodeOperationState`
+$$
+\tau_{compute} = \min(\text{base} + N_{dynamic} \times \text{increment} + \text{peer\_relief}, \tau_{max})
+$$
 
-Every operation produces structured timing data:
+The effective threshold rises with each dynamically added compute node (defaults: base=0.33, increment=0.10, max=0.70). When the peer LAN's cached compute score is healthy (≤ 0.35), a small relief bias (0.03) is added — reflecting that the peer can absorb spillover traffic via cross-LAN VIP routing. This scaling logic is paired with the reduced `W_HOPS` (0.28) in the server WSM, making cross-LAN server selection more willing when the local server is clearly more loaded. The trigger requires 3 of the last 5 windows, with a 45 s cooldown after each scale-up.
 
-| Field | What it measures | Typical range |
-|---|---|---|
-| `docker_run_s` | Container creation to running state | 0.1 – 1 s |
-| `network_attach_s` | veth creation → OVS → IP config (+ `rs.add` for storage) | 1 – 10 s |
-| `total_s` | Wall clock from first step to last | 1.5 – 15 s |
+**Storage scaling** uses a **diminishing-increment adaptive threshold**: each successive dynamic storage node raises the effective threshold by an increment that halves with every node added (floored at a minimum), so early nodes face a rapidly rising bar while later nodes face a near-flat ceiling. The trigger requires 2 of the last 5 windows, with a 120 s cooldown after each scale-up.
 
-`NodeOperationState` enum tracks progress: `PENDING` → `RUNNING_CONTAINER` → `ATTACHING_NETWORK` → `JOINING_RS` (storage only) → `DONE` / `FAILED`.
+#### Scale-Down — AND-Gate Sliding Window
 
-#### Node Removal — Two-Phase Cooperative Drain
+Scale-down uses a separate sliding window per tier. Both CPU **and** latency must be below threshold simultaneously for a window to count as "idle" (AND-gate — prevents false positives from data-bound latency spikes with low CPU). Compute and storage both fire when 7 of the last 12 windows are idle. Windows where latency exceeds a timeout ceiling (default 5 000 ms) are treated as indeterminate and skipped — preventing RS election or connectivity timeouts from poisoning the signal.
 
-Removal follows a **two-phase cooperative drain** to avoid cutting active connections mid-flight:
+Only dynamically added nodes are eligible for removal — static servers and primary DB containers are never removed.
 
-**Phase A — Controller-side isolation (immediate):**
-1. Remove MAC from VIP pool (`remove_server_mac` / `remove_storage_mac`) — no new connections routed to this node.
-2. Storage only: `rs.remove(IP:PORT)` via the replica set primary — node leaves RS before shutdown.
+#### Anti-Thrashing Mechanisms
 
-**Phase B — Node drain + cleanup:**
+Six mechanisms prevent scale-up / scale-down oscillation:
 
-| | Compute (`edge_server`) | Storage (`edge_storage_server`) |
-|---|---|---|
-| **Drain signal** | `docker exec <name> curl -sS -X POST http://localhost:5000/drain` | Phase A is sufficient — `rs.remove()` + VIP removal stop new work |
-| **Idle detection** | Flask active-request counter hits 0 → container calls `os._exit(0)` | Controller reads `connections_current` from telemetry pipeline |
-| **Timeout fallback** | Force-stop after 30 s | Force-stop after 15 s |
+| Mechanism | Description |
+| :--- | :--- |
+| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally, but scale-up is target-specific: pending compute drains block only compute scale-up, and pending Tier 1 selective drains block neither compute nor storage scale-up |
+| Sliding window | Requires sustained signal (not single-window spikes) |
+| Cross-direction reset | Scale-up clears the scale-down window (and vice versa) |
+| Compute scale-up cooldown | Suppress compute scale-up evaluation for 45 s after each compute scale-up |
+| Per-tier cooldowns | After scale-up: storage 120 s / compute 40 s before scale-down resumes |
+| Birth grace | Newly added nodes skip absent-node detection for 60 s during bootstrap |
 
-After the container stops: flush OVS flows for the MAC (`dl_src` + `dl_dst`), remove OVS port, delete veth pair, `docker rm`, optionally `docker volume rm` for storage.
+#### Node Addition Lifecycle
 
-Scale-down alert types (`ScaleDownComputeAlert`, `ScaleDownDataAlert`) are dispatched through the same `ElasticityManager` queue. The scale-down **detection policy** (when to scale down) is a separate concern, deferred until the removal mechanism is validated.
+Dynamic containers are named `{prefix}_{network_id}_dyn{counter}` (e.g. `edge_server_lan1_dyn1`). IP and MAC are pre-assigned from a per-LAN `IpAllocator` pool (suffixes 6–55, deterministic MACs), eliminating the O(N) container scan previously required by the shell scripts. Each step is individually timed and produces a `NodeResult` with full timing and state tracking.
+
+**Compute node (`ComputeNodeAdder.add_edge_server`):**
+
+1. `docker run --network none --name <name> edge_server` → container running.
+2. `add_network_node.sh --lan <N> --name <name> --ip <ip> --mac <mac>` → veth pair + OVS port + IP/MAC config.
+3. On success: `add_server_mac(mac)` + `register_backend_ip(mac, ip)` — the new server enters the VIP web pool immediately.
+
+**Storage node (`StorageNodeAdder.add_storage_node`):**
+
+1. `docker run --network none --name <name> -e RS_ADD_SELF=true edge_storage_server` → container running with sidecar.
+2. `add_network_node.sh --lan <N> --name <name> --ip <ip> --mac <mac>` → veth + OVS.
+3. Controller returns (~5-12 s) — **RS join is performed asynchronously by the sidecar** inside the container. The `mongo_telemetry.py` sidecar discovers the primary via `RS_SEED_HOST`, performs `rs.add()` with retry/exponential backoff, and waits for SECONDARY state. This avoids blocking Thread 3 for the ~34-45 s initial sync.
+4. VIP registration is **deferred** until the node is ready, via dual-path promotion:
+   - **Fast path:** sidecar emits `rs_secondary_ready` control event → controller immediately calls `add_storage_mac()`.
+   - **Fallback path:** aggregator propagates `member_state` from telemetry → controller detects `SECONDARY` and promotes (~2-4 s delay).
+
+Before `docker run`, the node manager checks existing container state: running → skip creation; stopped → remove and recreate. For storage, stale volumes are cleaned up to avoid replica-set ID clashes.
+
+#### Node Removal
+
+**Compute — Async Two-Phase Drain:**
+
+Phase A (Thread 3, <1 s): Remove MAC from VIP pool → discover veth → `docker exec curl -X POST http://localhost:5000/drain` → return (Thread 3 is free).
+
+Phase B (triggered by `drain_complete` ZMQ event or telemetry timeout): Run `remove_network_node.sh` → `docker stop` + flow flush + OVS/veth cleanup + `docker rm` → release IP.
+
+The drain endpoint sets `_draining = True` (new requests get 503), and when `active_requests == 0` the container exits itself via `os._exit(0)`.
+
+**Storage — Synchronous (~50 s worst case):**
+
+1. `remove_storage_mac(mac, domain)` — no new DNAT flows.
+2. `rs.remove(IP:PORT)` via the RS primary (Python-side, with retries).
+3. `remove_network_storage_node.sh` — flow flush + `docker stop` + OVS/veth + `docker rm` + `docker volume rm`.
+4. Release IP.
 
 #### Elastic Lifecycle: Data Gravity in Action
 
@@ -533,7 +423,7 @@ graph LR
 
 > Writes: local. Reads (own data): local. Reads (remote data): remote fetch. No secondaries.
 
-**Phase 2 — Sustained Cross-Network Demand (Tier 2):** Thread 3 detects that $T_{dados}$ from Network B to Network A data exceeds $\tau_{dados}$. A full secondary is deployed via `add_storage_node()` → `rs.add()` in Network B.
+**Phase 2 — Sustained Cross-Network Demand (Tier 2):** The storage degradation score for cross-network data access exceeds the adaptive threshold. Thread 3 deploys a full secondary via `add_storage_node()` → async `rs.add()` in the requesting network.
 
 ```mermaid
 graph LR
@@ -554,7 +444,7 @@ graph LR
 
 > Net B reads for Net A data: **always local** (served by secondary). Net A's full oplog is replicated.
 
-**Phase 3 — Demand Subsides (Scale-in):** $T_{dados}$ drops below $\tau_{dados}$. Thread 3 executes the two-phase drain: `rs.remove()`, wait for idle, stop container, clean up OVS/veth. VIP routes revert to Tier 0. System returns to Phase 1.
+**Phase 3 — Demand Subsides (Scale-in):** The scale-down sliding window detects sustained underutilisation. Thread 3 executes `rs.remove()`, waits for idle, stops the container, and cleans up. VIP routes revert to Tier 0.
 
 ```mermaid
 graph LR
@@ -575,7 +465,7 @@ graph LR
 
 > Edge storage freed, replication traffic stopped. Back to base state.
 
-> See [thread3_node_addition_plan.md](implementation_plans/thread3_node_addition_plan.md) and [node_removal_plan.md](implementation_plans/node_removal_plan.md) for the full implementation.
+> For full elasticity details, see the [Elasticity Overview](elasticy_manager/elasticity_overview.md).
 
 ---
 
@@ -587,7 +477,7 @@ The `TopologyMixin` mixin handles all topology concerns. It is mixed into the ma
 
 #### Local Topology — `_topology_worker` Greenthread
 
-A background greenthread runs every `TOPOLOGY_INTERVAL` seconds (default 5 s):
+A background greenthread runs every `TOPOLOGY_INTERVAL` seconds (default 1 s):
 
 1. Queries the OS-Ken topology API (`get_all_link`, `get_host`) to discover switches, links, and hosts.
 2. Builds a NetworkX `DiGraph` (`self.net`) for shortest-path computation.
@@ -596,13 +486,13 @@ A background greenthread runs every `TOPOLOGY_INTERVAL` seconds (default 5 s):
 5. Rebuilds VIP pools (`vip_server_pool`, `vip_storage_pool_n1`, `vip_storage_pool_n2`) by filtering the combined local + peer host attachment by registered MAC sets.
 6. On topology change: installs proactive L2 forwarding rules (priority 5) on all switches.
 
-Router MACs (configured via `ROUTER_MAC_BLOCKLIST` env var) are blocklisted from the host list to avoid treating inter-network router ports as service endpoints.
+Router MACs (configured via `ROUTER_MAC_BLOCKLIST` env var) are blocklisted from the host list to avoid treating inter-network router ports as service endpoints. A deduplication set (`_installed_flow_keys`) prevents reinstalling identical proactive rules. When a switch reconnects, `_on_datapath_connected` flushes stale flows, reinstalls the table-miss rule, and notifies mixins higher in the MRO (e.g. `VipRoutingMixin`) to reinstall their own rules.
 
 #### Peer Topology Sharing — ZMQ PUB/SUB
 
 Each controller binds a ZMQ PUB socket on port `TOPOLOGY_PUB_PORT` (default 5557). The `_topology_worker` publishes the full topology snapshot:
 - On every detected change (hosts/links/switches differ from previous tick).
-- Every `TOPOLOGY_HEARTBEAT_INTERVAL` seconds (default 15) even without change — so a restarted peer gets current state within seconds.
+- Every `TOPOLOGY_HEARTBEAT_TICKS` topology ticks with no change (default 30 ticks × 1 s interval = 30 s) — so a restarted peer gets current state quickly.
 - Immediately when the peer's snapshot reveals it has a stale view of this controller's local network.
 
 The peer controller's `ZmqTelemetrySource` SUB socket subscribes to this PUB endpoint (in addition to aggregator endpoints). Messages are disambiguated by the `"type"` field:
@@ -631,51 +521,34 @@ This design ensures:
 
 ---
 
-### 1.5 Environment Variable Reference
+### 1.5 Configuration
 
-All per-network configuration is injected via environment variables:
+All per-network configuration is injected via environment variables. Each subsystem's variables are documented in the corresponding overview:
 
-| Variable | Default | Description |
-|---|---|---|
-| `VIP_SERVER_IP` | `10.0.0.100` | Virtual IP for the compute/app server pool |
-| `VIP_SERVER_MAC` | `aa:bb:cc:dd:ee:01` | Virtual MAC for the server VIP |
-| `VIP_DATA_N1_IP` | `10.0.0.200` | Virtual IP for LAN 1 MongoDB storage |
-| `VIP_DATA_N1_MAC` | — | Virtual MAC for VIP_DATA_N1 |
-| `VIP_DATA_N2_IP` | `10.0.1.200` | Virtual IP for LAN 2 MongoDB storage |
-| `VIP_DATA_N2_MAC` | — | Virtual MAC for VIP_DATA_N2 |
-| `NETWORK_ID` | `lan1` | Identifies this controller's domain |
-| `SERVER_MACS` | `""` | Comma-separated MACs of compute servers behind the VIP |
-| `STORAGE_MACS_N1` | `""` | Comma-separated MACs of LAN 1 storage servers |
-| `STORAGE_MACS_N2` | `""` | Comma-separated MACs of LAN 2 storage servers |
-| `VIP_IDLE_TIMEOUT` | `30` | Seconds of idle before a DNAT rule expires |
-| `VIP_HARD_TIMEOUT` | `120` | Maximum seconds a DNAT rule persists |
-| `ROUTER_OVS_PORT` | `0` | OVS port connected to the inter-LAN router; `0` = cross-network routing disabled |
-| `ROUTER_MAC` | — | Router's LAN-side interface MAC (per controller) |
-| `ROUTER_MAC_BLOCKLIST` | — | Comma-separated MACs to exclude from host discovery |
-| `TAU_PROC_MS` | `600` | Compute threshold: alert when `avg_time_proc_ms` exceeds this |
-| `TAU_DADOS_MS` | `150000` | Data threshold: alert when `avg_time_db_ms` exceeds this |
-| `TOPOLOGY_INTERVAL` | `5` | Seconds between topology worker polls |
-| `TOPOLOGY_PUB_PORT` | `5557` | Port for this controller's topology PUB socket |
-| `TOPOLOGY_HEARTBEAT_INTERVAL` | `15` | Seconds before publishing a heartbeat update |
-| `AGGREGATOR_ENDPOINTS` | `tcp://127.0.0.1:5556` | Comma-separated aggregator PUB addresses |
-| `PEER_TOPOLOGY_ENDPOINTS` | `""` | Comma-separated peer controller PUB addresses |
+- **VIP routing** (VIP addresses, WSM weights, timeouts): [VIP Routing Overview](vip_routing/vip_routing_overview.md)
+- **Topology** (discovery interval, heartbeat, MAC role seeds, PUB port): [Topology Overview](topology/topology_overview.md)
+- **Telemetry** (aggregator endpoints, peer topology endpoints): [Telemetry Overview](telemetry/telemetry_overview.md)
+- **Elasticity** (scale-up degradation thresholds, scale-down windows, cooldowns): [Elasticity Overview](elasticy_manager/elasticity_overview.md)
 
 ---
 
-### 1.6 Future Work: Selective Sync Node (Tier 1)
+### 1.6 Tier 1 Selective Sync Node
 
-> **Status: NOT YET IMPLEMENTED — planned as future extension.**
+> **Status: implemented, feature-flagged behind `SS_ENABLED`** (default `0`).
+> Authoritative subsystem docs: [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md).
 
-The Selective Sync Node is intended as a lightweight intermediate tier between direct routing (Tier 0) and full replication (Tier 2). Its purpose is to provide a "middle path" for burst cross-network demand — replicating only the collections that are actually being accessed, identified by access tracking on the local MongoDB.
+The Selective Sync Node is the lightweight intermediate tier between direct routing (Tier 0) and full replication (Tier 2). Its purpose is a "middle path" for burst cross-network demand — replicating only the collections that are actually being accessed, identified by an edge-server `cached_collection` wrapper that reports per-request access stats on the existing telemetry frame.
 
-**Planned design:**
+**Design:**
 
-- A standalone `mongod` seeded with only the hot collections at deployment time.
-- Ongoing writes forwarded via per-collection Change Streams from the remote primary.
-- Documents carry a TTL and are auto-evicted when demand subsides.
-- Intra-network data is never synced because the primary is already local.
+- A standalone `mongod` (no `--replSet`) seeded with only the hot collections at spawn time.
+- One `ForwarderWorker` per hot collection, each tailing a Change Stream on the owner-region primary with a `$match` filter bounded by the hot-doc set.
+- `directConnection=true` on the remote `MongoClient` URI pins the stream to the primary at grant time; no implicit re-election handoff.
+- Live reconfiguration via `POST /forwarder_config` on the supervisor admin port (5001).
+- Two-phase teardown via `POST /drain`: workers persist final resume tokens under lock, supervisor emits `drain_complete` over the existing ZMQ control-event channel, then `mongod` shuts down cleanly. Phase B (OVS teardown + `docker rm`) runs on the `drain_complete` event.
+- Client-side Tier 1 selection — the edge-server wrapper consults a `tier1_manifest` and short-circuits point-lookups; VIP routing is not involved (no MongoDB wire-protocol inspection in the controller).
 
-**Planned data placement hierarchy (with Tier 1):**
+**Data placement hierarchy:**
 
 | Scenario | Relationship | Strategy | Rationale |
 |---|---|---|---|
@@ -684,7 +557,7 @@ The Selective Sync Node is intended as a lightweight intermediate tier between d
 | User B reads Data A (burst demand) | Cross-network | **Selective Sync Node (Tier 1)** | Only hot collections synced locally |
 | User B reads Data A (sustained demand) | Cross-network | **Full replica via `rs.add()` (Tier 2)** | Full autonomous replication justified |
 
-When implemented, this would also require a **MDVBP (Metadata-Driven VIP Backend Picker)** tier map in Thread 1's `VIP_DATA_N*` selection logic, replacing the current first-available strategy with tier-aware routing.
+When implemented, this would also require a **MDVBP (Metadata-Driven VIP Backend Picker)** tier map in Thread 1's `VIP_DATA_N*` selection logic if Tier 1 were ever VIP-routed. It is not — Tier 1 selection is **client-side** in the edge-server `cached_collection` wrapper, which consults the `tier1_manifest` broadcast by the controller.
 
 ---
 
@@ -700,6 +573,8 @@ Each thread connects to the appropriate domain VIP (`VIP_DATA_N1` or `VIP_DATA_N
 
 Each server pushes a metric event **directly via ZeroMQ PUSH** to its network's aggregator container after every HTTP request. There is no database in the telemetry path.
 
+Each container identifies itself by its **MAC address**, discovered from `/sys/class/net/eth0/address`. The MAC is used as `server_id` throughout the pipeline, matching the key in the controller's VIP pool directly — no separate ID-to-MAC mapping is needed.
+
 The Flask app uses `@app.before_request` / `@app.after_request` hooks:
 - `before_request`: records `t_start = time.monotonic()` and initialises `t_dados_elapsed = 0.0`.
 - `after_request`: computes `t_total`, calls `push_metric()` which builds an event dict (including `cpu_percent` and `ram_used_mb` via `psutil`) and sends it via `zmq.NOBLOCK`.
@@ -708,10 +583,10 @@ Per-request metric event:
 
 ```json
 {
-  "server_id": "edge-server-net1-1",
+  "server_id": "00:00:00:00:00:02",
   "ts": 1742126400.0,
-  "T_total_ms": 85.2,
-  "T_dados_ms": 47.1,
+  "time_total_ms": 85.2,
+  "time_db_ms": 47.1,
   "status_code": 200,
   "request_type": "read",
   "cpu_percent": 34.7,
@@ -719,14 +594,25 @@ Per-request metric event:
 }
 ```
 
+A daemon thread also sends a **heartbeat event** every 60 s when the server is idle (the countdown resets after every request-driven event), carrying CPU and RAM for liveness detection.
+
 `zmq.NOBLOCK` ensures the hook never blocks the HTTP response even if the aggregator is temporarily unavailable — events are simply dropped.
+
+#### Edge Server Connection Model
+
+Each edge server maintains a module-level `MongoClient` per LAN with `maxPoolSize=1` and `maxIdleTimeMS` aligned with the VIP idle timeout. This amortises TCP handshake + MongoDB hello cost across requests while preserving DNAT re-evaluation: after the idle window, the driver closes the socket, and the next request opens a fresh TCP SYN → `packet_in` → controller re-evaluates WSM.
+
+Two mechanisms protect edge servers from lingering connections to unreachable storage nodes:
+
+- **Per-LAN circuit breaker:** trips on `AutoReconnect`, stays OPEN for a configurable cooldown (default 5 s), then allows one probe request (HALF_OPEN). This prevents repeated 3 s timeout blocks.
+- **Per-LAN threshold eviction:** the `_check_tdados_threshold` after-request hook tracks cumulative MongoDB time per LAN. Only the LAN(s) whose individual time exceeds the threshold have their singleton client evicted; healthy LAN clients are preserved.
 
 ```mermaid
 graph LR
     Client["Client Request<br/>(via DNAT)"] --> Server["Server Container"]
     Server -->|"DB queries<br/>(to VIP_DATA_N*)"| VIPd["VIP_DATA_N1 / N2<br/>(SDN selects mongod)"]
     VIPd -.->|"Tier 0: remote primary<br/>Tier 2: local secondary"| Mongo[("mongod instance")]
-    Server -->|"ZMQ PUSH per-request<br/>{T_total, T_dados, cpu, ram}"| Agg["Aggregator<br/>(ZMQ PULL)"]
+    Server -->|"ZMQ PUSH per-request<br/>{time_total, time_db, cpu, ram}"| Agg["Aggregator<br/>(ZMQ PULL)"]
 ```
 
 ### 2.3 Graceful Drain Endpoint
@@ -750,15 +636,16 @@ Each `edge_storage_server` container runs a bare `mongod` with a Python sidecar 
 ### Activity-Based Push
 
 The sidecar uses `serverStatus.opcounters` delta tracking to avoid flooding the aggregator with identical snapshots when MongoDB is idle:
-- **Active:** client operations detected (insert/query/update/delete/getmore delta > 0, or command delta > 2 to exclude the sidecar's own admin commands) → push `mongo_stats` event.
-- **Idle:** no client activity → push a `heartbeat` event every 60 s (liveness only, not forwarded to controller).
+- **Active:** CRUD opcounters (`insert`, `query`, `update`, `delete`, `getmore`) delta > 0 → push `mongo_stats` event. The `command` opcounter is ignored because internal replica set heartbeats inflate it every cycle even when idle. The first poll captures a baseline without reporting, preventing the sidecar's own admin connections from producing a spurious event.
+- **Idle:** no client activity → push a `heartbeat` event every 60 s (liveness only). Emitted only by the **static primary DB** container (opts in with `HEARTBEAT_ENABLED=true`). Dynamic secondaries keep the default `HEARTBEAT_ENABLED=false` and emit nothing while idle, relying on scale-down for graceful removal and the 180 s absence timeout for failure detection.
 
 ```json
 {
   "event_type": "mongo_stats",
-  "server_id": "mongo-net1",
+  "server_id": "00:00:00:00:00:06",
   "ts": 1742126400.0,
   "repl_lag_s": 1.2,
+  "member_state": "SECONDARY",
   "connections_current": 4,
   "cpu_percent": 12.3,
   "ram_used_mb": 256.7
@@ -845,12 +732,11 @@ The base topology for each network (OVS bridge, router, initial edge servers, in
 
 ### 4.2 Dynamic Node Addition — `add_network_node.sh` / `add_network_storage_node.sh`
 
-Thread 3 (`NodeAdder`) calls these scripts at runtime to attach dynamically provisioned containers:
+Thread 3 (`NodeAdder`) calls `add_network_node.sh` at runtime to attach dynamically provisioned containers (both compute and storage):
 
-- **`add_network_node.sh`** — pure Layer 2/3 wiring: allocate IP (auto-scan for next free), derive MAC, create veth pair, attach to OVS bridge, configure container interface. Does not start containers or modify MongoDB.
-- **`add_network_storage_node.sh`** — same networking, plus `rs.add()` to join the replica set and waits for the member to reach SECONDARY state.
+- **`add_network_node.sh`** — pure Layer 2/3 wiring: allocate IP, derive MAC, create veth pair, attach to OVS bridge, configure container interface. Does not start containers or modify MongoDB. Used for both compute and storage nodes — RS join is handled asynchronously by the `mongo_telemetry.py` sidecar inside the storage container.
 
-Both scripts emit `RESULT_IP=<ip>` on success for machine-readable parsing by `NodeAdder`.
+The script emits `RESULT_IP=<ip>` and `RESULT_MAC=<mac>` on success for machine-readable parsing by the node manager.
 
 **IP auto-assignment:** scans all running container PIDs via `nsenter` to find taken addresses, reserves `.1` (gateway) and VIP addresses, picks the lowest free host octet.
 
@@ -877,8 +763,8 @@ The architecture's contribution to the state of the art is the integration of th
 | Layer | Traditional Approach | This System |
 |---|---|---|
 | **Network** | Static routing or ECMP | Double-VIP SDN routing: `VIP_SERVER` selects best web server (WSM); `VIP_DATA_N1`/`VIP_DATA_N2` selects per-domain `mongod` endpoint |
-| **Compute** | Manual scaling or load-balancer round-robin | `ElasticityManager` driven by $T_{proc}$ threshold — QoE-aware scale-out/in with cooperative drain |
-| **Storage** | Static sharding or full replication | Adaptive hierarchy: Tier 0 (remote primary) → Tier 2 (full replica via `rs.add()`), triggered by $T_{dados}$ threshold. *(Tier 1 selective sync: future work)* |
+| **Compute** | Manual scaling or load-balancer round-robin | `ElasticityManager` driven by adaptive compute degradation score with peer-aware bias — QoE-aware scale-out/in with async cooperative drain |
+| **Storage** | Static sharding or full replication | Adaptive hierarchy: Tier 0 (remote primary) → Tier 1 (selective sync node — standalone `mongod` + Change Stream forwarders) → Tier 2 (full replica via async `rs.add()`), triggered by diminishing-increment storage degradation score. Tier 1 is feature-flagged behind `SS_ENABLED`. |
 
 **Clean Separation of Responsibilities.** Each layer performs only its designated function and requires no knowledge of the others:
 
@@ -893,3 +779,5 @@ The architecture's contribution to the state of the art is the integration of th
 | **mongod / storage** | Serve documents; sidecar reports telemetry via ZMQ |
 
 By coupling these three layers under a single control loop, the system eliminates the coordination gaps that arise when network, compute, and storage are managed by independent subsystems. The Double-VIP model ensures that routing intelligence resides entirely in the SDN layer: the MongoDB driver in each web server never performs topology discovery, never sends heartbeats, and never makes data-routing decisions. The network decides.
+
+**Client-side exception — Tier 1 manifest routing.** Tier 0 and Tier 2 are fully network-decided (driver sees only `VIP_DATA_N*`). Tier 1 is the only case where the data path is shaped inside the edge-server container: `source/docker/edge_server/source/platform_cache.py`'s `cached_collection(...)` wrapper consults the controller-broadcast `tier1_manifest` and short-circuits point-lookups in the hot set to the local standalone `mongod`; everything else still falls through to `VIP_DATA`. This is deliberate — routing Tier 1 through the SDN layer would require MongoDB wire-protocol inspection in the controller, which is rejected on principle. Tier 1 is therefore the first (and only) example of platform-assisted data-path logic in this architecture. Details: [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md).

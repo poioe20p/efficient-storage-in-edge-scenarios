@@ -32,11 +32,14 @@ KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
        │       │
        │       └─ Not VIP ────────────► existing L2 learning logic
        │
-       ├── Thread 2 (ZMQ subscriber) ── _on_telemetry_update()
-       │       ├─ update_server_stats()    → _server_stats dict
-       │       └─ update_storage_stats()   → _storage_stats dict
-       │
-       └── Thread 3 (elasticity) ── register_backend_ip() after spawning new containers
+      ├── Thread 2 (ZMQ subscriber) ── _on_telemetry_update()
+      │       ├─ process_secondary_events() / telemetry fallback
+      │       │    → _promote_storage_backend()
+      │       │    → add_storage_mac() + mark_storage_backend_warm()
+      │       ├─ update_server_stats() / update_storage_stats()
+      │       └─ _refresh_pending_storage() → bounded PUT /vip_data fan-out
+      │
+      └── Thread 3 (elasticity) ── register_new_server_backend() after spawning new containers
 ```
 
 `VipRoutingMixin` must sit **before** `TopologyMixin` in the class MRO so that
@@ -75,6 +78,20 @@ LAN 1's MongoDB replica set, and to `VIP_DATA_N2` to reach LAN 2's. This
 separation allows the WSM cost function to independently select the best storage
 node in each domain.
 
+### Scope — Tier 0 and Tier 2 only
+
+VIP routing covers the Tier 0 (direct cross-region read over `VIP_DATA_N*`) and
+Tier 2 (full replica-set member behind the owner LAN's `VIP_DATA`) paths. It
+does **not** participate in Tier 1 selective-sync selection. Tier 1 is routed
+**client-side** inside the edge-server container: the `cached_collection(...)`
+wrapper in `source/docker/edge_server/source/platform_cache.py` consults the
+controller-broadcast `tier1_manifest` and short-circuits point-lookups on hot
+doc ids to the local standalone `mongod` on port `27018`; all other reads and
+every write fall through to `VIP_DATA_N*` as normal. Routing Tier 1 at the SDN
+layer would require MongoDB wire-protocol inspection in the controller, which
+is rejected on principle. See
+[`selective_sync/selective_sync_overview.md`](../selective_sync/selective_sync_overview.md).
+
 ---
 
 ## MAC → IP Resolution
@@ -94,9 +111,11 @@ backend. The `_mac_to_ip` / `_ip_to_mac` dictionaries (defined in
    field in its `TopologyHostEntry`. This ensures the controller can route to
    peer backends immediately without waiting for cross-network ARP traffic.
 
-`register_backend_ip()` is also called by Thread 3 (elasticity manager) after
-spawning a new container, so VIP routing can reach the new backend before its
-first ARP reaches the controller.
+Thread 3 uses `register_new_server_backend()` for compute nodes so VIP routing
+adds the MAC to `VIP_SERVER`, seeds the backend IP, and creates the compute
+warm lease in one controller-side step. Storage additions still pre-seed
+`_mac_to_ip` via `register_backend_ip()` before the node is admitted into
+`VIP_DATA`.
 
 ---
 
@@ -156,6 +175,24 @@ Default weights: `W_STORAGE_CPU=0.2`, `W_STORAGE_RAM=0.2`,
 - **Round-robin:** when multiple backends share the lowest cost (common during
   cold start when all values are 0.0), a round-robin counter distributes
   traffic evenly. Each domain's storage pool has its own counter.
+
+### Warm Leases
+
+Newly admitted compute backends and newly promoted storage secondaries receive
+bounded warm leases in `VipRoutingMixin`. Each lease is governed by both a
+monotonic expiry time and a remaining-selection budget, and it is claimable
+only when the backend is already visible in the concrete VIP pool and has a
+known backend IP.
+
+Selection order is therefore:
+
+1. Claim a warm lease if one is currently usable.
+2. Fall back to the normal WSM cost function unchanged.
+
+Compute warm leases are created by Thread 3 through
+`register_new_server_backend(mac, ip)`. Storage warm leases are created by
+Thread 2 when `_promote_storage_backend()` admits a `SECONDARY` into the
+appropriate `VIP_DATA` membership set.
 
 ### Hop Estimation
 
@@ -278,8 +315,24 @@ server's activity, not the data's origin.
 ### VIP Address Updates
 
 The `/vip_data` PUT route updates `vip_data_per_domain` and invalidates any
-cached singleton client whose LAN was changed, so the next query recreates the
-client with the new VIP address.
+cached singleton client whose LAN key appears in the payload, even when the
+VIP address text is unchanged. Retired clients stop being reused immediately
+and are only closed after a grace period, so in-flight requests can finish on
+the old object while the next query recreates the client through `VIP_DATA`.
+
+### Thread 2 Storage Refresh
+
+When a dynamic storage node reaches `SECONDARY`, Thread 2 promotes it into the
+correct `VIP_DATA` membership set, marks a short storage warm lease, and
+records one pending refresh keyed by storage MAC. That pending refresh is only
+resolved on a later telemetry pass that sees the backend in the concrete
+`vip_storage_pool_*` and `_mac_to_ip`; an earlier `PUT /vip_data` would only
+reconnect through the old pool membership and be wasted.
+
+Resolution sends a bounded `PUT /vip_data` fan-out to a deterministic
+round-robin subset of local edge servers. Each target retires its per-LAN
+MongoDB client, so the next database request repunts through `VIP_DATA` and
+gives the storage warm lease a chance to steer the reconnect.
 
 ### Connection Failure Handling
 
@@ -349,7 +402,7 @@ sequenceDiagram
 
     Note over C,DB: Phase 1 — VIP_SERVER routing (client → edge server)
 
-    C->>S: HTTP request to VIP_SERVER<br/>(10.0.0.100:5000)
+    C->>S: HTTP request to VIP_SERVER<br/>(10.0.0.253:5000)
     Note right of S: No matching flow rule →<br/>priority-100 punt triggers Packet-In
     S->>Ctrl: Packet-In (SYN to VIP_SERVER)
     Ctrl->>Ctrl: select_server(client_mac)<br/>WSM cost → pick best edge server
@@ -364,7 +417,7 @@ sequenceDiagram
 
     Note over C,DB: Phase 3 — VIP_DATA routing (edge server → storage)
 
-    ES->>S: MongoDB query to VIP_DATA<br/>(e.g. 10.0.0.200:27018)
+    ES->>S: MongoDB query to VIP_DATA<br/>(e.g. 10.0.0.254:27018)
     Note right of S: No matching flow rule →<br/>priority-100 punt triggers Packet-In
     S->>Ctrl: Packet-In (SYN to VIP_DATA)
     Ctrl->>Ctrl: select_storage(domain, server_mac)<br/>WSM cost → pick best storage node

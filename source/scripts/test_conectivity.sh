@@ -8,8 +8,12 @@ set -euo pipefail
 #     aggregator_n1           10.0.0.5   (gateway 10.0.0.1 via nat-router eth1)
 #   LAN2 (ovs-br1, 10.0.1.0/24):
 #     edge_server_n2          10.0.1.2   (gateway 10.0.1.1 via nat-router eth2)
-#     edge_storage_server_n2  10.0.1.3   (gateway 10.0.1.1 via nat-router eth2)
+#     edge_storage_server_n2  10.0.1.4   (gateway 10.0.1.1 via nat-router eth2)
 #     aggregator_n2           10.0.1.5   (gateway 10.0.1.1 via nat-router eth2)
+# VIPs:
+#   VIP_SERVER   = 10.0.0.253 (shared compute VIP on both LANs)
+#   VIP_DATA_N1  = 10.0.0.254 (LAN1 storage domain)
+#   VIP_DATA_N2  = 10.0.1.254 (LAN2 storage domain)
 
 PING_COUNT=${PING_COUNT:-3}
 PING_TIMEOUT=${PING_TIMEOUT:-2}
@@ -19,8 +23,8 @@ IFS=' ' read -r -a INTERNET_TARGETS <<< "${INTERNET_TARGETS:-${DEFAULT_TARGETS[*
 LAN1_CONTAINERS=(edge_server_n1 edge_storage_server_n1 aggregator_n1)
 LAN2_CONTAINERS=(edge_server_n2 edge_storage_server_n2 aggregator_n2)
 VIP_SERVER=10.0.0.253        # shared VIP — punt rule installed on both switches
-LAN1_VIP_DATA=10.0.0.254
-LAN2_VIP_DATA=10.0.1.254
+LAN1_VIP_DATA=10.0.0.254     # VIP_DATA_N1
+LAN2_VIP_DATA=10.0.1.254     # VIP_DATA_N2
 LAN1_VIP=${VIP_SERVER}       # alias for commented-out VIP ping tests
 LAN2_VIP=${VIP_SERVER}
 LAN1_EDGE_IP=10.0.0.2

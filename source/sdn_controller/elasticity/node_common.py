@@ -95,10 +95,11 @@ class NodeInfo:
     network_id:        str
     name:              str
     ip:                str
-    node_type:         str   # "compute" or "storage"
+    node_type:         str   # "compute" | "storage" | "selective_storage"
     rs_name:           str = ""
     primary_container: str = ""
     port:              int = 27018
+    owner_lan:         str = ""   # selective_storage only: e.g. "lan1"
 
 
 class _BaseNodeAdder:

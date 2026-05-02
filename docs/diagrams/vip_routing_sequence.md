@@ -8,7 +8,7 @@ sequenceDiagram
 
     Note over C,DB: Phase 1 — VIP_SERVER routing (client → edge server)
 
-    C->>S: HTTP request to VIP_SERVER<br/>(10.0.0.100:5000)
+    C->>S: HTTP request to VIP_SERVER<br/>(10.0.0.253:5000)
     Note right of S: No matching flow rule →<br/>priority-100 punt triggers Packet-In
     S->>Ctrl: Packet-In (SYN to VIP_SERVER)
     Ctrl->>Ctrl: select_server(client_mac)<br/>WSM cost → pick best edge server
@@ -23,7 +23,7 @@ sequenceDiagram
 
     Note over C,DB: Phase 3 — VIP_DATA routing (edge server → storage)
 
-    ES->>S: MongoDB query to VIP_DATA<br/>(e.g. 10.0.0.200:27018)
+    ES->>S: MongoDB query to VIP_DATA<br/>(e.g. 10.0.0.254:27018)
     Note right of S: No matching flow rule →<br/>priority-100 punt triggers Packet-In
     S->>Ctrl: Packet-In (SYN to VIP_DATA)
     Ctrl->>Ctrl: select_storage(domain, server_mac)<br/>WSM cost → pick best storage node
