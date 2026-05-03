@@ -126,7 +126,7 @@ try {
 # 0 - Cleanup old runs
 # ==============================
 echo "Cleaning up network and Docker resources..."
-./cleanup.sh -v
+bash ./cleanup.sh -v
 
 if [[ $? -ne 0 ]]; then
     echo "Cleanup failed. Aborting build_setup.sh."
@@ -198,7 +198,7 @@ sleep 1
 # 3 - Run build_network_1.sh to setup first network
 # ==============================
 echo "Building first network (network 1)..."
-./network/build_network_1.sh
+bash ./network/build_network_1.sh
 if [[ $? -ne 0 ]]; then
     echo "Failed to build first network. Aborting."
     exit 1
@@ -260,7 +260,7 @@ fi
 # 4 - Run build_network_2.sh to setup second network
 # ==============================
 echo "Building second network (network 2)..."
-./network/build_network_2.sh
+bash ./network/build_network_2.sh
 if [[ $? -ne 0 ]]; then
     echo "Failed to build second network. Aborting."
     exit 1
@@ -321,7 +321,7 @@ fi
 # 6 - Configure Router WAN and Routes
 # ==============================
 echo "Configuring router WAN interfaces and port-forwardings..."
-./network/build_router.sh
+bash ./network/build_router.sh
 if [[ $? -ne 0 ]]; then
     echo "Failed to configure router. Aborting."
     exit 1
@@ -421,7 +421,7 @@ wait_for_controller_connected "ovs-br1"
 sleep 5
 
 echo "Running connectivity tests to seed controller ARP tables..."
-"${SCRIPT_DIR}/test_conectivity.sh" all || echo "WARNING: some connectivity tests failed; ARP seeding may be incomplete."
+bash "${SCRIPT_DIR}/test_conectivity.sh" all || echo "WARNING: some connectivity tests failed; ARP seeding may be incomplete."
 
-./network/clients/remove_test_clients.sh --lan 1 --prefix lan1_client
-./network/clients/remove_test_clients.sh --lan 2 --prefix lan2_client
+bash ./network/clients/remove_test_clients.sh --lan 1 --prefix lan1_client
+bash ./network/clients/remove_test_clients.sh --lan 2 --prefix lan2_client

@@ -145,4 +145,4 @@ echo "==========================================================================
 # No-op when all knobs are 0.
 # ============================================================================
 SCRIPT_DIR_BR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_ROUTER="${PID_ROUTER}" "${SCRIPT_DIR_BR}/inject_wan_latency.sh"
+PID_ROUTER="${PID_ROUTER}" bash "${SCRIPT_DIR_BR}/inject_wan_latency.sh"
