@@ -8,7 +8,7 @@
 #   ./cleanup.sh -d|--docker   # Clean only Docker containers (and related)
 #   ./cleanup.sh -s|--stop-containers  # Stop running containers (no removal)
 #   ./cleanup.sh --images      # Also remove project images tagged :latest
-#   NAT_IFACE=enp0s9 NAT_SUBNET=192.168.100.0/24 ./cleanup.sh   # Override defaults
+#   NAT_IFACE=<iface> NAT_SUBNET=192.168.100.0/24 ./cleanup.sh   # Override defaults when NAT cleanup is needed
 #
 # Notes:
 # - This script is intended to run on Linux/WSL with required privileges.
@@ -56,8 +56,11 @@ if [[ ${1-} == "-h" || ${1-} == "--help" ]]; then
 fi
 
 # Defaults (can be overridden via env)
-NAT_IFACE=${NAT_IFACE:-enp0s9}
+# NAT_IFACE=${NAT_IFACE:-enp0s9}
+NAT_IFACE=${NAT_IFACE:}
 NAT_SUBNET=${NAT_SUBNET:-192.168.100.0/24}
+
+
 
 # Detect sudo usage for privileged cmds
 need_sudo() {
@@ -92,6 +95,10 @@ ip_safe_del_link() {
 iptables_safe_delete_nat() {
 	local subnet="$1"; shift
 	local iface="$1"
+	if [[ -z "$iface" ]]; then
+		log "NAT_IFACE not set; skipping NAT rule cleanup."
+		return 0
+	fi
 	# Attempt to delete MASQUERADE rule if present
 	if $SUDO iptables -t nat -C POSTROUTING -s "$subnet" -o "$iface" -j MASQUERADE >/dev/null 2>&1; then
 		$SUDO iptables -t nat -D POSTROUTING -s "$subnet" -o "$iface" -j MASQUERADE || warn "Failed to delete NAT rule"

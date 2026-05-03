@@ -144,18 +144,18 @@ if [[ "$FORWARD_POLICY" != "ACCEPT" ]]; then
     sudo iptables --policy FORWARD ACCEPT
 fi
 
-echo "Ensuring enp0s3 has IP 192.168.100.4/24..."
-if ! ip link show enp0s3 &>/dev/null; then
-    echo "Network interface enp0s3 not found. Aborting."
-    exit 1
-fi
+# echo "Ensuring enp0s3 has IP 192.168.100.4/24..."
+# if ! ip link show enp0s3 &>/dev/null; then
+#     echo "Network interface enp0s3 not found. Aborting."
+#     exit 1
+# fi
 
-if ip addr show dev enp0s3 | grep -q "192.168.100.4/24"; then
-    echo "enp0s3 already has 192.168.100.4/24 assigned."
-else
-    sudo ip addr add 192.168.100.4/24 dev enp0s3
-    echo "Assigned 192.168.100.4/24 to enp0s3."
-fi
+# if ip addr show dev enp0s3 | grep -q "192.168.100.4/24"; then
+#     echo "enp0s3 already has 192.168.100.4/24 assigned."
+# else
+#     sudo ip addr add 192.168.100.4/24 dev enp0s3
+#     echo "Assigned 192.168.100.4/24 to enp0s3."
+# fi
 
 
 # ==============================
