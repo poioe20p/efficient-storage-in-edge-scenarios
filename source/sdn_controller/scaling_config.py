@@ -86,6 +86,9 @@ _SCALE_DOWN_COMPUTE_WINDOW_SIZE = int(os.environ.get("SCALE_DOWN_COMPUTE_WINDOW_
 _SCALE_DOWN_COMPUTE_REQUIRED    = int(os.environ.get("SCALE_DOWN_COMPUTE_REQUIRED",     "7"))
 _SCALE_DOWN_STORAGE_WINDOW_SIZE = int(os.environ.get("SCALE_DOWN_STORAGE_WINDOW_SIZE", "12"))
 _SCALE_DOWN_STORAGE_REQUIRED    = int(os.environ.get("SCALE_DOWN_STORAGE_REQUIRED",     "7"))
+_SCALE_DOWN_CANDIDATE_MAX_STALENESS_S = float(
+	os.environ.get("SCALE_DOWN_CANDIDATE_MAX_STALENESS_S", "90")
+)
 
 # Cooldowns — suppress evaluation for a grace period after scale-up
 _SCALEDOWN_STORAGE_COOLDOWN_S = float(os.environ.get("SCALEDOWN_STORAGE_COOLDOWN_S", "120"))

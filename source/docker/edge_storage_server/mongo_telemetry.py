@@ -1,4 +1,6 @@
+import ipaddress
 import os
+import re
 import socket
 import subprocess
 import time
@@ -104,6 +106,10 @@ def _discover_mac() -> str:
     back to scanning all interfaces so that containers whose primary interface is
     named differently still report a real MAC.
     """
+    configured_mac = _validated_env_mac()
+    if configured_mac:
+        return configured_mac
+
     preferred = os.environ.get("IFACE", "eth0")
     candidates = [preferred]
     try:
@@ -123,7 +129,32 @@ def _discover_mac() -> str:
     return "unknown"
 
 
-SERVER_MAC           = _discover_mac()
+_MAC_RE = re.compile(r"^[0-9a-f]{2}(?::[0-9a-f]{2}){5}$")
+
+
+def _validated_env_mac() -> str:
+    configured_mac = os.environ.get("OWN_MAC", "").strip().lower()
+    if not configured_mac:
+        return ""
+    if _MAC_RE.fullmatch(configured_mac):
+        return configured_mac
+    logger.warning("Ignoring invalid OWN_MAC=%r", configured_mac)
+    return ""
+
+
+def _validated_env_ip() -> str:
+    configured_ip = os.environ.get("OWN_IP", "").strip()
+    if not configured_ip:
+        return ""
+    try:
+        ipaddress.IPv4Address(configured_ip)
+        return configured_ip
+    except ipaddress.AddressValueError:
+        logger.warning("Ignoring invalid OWN_IP=%r", configured_ip)
+        return ""
+
+
+SERVER_MAC           = "unknown"
 AGGREGATOR_PULL_ADDR = os.environ.get("AGGREGATOR_PULL_ADDR", "") or _aggregator_addr_from_lan()
 MONGO_URI            = os.environ.get("MONGO_URI", "mongodb://localhost:27018/")
 INTERVAL_S           = float(os.environ.get("TELEMETRY_INTERVAL_S", "0.5"))
@@ -316,6 +347,10 @@ def _wait_for_network(seed_host: str, seed_port: int, timeout: float = _NETWORK_
 
 def _discover_own_ip() -> str:
     """Discover this container's IP from eth0 (or first non-loopback interface)."""
+    configured_ip = _validated_env_ip()
+    if configured_ip:
+        return configured_ip
+
     preferred = os.environ.get("IFACE", "eth0")
     try:
         result = subprocess.run(
@@ -335,10 +370,11 @@ def _rs_self_join() -> None:
     """Join this node to the replica set by connecting to the seed host.
 
     Steps:
-      1. Connect to RS_SEED_HOST, query isMaster to find the current primary.
-      2. Discover own IP from eth0.
-      3. Clean stale member at own host:port if present.
-      4. rs.add({host: own_ip:port, priority: 0}) with retry/backoff.
+    1. Connect directly to RS_SEED_HOST.
+    2. Discover own IP from eth0 or validated OWN_IP.
+    3. Fetch the replica-set config, remove any stale member at own host:port,
+       and append this node as a non-voting secondary.
+    4. Apply the updated config via replSetReconfig with retry/backoff.
 
     Environment:
       RS_SEED_HOST  \u2014 host:port of a known RS member (seed)
@@ -372,38 +408,23 @@ def _rs_self_join() -> None:
     backoff = _RS_INITIAL_BACKOFF
     for attempt in range(1, _RS_MAX_ATTEMPTS + 1):
         try:
-            # Connect to seed to discover the current primary
-            client = MongoClient(f"mongodb://{seed_host}/",
-                                 serverSelectionTimeoutMS=5000,
-                                 directConnection=True)
-            try:
-                is_master = client.admin.command("isMaster")
-                primary_host = is_master.get("primary")
-                logger.info("Attempt %d/%d: isMaster → primary=%s, setName=%s",
-                            attempt, _RS_MAX_ATTEMPTS, primary_host,
-                            is_master.get("setName", "?"))
-            finally:
-                client.close()
-
-            if not primary_host:
-                logger.warning("Attempt %d/%d: no primary in isMaster response \u2014 retrying in %.0fs",
-                               attempt, _RS_MAX_ATTEMPTS, backoff)
-                time.sleep(backoff)
-                backoff *= _RS_BACKOFF_FACTOR
-                continue
-
-            # Connect to the actual primary
-            primary_client = MongoClient(f"mongodb://{primary_host}/",
-                                        serverSelectionTimeoutMS=5000,
-                                        directConnection=True)
+            client = MongoClient(
+                f"mongodb://{seed_host}/",
+                serverSelectionTimeoutMS=5000,
+                directConnection=True)
             try:
                 # Single config fetch: remove stale member (if any) AND add
                 # ourselves in one replSetReconfig to avoid version drift.
-                config = primary_client.admin.command("replSetGetConfig")["config"]
-                logger.info("Attempt %d/%d: RS config v%d, %d members: %s",
-                            attempt, _RS_MAX_ATTEMPTS, config["version"],
-                            len(config["members"]),
-                            [m["host"] for m in config["members"]])
+                config = client.admin.command("replSetGetConfig")["config"]
+                logger.info(
+                    "Attempt %d/%d: RS config via seed=%s v%d, %d members: %s",
+                    attempt,
+                    _RS_MAX_ATTEMPTS,
+                    seed_host,
+                    config["version"],
+                    len(config["members"]),
+                    [m["host"] for m in config["members"]],
+                )
 
                 # Clean stale member at our host:port if present
                 original_len = len(config["members"])
@@ -413,7 +434,7 @@ def _rs_self_join() -> None:
                 if len(config["members"]) < original_len:
                     logger.info("Removing stale RS member at %s from config", member_host)
 
-                # rs.add() \u2014 append ourselves
+                # Append ourselves to the fetched config before replSetReconfig.
                 max_id = max(m["_id"] for m in config["members"])
                 config["version"] += 1
                 config["members"].append({
@@ -422,16 +443,28 @@ def _rs_self_join() -> None:
                     "priority": 0,
                     "votes": 0,
                 })
-                primary_client.admin.command("replSetReconfig", config)
-                logger.info("RS self-join succeeded: added %s to RS (attempt %d, new config v%d, %d members)",
-                            member_host, attempt, config["version"], len(config["members"]))
+                client.admin.command("replSetReconfig", config)
+                logger.info(
+                    "RS self-join succeeded via RS_SEED_HOST=%s: added %s (attempt %d, new config v%d, %d members)",
+                    seed_host,
+                    member_host,
+                    attempt,
+                    config["version"],
+                    len(config["members"]),
+                )
                 return
             finally:
-                primary_client.close()
+                client.close()
 
         except PyMongoError as exc:
-            logger.warning("Attempt %d/%d: RS self-join failed: %s \u2014 retrying in %.0fs",
-                           attempt, _RS_MAX_ATTEMPTS, exc, backoff)
+            logger.warning(
+                "Attempt %d/%d: RS self-join failed via RS_SEED_HOST=%s: %s — retrying in %.0fs",
+                attempt,
+                _RS_MAX_ATTEMPTS,
+                seed_host,
+                exc,
+                backoff,
+            )
             time.sleep(backoff)
             backoff *= _RS_BACKOFF_FACTOR
 

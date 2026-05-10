@@ -2,6 +2,7 @@ import os
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 import zmq
 from flask import Flask, g, request
@@ -180,31 +181,40 @@ class ZmqMetricSender(MetricSender):
             pass
 
 
-def _heartbeat_loop(sender: MetricSender, last_sent: list[float]) -> None:
+def _heartbeat_loop(
+    sender: MetricSender,
+    last_sent: list[float],
+    get_drain_state: Callable[[], str],
+) -> None:
     while True:
         time.sleep(1.0)
         if time.monotonic() - last_sent[0] >= HEARTBEAT_INTERVAL_S:
             last_sent[0] = time.monotonic()
-            sender.send(_build_heartbeat_event(_get_server_mac()))
+            sender.send(_build_heartbeat_event(_get_server_mac(), get_drain_state))
 
 
-def _build_heartbeat_event(server_id: str) -> dict:
+def _build_heartbeat_event(server_id: str, get_drain_state: Callable[[], str]) -> dict:
     return {
         "event_type": "heartbeat",
         "server_id": server_id,
         "ts": time.time(),
         "cpu_percent": container_cpu_percent(),
         "ram_used_mb": container_ram_used_mb(),
+        "state": get_drain_state(),
     }
 
 
-def _bootstrap_heartbeat_loop(sender: MetricSender, last_sent: list[float]) -> None:
+def _bootstrap_heartbeat_loop(
+    sender: MetricSender,
+    last_sent: list[float],
+    get_drain_state: Callable[[], str],
+) -> None:
     global _sent_bootstrap_heartbeat
 
     while not _sent_bootstrap_heartbeat:
         server_id = _get_server_mac()
         if server_id != "unknown":
-            sender.send(_build_heartbeat_event(server_id))
+            sender.send(_build_heartbeat_event(server_id, get_drain_state))
             last_sent[0] = time.monotonic()
             _sent_bootstrap_heartbeat = True
             return
@@ -219,6 +229,7 @@ def _build_event(
     time_db_cmd_count: int,
     status_code: int,
     request_type: str,
+    get_drain_state: Callable[[], str],
 ) -> dict:
     return {
         "server_id": _get_server_mac(),
@@ -232,19 +243,29 @@ def _build_event(
         "request_type": request_type,
         "cpu_percent": container_cpu_percent(),
         "ram_used_mb": container_ram_used_mb(),
+        "state": get_drain_state(),
     }
 
 
-def init_telemetry(app: Flask, sender: MetricSender | None = None) -> None:
+def init_telemetry(
+    app: Flask,
+    sender: MetricSender | None = None,
+    get_drain_state: Callable[[], str] | None = None,
+) -> None:
     _sender = sender or ZmqMetricSender()
     _last_sent: list[float] = [time.monotonic()]
+    _get_state = get_drain_state or (lambda: "active")
 
     if HEARTBEAT_ENABLED:
-        threading.Thread(target=_heartbeat_loop, args=(_sender, _last_sent), daemon=True).start()
+        threading.Thread(
+            target=_heartbeat_loop,
+            args=(_sender, _last_sent, _get_state),
+            daemon=True,
+        ).start()
 
     threading.Thread(
         target=_bootstrap_heartbeat_loop,
-        args=(_sender, _last_sent),
+        args=(_sender, _last_sent, _get_state),
         daemon=True,
     ).start()
 
@@ -271,6 +292,7 @@ def init_telemetry(app: Flask, sender: MetricSender | None = None) -> None:
             time_db_cmd_count=getattr(g, "time_db_cmd_count", 0),
             status_code=response.status_code,
             request_type="write" if request.method in ("POST", "PUT", "PATCH", "DELETE") else "read",
+            get_drain_state=_get_state,
         )
         # Tier 1 selective-sync signal. Empty/{} when
         # the request never touched a wrapped collection — zero-cost for

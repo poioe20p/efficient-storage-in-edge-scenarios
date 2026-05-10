@@ -247,7 +247,7 @@ One aggregator container runs per network. It collects events via ZMQ PULL, drai
 - **Per-server storage stats** — latest snapshot per `server_id`: `avg_repl_lag_s`, `avg_connections`, `avg_cpu_percent`, `avg_ram_used_mb`, `member_state`.
 - **Domain summary** — across all HTTP events: `total_requests`, `avg_time_proc_ms`, `avg_time_db_ms`, `p95_time_db_ms`, `average_cpu_percent`, `peak_time_total_ms`.
 - **Control events** — forwarded from container sidecars (e.g. `drain_complete`, `rs_secondary_ready`), consumed by Thread 3 for lifecycle management.
-- **Heartbeat-only nodes** — static nodes that sent only heartbeats (no data events) still appear with `request_count=0`, so the controller knows they are alive. Dynamic nodes do not emit periodic heartbeats (keep the default `HEARTBEAT_ENABLED=false`); an idle dynamic node is reclaimed via the scale-down path (graceful) or, on crash, via the 180 s absence timeout.
+- **Heartbeat-only nodes** — static nodes that sent only heartbeats (no data events) still appear with `request_count=0`, so the controller knows they are alive. Dynamic nodes do not emit periodic heartbeats (keep the default `HEARTBEAT_ENABLED=false`); an idle dynamic node is reclaimed via the scale-down path (graceful) or, on crash, via the 180 s absence timeout. For compute scale-down ranking, the controller reuses the retained `_server_stats` snapshot and treats a quiet dynamic compute node as eligible only while its cached `last_report_ts` remains inside `SCALE_DOWN_CANDIDATE_MAX_STALENESS_S` (default 90 s).
 
 All per-node dicts are keyed by MAC address. Pydantic validates the incoming JSON at the transport boundary — invalid messages are caught and logged before reaching controller logic.
 
@@ -318,10 +318,11 @@ Thread 2 (storage / compute scaling policy) and the consumer-side `PromotionCoor
 | 3 | `SelectiveSyncReconfigureAlert` | Coordinator detects growth / shrink in the hot doc set | Manifest-first rebroadcast, then live `POST /forwarder_config` on the supervisor |
 | 4 | `ComputeAlert` | Adaptive compute degradation threshold with peer-aware bias (3-of-5 sliding window) | Spawn `edge_server` |
 | 5 | `CleanupComputeAlert` | `drain_complete` ZMQ event or telemetry timeout (compute) | Teardown drained compute node |
-| 5 | `CleanupSelectiveAlert` | `drain_complete` event (Tier 1 supervisor) or telemetry timeout | OVS teardown + `docker rm` of the drained Tier 1 container (Phase B) |
-| 6 | `ScaleDownDataAlert` | Storage underutilisation (7-of-12 sliding window) or telemetry timeout | Remove storage node from RS and teardown |
-| 6 | `ScaleDownSelectiveAlert` | Coordinator: cold set, staleness, or (dormant) Tier 2 supersede of a cross-LAN `DataAlert` | Phase A drain — revoke manifest, `POST /drain`, record `PendingDrain` |
-| 7 | `ScaleDownComputeAlert` | Compute underutilisation (7-of-12 sliding window) or telemetry timeout | Drain and teardown compute node |
+| 6 | `CleanupSelectiveAlert` | `drain_complete` event (Tier 1 supervisor) or telemetry timeout | OVS teardown + `docker rm` of the drained Tier 1 container (Phase B) |
+| 7 | `CancelComputeDrainAlert` | Compute scale-up fired while a compute drain is pending | Cancel the pending compute drain and re-add the MAC to the VIP pool |
+| 8 | `ScaleDownDataAlert` | Storage underutilisation (7-of-12 sliding window) or telemetry timeout | Remove storage node from RS and teardown |
+| 9 | `ScaleDownSelectiveAlert` | Coordinator: cold set, staleness, or (dormant) Tier 2 supersede of a cross-LAN `DataAlert` | Phase A drain — revoke manifest, `POST /drain`, record `PendingDrain` |
+| 10 | `ScaleDownComputeAlert` | Compute underutilisation (7-of-12 sliding window) or telemetry timeout | Drain and teardown compute node |
 
 Tie-breaking within the same priority uses a monotonic sequence counter (FIFO). Full alert-lifecycle write-up: [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md#elasticity-alerts).
 
@@ -357,7 +358,7 @@ Six mechanisms prevent scale-up / scale-down oscillation:
 
 | Mechanism | Description |
 | :--- | :--- |
-| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally, but scale-up is target-specific: pending compute drains block only compute scale-up, and pending Tier 1 selective drains block neither compute nor storage scale-up |
+| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally. Pending compute drains do not block compute scale-up; they are subtracted from the effective dynamic compute count and canceled after `ComputeAlert` is submitted. Pending Tier 1 selective drains block neither compute nor storage scale-up |
 | Sliding window | Requires sustained signal (not single-window spikes) |
 | Cross-direction reset | Scale-up clears the scale-down window (and vice versa) |
 | Compute scale-up cooldown | Suppress compute scale-up evaluation for 45 s after each compute scale-up |

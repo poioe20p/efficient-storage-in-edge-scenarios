@@ -14,10 +14,20 @@ The summary should explain how the run went in terms of elasticity, scale-up and
 scale-down, Tier 1 selective-sync behavior, traffic handling, and any relevant
 defects or caveats.
 
+By default, use this skill once for each newly completed experiment run folder
+under `source/scripts/testing/metrics/`, unless the user explicitly says to
+defer the summary or keep the folder untouched.
+
 After the summary is written and checked, clean the target run folder by deleting
 only transient per-phase client request CSV files and controller log files:
 `client_requests_*.csv` and `controller_lan[0-9].log`. Leave every other file in
 the run folder intact.
+
+When the run folder lives on `cloud-vm`, this skill is also the default remote
+size-reduction step. Unless the user says controller logs still need to be kept
+or the remote folder must remain in place, copy the reduced run folder back to
+the local machine after cleanup, verify the copy succeeded, and then delete the
+remote run folder to reclaim cloud disk space.
 
 ## Input Resolution
 
@@ -208,6 +218,23 @@ and the summary is based on the data that will be removed.
 5. Verify that no `client_requests_*.csv` or `controller_lan[0-9].log` files
    remain in that run folder.
 
+## Cloud Copy-Back Procedure
+
+Use this procedure when the analyzed run folder is on `cloud-vm`.
+
+1. Confirm whether controller logs still need to be retained.
+2. If controller logs are still needed, stop after the summary or copy the full
+  folder first and do not delete the remote run folder.
+3. If controller logs are no longer needed, run the cleanup procedure above.
+4. Copy the remaining run folder back to the local machine with `scp`, `rsync`,
+  or a similar transfer tool.
+5. Verify the local copy exists and contains the expected summary and retained
+  artifacts.
+6. Unless the user asked to retain the remote copy, delete the remote run
+  folder only after the local copy is verified.
+7. If transfer verification fails, keep the remote run folder and report the
+  failure instead of deleting it.
+
 ## Completion Checks
 
 - `run_summary.md` exists in the target run folder.
@@ -219,4 +246,7 @@ and the summary is based on the data that will be removed.
   CLIs were runnable.
 - The transient client request CSV and controller log files have been removed
   from the run folder after the summary was produced.
+- If the cloud copy-back workflow was used, the verified local copy exists and
+  the remote run folder was deleted only when the user did not request remote
+  retention.
 - No unrelated files were deleted.

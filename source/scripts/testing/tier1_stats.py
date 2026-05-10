@@ -36,6 +36,7 @@ TIER1_COORD_COLUMNS = [
     "coord_breach_fill_pct",
     "coord_cooldown_remaining_s",
     "coord_hot_doc_total",
+    "tier1_lifecycle_active_count",
 ]
 
 TIER1_ALL_COLUMNS = TIER1_TELEMETRY_COLUMNS + TIER1_COORD_COLUMNS
@@ -135,12 +136,12 @@ def top_hot_doc_hits(servers: dict) -> int:
 def tier1_storage_aggregate(storage_servers: dict) -> tuple[int, float, float, int]:
     """Aggregate Tier 1 container health across storage_servers.
 
-    Returns ``(active_count, avg_lag_s, max_resume_token_age_s, hot_doc_total)``.
-    A storage server counts as "Tier 1 active" iff its
+    Returns ``(reporting_count, avg_lag_s, max_resume_token_age_s, hot_doc_total)``.
+    A storage server counts toward the reporting-side Tier 1 supply metric iff its
     ``selective_sync_per_collection`` is a non-empty dict. Compute / full-replica
     storage carries ``null`` here and is ignored.
     """
-    active = 0
+    reporting = 0
     lags: list[float] = []
     max_token_age = 0.0
     hot_total = 0
@@ -149,7 +150,7 @@ def tier1_storage_aggregate(storage_servers: dict) -> tuple[int, float, float, i
         per_coll = s.get("selective_sync_per_collection")
         if not per_coll:
             continue
-        active += 1
+        reporting += 1
         for coll_stats in per_coll.values():
             try:
                 lags.append(float(coll_stats.get("lag_s", 0.0) or 0.0))
@@ -168,7 +169,7 @@ def tier1_storage_aggregate(storage_servers: dict) -> tuple[int, float, float, i
                 pass
 
     avg_lag = (sum(lags) / len(lags)) if lags else 0.0
-    return active, avg_lag, max_token_age, hot_total
+    return reporting, avg_lag, max_token_age, hot_total
 
 
 # ---------------------------------------------------------------------------
@@ -227,11 +228,12 @@ def build_tier1_row(summary: dict, coord_state_by_lan: dict) -> dict:
     p95_owner = max_p95_for_lan(servers, my_lan) if my_lan else 0.0
     p95_peer  = max_p95_for_lan(servers, other)  if other  else 0.0
 
-    active, avg_lag, max_token_age, hot_total = tier1_storage_aggregate(storage)
+    reporting_active, avg_lag, max_token_age, hot_total = tier1_storage_aggregate(storage)
 
     coord_state, fill_pct, cooldown_s, coord_hot = coord_row_fields(
         coord_state_by_lan, my_lan,
     )
+    lifecycle_active = 1 if coord_state == "ACTIVE" else 0
 
     return {
         # telemetry-derived
@@ -242,7 +244,7 @@ def build_tier1_row(summary: dict, coord_state_by_lan: dict) -> dict:
         "t_db_p95_ms_owner_lan":        round(p95_owner, 2),
         "t_db_p95_ms_peer_lan":         round(p95_peer, 2),
         "top_hot_doc_hits":             top_hot_doc_hits(servers),
-        "tier1_active_count":           active,
+        "tier1_active_count":           reporting_active,
         "avg_tier1_lag_s":              round(avg_lag, 4),
         "max_tier1_resume_token_age_s": round(max_token_age, 4),
         "tier1_hot_doc_total":          hot_total,
@@ -251,4 +253,5 @@ def build_tier1_row(summary: dict, coord_state_by_lan: dict) -> dict:
         "coord_breach_fill_pct":        round(fill_pct, 2),
         "coord_cooldown_remaining_s":   round(cooldown_s, 2),
         "coord_hot_doc_total":          coord_hot,
+        "tier1_lifecycle_active_count": lifecycle_active,
     }

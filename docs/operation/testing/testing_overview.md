@@ -9,6 +9,10 @@ tooling needed to seed data, generate phased HTTP traffic, add realistic CPU
 work to edge server endpoints, and trace individual requests through the full
 VIP routing pipeline.
 
+The standard experiment bringup is a self-contained single-host lab: it does
+not require outbound Internet access, inbound Internet access, or a specific
+physical host NIC assignment before `make setup_network` runs.
+
 ## Experiment Operator Workflow
 
 For long VM-backed experiment campaigns, use the custom agent
@@ -18,17 +22,27 @@ together with the durable campaign brief
 
 1. State the campaign objective, the intended run delta, the live checkpoint
   plan, and any allowed between-run edit scope.
-2. The agent enters the VM with `ssh vm-tese`, changes to
-  `/media/sf_shared/scripts`, launches the experiment, and handles the single
-  `sudo` password prompt.
+2. The default execution host is the cloud VM. The agent enters it with
+  `ssh cloud-vm`, changes to `~/efficient-storage-in-edge-scenarios`, syncs
+  any required local changes with `scp`, `rsync`, or a similar tool when
+  needed, launches the experiment with `sudo -n`, and treats any interactive
+  sudo prompt as a configuration failure instead of waiting for user input.
 3. During the run, the agent performs only the predeclared read-only checks
   against the active run folder unless the live plan explicitly allows
   snapshot-based analysis outside that folder.
 4. If the campaign brief defines stop or restart criteria, the agent may halt
   or relaunch the run when the observed evidence matches those criteria.
-5. After the run, the agent follows the repository summary workflow from
+5. After the run, if controller logs are no longer needed, the agent follows
+  the repository summary workflow from
   [`metrics-run-summary`](../../../.github/skills/metrics-run-summary/SKILL.md)
-  and updates the campaign brief before any next run.
+  on the cloud VM first so the folder is reduced before transfer.
+6. Unless instructed otherwise, after every completed cloud run the agent then
+  copies the remaining run folder back to the local host with `scp` or a
+  similar transfer tool and deletes the remote run folder after the local copy
+  is verified.
+7. If controller logs still need to be preserved, the agent copies the full run
+  folder first or postpones remote cleanup, then updates the campaign brief
+  before any next run.
 
 ---
 
@@ -54,7 +68,9 @@ together with the durable campaign brief
     └─ writes CSV metrics                → sustained_plateau → demand_drop
          │
          ▼
-  metrics/client_requests.csv    ←── one row per request (latency, status, phase)
+  metrics/client_requests.csv    ←── aggregate rows across the full run
+  metrics/client_requests_<phase>.csv
+                                ←── phase-scoped request rows for analysis
 ```
 
 Separately, `trace_request.sh` can be used at any time to fire a single request
@@ -95,8 +111,9 @@ Implementation plan for the client-side experiment driver.
 | `traffic_generator.py` | Async Python script: phases × clients → `curl` inside network namespaces through `VIP_SERVER` |
 | `phases.json` | Declarative 9-phase config (duration, rate, cross-region ratio, request mix) |
 
-Output: `metrics/client_requests.csv` with per-request timestamp, phase,
-endpoint, target region, HTTP status, and latency.
+Output: aggregate `metrics/client_requests.csv` with per-request timestamp,
+phase, endpoint, target region, HTTP status, and latency, plus matching
+`metrics/client_requests_<phase>.csv` files for phase-scoped analysis.
 
 Current default schedule: `baseline` 60 s, `local_moderate` 90 s,
 `storage_stress` 240 s, `cross_region_hotspot` 300 s,
@@ -142,13 +159,16 @@ traffic generator.
 | CLI | Purpose |
 |---|---|
 | `cli_overview` | One-page dashboard: request rate, CPU, T_proc, T_db (read/write stacked), node counts with phase shading and elasticity-event overlays |
+| `cli_simple_run` | Simpler per-run plots: average latency, p95 latency, failure rate, total active nodes, and active nodes by type |
+| `cli_simple_compare` | Simpler multi-run comparison plots: overall latency, failure rate, node-count summaries, and per-phase latency/failure comparisons |
 | `cli_cpu_drivers` | Per-node CPU vs request-count; old-vs-new node CPU table to detect load-balance failures |
 | `cli_scale_down` | Reconstructs the scale-down predicate from CSV and cross-checks against controller log lines |
 | `cli_tdb_drivers` | OLS regression `T_db_write ~ a + b·storage_count + c·cross_region_ratio` to falsify the "more storage = slower writes" hypothesis |
 
 Consumes `resource_stats.csv` (domain), `per_node_stats.csv` (per-container),
-`client_requests_<phase>.csv`, `phases_snapshot.json`, and the controller
-log files. Missing fields on older runs degrade gracefully with warnings.
+`client_requests.csv`, `client_requests_<phase>.csv`, `container_events.csv`,
+`phases_snapshot.json`, and the controller log files. Missing fields on older
+runs degrade gracefully with warnings.
 
 ### 6. Ablation Batch Results — [`elasticity_ablation_batch1_results.md`](elasticity_ablation_batch1_results.md)
 
@@ -167,7 +187,7 @@ defect-prone in the rerun artifacts.
 
 #### `resource_stats.csv` — Tier 1 columns
 
-The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/collect_resource_stats.py)) appends 15 Tier 1 observability columns derived by [`tier1_stats.py`](../../../source/scripts/testing/tier1_stats.py). The first eleven come from each aggregator's `TelemetrySummary`; the last four from the controller's coordinator-state PUB ([`state_publisher.py`](../../../source/sdn_controller/selective_sync/state_publisher.py)).
+The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/collect_resource_stats.py)) appends 16 Tier 1 observability columns derived by [`tier1_stats.py`](../../../source/scripts/testing/tier1_stats.py). The first eleven come from each aggregator's `TelemetrySummary`; the last five from the controller's coordinator-state PUB ([`state_publisher.py`](../../../source/sdn_controller/selective_sync/state_publisher.py)).
 
 | Column | Source | Maps to |
 |---|---|---|
@@ -186,6 +206,9 @@ The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/col
 | `coord_breach_fill_pct` | `breach_ring_filled / capacity * 100` | M-of-N progress toward firing |
 | `coord_cooldown_remaining_s` | `Tier1OwnerState.cooldown_remaining_s` | Why a re-promotion is suppressed |
 | `coord_hot_doc_total` | `Tier1OwnerState.hot_doc_total` | Hot set size held by coordinator |
+| `tier1_lifecycle_active_count` | derived from `coord_state_owner_lan == ACTIVE` | Tier 1 lifecycle truth for ACTIVE windows |
+
+`tier1_active_count` is intentionally a supply-side reporting metric, not a lifecycle truth signal: quiet Tier 1 windows can keep it at `0` even when the coordinator state is `ACTIVE`. Use `tier1_lifecycle_active_count` or `coord_state_owner_lan` when the question is whether Tier 1 actually reached service.
 
 Empty/baseline rows (no telemetry, `SS_ENABLED=0`) yield zeros and `coord_state_owner_lan="NONE"`.
 
@@ -218,6 +241,8 @@ Lifetime reconstruction: a container's lifetime begins at its first `initial` or
 > latency injection the raw veth path measures ~5–15 ms and the gate never
 > fires. The bringup applies the `metro` profile (`WAN_RTT_MS=10`) by default;
 > override per run via [`source/scripts/wan.env`](../../../source/scripts/wan.env)
+> This is internal latency emulation on the host lab topology, not an external
+> Internet uplink requirement.
 > or at runtime with [`wan_set.sh`](../../../source/scripts/tools/wan_set.sh).
 > See [Topology — WAN Emulation](../topology/topology_overview.md#wan-emulation-inter-lan-latency)
 > for the four available profiles.

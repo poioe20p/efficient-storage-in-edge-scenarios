@@ -11,8 +11,13 @@ way to interpret a run is to eyeball the CSVs; this plan provides:
    timestamps, and parses controller logs into typed `ElasticityEvent`s.
 2. A **per-node CSV** (`per_node_stats.csv`) so analysis can see whether new
    dynamic nodes actually absorb load.
-3. Four **CLIs** consuming the loader — overview dashboard, CPU-driver
-   diagnostic, scale-down predicate audit, and T_db decomposition regression.
+3. Four **diagnostic CLIs** consuming the loader — overview dashboard,
+    CPU-driver diagnostic, scale-down predicate audit, and T_db decomposition
+    regression.
+4. A simple **run-summary CLI** (`cli_simple_run`) for average latency,
+    p95 latency, failure rate, and active-node plots.
+5. A simple **comparison CLI** (`cli_simple_compare`) for cross-run overall and
+    per-phase latency, failure rate, and node-count summaries.
 
 Scope boundary: the toolchain is **read-only**. It does not change telemetry,
 thresholds, scaling logic, or the traffic generator. Columns that depend on
@@ -28,7 +33,7 @@ Reference: [`./testing_overview.md`](testing_overview.md).
 | Stage | Current | After this plan |
 |---|---|---|
 | Collector `collect_resource_stats.py` | writes `resource_stats.csv` (domain rows) | additionally writes `per_node_stats.csv` (one row per container per window) |
-| Post-processing | ad-hoc — manual CSV inspection | `python -m source.scripts.testing.analysis.cli_<name> --run-dir <dir>` produces PNGs and a `summary.md` under `<dir>/analysis/` |
+| Post-processing | ad-hoc — manual CSV inspection | `python -m source.scripts.testing.analysis.cli_<name> --run-dir <dir>` produces PNGs and a `summary.md` under `<dir>/analysis/`; `cli_simple_compare` writes a separate comparison output directory |
 | Run directory layout | CSVs + controller logs | adds `per_node_stats.csv` and an `analysis/` subdirectory populated on demand |
 
 No change to experiment execution, workload definition, or the traffic
@@ -46,7 +51,10 @@ generator.
 | New | `source/scripts/testing/analysis/events.py` | controller-log regex parsers → `list[ElasticityEvent]` |
 | New | `source/scripts/testing/analysis/phase_window.py` | map window timestamps to phase boundaries via `phases_snapshot.json` |
 | New | `source/scripts/testing/analysis/plots.py` | shared matplotlib helpers (phase shading, event overlays) |
+| New | `source/scripts/testing/analysis/simple_metrics.py` | request bucketing, failure-rate summaries, and active-node reconstruction from `container_events.csv` |
 | New | `source/scripts/testing/analysis/cli_overview.py` | one-page dashboard per run |
+| New | `source/scripts/testing/analysis/cli_simple_run.py` | simple per-run latency, failure-rate, and active-node plots |
+| New | `source/scripts/testing/analysis/cli_simple_compare.py` | simple multi-run comparison plots |
 | New | `source/scripts/testing/analysis/cli_cpu_drivers.py` | per-node CPU vs request_count, old-vs-new load-balance table |
 | New | `source/scripts/testing/analysis/cli_scale_down.py` | reconstruct scale-down predicate from CSV; compare to logs |
 | New | `source/scripts/testing/analysis/cli_tdb_drivers.py` | T_db decomposition regression |
@@ -180,12 +188,24 @@ def load_run(run_dir: Path) -> Run:
         p.name: _read_csv(run_dir / f"client_requests_{p.name}.csv", optional=True)
         for p in phases
     }
+    all_client_rows = _read_csv(run_dir / "client_requests.csv", optional=True)
+    container_event_rows = _read_csv(run_dir / "container_events.csv", optional=True)
     # Controller log filenames match the convention in run_experiment.sh.
     # If that naming changes, update this list.
     events = _parse_logs([run_dir / "controller_lan1.log",
                           run_dir / "controller_lan2.log"])
     t0 = min(float(r["window_end"]) for r in domain_rows) if domain_rows else 0.0
-    return Run(run_dir, phases, domain_rows, node_rows, clients, events, t0)
+    return Run(
+        run_dir,
+        phases,
+        domain_rows,
+        node_rows,
+        clients,
+        all_client_rows,
+        container_event_rows,
+        events,
+        t0,
+    )
 ```
 
 **Loader dependencies on upstream artifacts:**
@@ -236,6 +256,34 @@ One figure per run with N rows per LAN stacked:
 
 All axes share a time x-axis with phase background shading and vertical lines
 at spawn/remove events from the event stream.
+
+### 4b. `cli_simple_run`
+
+Simple service-facing run summary. Uses `client_requests.csv` for latency and
+failure-rate plots and `container_events.csv` for active-node plots. Produces a
+single figure with:
+
+- average latency over time
+- p95 latency over time
+- failure rate over time
+- total active nodes over time
+- active nodes by type (`compute`, `storage`, `selective`)
+
+This is intended to be the first interpretation surface for a run before the
+more diagnostic dashboards are consulted.
+
+### 4c. `cli_simple_compare`
+
+Simple multi-run comparison output. Produces:
+
+- `simple_compare_overall.png` for overall average latency, failure rate, mean
+    total nodes, and max total nodes by run
+- `simple_compare_phase.png` for per-phase average latency and failure rate by
+    run
+
+Unlike the single-run CLIs, this command writes to a caller-provided output
+directory or a default comparison directory because it spans multiple run
+folders.
 
 ### 5. `cli_cpu_drivers`
 

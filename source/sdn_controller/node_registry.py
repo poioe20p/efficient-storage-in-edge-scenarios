@@ -87,12 +87,25 @@ class DynamicNodeRegistry:
                 return info
         return None
 
+    def list_dynamic(self, node_type: str) -> list[NodeInfo]:
+        """Return tracked dynamic nodes of the given type in insertion order."""
+        return [
+            info
+            for mac, info in self._active.items()
+            if info.node_type == node_type and mac in self._dynamic_node_macs
+        ]
+
     def count_dynamic(self, node_type: str) -> int:
         """Count dynamic nodes of the given type."""
         return sum(
             1 for info in self._active.values()
             if info.node_type == node_type
         )
+
+    def node_age_s(self, mac: str, now: float | None = None) -> float:
+        """Return monotonic age of a tracked node in seconds."""
+        current = time.monotonic() if now is None else now
+        return current - self._birth_ts.get(mac, current)
 
     def get_node_info(self, mac: str) -> NodeInfo | None:
         return self._active.get(mac)

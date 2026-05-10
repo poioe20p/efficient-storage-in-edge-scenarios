@@ -28,6 +28,8 @@ class Run:
     domain_rows: list[dict]
     node_rows: list[dict]              # empty if per_node_stats.csv missing
     clients: dict[str, list[dict]]    # phase name -> rows
+    all_client_rows: list[dict]        # aggregate client_requests.csv rows
+    container_event_rows: list[dict]   # container_events.csv rows
     events: list[ElasticityEvent]
     t0: float                          # earliest window_end, for time normalisation
 
@@ -108,6 +110,9 @@ def load_run(run_dir: Path) -> Run:
         rows = _read_csv(run_dir / f"client_requests_{p.name}.csv", optional=True)
         clients[p.name] = rows
 
+    all_client_rows = _read_csv(run_dir / "client_requests.csv", optional=True)
+    container_event_rows = _read_csv(run_dir / "container_events.csv", optional=True)
+
     # Controller logs: controller_lan1.log, controller_lan2.log
     log_paths = [
         run_dir / "controller_lan1.log",
@@ -123,6 +128,8 @@ def load_run(run_dir: Path) -> Run:
         domain_rows=domain_rows,
         node_rows=node_rows,
         clients=clients,
+        all_client_rows=all_client_rows,
+        container_event_rows=container_event_rows,
         events=events,
         t0=t0,
     )

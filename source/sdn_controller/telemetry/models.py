@@ -7,6 +7,8 @@ in every telemetry event it pushes; the aggregator preserves the key as-is.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -48,6 +50,7 @@ class ServerSummary(BaseModel):
     t_db_p95_ms_per_lan: dict[str, float] = {}
     # {owner_lan: {collection: {op_type: count}}} over the window.
     op_counters: dict[str, dict[str, dict[str, int]]] = {} # 
+    state: Literal["active", "draining"] = "active"
 
 
 class StorageServerSummary(BaseModel):

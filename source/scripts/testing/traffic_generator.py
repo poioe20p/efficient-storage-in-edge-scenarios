@@ -214,8 +214,7 @@ async def client_loop(
     phase: PhaseConfig,
     snap: Snapshot,
     vip: str,
-    csv_writer,
-    csv_file,
+    csv_targets,
     csv_lock: asyncio.Lock,
     dry_run: bool,
 ):
@@ -249,8 +248,10 @@ async def client_loop(
             round(latency_s, 4),
         ]
         async with csv_lock:
-            csv_writer.writerow(row)
-            csv_file.flush()
+            for csv_writer, csv_file in csv_targets:
+                csv_writer.writerow(row)
+            for _, csv_file in csv_targets:
+                csv_file.flush()
 
         now = time.monotonic()
         remaining = max(0, phase_end - now)
@@ -311,41 +312,55 @@ async def run(args):
               f"cross_region={p.cross_region_ratio}")
 
     # Phase file: signals the current phase to sibling processes (e.g. resource stats collector)
-    phase_file = os.path.join(output_dir, "current_phase.txt") if output_dir else "current_phase.txt"
+    phase_state_file = os.path.join(output_dir, "current_phase.txt") if output_dir else "current_phase.txt"
+    header = [
+        "timestamp", "phase", "client_ns", "client_lan", "endpoint",
+        "device_id", "node_id", "target_region", "http_status", "latency_s",
+    ]
 
-    written_files = []
-    for i, phase in enumerate(phases):
-        phase_output = f"{base}_{phase.name}{ext}"
-        written_files.append(phase_output)
+    aggregate_file = open(args.output, "w", newline="")
+    aggregate_writer = csv.writer(aggregate_file)
+    aggregate_writer.writerow(header)
 
-        # Write current phase name so other processes can read it
-        with open(phase_file, "w") as pf:
-            pf.write(phase.name)
+    written_files = [args.output]
+    try:
+        for i, phase in enumerate(phases):
+            phase_output = f"{base}_{phase.name}{ext}"
+            written_files.append(phase_output)
 
-        print(f"\n{'='*60}")
-        print(f"Phase {i + 1}/{len(phases)}: {phase.name} ({phase.duration_s}s)")
-        print(f"  Output: {phase_output}")
-        print(f"{'='*60}")
+            # Write current phase name so other processes can read it
+            with open(phase_state_file, "w") as pf:
+                pf.write(phase.name)
 
-        csv_file = open(phase_output, "w", newline="")
-        writer = csv.writer(csv_file)
-        writer.writerow([
-            "timestamp", "phase", "client_ns", "client_lan", "endpoint",
-            "device_id", "node_id", "target_region", "http_status", "latency_s",
-        ])
+            print(f"\n{'='*60}")
+            print(f"Phase {i + 1}/{len(phases)}: {phase.name} ({phase.duration_s}s)")
+            print(f"  Output: {phase_output}")
+            print(f"{'='*60}")
 
-        tasks = [
-            asyncio.create_task(
-                client_loop(ns, lan, phase, snap, args.vip, writer, csv_file,
-                            csv_lock, args.dry_run)
-            )
-            for ns, lan in all_clients
-        ]
-        await asyncio.gather(*tasks)
-        csv_file.close()
+            phase_output_file = open(phase_output, "w", newline="")
+            phase_writer = csv.writer(phase_output_file)
+            phase_writer.writerow(header)
+
+            try:
+                csv_targets = [
+                    (aggregate_writer, aggregate_file),
+                    (phase_writer, phase_output_file),
+                ]
+                tasks = [
+                    asyncio.create_task(
+                        client_loop(ns, lan, phase, snap, args.vip, csv_targets,
+                                    csv_lock, args.dry_run)
+                    )
+                    for ns, lan in all_clients
+                ]
+                await asyncio.gather(*tasks)
+            finally:
+                phase_output_file.close()
+    finally:
+        aggregate_file.close()
 
     # Signal that all phases are complete
-    with open(phase_file, "w") as pf:
+    with open(phase_state_file, "w") as pf:
         pf.write("idle")
 
     print(f"\nDone. Results written to:")

@@ -231,25 +231,28 @@ bash source/scripts/build_network_setup.sh
 Use the same runner and workload for every configuration:
 
 ```bash
-bash source/scripts/testing/run_experiment.sh --run-label c0
+bash source/scripts/testing/run_experiment.sh --batch-dir batch4 --run-label c0
 ```
 
-This produces a labeled run folder under `source/scripts/testing/metrics/`,
-using the pattern `<timestamp>_<config-id>` such as `20260501_153012_c0`.
+This produces a labeled run folder under `source/scripts/testing/metrics/<batch-dir>/`
+when `--batch-dir` is provided, or directly under `source/scripts/testing/metrics/`
+when it is omitted. The run folder name still uses the pattern
+`<timestamp>_<config-id>` such as `20260501_153012_c0`.
 The run folder should also contain a snapshot of the exact
 `osken-controller.env` contents used for that execution.
 
 ### 5. Generate analysis outputs for each run
 
-Run the same post-processing sequence for every run:
+Run the same post-processing sequence for every run. Use `<run_path>` as either
+`<run_id>` or `<batch-dir>/<run_id>` depending on how the launcher was invoked:
 
 ```bash
-python source/scripts/tools/metrics_stats.py "source/scripts/testing/metrics/<run_id>" --by-phase --by-lan --by-endpoint
-python source/scripts/tools/metrics_stats.py -r "source/scripts/testing/metrics/<run_id>/resource_stats.csv" --by-phase --by-network
-python -m source.scripts.testing.analysis.cli_overview --run-dir "source/scripts/testing/metrics/<run_id>"
-python -m source.scripts.testing.analysis.cli_scale_down --run-dir "source/scripts/testing/metrics/<run_id>"
-python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir "source/scripts/testing/metrics/<run_id>"
-python -m source.scripts.testing.analysis.cli_cpu_drivers --run-dir "source/scripts/testing/metrics/<run_id>"
+python source/scripts/tools/metrics_stats.py "source/scripts/testing/metrics/<run_path>" --by-phase --by-lan --by-endpoint
+python source/scripts/tools/metrics_stats.py -r "source/scripts/testing/metrics/<run_path>/resource_stats.csv" --by-phase --by-network
+python -m source.scripts.testing.analysis.cli_overview --run-dir "source/scripts/testing/metrics/<run_path>"
+python -m source.scripts.testing.analysis.cli_scale_down --run-dir "source/scripts/testing/metrics/<run_path>"
+python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir "source/scripts/testing/metrics/<run_path>"
+python -m source.scripts.testing.analysis.cli_cpu_drivers --run-dir "source/scripts/testing/metrics/<run_path>"
 ```
 
 ### 6. Record results in a comparison table
@@ -390,7 +393,7 @@ Action:
 
 ### New artifacts expected when this plan is executed
 
-- multiple run folders under `source/scripts/testing/metrics/`
+- multiple run folders under `source/scripts/testing/metrics/`, optionally grouped in batch subdirectories
 - a comparison summary document under `docs/operation/testing/`
 
 ---

@@ -1,5 +1,7 @@
 import logging
 import os
+import time
+from dataclasses import dataclass
 
 from os_ken.base import app_manager
 from os_ken.controller import ofp_event
@@ -12,16 +14,20 @@ from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
 from os_ken import cfg
 
-from .elasticity.elasticity import ElasticityManager
-from .elasticity.elasticity import DataAlert
+from .elasticity.elasticity import ComputeAlert, DataAlert, ElasticityManager
+from .elasticity.node_common import NodeInfo
 from .selective_sync.promotion import PromotionCoordinator
 from .selective_sync.state_publisher import CoordinatorStatePublisher
-from .telemetry.models import TelemetrySummary
+from .telemetry.models import ServerSummary, TelemetrySummary
 from .telemetry.zmq_source import ZmqTelemetrySource
 from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
 from .scaling_policy import ScalingPolicy
-from .scaling_config import _VIP_DATA_WARM_REFRESH_TARGETS
+from .scaling_config import (
+    _NODE_BIRTH_GRACE_S,
+    _SCALE_DOWN_CANDIDATE_MAX_STALENESS_S,
+    _VIP_DATA_WARM_REFRESH_TARGETS,
+)
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
 
@@ -35,6 +41,14 @@ import requests
 _REQUIRED_APP = ['os_ken.topology.switches']
 
 logger = logging.getLogger('os_ken.main_n2')
+
+
+@dataclass(frozen=True)
+class _ComputeScaleDownCandidate:
+    node: NodeInfo
+    summary: ServerSummary
+    staleness_s: float
+    age_s: float
 
 
 class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
@@ -181,6 +195,93 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 owner_lan,
             )
 
+    def _pick_compute_scale_down_candidate(self) -> NodeInfo | None:
+        now_wall = time.time()
+        now_mono = time.monotonic()
+        eligible: list[_ComputeScaleDownCandidate] = []
+
+        for node in self._node_registry.list_dynamic("compute"):
+            if self._elasticity.has_pending_drain(node.mac):
+                logger.debug(
+                    "[scale-down] compute candidate skip name=%s mac=%s reason=pending_drain",
+                    node.name,
+                    node.mac,
+                )
+                continue
+
+            server = self._server_stats.get(node.mac)
+            if server is None:
+                logger.debug(
+                    "[scale-down] compute candidate skip name=%s mac=%s reason=no_cached_server_summary",
+                    node.name,
+                    node.mac,
+                )
+                continue
+
+            staleness_s = max(0.0, now_wall - server.last_report_ts)
+            if staleness_s > _SCALE_DOWN_CANDIDATE_MAX_STALENESS_S:
+                logger.debug(
+                    "[scale-down] compute candidate skip name=%s mac=%s reason=stale staleness=%.1fs",
+                    node.name,
+                    node.mac,
+                    staleness_s,
+                )
+                continue
+
+            if server.state != "active":
+                logger.debug(
+                    "[scale-down] compute candidate skip name=%s mac=%s reason=state state=%s",
+                    node.name,
+                    node.mac,
+                    server.state,
+                )
+                continue
+
+            age_s = self._node_registry.node_age_s(node.mac, now_mono)
+            if age_s < _NODE_BIRTH_GRACE_S:
+                logger.debug(
+                    "[scale-down] compute candidate skip name=%s mac=%s reason=too_young age=%.1fs",
+                    node.name,
+                    node.mac,
+                    age_s,
+                )
+                continue
+
+            eligible.append(
+                _ComputeScaleDownCandidate(
+                    node=node,
+                    summary=server,
+                    staleness_s=staleness_s,
+                    age_s=age_s,
+                )
+            )
+
+        if not eligible:
+            logger.info(
+                "[scale-down] compute underutilisation but no graceful candidate is eligible"
+            )
+            return None
+
+        eligible.sort(key=lambda item: (
+            item.summary.request_count,
+            item.summary.avg_cpu_percent,
+            item.summary.avg_time_proc_ms,
+            -item.summary.last_report_ts,
+        ))
+
+        chosen = eligible[0]
+        logger.info(
+            "[scale-down] compute candidate selected name=%s mac=%s req=%d cpu=%.2f proc=%.2f stale=%.1fs age=%.1fs",
+            chosen.node.name,
+            chosen.node.mac,
+            chosen.summary.request_count,
+            chosen.summary.avg_cpu_percent,
+            chosen.summary.avg_time_proc_ms,
+            chosen.staleness_s,
+            chosen.age_s,
+        )
+        return chosen.node
+
     def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
         """Thread 2 callback — thin mediator that orchestrates composed components."""
         if summary.network_id != self._lan_id:
@@ -251,7 +352,12 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         # 6. Scale-up evaluation
         dynamic_storage_count = self._node_registry.count_dynamic("storage")
-        dynamic_compute_count = self._node_registry.count_dynamic("compute")
+        registry_dynamic_compute_count = self._node_registry.count_dynamic("compute")
+        pending_compute_drain_count = self._elasticity.pending_compute_drain_count()
+        effective_dynamic_compute_count = max(
+            0,
+            registry_dynamic_compute_count - pending_compute_drain_count,
+        )
         peer_network_id = "lan2" if summary.network_id == "lan1" else "lan1"
         peer_summary = self._telemetry.get_latest(peer_network_id)
         peer_ds = peer_summary.domain_summary if peer_summary and peer_summary.domain_summary else None
@@ -263,7 +369,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             logger.debug("[scale-up] elasticity manager is busy — skipping")
         else:
             if compute_blocked:
-                logger.debug("[scale-up] compute blocked by pending compute drain — skipping")
+                logger.debug("[scale-up] compute blocked by active elasticity operation — skipping")
             if storage_blocked:
                 logger.debug("[scale-up] storage blocked by pending storage drain — skipping")
 
@@ -272,7 +378,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 lan,
                 summary.network_id,
                 dynamic_storage_count,
-                dynamic_compute_count,
+                effective_dynamic_compute_count,
                 peer_ds,
                 allow_compute=not compute_blocked,
                 allow_storage=not storage_blocked,
@@ -289,6 +395,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                     self._selective_sync_coordinator.drain(
                         alert.owner_lan, reason="tier2_supersedes")
                 self._elasticity.submit(alert)
+                if (isinstance(alert, ComputeAlert)
+                        and self._elasticity.has_pending_compute_drain()):
+                    logger.info(
+                        "[scale-up] compute triggered with %d pending compute drain(s) — submitting lower-priority cancel",
+                        pending_compute_drain_count,
+                    )
+                    self._elasticity.submit_cancel_compute_drain()
 
         if self._elasticity.is_busy():
             logger.debug("[scale-down] elasticity manager is busy — skipping scaling evaluation")
@@ -300,13 +413,17 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             logger.debug("[scale-down] compute within %.0fs cooldown — skipping", remaining)
         else:
             if self._scaling_policy.evaluate_scale_down_compute(ds):
-                node = self._node_registry.find_last_dynamic("compute")
+                node = self._pick_compute_scale_down_candidate()
                 if node:
                     logger.info(
                         "[scale-down] compute underutilisation — removing %s", node.name)
                     alert = self._node_registry.build_scale_down_alert(node.mac)
                     if alert:
                         self._elasticity.submit(alert)
+                else:
+                    logger.info(
+                        "[scale-down] compute underutilisation but no graceful candidate is eligible — clearing current window"
+                    )
                 self._scaling_policy.clear_scale_down_compute_window()
 
         remaining = self._scaling_policy.storage_cooldown_remaining()

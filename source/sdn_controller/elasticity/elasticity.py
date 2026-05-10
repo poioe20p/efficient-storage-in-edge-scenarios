@@ -91,6 +91,12 @@ class CleanupComputeAlert:
     mac: str
 
 
+@dataclass(frozen=True)
+class CancelComputeDrainAlert:
+    """Cancel one pending compute drain when compute scale-up is triggered."""
+    mac: str | None = None
+
+
 # ── Tier 1 selective-sync alerts ──────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -161,9 +167,10 @@ _PRIORITY_SELECTIVE_SYNC_RECONFIGURE = 3   # Tier 1 live reconfigure
 _PRIORITY_COMPUTE_ALERT              = 4
 _PRIORITY_CLEANUP_COMPUTE            = 5
 _PRIORITY_CLEANUP_SELECTIVE          = 6   # Tier 1 Phase B
-_PRIORITY_SCALEDOWN_DATA             = 7
-_PRIORITY_SCALEDOWN_SELECTIVE        = 8   # Tier 1 teardown Phase A
-_PRIORITY_SCALEDOWN_COMPUTE          = 9
+_PRIORITY_CANCEL_COMPUTE_DRAIN       = 7
+_PRIORITY_SCALEDOWN_DATA             = 8
+_PRIORITY_SCALEDOWN_SELECTIVE        = 9   # Tier 1 teardown Phase A
+_PRIORITY_SCALEDOWN_COMPUTE          = 10
 
 # Tie-breaker: monotonically increasing sequence so alerts with the same
 # priority are processed in FIFO order.
@@ -177,6 +184,7 @@ _ALERT_PRIORITY: dict[type, int] = {
     ComputeAlert:                   _PRIORITY_COMPUTE_ALERT,
     CleanupComputeAlert:            _PRIORITY_CLEANUP_COMPUTE,
     CleanupSelectiveAlert:          _PRIORITY_CLEANUP_SELECTIVE,
+    CancelComputeDrainAlert:        _PRIORITY_CANCEL_COMPUTE_DRAIN,
     ScaleDownDataAlert:             _PRIORITY_SCALEDOWN_DATA,
     ScaleDownSelectiveAlert:        _PRIORITY_SCALEDOWN_SELECTIVE,
     ScaleDownComputeAlert:          _PRIORITY_SCALEDOWN_COMPUTE,
@@ -282,7 +290,7 @@ class ElasticityManager:
         :class:`CleanupComputeAlert` with a warning so a stray
         ``drain_complete`` event can't wedge the queue.
         """
-        pending = self._pending_drains.get(mac)
+        pending = self._get_pending_drain(mac)
         if pending is None:
             logger.warning("[elasticity] submit_cleanup for unknown mac=%s — submitting CleanupComputeAlert", mac)
             self.submit(CleanupComputeAlert(mac=mac))
@@ -291,6 +299,10 @@ class ElasticityManager:
             self.submit(CleanupSelectiveAlert(mac=mac))
         else:
             self.submit(CleanupComputeAlert(mac=mac))
+
+    def submit_cancel_compute_drain(self, mac: str | None = None) -> None:
+        """Submit a lower-priority cancel request for a pending compute drain."""
+        self.submit(CancelComputeDrainAlert(mac=mac))
 
     def has_active_operation(self) -> bool:
         """Return True while Thread 3 is actively executing a handler."""
@@ -307,16 +319,11 @@ class ElasticityManager:
         """
         if self._busy:
             return True
-        return bool(self._pending_drains)
+        return bool(self._pending_drain_snapshot())
 
     def blocks_compute_scale_up(self) -> bool:
         """Return True when compute scale-up should be skipped."""
-        if self._busy:
-            return True
-        return any(
-            pending.node_type == "compute"
-            for pending in self._pending_drains.values()
-        )
+        return self._busy
 
     def blocks_storage_scale_up(self) -> bool:
         """Return True when storage scale-up should be skipped."""
@@ -324,12 +331,27 @@ class ElasticityManager:
             return True
         return any(
             pending.node_type == "storage"
-            for pending in self._pending_drains.values()
+            for pending in self._pending_drain_snapshot()
         )
 
     def has_pending_drain(self, mac: str) -> bool:
         """Check if a MAC has an in-progress drain (Phase A done, Phase B pending)."""
-        return mac in self._pending_drains
+        return self._get_pending_drain(mac) is not None
+
+    def has_pending_compute_drain(self) -> bool:
+        """Return True when any compute drain is pending Phase B cleanup/cancel."""
+        return any(
+            pending.node_type == "compute"
+            for pending in self._pending_drain_snapshot()
+        )
+
+    def pending_compute_drain_count(self) -> int:
+        """Count pending compute drains without changing lifecycle registry state."""
+        return sum(
+            1
+            for pending in self._pending_drain_snapshot()
+            if pending.node_type == "compute"
+        )
 
     def consume_addition_completions(self) -> list[NodeInfo]:
         """Called by Thread 2 to collect NodeInfo records for newly added nodes."""
@@ -370,6 +392,8 @@ class ElasticityManager:
                         self._handle_scale_down_data(alert)
                     elif isinstance(alert, CleanupComputeAlert):
                         self._handle_cleanup_compute(alert)
+                    elif isinstance(alert, CancelComputeDrainAlert):
+                        self._handle_cancel_compute_drain(alert)
                     elif isinstance(alert, SelectiveSyncAlert):
                         self._handle_selective_sync(alert)
                     elif isinstance(alert, SelectiveSyncReconfigureAlert):
@@ -506,7 +530,7 @@ class ElasticityManager:
             return
 
         pending.ip = alert.ip
-        self._pending_drains[alert.mac] = pending
+        self._set_pending_drain(alert.mac, pending)
         self._record({"type": "scale_down_compute_phase_a", "alert": alert, "pending": pending})
 
         if not pending.drain_signaled:
@@ -522,7 +546,7 @@ class ElasticityManager:
 
         Triggered by drain_complete ZMQ event or telemetry timeout fallback.
         """
-        pending = self._pending_drains.get(alert.mac)
+        pending = self._get_pending_drain(alert.mac)
         if pending is None:
             logger.warning("[elasticity] CleanupComputeAlert for unknown mac=%s — ignoring", alert.mac)
             return
@@ -532,7 +556,7 @@ class ElasticityManager:
         self._compute_adder.log_removal_timings(result)
         self._record({"type": "scale_down_compute_phase_b", "alert": alert, "result": result})
 
-        del self._pending_drains[alert.mac]
+        self._pop_pending_drain(alert.mac)
 
         # Release IP only after container is fully torn down
         if pending.ip:
@@ -546,6 +570,29 @@ class ElasticityManager:
             logger.info("[elasticity] cleanup_compute done: container=%s", pending.container_name)
         else:
             logger.error("[elasticity] cleanup_compute FAILED: container=%s", pending.container_name)
+
+    def _handle_cancel_compute_drain(self, alert: CancelComputeDrainAlert) -> None:
+        """Cancel one pending compute drain and re-admit the node to the VIP pool."""
+        pending = self._select_pending_compute_drain(alert.mac)
+        if pending is None:
+            logger.info("[elasticity] no pending compute drain to cancel")
+            return
+
+        if self._compute_adder.cancel_drain(pending.container_name):
+            self._topo.add_server_mac(pending.mac)
+            self._pop_pending_drain(pending.mac)
+            self._record({"type": "cancel_compute_drain", "alert": alert, "pending": pending})
+            logger.info(
+                "[elasticity] canceled compute drain mac=%s container=%s",
+                pending.mac, pending.container_name,
+            )
+            return
+
+        logger.warning(
+            "[elasticity] cancel failed for compute drain mac=%s container=%s — submitting cleanup",
+            pending.mac, pending.container_name,
+        )
+        self.submit_cleanup(pending.mac)
 
     def _handle_scale_down_data(self, alert: ScaleDownDataAlert) -> None:
         """Storage removal: VIP isolation → rs.remove() → script teardown."""
@@ -685,7 +732,7 @@ class ElasticityManager:
         ZMQ event dispatched by :class:`ControlEventDispatcher`, or on the
         existing telemetry-window timeout fallback.
         """
-        if alert.mac in self._pending_drains:
+        if self._get_pending_drain(alert.mac) is not None:
             logger.info(
                 "[elasticity] selective drain already pending for %s (%s) — ignoring duplicate request",
                 alert.container_name,
@@ -733,7 +780,7 @@ class ElasticityManager:
             )
             return
 
-        self._pending_drains[alert.mac] = pending
+        self._set_pending_drain(alert.mac, pending)
         self._record({"type": "scale_down_selective_phase_a", "alert": alert, "pending": pending})
 
         if not pending.drain_signaled:
@@ -751,7 +798,7 @@ class ElasticityManager:
 
     def _handle_cleanup_selective(self, alert: CleanupSelectiveAlert) -> None:
         """Phase B: OVS teardown + docker rm. Triggered by drain_complete or timeout fallback."""
-        pending = self._pending_drains.get(alert.mac)
+        pending = self._get_pending_drain(alert.mac)
         if pending is None:
             logger.warning(
                 "[elasticity] CleanupSelectiveAlert for unknown mac=%s \u2014 ignoring",
@@ -773,7 +820,7 @@ class ElasticityManager:
         self._selective_adder.log_removal_timings(result)
         self._record({"type": "scale_down_selective_phase_b", "alert": alert, "result": result})
 
-        del self._pending_drains[alert.mac]
+        self._pop_pending_drain(alert.mac)
 
         if pending.ip:
             self._get_allocator(pending.lan).release(pending.ip)
@@ -803,6 +850,34 @@ class ElasticityManager:
         name = f"{prefix}_{network_id}_dyn{_COUNTER[network_id]}"
         logger.debug("[elasticity] generated container name: %s", name)
         return name
+
+    def _pending_drain_snapshot(self) -> tuple[PendingDrain, ...]:
+        with self._lock:
+            return tuple(self._pending_drains.values())
+
+    def _get_pending_drain(self, mac: str) -> PendingDrain | None:
+        with self._lock:
+            return self._pending_drains.get(mac)
+
+    def _set_pending_drain(self, mac: str, pending: PendingDrain) -> None:
+        with self._lock:
+            self._pending_drains[mac] = pending
+
+    def _pop_pending_drain(self, mac: str) -> PendingDrain | None:
+        with self._lock:
+            return self._pending_drains.pop(mac, None)
+
+    def _select_pending_compute_drain(self, mac: str | None = None) -> PendingDrain | None:
+        with self._lock:
+            if mac is not None:
+                pending = self._pending_drains.get(mac)
+                if pending and pending.node_type == "compute":
+                    return pending
+                return None
+            for pending in self._pending_drains.values():
+                if pending.node_type == "compute":
+                    return pending
+        return None
 
     def _record(self, entry: dict) -> None:
         # threading.Lock used as a context manager: acquired on enter, released on exit.

@@ -84,9 +84,10 @@ Four dataclasses ride the existing elasticity priority queue (no new thread, no 
 | 4 | `ComputeAlert` | Edge-server scale-up. |
 | 5 | `CleanupComputeAlert` | Compute Phase B. |
 | 6 | `CleanupSelectiveAlert` | Tier 1 Phase B. |
-| 7 | `ScaleDownDataAlert` | Tier 2 teardown. |
-| 8 | `ScaleDownSelectiveAlert` | Tier 1 Phase A. |
-| 9 | `ScaleDownComputeAlert` | Compute Phase A. |
+| 7 | `CancelComputeDrainAlert` | Lower-priority compute drain cancel submitted after compute scale-up. |
+| 8 | `ScaleDownDataAlert` | Tier 2 teardown. |
+| 9 | `ScaleDownSelectiveAlert` | Tier 1 Phase A. |
+| 10 | `ScaleDownComputeAlert` | Compute Phase A. |
 
 ### Two-phase teardown
 
@@ -233,7 +234,7 @@ Each telemetry window the controller emits a coordinator-state snapshot via a de
   ```
 
 - Implementation: [`source/sdn_controller/selective_sync/state_publisher.py`](../../../source/sdn_controller/selective_sync/state_publisher.py) (`Tier1OwnerState`, `CoordinatorStatePublisher`) + `PromotionCoordinator.snapshot()`.
-- Consumer: [`source/scripts/testing/collect_resource_stats.py`](../../../source/scripts/testing/collect_resource_stats.py) merges the latest frame per `network_id` into each row of `resource_stats.csv` via the helpers in [`tier1_stats.py`](../../../source/scripts/testing/tier1_stats.py). See [`testing/testing_overview.md`](../testing/testing_overview.md) for the full CSV column list.
+- Consumer: [`source/scripts/testing/collect_resource_stats.py`](../../../source/scripts/testing/collect_resource_stats.py) merges the latest frame per `network_id` into each row of `resource_stats.csv` via the helpers in [`tier1_stats.py`](../../../source/scripts/testing/tier1_stats.py). In that CSV contract, `tier1_lifecycle_active_count` is derived from `Tier1OwnerState.state == "ACTIVE"`, while `tier1_active_count` remains the supply-side reporting count derived from `selective_sync_per_collection`. See [`testing/testing_overview.md`](../testing/testing_overview.md) for the full CSV column list.
 
 ---
 

@@ -88,14 +88,19 @@ by Thread 3.
 | ------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
 | `ComputeAlert`          | Adaptive compute threshold with peer-aware bias (3-of-5 window, 45 s compute scale-up cooldown) | `lan`, `network_id`                                                                                    |
 | `DataAlert`             | Adaptive storage threshold (see below)           | `lan`, `network_id`, `rs_name`, `primary_container`, `port`                                      |
+| `CancelComputeDrainAlert` | Compute scale-up fired while a compute drain is pending | optional `mac` |
 | `ScaleDownComputeAlert` | Underutilisation (7-of-12 window) or timeout     | `lan`, `network_id`, `container_name`, `mac`, `ip`                                               |
 | `ScaleDownDataAlert`    | Underutilisation (7-of-12 window) or timeout     | `lan`, `network_id`, `container_name`, `mac`, `ip`, `rs_name`, `primary_container`, `port` |
 | `CleanupComputeAlert`   | `drain_complete` ZMQ event / telemetry timeout | `mac`                                                                                                    |
 
-Alert dispatch uses a `PriorityQueue` — storage scale-up has highest priority
-(1), compute scale-up next (2), then cleanup (3), storage removal (4), and
-compute removal (5). Tie-breaking uses a monotonic sequence counter for FIFO
-within the same priority.
+Alert dispatch uses a `PriorityQueue` — lower numbers win. Current priorities
+are: `DataAlert` (1), `SelectiveSyncAlert` (2),
+`SelectiveSyncReconfigureAlert` (3), `ComputeAlert` (4),
+`CleanupComputeAlert` (5), `CleanupSelectiveAlert` (6),
+`CancelComputeDrainAlert` (7), `ScaleDownDataAlert` (8),
+`ScaleDownSelectiveAlert` (9), and `ScaleDownComputeAlert` (10).
+Tie-breaking uses a monotonic sequence counter for FIFO within the same
+priority.
 
 ### Scale-Up Degradation Score
 
@@ -174,7 +179,7 @@ Seven mechanisms prevent scale-up / scale-down thrashing:
 
 | Mechanism                 | Description |
 | ------------------------- | ----------- |
-| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally, but scale-up is target-specific: pending compute drains block only compute scale-up, and pending Tier 1 selective drains block neither compute nor storage scale-up |
+| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally. Pending compute drains do not block compute scale-up; instead they are subtracted from the effective dynamic compute count and canceled after `ComputeAlert` is submitted. Pending Tier 1 selective drains block neither compute nor storage scale-up |
 | Sliding window            | Requires sustained signal (not single-window spikes) |
 | Cross-direction reset     | Scale-up clears the scale-down window (and vice versa) |
 | Compute scale-up cooldown | After compute scale-up: suppress further compute scale-up evaluation for 45 s |
@@ -250,6 +255,7 @@ Diminishing-increment storage scale-up threshold** (see [§ Diminishing-Incremen
 | `SCALE_DOWN_STORAGE_REQUIRED`        | `7`    | Required below-threshold windows (storage)           |
 | `SCALE_DOWN_PROC_TIMEOUT_CEILING_MS` | `5000` | Proc latency above → indeterminate window           |
 | `SCALE_DOWN_DB_TIMEOUT_CEILING_MS`   | `5000` | DB latency above → indeterminate window             |
+| `SCALE_DOWN_CANDIDATE_MAX_STALENESS_S` | `90` | Max age of a retained compute `ServerSummary` allowed for graceful candidate ranking; with current defaults it should sit above the 70 s compute arm horizon and below the 180 s absence-timeout horizon |
 | `TELEMETRY_TIMEOUT_WINDOWS`          | `18`   | Absent windows before dead-node removal (180 s raw absence tolerance; dynamic nodes don't heartbeat, so this is the sole failure detector for them) |
 | `SCALEDOWN_STORAGE_COOLDOWN_S`       | `120`  | Post-scale-up cooldown before storage scale-down (s) |
 | `SCALEDOWN_COMPUTE_COOLDOWN_S`       | `40`   | Post-scale-up cooldown before compute scale-down (s) |
@@ -392,15 +398,15 @@ is individually timed with `time.perf_counter()`.
 
 #### `add_storage_node(lan, name, rs_name, port, ip, mac)`
 
-RS join (`rs.add()`) is handled asynchronously by the `mongo_telemetry.py`
-sidecar inside the container, with 5-attempt retry/exponential backoff. The
-primary IP is derived from LAN topology convention (`10.0.{lan-1}.4`).
+RS join is handled asynchronously by the `mongo_telemetry.py` sidecar inside
+the container, with 5-attempt retry/exponential backoff. The seed / reconfig
+target IP is derived from LAN topology convention (`10.0.{lan-1}.4`).
 
 | Step        | Operation                                                                                                                                                                                                      | On failure                                    |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1           | `docker run -dit --network none --name <name> -v <name>-data:/data/db -e LAN_ID=lan<N> -e MONGO_REPLSET=<rs> -e MONGO_PORT=<port> -e RS_ADD_SELF=true -e RS_SEED_HOST=<primary_ip:port> edge_storage_server` | Return `FAILED`                             |
+| 1           | `docker run -dit --network none --name <name> -v <name>-data:/data/db -e LAN_ID=lan<N> -e MONGO_REPLSET=<rs> -e MONGO_PORT=<port> -e IFACE=eth0 -e OWN_IP=<ip> -e OWN_MAC=<mac> -e RS_ADD_SELF=true -e RS_SEED_HOST=<primary_ip:port> edge_storage_server` | Return `FAILED`                             |
 | 2           | `add_network_node.sh --lan <N> --name <name> --ip <ip> --mac <mac>`                                                                                                                                          | Cleanup container + volume, return `FAILED` |
-| *(async)* | Sidecar `_rs_self_join()` runs inside container: `rs.add()` with retry/backoff → `_wait_for_ready()` → emits `rs_secondary_ready`                                                                    | Sidecar retries; controller not blocked       |
+| *(async)* | Sidecar `_rs_self_join()` runs inside container: direct `replSetGetConfig` / `replSetReconfig` against `RS_SEED_HOST` with retry/backoff → `_wait_for_ready()` → emits `rs_secondary_ready`            | Sidecar retries; controller not blocked       |
 
 ### Idempotency
 
@@ -440,7 +446,10 @@ On a successful `NodeResult`:
   hasn't finished its initial sync.
 
 Both paths notify Thread 2 via `consume_addition_completions()` so it can
-track the new MAC for scale-down decisions (LIFO ordering).
+track the new MAC for scale-down decisions. Compute scale-down now ranks
+dynamic compute nodes using retained `_server_stats` summaries plus a bounded
+staleness check; storage scale-down still uses the existing newest-node LIFO
+selection.
 
 ### Storage VIP Promotion (Dual Path)
 
@@ -484,7 +493,12 @@ independent triggers can initiate removal:
 - **Underutilisation** — CPU and latency metrics below scale-down thresholds
   for a sustained period (sliding window). Only dynamically added nodes are
   eligible — static servers and primary DB containers are never removed.
-  This is the **graceful** path for idle dynamic nodes.
+  This is the **graceful** path for idle dynamic nodes. For compute nodes, the
+  controller ranks dynamic candidates by retained per-node telemetry
+  (`request_count`, `avg_cpu_percent`, `avg_time_proc_ms`) using the latest
+  `_server_stats` snapshot while `last_report_ts` remains within
+  `SCALE_DOWN_CANDIDATE_MAX_STALENESS_S` (default 90 s). Storage removal keeps
+  the existing LIFO selection.
 - **Telemetry timeout** — dynamic node absent from 18 consecutive telemetry
   windows (180 s) → assumed dead. This is a **failure detector**, not an
   idleness detector: dynamic nodes don't emit periodic heartbeats (the image
@@ -523,9 +537,11 @@ Triggered by `drain_complete` ZMQ event or telemetry timeout fallback.
 3. Release IP back to `IpAllocator`.
 4. Delete `PendingDrain` entry; notify Thread 2 via `consume_removal_completions()`.
 
-**Drain endpoint (`/drain`):** Sets `_draining = True` → `before_request`
-returns 503 for new requests → drain monitor sends `drain_complete` ZMQ event
-when `active_requests == 0` → exits via `os._exit(0)`.
+**Drain endpoint (`/drain`):** `start` sets `_draining = True` and quiesces
+without rejecting workload requests. The drain monitor sends `drain_complete`
+and exits via `os._exit(0)` once the quiet period expires with no in-flight
+requests. `cancel` sets the server back to `active`; the controller then
+re-adds the MAC to the compute VIP pool and clears the pending drain.
 
 ### Storage Node Removal — Synchronous
 
@@ -566,8 +582,11 @@ Every `RemovalResult` carries a `RemovalTimings` record:
 handler or while a Phase A drain is pending. Thread 2 uses this stricter gate
 for scale-down and other general checks. For scale-up, Thread 2 now calls
 `blocks_compute_scale_up()` and `blocks_storage_scale_up()` instead of using a
-single global boolean. Pending compute drains block only compute scale-up;
-pending Tier 1 selective drains block neither compute nor storage scale-up.
+single global boolean. Pending compute drains no longer block compute scale-up:
+Thread 2 subtracts pending compute drains from the effective dynamic compute
+count, submits `ComputeAlert` first when the sustained scale-up predicate
+fires, and then submits lower-priority `CancelComputeDrainAlert` recovery work.
+Pending Tier 1 selective drains block neither compute nor storage scale-up.
 Storage removal remains a one-phase operation today, so storage scale-up is
 blocked only while a storage handler is actively running.
 
@@ -663,11 +682,12 @@ trigger, filtering transient spikes and preventing runaway scaling.
 
 ## Async RS Join via Sidecar
 
-RS join (`rs.add()`) is performed inside the container by the
+Replica-set join is performed inside the container by the
 `mongo_telemetry.py` sidecar, not by the controller or a shell script. The
-sidecar discovers the primary via `RS_SEED_HOST` env var, performs `rs.add()`
-with 5-attempt retry/exponential backoff, then waits for SECONDARY state (with
-a configurable timeout: `RS_READY_TIMEOUT_S`, default 300 s).
+sidecar waits for eth0 + seed reachability, connects directly to
+`RS_SEED_HOST`, performs `replSetGetConfig` / `replSetReconfig` with
+5-attempt retry/exponential backoff, then waits for SECONDARY state (with a
+configurable timeout: `RS_READY_TIMEOUT_S`, default 300 s).
 
 The sidecar creates its ZMQ socket **after** `_rs_self_join()` (which waits for
 eth0 + seed connectivity) but **before** `_wait_for_ready()`. This ensures
@@ -684,42 +704,35 @@ removes any stale member at the same `host:port` and adds the new member —
 eliminating the "Already present" errors that previously caused 86% spawn
 failure rates.
 
+### Dynamic Storage Join Fast Path
+
+The current Tier 2 fast path stays deliberately narrow and seed-only:
+
+1. `StorageNodeAdder` still derives `RS_SEED_HOST` from the static `.4` storage
+  node in the target LAN.
+2. The sidecar no longer performs the extra `isMaster` discovery round before
+  `replSetGetConfig` / `replSetReconfig`; it reconfigures directly against
+  `RS_SEED_HOST`.
+3. Thread 3 injects controller-known `OWN_IP`, `OWN_MAC`, and `IFACE=eth0`
+  into the dynamic storage container at `docker run` time.
+4. The sidecar validates those identity hints first and falls back to the
+  existing in-container discovery when they are absent or malformed.
+
+This does **not** change Tier 2 service semantics. VIP promotion remains gated
+on `rs_secondary_ready` or telemetry fallback seeing `member_state == "SECONDARY"`.
+
+  ## Reserved Standby for First Tier 2 Scale-Up - Planned
+
+  > **Status:** Not yet implemented.
+
+  An optional launch-time feature will maintain one heartbeating Tier 2 standby
+  secondary per LAN. The standby joins the local replica set ahead of demand,
+  stays outside `VIP_DATA_N*` while reserved, and is consumed only by the first
+  storage scale-up for that LAN. If the first storage alert arrives before the
+  standby is ready, the controller falls back to the current on-demand Tier 2
+  path and spends the reserve opportunity for that LAN.
+
+  The phased implementation plan lives in:
+  **[implementation/storage_standby_first_scaleup/README.md](implementation/storage_standby_first_scaleup/README.md)**
+
 ---
-
-## Warm Volume Snapshot for Storage Scale-Up — Planned
-
-> **Status:** Not yet implemented.
-
-Even with async RS join, a new storage node must perform a **full initial sync**
-from the primary (~20–30 s, primary CPU ~95 %). This optimisation would pre-seed
-the new node's data volume with a recent WiredTiger snapshot so it only replays
-the oplog delta (~1–3 s).
-
-### How It Works
-
-1. **Primary sidecar** (`mongo_telemetry.py`) runs a background thread that
-   periodically snapshots `/data/db` → `/warm` under `fsyncLock`. The warm
-   volume (`rs_net{lan}_warm`) is a Docker named volume mounted on the primary.
-2. **Controller** (`storage_node_manager.py`), before `docker run`, clones the
-   warm volume into the new node's `{name}-data` volume using
-   `_acquire_warm_volume()`. If the snapshot is missing or stale (> 600 s), the
-   system falls back to an empty volume (current behaviour — full initial sync).
-
-### Write Pause
-
-`fsyncLock` blocks **all client writes** for the duration of the file copy —
-typically **0.5–5 s** for 50–200 MB datasets. The snapshot only runs when CPU
-is below 70 % and repeats every 5 minutes, making this infrequent.
-
-### New Environment Variables
-
-| Variable                      | Where           | Default   | Description                      |
-| ----------------------------- | --------------- | --------- | -------------------------------- |
-| `WARM_SNAPSHOT_ENABLED`     | Primary sidecar | `false` | Enable periodic warm snapshot    |
-| `WARM_SNAPSHOT_INTERVAL_S`  | Primary sidecar | `300`   | Seconds between snapshots        |
-| `WARM_SNAPSHOT_CPU_CEILING` | Primary sidecar | `70`    | Skip snapshot if CPU% exceeds    |
-| `WARM_SNAPSHOT_DIR`         | Primary sidecar | `/warm` | Mount point for warm volume      |
-| `WARM_VOLUME_MAX_AGE_S`     | Controller      | `600`   | Max snapshot age before fallback |
-
-Full implementation plan:
-**[`implementation/warm_volume_snapshot_plan.md`](implementation/warm_volume_snapshot_plan.md)**

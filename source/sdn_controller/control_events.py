@@ -36,6 +36,10 @@ class ControlEventDispatcher:
                 if mac and elasticity.has_pending_drain(mac):
                     logger.info("[control] drain_complete received for mac=%s — submitting Phase B cleanup", mac)
                     elasticity.submit_cleanup(mac)
+                elif mac:
+                    logger.info("[control] drain_complete for unknown mac=%s — ignoring", mac)
+                else:
+                    logger.warning("[control] drain_complete missing server_id — ignoring")
 
     def process_secondary_events(
         self,

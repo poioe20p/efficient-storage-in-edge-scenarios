@@ -353,7 +353,7 @@ sudo python3 source/scripts/testing/traffic_generator.py \
 | `--clients-lan1` | *required* | Comma-separated list of LAN1 namespace names |
 | `--clients-lan2` | *required* | Comma-separated list of LAN2 namespace names |
 | `--snapshot-dir` | `data/workload_snapshot` | Directory containing exported JSON files |
-| `--output` | `metrics/client_requests.csv` | CSV output file path |
+| `--output` | `metrics/client_requests.csv` | Aggregate CSV output path; per-phase siblings are written as `client_requests_<phase>.csv` |
 | `--vip` | `10.0.0.100:5000` | VIP\_SERVER address:port |
 | `--dry-run` | `false` | Print curl commands without executing |
 
@@ -799,7 +799,7 @@ All clients run concurrently within a phase (reflecting realistic multi-user loa
 | 3 | Smoke test (`baseline` only, 30s, 1 client/LAN) | CSV has rows with `http_status=200`, `latency_s` between 0.01–1.0 |
 | 4 | `cross_region_hotspot` cross-region check (30s) | For the source LAN of `hotspot_direction`, most `device_status` rows target peer-region device IDs |
 | 5 | Rate accuracy (`compute_spike`, 60s, 1 client) | Total rows ≈ `17 × 60 = 1020` (±10%) |
-| 6 | Per-phase outputs present | Run directory contains `client_requests_<phase>.csv` files plus `current_phase.txt` |
+| 6 | Aggregate and per-phase outputs present | Run directory contains `client_requests.csv`, `client_requests_<phase>.csv` files, and `current_phase.txt` |
 
 ---
 

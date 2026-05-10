@@ -15,9 +15,10 @@
 # Edit the configuration variables below to match your deployment.
 #
 # Usage:
-#   sudo ./run_experiment.sh [--run-label c0] [--skip-clients] [--skip-seed] [--skip-snapshot]
+#   sudo ./run_experiment.sh [--batch-dir batch4] [--run-label c0] [--skip-clients] [--skip-seed] [--skip-snapshot]
 #
 # Flags (all optional):
+#   --batch-dir DIR     Place the run folder under metrics/DIR/ (example: metrics/batch4/20260501_153012_c0)
 #   --run-label LABEL    Append a config label to the metrics folder name (example: 20260501_153012_c0)
 #   --skip-clients       Skip step 1 (test namespaces already created)
 #   --skip-seed          Skip step 2 (data already seeded)
@@ -90,10 +91,13 @@ SKIP_CLIENTS=false
 SKIP_SEED=false
 SKIP_SNAPSHOT=false
 DRY_RUN=false
+BATCH_DIR=""
 RUN_LABEL=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --batch-dir)    shift; BATCH_DIR="$1" ;;
+        --batch-dir=*)  BATCH_DIR="${1#*=}"    ;;
         --run-label)     shift; RUN_LABEL="$1"  ;;
         --run-label=*)   RUN_LABEL="${1#*=}"    ;;
         --skip-clients)   SKIP_CLIENTS=true  ;;
@@ -119,8 +123,15 @@ if [[ -n "$RUN_LABEL" ]] && [[ ! "$RUN_LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]];
     exit 1
 fi
 
+if [[ -n "$BATCH_DIR" ]] && [[ ! "$BATCH_DIR" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$ ]]; then
+    echo "ERROR: invalid --batch-dir '$BATCH_DIR' (allowed: relative path segments with letters, numbers, '.', '_' and '-')" >&2
+    exit 1
+fi
+
 readonly RUN_ID="${RUN_TIMESTAMP}${RUN_LABEL:+_${RUN_LABEL}}"
-readonly RUN_DIR="${SCRIPT_DIR}/metrics/${RUN_ID}"
+readonly METRICS_ROOT="${SCRIPT_DIR}/metrics"
+readonly RUN_PARENT_DIR="${METRICS_ROOT}${BATCH_DIR:+/${BATCH_DIR}}"
+readonly RUN_DIR="${RUN_PARENT_DIR}/${RUN_ID}"
 readonly CONTROLLER_ENV_SNAPSHOT_OUTPUT="${RUN_DIR}/controller_env_snapshot.env"
 
 # Traffic generator config and output
@@ -154,6 +165,7 @@ prepare_run_outputs() {
     cp "$PHASES_CONFIG" "$PHASES_SNAPSHOT_OUTPUT"
     cp "$CONTROLLER_ENV_SOURCE" "$CONTROLLER_ENV_SNAPSHOT_OUTPUT"
     echo "  Run dir    : ${RUN_DIR}"
+    echo "  Batch dir  : ${BATCH_DIR:-<none>}"
     echo "  Run label  : ${RUN_LABEL:-<none>}"
     echo "  Phase copy : ${PHASES_SNAPSHOT_OUTPUT}"
     echo "  Env copy   : ${CONTROLLER_ENV_SNAPSHOT_OUTPUT}"
@@ -336,6 +348,7 @@ build_client_lists
 echo "======================================================"
 echo " Edge IoT Experiment — Full Run"
 echo "======================================================"
+echo " Batch dir   : ${BATCH_DIR:-<none>}"
 echo " Clients/LAN : ${CLIENTS_PER_LAN}  (${CLIENTS_LAN1} | ${CLIENTS_LAN2})"
 echo " Devices/LAN : ${SEED_DEVICES}"
 echo " Nodes/LAN   : ${SEED_NODES}"

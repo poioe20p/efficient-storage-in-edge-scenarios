@@ -57,7 +57,7 @@ fi
 
 # Defaults (can be overridden via env)
 # NAT_IFACE=${NAT_IFACE:-enp0s9}
-NAT_IFACE=${NAT_IFACE:}
+NAT_IFACE="${NAT_IFACE-}"
 NAT_SUBNET=${NAT_SUBNET:-192.168.100.0/24}
 
 

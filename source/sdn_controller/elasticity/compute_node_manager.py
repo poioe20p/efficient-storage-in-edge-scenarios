@@ -177,6 +177,25 @@ class ComputeNodeAdder(_BaseNodeAdder):
                          pending.container_name, stdout, stderr)
         return RemovalResult(ok, pending.container_name, pending.mac, timings, state, stdout, stderr)
 
+    def cancel_drain(self, name: str) -> bool:
+        """Cancel a previously started compute drain via the edge server API."""
+        command = [
+            "docker", "exec", name,
+            "curl", "-sf", "--max-time", "2",
+            "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", '{"command":"cancel"}',
+            "http://localhost:5000/drain",
+        ]
+        for attempt in range(1, 3):
+            ok, _, _ = self._run_cmd(command)
+            if ok:
+                logger.info("[node_remove] drain cancel acknowledged for %s", name)
+                return True
+            logger.warning("[node_remove] drain cancel attempt %d/2 failed for %s", attempt, name)
+
+        return False
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

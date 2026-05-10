@@ -3,7 +3,8 @@ storage_node_manager.py — Timed, idempotent lifecycle for storage (edge_storag
 
 Covers:
   - Spawning an edge_storage_server container, attaching it to OVS, and joining
-    the MongoDB replica set via rs.add() (add_storage_node)
+        the MongoDB replica set via the sidecar's direct seed-host reconfig path
+        (add_storage_node)
   - Graceful removal: rs.remove() via the primary, then OVS/Docker teardown
     (remove_storage_node)
 """
@@ -41,7 +42,7 @@ class StorageNodeAdder(_BaseNodeAdder):
         mac: str | None = None,
     ) -> NodeResult:
         """Spawn an edge_storage_server container, attach it to OVS LAN ``lan``,
-        and join the replica set via ``rs.add()``.
+                and join the replica set via the sidecar's direct seed-host reconfig.
 
         Steps:
           1. ``docker run --network none edge_storage_server mongod --replSet ...``
@@ -59,8 +60,15 @@ class StorageNodeAdder(_BaseNodeAdder):
         # ── Step 1: docker run ────────────────────────────────────────────────
         logger.info("[node_add] step=docker_run container=%s rs=%s", name, rs_name)
         t0 = time.perf_counter()
-        ok, stdout, stderr = self._docker_run_storage(name, rs_name, port, lan,
-                                                      rs_seed_host=rs_seed_host)
+        ok, stdout, stderr = self._docker_run_storage(
+            name,
+            rs_name,
+            port,
+            lan,
+            rs_seed_host=rs_seed_host,
+            ip=ip,
+            mac=mac,
+        )
         timings.docker_run_s = time.perf_counter() - t0
 
         if not ok:
@@ -166,8 +174,16 @@ class StorageNodeAdder(_BaseNodeAdder):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _docker_run_storage(self, name: str, rs_name: str, port: int, lan: int,
-                            rs_seed_host: str | None = None) -> tuple[bool, str, str]:
+    def _docker_run_storage(
+        self,
+        name: str,
+        rs_name: str,
+        port: int,
+        lan: int,
+        rs_seed_host: str | None = None,
+        ip: str | None = None,
+        mac: str | None = None,
+    ) -> tuple[bool, str, str]:
         state = self._container_state(name)
         if state == "running":
             logger.info("[node_add] container %s already running — skipping docker run", name)
@@ -187,11 +203,16 @@ class StorageNodeAdder(_BaseNodeAdder):
             "-e", f"MONGO_REPLSET={rs_name}",
             "-e", f"MONGO_PORT={port}",
             "-e", f"CONTAINER_NAME={name}",
+            "-e", "IFACE=eth0",
             # Dynamic secondaries inherit HEARTBEAT_ENABLED=0 (image default).
             # Lifecycle is handled by scale-down (graceful) + telemetry-window
             # absence timeout (failure). See
             # docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
         ]
+        if ip:
+            cmd += ["-e", f"OWN_IP={ip}"]
+        if mac:
+            cmd += ["-e", f"OWN_MAC={mac}"]
         # If rs_seed_host is provided, the sidecar will self-join the RS
         if rs_seed_host:
             cmd += ["-e", "RS_ADD_SELF=true", "-e", f"RS_SEED_HOST={rs_seed_host}"]

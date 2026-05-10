@@ -14,4 +14,4 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "${SCRIPT_DIR}/add_network_node.sh" "$@"
+exec /bin/bash "${SCRIPT_DIR}/add_network_node.sh" "$@"

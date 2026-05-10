@@ -46,6 +46,8 @@ MAX_IDLE_MS:  int   = int(os.environ.get("MAX_IDLE_MS",
                           str(int(os.environ.get("VIP_IDLE_TIMEOUT", "30")) * 1000)))
 TAU_DADOS_MS: float = float(os.environ.get("TAU_DADOS_MS", "65"))
 CIRCUIT_COOLDOWN_S: float = float(os.environ.get("CIRCUIT_COOLDOWN_S", "5"))
+DRAIN_POLL_INTERVAL_S: float = float(os.environ.get("DRAIN_POLL_INTERVAL_S", "0.5"))
+DRAIN_QUIET_PERIOD_S: float = float(os.environ.get("DRAIN_QUIET_PERIOD_S", "1.0"))
 MONGO_CLIENT_RETIRE_GRACE_S: float = float(
     os.environ.get("MONGO_CLIENT_RETIRE_GRACE_S", "30")
 )
@@ -56,6 +58,7 @@ MONGO_CLIENT_RETIRE_GRACE_S: float = float(
 
 _draining = False
 _active_requests = 0
+_last_user_request_ts = time.monotonic()
 _active_requests_lock = threading.Lock()
 _SKIP_COUNTING = frozenset({"/health", "/drain"})
 
@@ -244,16 +247,18 @@ def timed_db(lan: str):
 # Drain guard — registered before init_telemetry so it has priority
 # ---------------------------------------------------------------------------
 
+def get_drain_state() -> str:
+    return "draining" if _draining else "active"
+
 @app.before_request
 def _drain_guard():
-    global _active_requests
+    global _active_requests, _last_user_request_ts
     g.counted = False # g is the Flask request-global namespace; this flag tracks whether the current request was counted in _active_requests
     if request.path in _SKIP_COUNTING:
-        return None  # control-plane routes bypass counting and drain check
-    if _draining:
-        return jsonify({"status": "draining"}), 503
+        return None  # control-plane routes bypass request counting
     with _active_requests_lock:
         _active_requests += 1
+        _last_user_request_ts = time.monotonic()
     g.counted = True  # only set after successful increment
     return None
 
@@ -283,23 +288,41 @@ _drain_monitor_thread: threading.Thread | None = None
 
 @app.route("/drain", methods=["POST"])
 def drain():
-    """Signal the server to stop accepting new requests and drain in-flight ones.
+    """Change the local drain state.
 
-    The drain monitor thread watches ``_active_requests`` and fires a
-    ``drain_complete`` ZMQ event once all in-flight requests finish, then
-    terminates the process via ``os._exit(0)``.
+    Supported commands:
+      - start  (default when omitted)
+      - cancel
+
+    ``start`` moves the server into quiesce mode without rejecting workload
+    requests. Repeated ``start`` refreshes the quiet-period timer.
     """
-    global _draining, _drain_monitor_thread
-    _draining = True
-    if _drain_monitor_thread is None:
+    global _draining, _drain_monitor_thread, _last_user_request_ts
+    body = request.get_json(silent=True) or {}
+    command = body.get("command", "start")
+
+    if command not in ("start", "cancel"):
+        return jsonify({"error": "invalid command"}), 400
+
+    if command == "cancel":
+        _draining = False
+        with _active_requests_lock:
+            remaining = _active_requests
+        log.info("Drain canceled — server returned to active state with %d in-flight", remaining)
+        return jsonify({"state": "active", "active_requests": remaining}), 200
+
+    with _active_requests_lock:
+        _draining = True
+        _last_user_request_ts = time.monotonic()
+        remaining = _active_requests
+
+    if _drain_monitor_thread is None or not _drain_monitor_thread.is_alive():
         _drain_monitor_thread = threading.Thread(
             target=_drain_monitor, daemon=True, name="drain-monitor"
         )
         _drain_monitor_thread.start()
-    with _active_requests_lock:
-        remaining = _active_requests
-    log.info("Drain activated — rejecting new requests, %d in-flight", remaining)
-    return jsonify({"status": "draining", "active_requests": remaining}), 200
+    log.info("Drain activated — quiescing with %d in-flight", remaining)
+    return jsonify({"state": "draining", "active_requests": remaining}), 200
 
 
 @app.route("/vip_data", methods=["PUT"])
@@ -591,15 +614,21 @@ threading.Thread(
 
 
 def _drain_monitor() -> None:
-    """Background thread: started by POST /drain. Polls active_requests and,
-    once all in-flight requests finish, sends a drain_complete ZMQ event then
-    terminates the process via os._exit(0).
+    """Background thread started by POST /drain.
+
+    The server keeps serving workload traffic while draining. Once request
+    activity reaches zero and remains quiet for a short period, emit
+    ``drain_complete`` and terminate the process. If drain is canceled, exit
+    the thread silently.
     """
     while True:
-        time.sleep(0.5)
+        time.sleep(DRAIN_POLL_INTERVAL_S)
         with _active_requests_lock:
             remaining = _active_requests
-        if remaining <= 0:
+            quiet_for = time.monotonic() - _last_user_request_ts
+        if not _draining:
+            return
+        if remaining <= 0 and quiet_for >= DRAIN_QUIET_PERIOD_S:
             log.info("Drain complete \u2014 all in-flight requests finished, sending drain_complete event")
             _metric_sender.send({
                 "event_type": "drain_complete",
@@ -609,7 +638,7 @@ def _drain_monitor() -> None:
             time.sleep(0.1)  # small delay to let ZMQ flush the send buffer
             os._exit(0)  # noqa: SLF001 — intentional hard exit after drain
 
-init_telemetry(app, sender=_metric_sender)
+init_telemetry(app, sender=_metric_sender, get_drain_state=get_drain_state)
 
 if __name__ == "__main__":
     log.info(

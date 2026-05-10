@@ -216,6 +216,7 @@ def _publish_loop() -> None:
             time_db     = [event["time_db_ms"] for event in events]
             time_procs  = [event["time_total_ms"] - event["time_db_ms"] for event in events]
             errors      = sum(1 for event in events if event["status_code"] >= 500)
+            latest_event = max(events, key=lambda event: event.get("ts", 0.0))
 
             # --- Tier 1 selective-sync roll-up ---
             # 1) p95 per owner_lan across every request this server made.
@@ -285,6 +286,7 @@ def _publish_loop() -> None:
                 "avg_cpu_percent":   statistics.mean([event["cpu_percent"] for event in events]),
                 "avg_ram_used_mb":   statistics.mean([event["ram_used_mb"] for event in events]),
                 "last_report_ts":    last_seen.get(server_id, 0.0),
+                "state":             latest_event.get("state", "active"),
                 "avg_time_db_read_ms":   statistics.mean(e.get("time_db_read_ms", 0) for e in events),
                 "avg_time_db_write_ms":  statistics.mean(e.get("time_db_write_ms", 0) for e in events),
                 "avg_time_db_cmd_count": statistics.mean(e.get("time_db_cmd_count", 0) for e in events),
@@ -344,7 +346,14 @@ def _publish_loop() -> None:
                         "avg_cpu_percent":   hb.get("cpu_percent", 0.0),
                         "avg_ram_used_mb":   hb.get("ram_used_mb", 0.0),
                         "last_report_ts":    last_seen.get(sid, hb.get("ts", 0.0)),
+                        "state":             hb.get("state", "active"),
                     }
+                else:
+                    ts = hb.get("ts", 0.0)
+                    entry = servers[sid]
+                    if ts > entry.get("last_report_ts", 0.0):
+                        entry["last_report_ts"] = ts
+                        entry["state"] = hb.get("state", entry.get("state", "active"))
 
         # ── Tier 1 selective-sync frames — last-writer-wins per collection ─────
         # The supervisor pushes one frame per Change Stream event per

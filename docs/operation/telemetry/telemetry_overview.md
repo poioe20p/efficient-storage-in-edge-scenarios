@@ -506,13 +506,18 @@ endpoints, configured via environment variables:
 The `_on_telemetry_update` callback (Thread 2):
 
 1. Ignores summaries not matching this controller's `LAN_ID`.
-2. Processes control events (`drain_complete` → submit `CleanupComputeAlert`;
-   `rs_secondary_ready` → promote storage node to VIP pool).
+2. Processes control events (`drain_complete` → submit cleanup when the MAC is
+  still pending, otherwise log and ignore; `rs_secondary_ready` → promote
+  storage node to VIP pool).
 3. Synchronises node tracking (newly seen MACs, absent-node detection with
    birth grace period).
 4. Calls `update_server_stats(summary.servers)` and
-   `update_storage_stats(summary.storage_servers)` to feed Thread 1's VIP
-   routing cost functions.
+  `update_storage_stats(summary.storage_servers)` to feed Thread 1's VIP
+  routing cost functions. The retained `_server_stats` map is also reused by
+  compute scale-down candidate selection: a quiet dynamic compute node may
+  drop out of the current window's `summary.servers` map but still remain
+  rankable until its cached `last_report_ts` exceeds
+  `SCALE_DOWN_CANDIDATE_MAX_STALENESS_S` (default 90 s).
 5. Promotes storage nodes from telemetry when `member_state == "SECONDARY"`
    (fallback path for VIP registration — see elasticity overview).
 6. Evaluates domain-level thresholds using a **weighted degradation score**
