@@ -244,6 +244,11 @@ since the last poll:
   `SECONDARY`, so the controller can see a newly promoted backend before the
   next normal activity-driven poll.
 
+Replica-set readiness and telemetry inspection are intentionally pinned to the
+container's own `mongod` via a direct local client. The sidecar is checking the
+state of the MongoDB server running inside that container, not asking PyMongo
+to select an arbitrary replica-set member after topology discovery.
+
 When idle, a `heartbeat` event is sent every `HEARTBEAT_INTERVAL_S` (default
 60 s) for liveness — **only when `HEARTBEAT_ENABLED=true`**, which is set
 explicitly on the static primary DB container. Dynamic storage secondaries keep
@@ -507,12 +512,18 @@ The `_on_telemetry_update` callback (Thread 2):
 
 1. Ignores summaries not matching this controller's `LAN_ID`.
 2. Processes control events (`drain_complete` → submit cleanup when the MAC is
-  still pending, otherwise log and ignore; `rs_secondary_ready` → promote
-  storage node to VIP pool).
+  still pending, otherwise log and ignore; `rs_secondary_ready` → promote the
+  storage node into `VIP_DATA` and mark a short warm lease).
 3. Synchronises node tracking (newly seen MACs, absent-node detection with
    birth grace period).
 4. Calls `update_server_stats(summary.servers)` and
   `update_storage_stats(summary.storage_servers)` to feed Thread 1's VIP
+
+Telemetry and control events make promoted storage visible to the controller,
+but they are not the intended post-failure traffic-steering mechanism.
+The approved VIP-routing phases use in-band `VIP_DATA_RECOVERY_*` selection
+after real connection failures instead of controller-driven `/vip_data`
+refresh fan-out.
   routing cost functions. The retained `_server_stats` map is also reused by
   compute scale-down candidate selection: a quiet dynamic compute node may
   drop out of the current window's `summary.servers` map but still remain

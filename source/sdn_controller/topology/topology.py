@@ -31,6 +31,10 @@ class TopologyMixin:
         self.vip_data_n1_mac = os.environ.get("VIP_DATA_N1_MAC", "aa:bb:cc:dd:ee:02")
         self.vip_data_n2_ip  = os.environ.get("VIP_DATA_N2_IP",  "10.0.1.254")
         self.vip_data_n2_mac = os.environ.get("VIP_DATA_N2_MAC", "aa:bb:cc:dd:ee:03")
+        self.vip_data_recovery_n1_ip = os.environ.get("VIP_DATA_RECOVERY_N1_IP", "10.0.0.252")
+        self.vip_data_recovery_n1_mac = os.environ.get("VIP_DATA_RECOVERY_N1_MAC", "aa:bb:cc:dd:ee:12")
+        self.vip_data_recovery_n2_ip = os.environ.get("VIP_DATA_RECOVERY_N2_IP", "10.0.1.252")
+        self.vip_data_recovery_n2_mac = os.environ.get("VIP_DATA_RECOVERY_N2_MAC", "aa:bb:cc:dd:ee:13")
 
         self._network_id           = os.environ.get("LAN_ID", "lan1")
         self._topology_interval    = max(1, int(os.environ.get("TOPOLOGY_INTERVAL", "1")))

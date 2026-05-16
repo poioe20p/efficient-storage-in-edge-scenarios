@@ -18,8 +18,10 @@ forwarding (the packet is already rewritten — no second VIP PacketIn).
 
 This is NOT a new thread.  All methods are called inline by Thread 1's
 packet_in_handler.  State written by Thread 2 (_server_stats, _storage_stats)
-is read here — no locks are needed because eventlet uses cooperative switching
-and these dicts are only mutated between yield points.
+is read here without additional locking because eventlet uses cooperative
+switching and these dicts are only mutated between yield points. Warm-lease
+state is the exception: native Thread 3 writes it too, so that slice is
+guarded by a small threading.Lock.
 
 Usage (class MRO in main_n*.py):
     class KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp):
@@ -27,14 +29,25 @@ Usage (class MRO in main_n*.py):
 """
 import logging
 import os
+import threading
+import time
+from dataclasses import dataclass
 
 from os_ken.lib.packet import arp as arp_lib
 from os_ken.lib.packet import ethernet as eth_lib
 from os_ken.lib.packet import ether_types, ipv4, packet
+from os_ken.lib.packet import tcp as tcp_lib
 
+from .scaling_config import _VIP_WARM_SERVER_SECONDS, _VIP_WARM_STORAGE_SECONDS
 from .telemetry.models import ServerSummary, StorageServerSummary
 
 logger = logging.getLogger("os_ken.vip_routing")
+
+
+@dataclass(frozen=True)
+class WarmLease:
+    started_ts: float
+    expires_ts: float
 
 # --- Server (compute) WSM weights ---
 _W_CPU      = float(os.environ.get("W_CPU",      "0.2"))
@@ -51,6 +64,8 @@ _W_STORAGE_HOPS        = float(os.environ.get("W_STORAGE_HOPS",        "0.3"))
 
 _VIP_IDLE_TIMEOUT = int(os.environ.get("VIP_IDLE_TIMEOUT", "30"))
 _VIP_HARD_TIMEOUT = int(os.environ.get("VIP_HARD_TIMEOUT", "120"))
+_VIP_DATA_RECOVERY_IDLE_TIMEOUT = int(os.environ.get("VIP_DATA_RECOVERY_IDLE_TIMEOUT", "40"))
+_VIP_DATA_RECOVERY_HARD_TIMEOUT = int(os.environ.get("VIP_DATA_RECOVERY_HARD_TIMEOUT", "45"))
 
 # Cross-network routing: OVS port number connected to the inter-LAN router.
 # 0 = disabled (local-only mode).  Set to the actual port (e.g. 3) to enable
@@ -73,6 +88,8 @@ class VipRoutingMixin:
     Depends on TopologyMixin attributes (set at __init__ time):
         vip_server_ip, vip_server_mac,
         vip_data_n1_ip, vip_data_n1_mac, vip_data_n2_ip, vip_data_n2_mac,
+        vip_data_recovery_n1_ip, vip_data_recovery_n1_mac,
+        vip_data_recovery_n2_ip, vip_data_recovery_n2_mac,
         vip_server_pool, vip_storage_pool_n1, vip_storage_pool_n2,
         hop_cache, _hop_cache_max, host_attachment
 
@@ -93,23 +110,39 @@ class VipRoutingMixin:
         # events — the aggregator forwards it as the dict key.
         # Updated by Thread 2 via update_server_stats() / update_storage_stats().
         # Read by Thread 1 cost functions (select_server / select_storage).
-        self._server_stats:  dict[str, ServerSummary]        = {}
-        self._storage_stats: dict[str, StorageServerSummary] = {}
+        self._server_stats:  dict[str, ServerSummary]        = {} # mac -> ServerSummary
+        self._storage_stats: dict[str, StorageServerSummary] = {} # mac -> StorageServerSummary
 
         # Round-robin counters for cold-start tie-breaking.
         # When multiple backends share the lowest WSM cost (common during cold
         # start when all resource dimensions are 0.0), the counter ensures
         # traffic is distributed instead of always hitting the first entry.
         self._rr_server_idx: int = 0
-        self._rr_storage_idx: dict[str, int] = {}   # keyed by domain ("n1"/"n2")
+        self._rr_storage_idx: dict[str, int] = {}   # domain -> counter
+
+        self._warm_lock = threading.Lock()
+        self._warm_server_leases: dict[str, WarmLease] = {} # mac -> lease
+        self._warm_storage_leases: dict[str, dict[str, WarmLease]] = {
+            "n1": {},
+            "n2": {},
+        } # domain -> (mac -> lease)
 
         logger.debug(
             "vip routing mixin: w_cpu=%.2f w_ram=%.2f w_req=%.2f w_hops=%.2f "
-            "idle_timeout=%ds hard_timeout=%ds router_port=%d",
+            "idle_timeout=%ds hard_timeout=%ds router_port=%d warm_storage=%.1fs warm_server=%.1fs",
             _W_CPU, _W_RAM, _W_REQUESTS, _W_HOPS,
             _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
             _ROUTER_OVS_PORT,
+            _VIP_WARM_STORAGE_SECONDS,
+            _VIP_WARM_SERVER_SECONDS,
         )
+
+    def _iter_vip_bindings(self):
+        yield (self.vip_server_ip, self.vip_server_mac, "server", False)
+        yield (self.vip_data_n1_ip, self.vip_data_n1_mac, "n1", False)
+        yield (self.vip_data_n2_ip, self.vip_data_n2_mac, "n2", False)
+        yield (self.vip_data_recovery_n1_ip, self.vip_data_recovery_n1_mac, "n1", True)
+        yield (self.vip_data_recovery_n2_ip, self.vip_data_recovery_n2_mac, "n2", True)
 
     # ------------------------------------------------------------------
     # Datapath connection hook
@@ -151,6 +184,107 @@ class VipRoutingMixin:
         self._mac_to_ip[mac] = ip
         logger.info("backend ip registered (static seed): %s -> %s", mac, ip)
 
+    def _claim_warm_backend(
+        self,
+        vip_name: str,
+        leases: dict[str, WarmLease],
+        pool: dict[str, dict],
+    ) -> dict | None:
+        """Check for and claim any warm lease for a backend in the pool."""
+        now = time.monotonic()
+        
+        with self._warm_lock:
+            
+            expired = [
+                mac
+                for mac, lease in leases.items()
+                if lease.expires_ts <= now
+            ]
+            for mac in expired:
+                leases.pop(mac, None)
+
+            candidates = [
+                (mac, lease)
+                for mac, lease in leases.items()
+                if mac in pool and mac in self._mac_to_ip
+            ]
+            if not candidates:
+                for mac in expired:
+                    logger.info("%s warm lease expired: mac=%s", vip_name, mac)
+                return None
+
+            mac, lease = max(candidates, key=lambda item: item[1].started_ts)
+            chosen = pool[mac]
+
+        for expired_mac in expired:
+            logger.info("%s warm lease expired: mac=%s", vip_name, expired_mac)
+
+        logger.info(
+            "%s warm lease claimed: mac=%s remaining=%.1fs",
+            vip_name,
+            mac,
+            max(lease.expires_ts - now, 0.0),
+        )
+        return chosen
+
+    # Controller-side lifecycle hooks used by Thread 2 and Thread 3 to keep
+    # VIP membership, backend IP seeding, and warm-lease state synchronized
+    # when dynamic backends are promoted, admitted, removed, or retracted.
+
+    def mark_server_backend_warm(self, mac: str) -> None:
+        now = time.monotonic()
+        with self._warm_lock:
+            self._warm_server_leases[mac] = WarmLease(
+                started_ts=now,
+                expires_ts=now + _VIP_WARM_SERVER_SECONDS,
+            )
+        logger.info(
+            "vip_server warm lease created: mac=%s ttl=%.1fs",
+            mac,
+            _VIP_WARM_SERVER_SECONDS,
+        )
+
+    def mark_storage_backend_warm(self, mac: str, domain: str) -> None:
+        now = time.monotonic()
+        with self._warm_lock:
+            domain_leases = self._warm_storage_leases.setdefault(domain, {})
+            domain_leases[mac] = WarmLease(
+                started_ts=now,
+                expires_ts=now + _VIP_WARM_STORAGE_SECONDS,
+            )
+        logger.info(
+            "vip_data(%s) warm lease created: mac=%s ttl=%.1fs",
+            domain,
+            mac,
+            _VIP_WARM_STORAGE_SECONDS,
+        )
+
+    def clear_server_backend_warm(self, mac: str) -> None:
+        with self._warm_lock:
+            cleared = self._warm_server_leases.pop(mac, None) is not None
+        if cleared:
+            logger.info("vip_server warm lease cleared: mac=%s", mac)
+
+    def clear_storage_backend_warm(self, mac: str, domain: str) -> None:
+        with self._warm_lock:
+            domain_leases = self._warm_storage_leases.setdefault(domain, {})
+            cleared = domain_leases.pop(mac, None) is not None
+        if cleared:
+            logger.info("vip_data(%s) warm lease cleared: mac=%s", domain, mac)
+
+    def register_new_server_backend(self, mac: str, ip: str) -> None:
+        self.add_server_mac(mac)
+        self.register_backend_ip(mac, ip)
+        self.mark_server_backend_warm(mac)
+
+    def unregister_server_backend(self, mac: str) -> None:
+        self.remove_server_mac(mac)
+        self.clear_server_backend_warm(mac)
+
+    def unregister_storage_backend(self, mac: str, domain: str) -> None:
+        self.remove_storage_mac(mac, domain)
+        self.clear_storage_backend_warm(mac, domain)
+
     # ------------------------------------------------------------------
     # VIP packet-in entry point — called from Thread 1's packet_in_handler
     # ------------------------------------------------------------------
@@ -169,7 +303,7 @@ class VipRoutingMixin:
             if (
                 arp_pkt is not None
                 and arp_pkt.opcode == arp_lib.ARP_REQUEST
-                and arp_pkt.dst_ip in (self.vip_server_ip, self.vip_data_n1_ip, self.vip_data_n2_ip)
+                and any(arp_pkt.dst_ip == vip_ip for vip_ip, _, _, _ in self._iter_vip_bindings())
             ):
                 logger.debug("vip ARP request: dpid=%s in_port=%s arp=%s", datapath.id, in_port, arp_pkt)
                 return self._reply_vip_arp(datapath, in_port, arp_pkt)
@@ -200,6 +334,16 @@ class VipRoutingMixin:
         if dst_ip == self.vip_data_n2_ip:
             logger.debug("vip data n2 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
             return self._handle_vip_data(datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n2")
+        if dst_ip == self.vip_data_recovery_n1_ip:
+            logger.debug("vip data recovery n1 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+            return self._handle_vip_data(
+                datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n1", recovery=True
+            )
+        if dst_ip == self.vip_data_recovery_n2_ip:
+            logger.debug("vip data recovery n2 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+            return self._handle_vip_data(
+                datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n2", recovery=True
+            )
 
         return False
 
@@ -209,15 +353,15 @@ class VipRoutingMixin:
 
     def _reply_vip_arp(self, datapath, in_port, arp_req) -> bool:
         """Craft and send an ARP reply for a VIP address request."""
-        if arp_req.dst_ip == self.vip_server_ip:
-            vip_mac = self.vip_server_mac
-            vip_ip  = self.vip_server_ip
-        elif arp_req.dst_ip == self.vip_data_n1_ip:
-            vip_mac = self.vip_data_n1_mac
-            vip_ip  = self.vip_data_n1_ip
-        else:
-            vip_mac = self.vip_data_n2_mac
-            vip_ip  = self.vip_data_n2_ip
+        vip_ip = None
+        vip_mac = None
+        for candidate_ip, candidate_mac, _, _ in self._iter_vip_bindings():
+            if arp_req.dst_ip == candidate_ip:
+                vip_ip = candidate_ip
+                vip_mac = candidate_mac
+                break
+        if vip_ip is None or vip_mac is None:
+            return False
 
         reply_pkt = packet.Packet()
         reply_pkt.add_protocol(eth_lib.ethernet(
@@ -292,7 +436,7 @@ class VipRoutingMixin:
     # VIP_DATA (MongoDB) — fixed storage node per domain
     # ------------------------------------------------------------------
 
-    def _handle_vip_data(self, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain) -> bool: # * allows passing domain as a keyword-only argument for clarity
+    def _handle_vip_data(self, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain, recovery=False) -> bool: # * allows passing domain as a keyword-only argument for clarity
         storage = self.select_storage(domain, src_mac)
         if storage is None:
             logger.warning("vip_data(%s): pool empty, packet dropped", domain)
@@ -308,10 +452,29 @@ class VipRoutingMixin:
             )
             return True
 
-        if domain == "n1":
+        if recovery and domain == "n1":
+            vip_ip, vip_mac = self.vip_data_recovery_n1_ip, self.vip_data_recovery_n1_mac
+        elif recovery and domain == "n2":
+            vip_ip, vip_mac = self.vip_data_recovery_n2_ip, self.vip_data_recovery_n2_mac
+        elif domain == "n1":
             vip_ip, vip_mac = self.vip_data_n1_ip, self.vip_data_n1_mac
         else:
             vip_ip, vip_mac = self.vip_data_n2_ip, self.vip_data_n2_mac
+
+        tcp_src_port = None
+        tcp_dst_port = None
+        if recovery:
+            tcp_pkt = pkt.get_protocol(tcp_lib.tcp)
+            if ip_proto != 6 or tcp_pkt is None or tcp_pkt.dst_port != 27018:
+                logger.warning(
+                    "vip_data(%s) recovery: non-Mongo recovery packet dropped proto=%s dst_port=%s",
+                    domain,
+                    ip_proto,
+                    getattr(tcp_pkt, "dst_port", None),
+                )
+                return True
+            tcp_src_port = tcp_pkt.src_port
+            tcp_dst_port = tcp_pkt.dst_port
 
         self._install_vip_dnat_snat(
             datapath, in_port, pkt,
@@ -322,11 +485,15 @@ class VipRoutingMixin:
             vip_mac=vip_mac,
             real_backend_ip=storage_ip,
             real_backend_mac=storage_mac,
+            tcp_src_port=tcp_src_port,
+            tcp_dst_port=tcp_dst_port,
+            idle_timeout=_VIP_DATA_RECOVERY_IDLE_TIMEOUT if recovery else None,
+            hard_timeout=_VIP_DATA_RECOVERY_HARD_TIMEOUT if recovery else None,
         )
         
         logger.info(
-            "vip_data(%s): client=%s -> vip=%s -> real=%s",
-            domain, src_ip, vip_ip, storage_ip,
+            "vip_data(%s): client=%s -> vip=%s -> real=%s recovery=%s",
+            domain, src_ip, vip_ip, storage_ip, recovery,
         )
         
         return True
@@ -349,6 +516,10 @@ class VipRoutingMixin:
         if not pool:
             logger.warning("select_server: pool empty")
             return None
+
+        warm = self._claim_warm_backend("vip_server", self._warm_server_leases, pool)
+        if warm is not None:
+            return warm
 
         # Compute max values for normalization (only from servers in the pool)
         pool_stats = [self._server_stats[m] for m in pool if m in self._server_stats]
@@ -429,6 +600,14 @@ class VipRoutingMixin:
             logger.warning("select_storage(%s): pool empty", domain)
             return None
 
+        warm = self._claim_warm_backend(
+            f"vip_data({domain})",
+            self._warm_storage_leases.setdefault(domain, {}),
+            pool,
+        )
+        if warm is not None:
+            return warm
+
         pool_stats = [self._storage_stats[m] for m in pool if m in self._storage_stats]
         cpu_max  = max((s.avg_cpu_percent        for s in pool_stats), default=0.0) or 1.0
         ram_max  = max((s.avg_ram_used_mb         for s in pool_stats), default=0.0) or 1.0
@@ -499,6 +678,8 @@ class VipRoutingMixin:
     def _install_vip_dnat_snat(
         self, datapath, in_port, pkt, *,
         client_mac, client_ip, ip_proto, vip_ip, vip_mac, real_backend_ip, real_backend_mac,
+        tcp_src_port=None, tcp_dst_port=None,
+        idle_timeout=None, hard_timeout=None,
     ):
         """Install a DNAT + SNAT flow rule pair and Packet-Out the first packet.
 
@@ -511,11 +692,11 @@ class VipRoutingMixin:
                   ipv4_src=backend, ipv4_dst=client, ip_proto)
             → set_field(eth_src=VIP_mac, ipv4_src=VIP_ip), output to client port
 
-        src_port (TCP/UDP) is intentionally excluded.  For VIP_DATA one rule per
-        (web_server_ip, domain_VIP) pair covers all concurrent connections from
-        that web server, preventing tier-transition read inconsistency.
-        For VIP_SERVER the same rule covers all parallel browser sub-connections,
-        ensuring per-client server affinity.
+        By default, transport ports are excluded so one steady-state VIP_DATA
+        rule can cover concurrent connections from the same web server without
+        tier-transition inconsistency. The recovery VIP path can optionally
+        narrow both DNAT and SNAT rules to one TCP connection by passing
+        tcp_src_port/tcp_dst_port and custom timeouts.
         """
         parser  = datapath.ofproto_parser
         ofproto = datapath.ofproto
@@ -546,14 +727,23 @@ class VipRoutingMixin:
         # eth_dst=vip_mac: the client sends to VIP_MAC (from our ARP reply).
         # ipv4_src=client_ip: scopes the rule to this specific client so
         #   multiple simultaneous clients each select their own backend.
-        dnat_match = parser.OFPMatch(
-            eth_type=0x0800,
-            eth_src=client_mac,    # scope to this exact client (ref: eth_src=src)
-            eth_dst=vip_mac,
-            ipv4_src=client_ip,
-            ipv4_dst=vip_ip,
-            ip_proto=ip_proto,
+        has_tcp_ports = (
+            ip_proto == 6
+            and tcp_src_port is not None
+            and tcp_dst_port is not None
         )
+        dnat_fields = {
+            "eth_type": 0x0800,
+            "eth_src": client_mac,
+            "eth_dst": vip_mac,
+            "ipv4_src": client_ip,
+            "ipv4_dst": vip_ip,
+            "ip_proto": ip_proto,
+        }
+        if has_tcp_ports:
+            dnat_fields["tcp_src"] = tcp_src_port
+            dnat_fields["tcp_dst"] = tcp_dst_port
+        dnat_match = parser.OFPMatch(**dnat_fields)
         # Cross-network: the frame must be addressed to the router's LAN MAC so
         # the router's kernel IP stack accepts it for L3 forwarding.  Sending
         # eth_dst=real_backend_mac causes the router to silently drop the frame
@@ -568,8 +758,8 @@ class VipRoutingMixin:
         self._install_flow(
             datapath, priority=200,
             match=dnat_match, actions=dnat_actions,
-            idle_timeout=_VIP_IDLE_TIMEOUT,
-            hard_timeout=_VIP_HARD_TIMEOUT,
+            idle_timeout=idle_timeout if idle_timeout is not None else _VIP_IDLE_TIMEOUT,
+            hard_timeout=hard_timeout if hard_timeout is not None else _VIP_HARD_TIMEOUT,
         )
 
         # --- SNAT rule ---
@@ -589,14 +779,18 @@ class VipRoutingMixin:
             )
         else:
             snat_eth_src = real_backend_mac
-        snat_match = parser.OFPMatch(
-            eth_type=0x0800,
-            eth_src=snat_eth_src,
-            eth_dst=client_mac,
-            ipv4_src=real_backend_ip,
-            ipv4_dst=client_ip,
-            ip_proto=ip_proto,
-        )
+        snat_fields = {
+            "eth_type": 0x0800,
+            "eth_src": snat_eth_src,
+            "eth_dst": client_mac,
+            "ipv4_src": real_backend_ip,
+            "ipv4_dst": client_ip,
+            "ip_proto": ip_proto,
+        }
+        if has_tcp_ports:
+            snat_fields["tcp_src"] = tcp_dst_port
+            snat_fields["tcp_dst"] = tcp_src_port
+        snat_match = parser.OFPMatch(**snat_fields)
         snat_actions = [
             parser.OFPActionSetField(eth_src=vip_mac),
             parser.OFPActionSetField(ipv4_src=vip_ip),
@@ -605,13 +799,17 @@ class VipRoutingMixin:
         self._install_flow(
             datapath, priority=200,
             match=snat_match, actions=snat_actions,
-            idle_timeout=_VIP_IDLE_TIMEOUT,
-            hard_timeout=_VIP_HARD_TIMEOUT,
+            idle_timeout=idle_timeout if idle_timeout is not None else _VIP_IDLE_TIMEOUT,
+            hard_timeout=hard_timeout if hard_timeout is not None else _VIP_HARD_TIMEOUT,
         )
 
         logger.info(
-            "dnat/snat installed: vip=%s -> real=%s (idle=%ds hard=%ds)",
-            vip_ip, real_backend_ip, _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
+            "dnat/snat installed: vip=%s -> real=%s (idle=%ds hard=%ds recovery_ports=%s)",
+            vip_ip,
+            real_backend_ip,
+            idle_timeout if idle_timeout is not None else _VIP_IDLE_TIMEOUT,
+            hard_timeout if hard_timeout is not None else _VIP_HARD_TIMEOUT,
+            has_tcp_ports,
         )
 
         # Packet-Out the first packet with DNAT actions so it reaches the backend
@@ -640,7 +838,7 @@ class VipRoutingMixin:
         parser  = datapath.ofproto_parser
         ofproto = datapath.ofproto
 
-        for vip_ip in (self.vip_server_ip, self.vip_data_n1_ip, self.vip_data_n2_ip):
+        for vip_ip, _, _, _ in self._iter_vip_bindings():
             match   = parser.OFPMatch(eth_type=0x0806, arp_tpa=vip_ip)
             actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                               ofproto.OFPCML_NO_BUFFER)]
@@ -663,7 +861,7 @@ class VipRoutingMixin:
         parser  = datapath.ofproto_parser
         ofproto = datapath.ofproto
 
-        for vip_ip in (self.vip_server_ip, self.vip_data_n1_ip, self.vip_data_n2_ip):
+        for vip_ip, _, _, _ in self._iter_vip_bindings():
             match   = parser.OFPMatch(eth_type=0x0800, ipv4_dst=vip_ip)
             actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                               ofproto.OFPCML_NO_BUFFER)]

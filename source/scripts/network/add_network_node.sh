@@ -14,9 +14,10 @@ declare -A LAN_SUBNET=( [1]="10.0.0" [2]="10.0.1" )
 declare -A LAN_GATEWAY=( [1]="10.0.0.1" [2]="10.0.1.1" )
 declare -A VETH_RANGE_START=( [1]=100 [2]=200 )
 declare -A VETH_RANGE_END=( [1]=149 [2]=249 )
-# .1 = gateway, .253 = VIP_SERVER, .254 = VIP_DATA_N{lan};
+# .1 = gateway, .252 = VIP_DATA recovery, .253 = VIP_SERVER,
+# .254 = VIP_DATA_N{lan};
 # test clients (namespace-based) use .56+
-declare -A RESERVED_SUFFIX=( [1]="1 253 254" [2]="1 253 254" )
+declare -A RESERVED_SUFFIX=( [1]="1 252 253 254" [2]="1 252 253 254" )
 
 LAN=""
 CONTAINER_NAME=""

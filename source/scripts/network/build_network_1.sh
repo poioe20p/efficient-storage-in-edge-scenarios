@@ -98,6 +98,9 @@ echo "Launching application containers..."
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name edge_server_n1 --network none \
   -e LAN_ID=lan1 \
+  -e VIP_DATA_RECOVERY_N1_IP=10.0.0.252 \
+  -e VIP_DATA_RECOVERY_N2_IP=10.0.1.252 \
+  -e VIP_DATA_RECOVERY_SESSION_MAX_AGE_S=35 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \
   -e LOG_LEVEL=INFO \
   -e HEARTBEAT_ENABLED=true \

@@ -37,7 +37,8 @@ KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
       │       │    → _promote_storage_backend()
       │       │    → add_storage_mac() + mark_storage_backend_warm()
       │       ├─ update_server_stats() / update_storage_stats()
-      │       └─ _refresh_pending_storage() → bounded PUT /vip_data fan-out
+      │       └─ maintain controller-side warm-lease inputs for later
+      │            fresh storage selections
       │
       └── Thread 3 (elasticity) ── register_new_server_backend() after spawning new containers
 ```
@@ -63,7 +64,7 @@ source/sdn_controller/
 
 ## VIP Addresses
 
-Three virtual IP addresses are managed. The IPs and MACs are configured via
+Three steady-state virtual IP addresses are managed today. The IPs and MACs are configured via
 environment variables and stored as attributes on `TopologyMixin` (see the
 [Topology Overview](../topology/topology_overview.md)):
 
@@ -72,11 +73,30 @@ environment variables and stored as attributes on `TopologyMixin` (see the
 | **VIP_SERVER**  | `VIP_SERVER_IP`, `VIP_SERVER_MAC`   | HTTP edge servers (shared across domains) |
 | **VIP_DATA_N1** | `VIP_DATA_N1_IP`, `VIP_DATA_N1_MAC` | MongoDB storage on LAN 1                  |
 | **VIP_DATA_N2** | `VIP_DATA_N2_IP`, `VIP_DATA_N2_MAC` | MongoDB storage on LAN 2                  |
+| **VIP_DATA_RECOVERY_N1** | `VIP_DATA_RECOVERY_N1_IP`, `VIP_DATA_RECOVERY_N1_MAC` | Temporary MongoDB recovery reconnect on LAN 1 |
+| **VIP_DATA_RECOVERY_N2** | `VIP_DATA_RECOVERY_N2_IP`, `VIP_DATA_RECOVERY_N2_MAC` | Temporary MongoDB recovery reconnect on LAN 2 |
 
 VIP_DATA is per-domain: edge servers on LAN 1 connect to `VIP_DATA_N1` to reach
 LAN 1's MongoDB replica set, and to `VIP_DATA_N2` to reach LAN 2's. This
 separation allows the WSM cost function to independently select the best storage
 node in each domain.
+
+The storage-recovery path still uses separate `VIP_DATA_RECOVERY_N1` and
+`VIP_DATA_RECOVERY_N2` addresses after a real storage-path connection failure,
+but the edge server no longer relies on a one-shot recovery client model.
+`app.py` now seeds a fixed startup-defined LAN registry and tracks one current
+epoch plus draining retired epochs per LAN. Each epoch binds one request-owned
+storage path boundary: mode (`normal` or `recovery`), bound VIP, lazy
+`MongoClient`, lease counts, and bounded recovery expiry. `AutoReconnect`
+rotates the current epoch to a recovery epoch with compare-and-swap semantics,
+old requests keep their leased epoch, new admitted requests lease the new
+current epoch, and background housekeeping rolls expired recovery epochs back to
+normal. `T_dados` is now observation-only and never forces reconnection. See
+[../other/edge_storage_connection_hard_failure_epoch_plan.md](../other/edge_storage_connection_hard_failure_epoch_plan.md).
+The design background remains documented in
+[implementation/vip_data_recovery_vip_arming_plan.md](./implementation/vip_data_recovery_vip_arming_plan.md)
+and
+[implementation/vip_data_recovery_flow_session_plan.md](./implementation/vip_data_recovery_flow_session_plan.md).
 
 ### Scope — Tier 0 and Tier 2 only
 
@@ -179,20 +199,29 @@ Default weights: `W_STORAGE_CPU=0.2`, `W_STORAGE_RAM=0.2`,
 ### Warm Leases
 
 Newly admitted compute backends and newly promoted storage secondaries receive
-bounded warm leases in `VipRoutingMixin`. Each lease is governed by both a
-monotonic expiry time and a remaining-selection budget, and it is claimable
-only when the backend is already visible in the concrete VIP pool and has a
-known backend IP.
+bounded warm leases in `VipRoutingMixin`. Each lease is governed by a monotonic
+expiry time only, and it is claimable only when the backend is already visible
+in the concrete VIP pool and has a known backend IP.
 
 Selection order is therefore:
 
 1. Claim a warm lease if one is currently usable.
 2. Fall back to the normal WSM cost function unchanged.
 
+If multiple warm leases are claimable at once, the newest lease wins first.
+This keeps the brief post-scale-up preference aligned with the latest admitted
+backend under sustained load.
+
 Compute warm leases are created by Thread 3 through
 `register_new_server_backend(mac, ip)`. Storage warm leases are created by
 Thread 2 when `_promote_storage_backend()` admits a `SECONDARY` into the
 appropriate `VIP_DATA` membership set.
+
+The current implementation plan also requires explicit warm-lease invalidation
+on backend removal because dynamic MAC/IP identities are allocator-recycled.
+Later admission still overwrites any prior lease before the backend becomes
+claimable. See
+[implementation/vip_warm_leases_plan.md](./implementation/vip_warm_leases_plan.md).
 
 ### Hop Estimation
 
@@ -282,21 +311,30 @@ LAN's replica set — the edge server routes each query to the correct VIP_DATA
 address based on the `lan1`/`lan2` prefix in the document `_id` (e.g.
 `lan1::device::042` → `VIP_DATA_N1`, `lan2::device::007` → `VIP_DATA_N2`).
 
-### Per-LAN Singleton Clients
+### Per-LAN Epoch Clients
 
-Each edge server maintains a module-level `MongoClient` per LAN with
-`maxPoolSize=1` and `maxIdleTimeMS` aligned with `VIP_IDLE_TIMEOUT × 1000`.
-This design amortises TCP handshake + MongoDB hello cost across requests while
-preserving the SDN controller's DNAT re-evaluation:
+Each edge server now seeds a fixed startup-defined LAN registry at module
+initialization. Startup requires matching normal and recovery VIP mappings for
+every supported LAN; missing or mismatched LAN sets fail fast before telemetry
+or background threads start.
 
-- **During traffic bursts:** the socket is reused — the DNAT rule is still
-  active and directs all traffic to the same backend regardless.
-- **After idle window:** the driver closes the socket automatically. The next
-  request opens a fresh TCP SYN → `packet_in` → controller re-evaluates WSM
-  and may select a different backend.
+For each LAN, `app.py` keeps LAN-local lifecycle state:
 
-`maxPoolSize=1` ensures exactly one DNAT selection is active per LAN per edge
-server at any time, consistent with the workload model.
+- current normal VIP and recovery VIP configuration
+- one circuit breaker shared by all requests for that LAN
+- one current epoch and zero or more retiring epochs
+
+Each epoch owns the lazy `MongoClient`, the bound VIP path, recovery expiry,
+and request lease counts. `maxPoolSize=1` still ensures exactly one DNAT
+selection per LAN per edge server for each live epoch, while the epoch model
+reduces the blast radius of a damaged connection by separating newer requests
+from older leased client state.
+
+The request boundary is now `timed_db(lan)`: it leases the current epoch,
+materializes that epoch's client lazily, and records the leased epoch in the
+request context for failure attribution. If a later VIP update or connection
+failure rotates the current epoch, already leased requests keep using their old
+epoch and bound VIP while new admitted requests move onto the new current epoch.
 
 ### LAN Resolution from Document IDs
 
@@ -312,27 +350,57 @@ Device and node IDs follow `{lan}::{type}::{number}` — the LAN is
 `query_events` always goes to the local `LAN_ID` because it tracks this edge
 server's activity, not the data's origin.
 
-### VIP Address Updates
+### Current VIP Update Surface and Recovery Path
 
-The `/vip_data` PUT route updates `vip_data_per_domain` and invalidates any
-cached singleton client whose LAN key appears in the payload, even when the
-VIP address text is unchanged. Retired clients stop being reused immediately
-and are only closed after a grace period, so in-flight requests can finish on
-the old object while the next query recreates the client through `VIP_DATA`.
+`app.py` exposes a `/vip_data` PUT route that validates the full payload up
+front, rejects malformed input or unknown LANs with JSON `400` responses, and
+updates LAN-local normal VIP configuration under the owning LAN's lifecycle
+lock. When a LAN's normal VIP changes, the edge server immediately replaces the
+current epoch for that LAN with a new normal epoch bound to the new VIP.
 
-### Thread 2 Storage Refresh
+The old leased epoch is moved to a retiring list and drains naturally; it is
+not force-closed while requests still hold leases. This means `/vip_data`
+changes only the storage path for newer admitted requests. The controller no
+longer uses `/vip_data` refresh fan-out as the intended post-failure failover
+mechanism.
+
+Instead:
+
+- a real `AutoReconnect` rotates the failed current epoch to a recovery epoch
+   bound to `VIP_DATA_RECOVERY_*`
+- the controller still installs narrow TCP-port-scoped recovery rules for that
+   recovery VIP path
+- background epoch housekeeping later rolls the current recovery epoch back to
+   a normal epoch after its bounded local recovery window expires
+
+See
+[implementation/vip_data_recovery_vip_arming_plan.md](./implementation/vip_data_recovery_vip_arming_plan.md)
+and
+[implementation/vip_data_recovery_flow_session_plan.md](./implementation/vip_data_recovery_flow_session_plan.md).
+
+### Storage Promotion and Recovery Path
 
 When a dynamic storage node reaches `SECONDARY`, Thread 2 promotes it into the
-correct `VIP_DATA` membership set, marks a short storage warm lease, and
-records one pending refresh keyed by storage MAC. That pending refresh is only
-resolved on a later telemetry pass that sees the backend in the concrete
-`vip_storage_pool_*` and `_mac_to_ip`; an earlier `PUT /vip_data` would only
-reconnect through the old pool membership and be wasted.
+correct `VIP_DATA` membership set and marks a short storage warm lease. That
+controller-local Phase 1 work makes the promoted backend eligible to win the
+next fresh storage selection that actually reaches Thread 1.
 
-Resolution sends a bounded `PUT /vip_data` fan-out to a deterministic
-round-robin subset of local edge servers. Each target retires its per-LAN
-MongoDB client, so the next database request repunts through `VIP_DATA` and
-gives the storage warm lease a chance to steer the reconnect.
+What it does not do by itself is force a distinct backend choice. Under the
+current broad steady-state `VIP_DATA` rule, a fresh normal epoch still depends
+on the controller's existing storage selection logic, and the selected backend
+may be the same as before. The implemented recovery path therefore focuses on
+edge-local blast-radius reduction rather than backend exclusion:
+
+- failure or VIP updates rotate the LAN's current epoch onto a fresh local
+   client object and a bound VIP path for newer requests
+- already leased requests stay on their old epoch until they drain
+- the controller's recovery VIP handling narrows the recovery flow, but it does
+   not promise a different backend unless the chosen VIP path differs
+
+See [implementation/vip_warm_leases_plan.md](./implementation/vip_warm_leases_plan.md),
+[implementation/vip_data_recovery_vip_arming_plan.md](./implementation/vip_data_recovery_vip_arming_plan.md),
+and
+[implementation/vip_data_recovery_flow_session_plan.md](./implementation/vip_data_recovery_flow_session_plan.md).
 
 ### Connection Failure Handling
 
@@ -344,7 +412,7 @@ circuit breaker with three states:
 
 | State     | Behaviour                                                            |
 | --------- | -------------------------------------------------------------------- |
-| CLOSED    | Normal operation — queries proceed to `_get_client()`             |
+| CLOSED    | Normal operation — queries proceed to `timed_db()` epoch checkout |
 | OPEN      | Fail-fast —`CircuitOpenError` raised immediately (no 3 s timeout) |
 | HALF_OPEN | One probe request allowed; success → CLOSED, failure → re-OPEN     |
 
@@ -353,18 +421,36 @@ seconds (default 5).  Because `CircuitOpenError` inherits from `PyMongoError`,
 existing endpoint `except PyMongoError` handlers return 503 without code
 changes — but the response is near-instant instead of blocking 3 seconds.
 
-**Per-LAN Threshold Eviction.** The `_check_tdados_threshold` after-request
-hook tracks cumulative MongoDB time **per LAN** in each request.  Only the
-LAN(s) whose individual time exceeds `TAU_DADOS_MS` have their singleton
-client evicted; healthy LAN clients are preserved.  This replaces the previous
-blanket eviction that cleared all clients when the total exceeded the
-threshold.
+**Per-LAN T_dados Observation.** The `_check_tdados_threshold` after-request
+hook still tracks cumulative MongoDB time **per LAN** in each request, but it
+is now observation-only. Threshold breaches are logged and preserved for
+telemetry or elasticity logic; they no longer rotate epochs or evict clients.
 
-**Interaction with DNAT rules.** When a client is evicted (by either
-mechanism), the next query creates a fresh `MongoClient` → new TCP SYN →
-`packet_in` → the controller re-evaluates WSM and may select a different
-backend.  The circuit breaker prevents the edge server from repeatedly
-creating connections to the same dead backend during the cooldown window.
+**Background Epoch Housekeeping.** A daemon housekeeping loop performs the two
+runtime cleanup tasks that the old request-end hooks used to blur together:
+
+- roll the current recovery epoch back to a normal epoch once its bounded local
+   recovery window expires
+- close retiring epochs only after their request leases drain, while logging
+   overdue-drain warnings instead of force-closing active epochs
+
+**Interaction with DNAT rules.** Rotating an epoch creates a fresh local client
+object and a new connection attempt using the epoch's bound VIP, but it does
+not itself claim backend exclusion. Under the broad steady-state `VIP_DATA`
+match, a fresh normal epoch can still reach the same backend when the
+controller's current selection rules choose it again. The recovery VIP path
+still narrows the controller-visible recovery connection, and the circuit
+breaker still prevents repeated immediate retries to the same dead path during
+the cooldown window.
+
+### Epoch Rationale
+
+Epoch started here as a shared-client blast-radius reduction mechanism, but the
+runtime only stays coherent if the same LAN-scoped object also owns request
+attribution, bound VIP-path snapshots, bounded recovery lifecycle, `/vip_data`
+validation cutover, and concurrency ownership. That is why the final edge
+server model treats epoch, not the raw `MongoClient`, as the unit of
+request-visible storage state over time.
 
 ---
 

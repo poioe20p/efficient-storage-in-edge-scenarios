@@ -15,22 +15,48 @@ _IGNORED_CMDS = {
 }
 
 
+def _command_target(command_name: str, command: dict) -> str | None:
+    target = command.get(command_name)
+    if isinstance(target, str):
+        return target
+    collection = command.get("collection")
+    if isinstance(collection, str):
+        return collection
+    return None
+
+
 class _DbTimingListener(monitoring.CommandListener):
     def started(self, event):
-        pass
+        if event.command_name in _IGNORED_CMDS:
+            return
+        try:
+            g.db_last_command = event.command_name
+            g.db_last_command_db = getattr(event, "database_name", None)
+            g.db_last_command_target = _command_target(
+                event.command_name,
+                getattr(event, "command", {}) or {},
+            )
+            g.db_last_command_failed = None
+            g.db_last_command_duration_s = None
+        except RuntimeError:
+            # Outside Flask request context (driver-internal op) — ignore.
+            pass
 
     def succeeded(self, event):
-        self._record(event.command_name, event.duration_micros)
+        self._record(event.command_name, event.duration_micros, failed=False)
 
     def failed(self, event):
-        self._record(event.command_name, event.duration_micros)
+        self._record(event.command_name, event.duration_micros, failed=True)
 
     @staticmethod
-    def _record(cmd: str, dur_us: int) -> None:
+    def _record(cmd: str, dur_us: int, *, failed: bool) -> None:
         if cmd in _IGNORED_CMDS:
             return
         dur_s = dur_us / 1_000_000.0
         try:
+            g.db_last_command = cmd
+            g.db_last_command_failed = failed
+            g.db_last_command_duration_s = dur_s
             if cmd in _READ_CMDS:
                 g.time_db_read_s = getattr(g, "time_db_read_s", 0.0) + dur_s
             elif cmd in _WRITE_CMDS:

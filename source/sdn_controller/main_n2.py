@@ -26,7 +26,6 @@ from .scaling_policy import ScalingPolicy
 from .scaling_config import (
     _NODE_BIRTH_GRACE_S,
     _SCALE_DOWN_CANDIDATE_MAX_STALENESS_S,
-    _VIP_DATA_WARM_REFRESH_TARGETS,
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
@@ -88,8 +87,6 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._scaling_policy = ScalingPolicy()
         self._node_registry = DynamicNodeRegistry()
         self._control_events = ControlEventDispatcher()
-        self._pending_vip_data_refresh: dict[str, tuple[str, str]] = {} # [mac] -> (domain, owner_lan)
-        self._vip_data_refresh_cursor = 0
 
         # ── Tier 1 selective-sync coordinator wiring ──
         self._selective_sync_coordinator = PromotionCoordinator(
@@ -137,63 +134,11 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
     def _promote_storage_backend(self, mac: str, domain: str) -> None:
         self.add_storage_mac(mac, domain)
         self.mark_storage_backend_warm(mac, domain)
-        owner_lan = "lan1" if domain == "n1" else "lan2"
-        self._pending_vip_data_refresh[mac] = (domain, owner_lan)
         logger.info(
-            "[vip_data] promoted storage mac=%s domain=%s owner_lan=%s",
+            "[vip_data] promoted storage mac=%s domain=%s",
             mac,
             domain,
-            owner_lan,
         )
-
-    def _select_vip_data_refresh_targets(self) -> list[str]:
-        eligible = sorted(mac for mac in self._local_server_macs if mac in self._mac_to_ip)
-        if not eligible:
-            return []
-
-        # Round-robin among eligible servers, with a limit on how many
-        # to refresh per window to avoid thundering herd. The cursor is advanced
-        # even if the selected servers are stale (e.g. due to a long-running
-        # refresh or slow Flask response) to ensure forward progress and eventual consistency.
-        limit = max(1, min(_VIP_DATA_WARM_REFRESH_TARGETS, len(eligible)))
-        start = self._vip_data_refresh_cursor % len(eligible)
-        ordered = eligible[start:] + eligible[:start]
-        picked = ordered[:limit]
-        self._vip_data_refresh_cursor = (start + limit) % len(eligible)
-        return picked
-
-    def _refresh_vip_data_clients(self, owner_lan: str) -> None:
-        targets = self._select_vip_data_refresh_targets()
-        if not targets:
-            logger.info("[vip_data] no eligible local refresh targets for %s", owner_lan)
-            return
-
-        payload = {
-            owner_lan: self.vip_data_n1_ip if owner_lan == "lan1" else self.vip_data_n2_ip
-        }
-        for mac in targets:
-            ip = self._mac_to_ip.get(mac)
-            if not ip:
-                continue
-            url = f"http://{ip}:5000/vip_data"
-            try:
-                requests.put(url, json=payload, timeout=2.0)
-            except requests.RequestException as exc:
-                logger.warning("[vip_data] refresh PUT %s failed: %s", url, exc)
-
-    def _refresh_pending_storage(self) -> None:
-        for mac, (domain, owner_lan) in list(self._pending_vip_data_refresh.items()):
-            pool = self.vip_storage_pool_n1 if domain == "n1" else self.vip_storage_pool_n2
-            if mac not in pool or mac not in self._mac_to_ip:
-                continue
-            self._refresh_vip_data_clients(owner_lan)
-            del self._pending_vip_data_refresh[mac]
-            logger.info(
-                "[vip_data] resolved pending refresh for mac=%s domain=%s owner_lan=%s",
-                mac,
-                domain,
-                owner_lan,
-            )
 
     def _pick_compute_scale_down_candidate(self) -> NodeInfo | None:
         now_wall = time.time()
@@ -297,7 +242,6 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._control_events.process_secondary_events(
             summary, self._node_registry, self._promote_storage_backend,
         )
-        self._refresh_pending_storage()
 
         # Mini-summaries (control event pass-throughs) have empty server dicts.
         if not summary.servers and not summary.storage_servers:
@@ -329,7 +273,6 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             self._local_storage_macs_n1, self._local_storage_macs_n2,
             self._promote_storage_backend,
         )
-        self._refresh_pending_storage()
 
         try:
             lan = int(summary.network_id.replace("lan", ""))

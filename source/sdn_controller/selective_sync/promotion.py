@@ -14,6 +14,7 @@ from ..elasticity.elasticity import (
     SelectiveSyncAlert,
     SelectiveSyncReconfigureAlert,
 )
+from ..elasticity.node_common import log_ready_timing
 from ..scaling_config import (
     _SS_BREACH_WINDOWS_M,
     _SS_BREACH_WINDOWS_N,
@@ -164,7 +165,8 @@ class PromotionCoordinator:
                 self.drain(owner_lan, reason="staleness")
 
     def on_spawned(self, owner_lan: str, container: str,
-                   mac: str, ip: str) -> None:
+                   mac: str, ip: str,
+                   spawn_started_monotonic_s: float | None = None) -> None:
         """Complete SPAWNING → ACTIVE and broadcast the first manifest."""
         entry = self._by_owner.get(owner_lan)
         if entry is None or entry.state is not _State.SPAWNING:
@@ -182,6 +184,14 @@ class PromotionCoordinator:
             "host":        f"{ip}:27018",
             "collections": {c: list(ids) for c, ids in entry.hot.items()},
         })
+        if spawn_started_monotonic_s is not None and spawn_started_monotonic_s > 0:
+            log_ready_timing(
+                container,
+                "selective_storage",
+                "tier1_active",
+                time.monotonic() - spawn_started_monotonic_s,
+                state="ACTIVE",
+            )
         logger.info("[tier1] ACTIVE owner=%s container=%s ip=%s",
                     owner_lan, container, ip)
 

@@ -8,7 +8,9 @@ This folder is the phased implementation plan for replacing the current
 one-way compute drain with a slower but safer workflow where the controller
 starts scale-down, the edge server stays responsible for declaring completion,
 and pending drains can be canceled after new compute scale-up has already been
-submitted.
+submitted. This rebound path intentionally favors immediate capacity recovery
+over a strict live-node cap, so a short-lived extra compute node may exist
+until the normal scale-down path reconciles capacity later.
 
 The plan is intentionally split into phases so the system can gain the
 availability benefit first and then tighten controller behavior in later,
@@ -48,7 +50,8 @@ The following decisions are fixed for all phases in this folder:
    first, then submit a lower-priority drain cancel. Pending compute drains are
    subtracted from the effective dynamic compute count used by scale-up
    threshold and max-cap evaluation, while registry lifecycle state remains
-   unchanged.
+   unchanged. This can temporarily leave one extra live compute node running
+   until a later scale-down window converges the system back to steady state.
 4. **No forced cleanup while telemetry is healthy.** If a draining node keeps
    sending telemetry, the drain is considered alive. If telemetry stops, the
    existing absence cleanup path handles the node.
@@ -125,7 +128,9 @@ Once all three phases land together, the system must satisfy the following:
    the newest dynamic node.
 4. If a compute drain is pending and the system becomes loaded again, the
    controller submits `ComputeAlert` first and then submits a lower-priority
-   `CancelComputeDrainAlert`.
+   `CancelComputeDrainAlert`. This path may temporarily over-scale by one live
+   compute node, which is accepted by design and corrected later by the normal
+   compute scale-down policy.
 5. If a draining server stops emitting telemetry, the existing absence path
    still removes it without requiring a special drain-timeout cleanup path.
 6. Experiment logs and CSV-derived analysis are sufficient to explain when a

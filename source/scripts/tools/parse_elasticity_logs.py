@@ -8,6 +8,7 @@ with one row per scaling event, suitable for correlation with resource_stats.csv
 Usage:
     python parse_elasticity_logs.py controller_lan1.log controller_lan2.log -o elasticity_events.csv
     python parse_elasticity_logs.py controller_lan1.log --controller-names lan1 -o events.csv
+    python parse_elasticity_logs.py controller_lan*.log -o elasticity_events.csv --timings-output node_lifecycle_timings.csv
 """
 
 from __future__ import annotations
@@ -184,6 +185,19 @@ def _node_add_timing(m, ctrl):
     })
 
 
+# --- Node ready timing ---
+
+@_pat(_TS + r" INFO .+\[node_ready\] timing  container=(\S+)  node_type=(\S+)"
+      r"  source=(\S+)  total=([\d.]+)s  state=(\S+)")
+def _node_ready_timing(m, ctrl):
+    return _row(m.group(1), ctrl, "node_ready_timing", m.group(3),
+                container=m.group(2), detail={
+                    "source": m.group(4),
+                    "total_s": float(m.group(5)),
+                    "state": m.group(6),
+                })
+
+
 # --- Scale-down triggers ---
 
 @_pat(_TS + r" INFO .+\[scale-down\] compute underutilisation: (\d+)/(\d+) "
@@ -280,6 +294,61 @@ def infer_controller_name(path: Path) -> str:
 CSV_COLUMNS = ["timestamp", "controller", "event_type", "node_type",
                "container", "mac", "ip", "detail"]
 
+TIMING_COLUMNS = [
+    "timestamp", "controller", "operation", "node_type", "container", "state",
+    "ready_source",
+    "docker_run_s", "net_attach_s", "rs_join_s", "drain_signal_s",
+    "net_cleanup_s", "total_s",
+]
+
+
+def infer_node_type(container: str) -> str:
+    if container.startswith("edge_server_"):
+        return "compute"
+    if container.startswith("edge_storage_"):
+        return "storage"
+    if container.startswith("sel_sync_"):
+        return "selective_storage"
+    return ""
+
+
+def node_lifecycle_timing_rows(events: list[dict]) -> list[dict]:
+    rows: list[dict] = []
+    for event in events:
+        event_type = event.get("event_type", "")
+        if event_type not in {"node_add_timing", "node_ready_timing", "node_remove_timing"}:
+            continue
+
+        detail_raw = event.get("detail") or "{}"
+        try:
+            detail = json.loads(detail_raw)
+        except json.JSONDecodeError:
+            detail = {}
+
+        container = event.get("container", "")
+        if event_type == "node_add_timing":
+            operation = "add"
+        elif event_type == "node_ready_timing":
+            operation = "ready"
+        else:
+            operation = "remove"
+        rows.append({
+            "timestamp": event.get("timestamp", ""),
+            "controller": event.get("controller", ""),
+            "operation": operation,
+            "node_type": event.get("node_type") or infer_node_type(container),
+            "container": container,
+            "state": detail.get("state", ""),
+            "ready_source": detail.get("source", ""),
+            "docker_run_s": detail.get("docker_run_s", ""),
+            "net_attach_s": detail.get("net_attach_s", ""),
+            "rs_join_s": detail.get("rs_join_s", ""),
+            "drain_signal_s": detail.get("drain_signal_s", ""),
+            "net_cleanup_s": detail.get("net_cleanup_s", ""),
+            "total_s": detail.get("total_s", ""),
+        })
+    return rows
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -287,6 +356,8 @@ def main():
     parser.add_argument("logs", nargs="+", type=Path, help="Controller log file(s)")
     parser.add_argument("-o", "--output", type=Path, default=Path("elasticity_events.csv"),
                         help="Output CSV path (default: elasticity_events.csv)")
+    parser.add_argument("--timings-output", type=Path,
+                        help="Optional flattened node add/ready/remove timing CSV path")
     parser.add_argument("--controller-names", nargs="*",
                         help="Controller name for each log file (inferred from filename if omitted)")
     args = parser.parse_args()
@@ -314,6 +385,17 @@ def main():
         writer.writerows(all_events)
 
     print(f"Wrote {len(all_events)} events → {args.output}", file=sys.stderr)
+
+    timings_output = args.timings_output
+    if timings_output is None:
+        timings_output = args.output.with_name("node_lifecycle_timings.csv")
+    timing_rows = node_lifecycle_timing_rows(all_events)
+    timings_output.parent.mkdir(parents=True, exist_ok=True)
+    with open(timings_output, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=TIMING_COLUMNS)
+        writer.writeheader()
+        writer.writerows(timing_rows)
+    print(f"Wrote {len(timing_rows)} node timing rows → {timings_output}", file=sys.stderr)
 
 
 if __name__ == "__main__":

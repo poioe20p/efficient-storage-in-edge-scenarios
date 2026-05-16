@@ -3,12 +3,15 @@ import os
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum, auto
+from uuid import uuid4
 
 from flask import Flask, g, jsonify, request
 from pymongo import MongoClient
 from pymongo.errors import AutoReconnect, PyMongoError
+from werkzeug.exceptions import BadRequest
 from db_monitor import register as _register_db_monitor
 from platform_cache import _owner_lan, cached_collection, set_tier1_manifest
 from telemetry import init_telemetry, ZmqMetricSender, _get_server_mac
@@ -51,6 +54,9 @@ DRAIN_QUIET_PERIOD_S: float = float(os.environ.get("DRAIN_QUIET_PERIOD_S", "1.0"
 MONGO_CLIENT_RETIRE_GRACE_S: float = float(
     os.environ.get("MONGO_CLIENT_RETIRE_GRACE_S", "30")
 )
+VIP_DATA_RECOVERY_SESSION_MAX_AGE_S: float = float(
+    os.environ.get("VIP_DATA_RECOVERY_SESSION_MAX_AGE_S", "35")
+)
 
 # ---------------------------------------------------------------------------
 # Drain state — set by POST /drain, read by before_request and drain monitor
@@ -62,85 +68,451 @@ _last_user_request_ts = time.monotonic()
 _active_requests_lock = threading.Lock()
 _SKIP_COUNTING = frozenset({"/health", "/drain"})
 
-vip_data_lock = threading.Lock()
+
+class StorageVipConfigurationError(RuntimeError):
+    """Raised when the fixed startup VIP configuration is incomplete."""
+
+
+@dataclass
+class _MongoEpoch:
+    epoch_id: int
+    mode: str
+    vip_ip: str
+    client: MongoClient | None = None
+    client_created_at: float | None = None
+    first_lease_at: float | None = None
+    lease_count: int = 0
+    retiring: bool = False
+    retire_requested_at: float | None = None
+    drain_deadline: float | None = None
+    recovery_expires_at: float | None = None
+
+
+@dataclass
+class _LanEpochState:
+    lifecycle_lock: threading.Lock = field(default_factory=threading.Lock)
+    normal_vip_ip: str | None = None
+    recovery_vip_ip: str | None = None
+    breaker: "_CircuitBreaker | None" = None
+    current: _MongoEpoch | None = None
+    retiring: list[_MongoEpoch] = field(default_factory=list)
+    next_epoch_id: int = 1
+
+
 vip_data_per_domain = {
     "lan1": "10.0.0.254",
     "lan2": "10.0.1.254",
 }
+vip_data_recovery_per_domain = {
+    "lan1": os.environ.get("VIP_DATA_RECOVERY_N1_IP", "10.0.0.252"),
+    "lan2": os.environ.get("VIP_DATA_RECOVERY_N2_IP", "10.0.1.252"),
+}
+
+_epoch_states_registry_lock = threading.Lock()
+_epoch_states: dict[str, _LanEpochState] = {}
+
+
+def _seed_epoch_states_from_config() -> None:
+    configured_lans = set(vip_data_per_domain)
+    recovery_lans = set(vip_data_recovery_per_domain)
+    if configured_lans != recovery_lans:
+        raise StorageVipConfigurationError(
+            "startup VIP configuration requires matching normal and recovery LAN sets"
+        )
+
+    seeded: dict[str, _LanEpochState] = {}
+    for lan in sorted(configured_lans):
+        seeded[lan] = _LanEpochState(
+            normal_vip_ip=vip_data_per_domain[lan],
+            recovery_vip_ip=vip_data_recovery_per_domain[lan],
+        )
+
+    with _epoch_states_registry_lock:
+        _epoch_states.clear()
+        _epoch_states.update(seeded)
 
 
 # ---------------------------------------------------------------------------
-# MongoDB client — one singleton MongoClient per LAN.
-# maxPoolSize=1 ensures exactly one DNAT selection per LAN per edge server.
-# maxIdleTimeMS matches VIP_IDLE_TIMEOUT so the driver closes the socket
-# at the same cadence as the SDN controller removes idle DNAT rules.
+# MongoDB client epochs — one current epoch plus draining retired epochs per LAN.
+# maxPoolSize=1 still ensures exactly one DNAT selection per LAN per edge server.
+# maxIdleTimeMS matches VIP_IDLE_TIMEOUT so the driver closes the socket at the
+# same cadence as the SDN controller removes idle DNAT rules.
 # ---------------------------------------------------------------------------
 
-_clients_lock = threading.Lock()
-_mongo_clients: dict[str, MongoClient] = {}
-_retired_clients: list[tuple[float, str, MongoClient]] = [] # [retired_ts, lan, client]
+
+def _get_lan_epoch_state(lan: str) -> _LanEpochState:
+    with _epoch_states_registry_lock:
+        state = _epoch_states.get(lan)
+    if state is None:
+        raise StorageVipConfigurationError(f"unknown configured LAN: {lan}")
+    return state
 
 
-def _close_retired_clients() -> None:
-    cutoff = time.monotonic() - MONGO_CLIENT_RETIRE_GRACE_S
-    ready: list[tuple[str, MongoClient]] = []
-    with _clients_lock:
-        still_retired: list[tuple[float, str, MongoClient]] = []
-        for retired_ts, lan, client in _retired_clients:
-            if retired_ts <= cutoff:
-                ready.append((lan, client))
-            else:
-                still_retired.append((retired_ts, lan, client))
-        _retired_clients[:] = still_retired
+def _snapshot_vip_ip_for_epoch(lan: str, mode: str) -> str:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        if mode == "normal":
+            vip_ip = state.normal_vip_ip
+            if vip_ip is None:
+                raise StorageVipConfigurationError(
+                    f"missing normal VIP mapping for {lan}"
+                )
+            return vip_ip
 
-    for lan, client in ready:
+        if mode == "recovery":
+            vip_ip = state.recovery_vip_ip
+            if vip_ip is None:
+                raise StorageVipConfigurationError(
+                    f"missing recovery VIP mapping for {lan}"
+                )
+            return vip_ip
+
+    raise ValueError(f"unsupported epoch mode: {mode}")
+
+
+def _new_epoch_locked(
+    state: _LanEpochState,
+    mode: str,
+    vip_ip: str,
+) -> _MongoEpoch:
+    epoch = _MongoEpoch(
+        epoch_id=state.next_epoch_id,
+        mode=mode,
+        vip_ip=vip_ip,
+    )
+    state.next_epoch_id += 1
+    return epoch
+
+
+def _mark_epoch_retiring_locked(state: _LanEpochState, epoch: _MongoEpoch) -> None:
+    now = time.monotonic()
+    epoch.retiring = True
+    epoch.retire_requested_at = now
+    epoch.drain_deadline = now + MONGO_CLIENT_RETIRE_GRACE_S
+    state.retiring.append(epoch)
+
+
+def _lease_current_epoch(lan: str) -> _MongoEpoch:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        current = state.current
+        if current is None:
+            vip_ip = state.normal_vip_ip
+            if vip_ip is None:
+                raise StorageVipConfigurationError(f"missing normal VIP mapping for {lan}")
+            current = _new_epoch_locked(
+                state,
+                mode="normal",
+                vip_ip=vip_ip,
+            )
+            state.current = current
+
+        current.lease_count += 1
+        if current.first_lease_at is None:
+            current.first_lease_at = time.monotonic()
+        return current
+
+
+def _get_or_create_epoch_client(lan: str, epoch: _MongoEpoch) -> MongoClient:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        if epoch.client is not None:
+            return epoch.client
+
+        url = f"mongodb://{epoch.vip_ip}:{DB_PORT}/"
+        epoch.client = MongoClient(
+            url,
+            maxPoolSize=1,
+            maxIdleTimeMS=MAX_IDLE_MS,
+            serverSelectionTimeoutMS=3000,
+            socketTimeoutMS=15000,
+            directConnection=True,
+        )
+        epoch.client_created_at = time.monotonic()
+        if epoch.mode == "recovery" and epoch.recovery_expires_at is None:
+            epoch.recovery_expires_at = (
+                epoch.client_created_at + VIP_DATA_RECOVERY_SESSION_MAX_AGE_S
+            )
+        log.info(
+            "Created MongoClient for %s epoch=%s mode=%s via %s "
+            "(maxIdleTimeMS=%d recovery_session_max_age_s=%.1f)",
+            lan,
+            epoch.epoch_id,
+            epoch.mode,
+            url,
+            MAX_IDLE_MS,
+            VIP_DATA_RECOVERY_SESSION_MAX_AGE_S,
+        )
+        return epoch.client
+
+
+def _release_epoch(lan: str, epoch: _MongoEpoch) -> None:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        if epoch.lease_count > 0:
+            epoch.lease_count -= 1
+
+
+def _rotate_epoch_if_current(
+    lan: str,
+    expected_epoch_id: int,
+    reason: str,
+    next_mode: str,
+    next_vip_ip: str,
+) -> _MongoEpoch:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        current = state.current
+
+        if current is None:
+            state.current = _new_epoch_locked(
+                state,
+                mode=next_mode,
+                vip_ip=next_vip_ip,
+            )
+            log.info(
+                "Initialized epoch for %s via %s: epoch=%s mode=%s vip=%s",
+                lan,
+                reason,
+                state.current.epoch_id,
+                state.current.mode,
+                state.current.vip_ip,
+            )
+            return state.current
+
+        if current.epoch_id != expected_epoch_id:
+            log.info(
+                "Skipped epoch rotation for %s via %s; current=%s expected=%s",
+                lan,
+                reason,
+                current.epoch_id,
+                expected_epoch_id,
+            )
+            return current
+
+        _mark_epoch_retiring_locked(state, current)
+        state.current = _new_epoch_locked(
+            state,
+            mode=next_mode,
+            vip_ip=next_vip_ip,
+        )
+        log.info(
+            "Rotated epoch for %s via %s: %s -> %s (mode=%s vip=%s)",
+            lan,
+            reason,
+            current.epoch_id,
+            state.current.epoch_id,
+            state.current.mode,
+            state.current.vip_ip,
+        )
+        return state.current
+
+
+def _rotate_current_epoch_locked(
+    lan: str,
+    state: _LanEpochState,
+    reason: str,
+    next_mode: str,
+    next_vip_ip: str,
+) -> _MongoEpoch:
+    current = state.current
+    if current is not None:
+        _mark_epoch_retiring_locked(state, current)
+
+    state.current = _new_epoch_locked(
+        state,
+        mode=next_mode,
+        vip_ip=next_vip_ip,
+    )
+    log.info(
+        "Replaced current epoch for %s via %s: %s -> %s (mode=%s vip=%s)",
+        lan,
+        reason,
+        getattr(current, "epoch_id", None),
+        state.current.epoch_id,
+        state.current.mode,
+        state.current.vip_ip,
+    )
+    return state.current
+
+
+def _rotate_current_epoch(
+    lan: str,
+    reason: str,
+    next_mode: str,
+    next_vip_ip: str,
+) -> _MongoEpoch:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        return _rotate_current_epoch_locked(
+            lan,
+            state,
+            reason,
+            next_mode,
+            next_vip_ip,
+        )
+
+
+def _collect_expired_recovery_epochs() -> list[tuple[str, int]]:
+    expired: list[tuple[str, int]] = []
+    now = time.monotonic()
+
+    with _epoch_states_registry_lock:
+        items = list(_epoch_states.items())
+
+    for lan, state in items:
+        with state.lifecycle_lock:
+            current = state.current
+            if current is None or current.mode != "recovery":
+                continue
+            if current.first_lease_at is None or current.recovery_expires_at is None:
+                continue
+            if now >= current.recovery_expires_at:
+                expired.append((lan, current.epoch_id))
+
+    return expired
+
+
+def _roll_expired_recovery_epochs() -> None:
+    for lan, expected_epoch_id in _collect_expired_recovery_epochs():
+        try:
+            next_vip_ip = _snapshot_vip_ip_for_epoch(lan, mode="normal")
+        except StorageVipConfigurationError as exc:
+            log.error(
+                "storage_vip_configuration_error during recovery rollback for %s: %s",
+                lan,
+                exc,
+            )
+            continue
+        _rotate_epoch_if_current(
+            lan,
+            expected_epoch_id=expected_epoch_id,
+            reason="recovery_expired",
+            next_mode="normal",
+            next_vip_ip=next_vip_ip,
+        )
+
+
+def _close_drained_epochs() -> None:
+    ready: list[tuple[str, int, MongoClient]] = []
+    overdue: list[tuple[str, int, int]] = []
+    now = time.monotonic()
+
+    with _epoch_states_registry_lock:
+        items = list(_epoch_states.items())
+
+    for lan, state in items:
+        with state.lifecycle_lock:
+            still_retiring: list[_MongoEpoch] = []
+            for epoch in state.retiring:
+                deadline_passed = (
+                    epoch.drain_deadline is not None and now >= epoch.drain_deadline
+                )
+                if epoch.lease_count == 0:
+                    if epoch.client is not None:
+                        ready.append((lan, epoch.epoch_id, epoch.client))
+                    continue
+                if deadline_passed:
+                    overdue.append((lan, epoch.epoch_id, epoch.lease_count))
+                still_retiring.append(epoch)
+            state.retiring = still_retiring
+
+    for lan, epoch_id, lease_count in overdue:
+        log.warning(
+            "retiring epoch %s for %s still has %s active leases after drain deadline",
+            epoch_id,
+            lan,
+            lease_count,
+        )
+
+    for lan, epoch_id, client in ready:
         try:
             client.close()
         except Exception as exc:  # pragma: no cover - defensive close path
-            log.warning("retired MongoClient close failed for %s: %s", lan, exc)
+            log.warning("drained epoch close failed for %s epoch=%s: %s", lan, epoch_id, exc)
 
 
-def _retire_client(lan: str) -> None:
-    retired = False
-    with _clients_lock:
-        old = _mongo_clients.pop(lan, None)
-        if old is not None:
-            _retired_clients.append((time.monotonic(), lan, old))
-            retired = True
-
-    if retired:
-        log.info(
-            "Retired MongoClient for %s; future requests will reconnect after %.0fs grace",
-            lan,
-            MONGO_CLIENT_RETIRE_GRACE_S,
-        )
-    _close_retired_clients()
-
-
-def _retired_client_sweeper() -> None:
+def _epoch_housekeeping_loop() -> None:
     sweep_interval = max(1.0, min(MONGO_CLIENT_RETIRE_GRACE_S / 2.0, 5.0))
     while True:
         time.sleep(sweep_interval)
-        _close_retired_clients()
+        try:
+            _roll_expired_recovery_epochs()
+            _close_drained_epochs()
+        except Exception:
+            log.exception("epoch housekeeping sweep failed")
 
 
-def _get_client(lan: str) -> MongoClient:
-    _close_retired_clients()
-    with _clients_lock:
-        client = _mongo_clients.get(lan)
-        if client is None:
-            with vip_data_lock:
-                vip_ip = vip_data_per_domain[lan]
-            url = f"mongodb://{vip_ip}:{DB_PORT}/"
-            client = MongoClient(
-                url, maxPoolSize=1, maxIdleTimeMS=MAX_IDLE_MS,
-                serverSelectionTimeoutMS=3000,
-                socketTimeoutMS=15000,
-                directConnection=True,
-            )
-            _mongo_clients[lan] = client
-            log.info("Created MongoClient for %s → %s (maxIdleTimeMS=%d)", lan, url, MAX_IDLE_MS)
-        return client
+def _snapshot_epoch(epoch: _MongoEpoch | None) -> dict[str, int | str | bool | None]:
+    if epoch is None:
+        return {
+            "epoch_id": None,
+            "mode": "unknown",
+            "vip_ip": None,
+            "retiring": None,
+        }
+    return {
+        "epoch_id": epoch.epoch_id,
+        "mode": epoch.mode,
+        "vip_ip": epoch.vip_ip,
+        "retiring": epoch.retiring,
+    }
+
+
+def _get_current_epoch_snapshot(lan: str) -> dict[str, int | str | bool | None]:
+    with _epoch_states_registry_lock:
+        state = _epoch_states.get(lan)
+    if state is None:
+        return _snapshot_epoch(None)
+
+    with state.lifecycle_lock:
+        return _snapshot_epoch(state.current)
+
+
+def _snapshot_normal_vip_config() -> dict[str, str]:
+    snapshot: dict[str, str] = {}
+
+    with _epoch_states_registry_lock:
+        items = list(_epoch_states.items())
+
+    for lan, state in items:
+        with state.lifecycle_lock:
+            if state.normal_vip_ip is not None:
+                snapshot[lan] = state.normal_vip_ip
+
+    return snapshot
+
+
+def _parse_vip_update_payload(body: object) -> dict[str, str]:
+    if not isinstance(body, dict):
+        raise BadRequest("vip_data payload must be a JSON object")
+
+    normalized: dict[str, str] = {}
+    for lan, raw_vip_ip in body.items():
+        if not isinstance(lan, str) or not lan:
+            raise BadRequest("vip_data payload contains an invalid LAN key")
+        if not isinstance(raw_vip_ip, str):
+            raise BadRequest(f"vip_data value for {lan} must be a string")
+
+        vip_ip = raw_vip_ip.strip()
+        if not vip_ip:
+            raise BadRequest(f"vip_data value for {lan} must be a non-empty string")
+
+        normalized[lan] = vip_ip
+
+    return normalized
+
+
+def _accumulate_tdados(lan: str, elapsed: float) -> None:
+    g.time_db_elapsed = getattr(g, "time_db_elapsed", 0.0) + elapsed
+    per_lan = getattr(g, "time_db_per_lan", None)
+    if per_lan is None:
+        per_lan = {}
+        g.time_db_per_lan = per_lan
+    per_lan[lan] = per_lan.get(lan, 0.0) + elapsed
+
+
+_seed_epoch_states_from_config()
 
 
 class _CircuitState(Enum):
@@ -183,22 +555,95 @@ class _CircuitBreaker:
             self.state = _CircuitState.OPEN
             self._opened_at = time.monotonic()
 
+    def snapshot(self) -> dict[str, float | str]:
+        with self._lock:
+            cooldown_remaining_s = 0.0
+            if self.state is _CircuitState.OPEN:
+                cooldown_remaining_s = max(
+                    0.0,
+                    CIRCUIT_COOLDOWN_S - (time.monotonic() - self._opened_at),
+                )
+            return {
+                "state": self.state.name,
+                "cooldown_remaining_s": round(cooldown_remaining_s, 3),
+            }
+
 
 class CircuitOpenError(PyMongoError):
     """Raised when the circuit breaker for a LAN is open."""
     pass
 
 
-_circuit_breakers: dict[str, _CircuitBreaker] = {}
-
-
-def _get_breaker(lan: str) -> _CircuitBreaker:
-    with _clients_lock:
-        breaker = _circuit_breakers.get(lan)
+def _get_or_create_breaker(lan: str) -> _CircuitBreaker:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        breaker = state.breaker
         if breaker is None:
             breaker = _CircuitBreaker()
-            _circuit_breakers[lan] = breaker
+            state.breaker = breaker
         return breaker
+
+
+def _get_breaker_snapshot(lan: str | None) -> dict[str, float | str]:
+    if not lan:
+        return {"state": "UNKNOWN", "cooldown_remaining_s": 0.0}
+
+    with _epoch_states_registry_lock:
+        state = _epoch_states.get(lan)
+    if state is None:
+        return {"state": "UNKNOWN", "cooldown_remaining_s": 0.0}
+
+    with state.lifecycle_lock:
+        breaker = state.breaker
+    if breaker is None:
+        return {"state": "UNINITIALIZED", "cooldown_remaining_s": 0.0}
+    return breaker.snapshot()
+
+
+def _log_db_failure(route_name: str, exc: Exception, lan: str | None = None) -> None:
+    failure_lan = lan or getattr(g, "db_last_lan", None) or "unknown"
+    breaker_snapshot = _get_breaker_snapshot(None if failure_lan == "unknown" else failure_lan)
+    request_epoch = getattr(g, "db_epoch_context", None) or _snapshot_epoch(None)
+    current_epoch = (
+        _get_current_epoch_snapshot(failure_lan)
+        if failure_lan != "unknown" else
+        _snapshot_epoch(None)
+    )
+    log.error(
+        "db_failure route=%s request_id=%s method=%s path=%s lan=%s "
+        "request_epoch_id=%s request_epoch_mode=%s request_epoch_vip=%s request_epoch_retiring=%s "
+        "current_epoch_id=%s current_epoch_mode=%s current_epoch_vip=%s current_epoch_retiring=%s "
+        "breaker_state=%s breaker_cooldown_remaining_s=%.3f "
+        "exc_type=%s exc=%s last_cmd=%s last_cmd_db=%s last_cmd_target=%s "
+        "last_cmd_failed=%s last_cmd_s=%s tdados_s=%.6f tdb_read_s=%.6f "
+        "tdb_write_s=%.6f tdb_cmd_count=%d",
+        route_name,
+        getattr(g, "request_id", "unknown"),
+        request.method,
+        request.path,
+        failure_lan,
+        request_epoch["epoch_id"],
+        request_epoch["mode"],
+        request_epoch["vip_ip"],
+        request_epoch["retiring"],
+        current_epoch["epoch_id"],
+        current_epoch["mode"],
+        current_epoch["vip_ip"],
+        current_epoch["retiring"],
+        breaker_snapshot["state"],
+        float(breaker_snapshot["cooldown_remaining_s"]),
+        type(exc).__name__,
+        exc,
+        getattr(g, "db_last_command", None),
+        getattr(g, "db_last_command_db", None),
+        getattr(g, "db_last_command_target", None),
+        getattr(g, "db_last_command_failed", None),
+        getattr(g, "db_last_command_duration_s", None),
+        getattr(g, "time_db_elapsed", 0.0),
+        getattr(g, "time_db_read_s", 0.0),
+        getattr(g, "time_db_write_s", 0.0),
+        getattr(g, "time_db_cmd_count", 0),
+    )
 
 
 @contextmanager
@@ -207,15 +652,16 @@ def timed_db(lan: str):
     elapsed time into ``g.time_db_elapsed`` so the telemetry layer can
     report T_dados correctly.
 
-    On a connection-level failure (e.g. RST after a DNAT rule change) the
-    stale client is evicted so the next request creates a fresh connection
-    to the VIP rather than retrying on the dead socket.
+    Requests lease the current LAN epoch, lazily materialize that epoch's
+    MongoClient, and keep their request-visible storage path bound to the
+    leased epoch even if a newer epoch becomes current later.
 
     A per-LAN circuit breaker prevents threads from blocking on a known-dead
     server: if the circuit is OPEN, a ``CircuitOpenError`` is raised immediately
     instead of waiting for the 3 s server-selection timeout.
     """
-    breaker = _get_breaker(lan)
+    g.db_last_lan = lan
+    breaker = _get_or_create_breaker(lan)
     if not breaker.check():
         raise CircuitOpenError(f"circuit open for {lan}")
     # Tag every wrapped cached_collection() access made inside this block
@@ -223,24 +669,35 @@ def timed_db(lan: str):
     # so nested timed_db() calls unwind correctly.
     owner_token = _owner_lan.set(lan)
     t0 = time.monotonic()
+    epoch: _MongoEpoch | None = None
     try:
+        epoch = _lease_current_epoch(lan)
+        g.db_epoch_context = _snapshot_epoch(epoch)
         try:
-            yield _get_client(lan)[DB_NAME]
+            client = _get_or_create_epoch_client(lan, epoch)
+            yield client[DB_NAME]
             breaker.record_success()
         except AutoReconnect:
             breaker.record_failure()
-            _retire_client(lan)
-            log.warning("timed_db: retired stale MongoClient for %s after connection failure", lan)
+            next_vip_ip = _snapshot_vip_ip_for_epoch(lan, mode="recovery")
+            _rotate_epoch_if_current(
+                lan,
+                expected_epoch_id=epoch.epoch_id,
+                reason="auto_reconnect",
+                next_mode="recovery",
+                next_vip_ip=next_vip_ip,
+            )
+            log.warning(
+                "timed_db: rotated epoch for %s after connection failure on epoch=%s",
+                lan,
+                epoch.epoch_id,
+            )
             raise
     finally:
+        if epoch is not None:
+            _release_epoch(lan, epoch)
         _owner_lan.reset(owner_token)
-        elapsed = time.monotonic() - t0
-        g.time_db_elapsed = getattr(g, "time_db_elapsed", 0.0) + elapsed
-        per_lan = getattr(g, "time_db_per_lan", None)
-        if per_lan is None:
-            per_lan = {}
-            g.time_db_per_lan = per_lan
-        per_lan[lan] = per_lan.get(lan, 0.0) + elapsed
+        _accumulate_tdados(lan, time.monotonic() - t0)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +710,14 @@ def get_drain_state() -> str:
 @app.before_request
 def _drain_guard():
     global _active_requests, _last_user_request_ts
+    g.request_id = uuid4().hex[:12]
+    g.db_last_lan = None
+    g.db_epoch_context = None
+    g.db_last_command = None
+    g.db_last_command_db = None
+    g.db_last_command_target = None
+    g.db_last_command_failed = None
+    g.db_last_command_duration_s = None
     g.counted = False # g is the Flask request-global namespace; this flag tracks whether the current request was counted in _active_requests
     if request.path in _SKIP_COUNTING:
         return None  # control-plane routes bypass request counting
@@ -272,6 +737,22 @@ def _drain_counter(response):
         with _active_requests_lock:
             _active_requests -= 1
     return response
+
+
+@app.errorhandler(BadRequest)
+def _handle_bad_request(exc):
+    return jsonify({"error": exc.description}), 400
+
+
+@app.errorhandler(StorageVipConfigurationError)
+def _handle_storage_vip_configuration_error(exc):
+    route_name = request.endpoint or request.path or "unknown"
+    _log_db_failure(
+        route_name,
+        exc,
+        lan=getattr(g, "db_last_lan", None),
+    )
+    return jsonify({"error": "storage VIP configuration error"}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -327,12 +808,37 @@ def drain():
 
 @app.route("/vip_data", methods=["PUT"])
 def set_vip_data():
-    body = request.get_json(silent=True) or {}
-    with vip_data_lock:
-        vip_data_per_domain.update(body)
-    for lan in body:
-        _retire_client(lan)
-    return jsonify({"message": "VIP data updated", "vip_data": vip_data_per_domain}), 200
+    body = _parse_vip_update_payload(request.get_json(silent=True))
+
+    with _epoch_states_registry_lock:
+        unknown_lans = sorted(lan for lan in body if lan not in _epoch_states)
+    if unknown_lans:
+        return jsonify({
+            "error": "unknown LANs in vip_data update",
+            "unknown_lans": unknown_lans,
+        }), 400
+
+    changed_lans: list[str] = []
+    for lan, vip_ip in body.items():
+        state = _get_lan_epoch_state(lan)
+        with state.lifecycle_lock:
+            if state.normal_vip_ip == vip_ip:
+                continue
+            state.normal_vip_ip = vip_ip
+            _rotate_current_epoch_locked(
+                lan,
+                state,
+                reason="vip_update",
+                next_mode="normal",
+                next_vip_ip=vip_ip,
+            )
+            changed_lans.append(lan)
+
+    return jsonify({
+        "message": "VIP data updated",
+        "vip_data": _snapshot_normal_vip_config(),
+        "changed_lans": changed_lans,
+    }), 200
 
 
 @app.route("/tier1_manifest", methods=["PUT"])
@@ -456,7 +962,7 @@ def device_latest(device_id: str):
         return jsonify(doc), 200
 
     except PyMongoError as exc:
-        log.error("device_latest error: %s", exc)
+        _log_db_failure("device_latest", exc)
         return jsonify({"error": "database error"}), 503
 
 
@@ -522,7 +1028,7 @@ def anomalies():
         return jsonify({"region": region, "window_hours": window_h, "results": hot_devices}), 200
 
     except PyMongoError as exc:
-        log.error("anomalies error: %s", exc)
+        _log_db_failure("anomalies", exc)
         return jsonify({"error": "database error"}), 503
 
 
@@ -548,7 +1054,7 @@ def dashboard(node_id: str):
         subscribed_tags = registry.get("subscribed_tags", [])
 
         devices: list[dict] = []
-        for lan in vip_data_per_domain:
+        for lan in _snapshot_normal_vip_config():
             with timed_db(lan) as db:
                 devices.extend(
                     cached_collection(db, "sensor_reports").find(
@@ -577,7 +1083,7 @@ def dashboard(node_id: str):
         }), 200
 
     except PyMongoError as exc:
-        log.error("dashboard error: %s", exc)
+        _log_db_failure("dashboard", exc)
         return jsonify({"error": "database error"}), 503
 
 
@@ -591,10 +1097,11 @@ def _check_tdados_threshold(response):
     for lan, elapsed in per_lan.items():
         time_ms = elapsed * 1000
         if time_ms > TAU_DADOS_MS:
-            _retire_client(lan)
             log.debug(
-                "T_dados[%s]=%.1fms > \u03c4=%.1fms \u2014 retired client to force reconnection",
-                lan, time_ms, TAU_DADOS_MS,
+                "T_dados[%s]=%.1fms > tau=%.1fms -- observed only, no forced reconnection",
+                lan,
+                time_ms,
+                TAU_DADOS_MS,
             )
     return response
 
@@ -607,9 +1114,9 @@ def _check_tdados_threshold(response):
 # the same ZMQ PUSH connection.
 _metric_sender = ZmqMetricSender()
 threading.Thread(
-    target=_retired_client_sweeper,
+    target=_epoch_housekeeping_loop,
     daemon=True,
-    name="mongo-client-sweeper",
+    name="mongo-epoch-housekeeping",
 ).start()
 
 
@@ -643,8 +1150,10 @@ init_telemetry(app, sender=_metric_sender, get_drain_state=get_drain_state)
 if __name__ == "__main__":
     log.info(
         "Starting edge-server on %s:%d  lan=%s  db_name=%s  vip_data=%s"
-        "  maxIdleTimeMS=%d  tau_dados=%.0fms",
-        BIND_HOST, BIND_PORT, LAN_ID, DB_NAME, vip_data_per_domain,
-        MAX_IDLE_MS, TAU_DADOS_MS,
+        "  vip_data_recovery=%s"
+        "  maxIdleTimeMS=%d  tau_dados=%.0fms  recovery_session_max_age_s=%.1f",
+        BIND_HOST, BIND_PORT, LAN_ID, DB_NAME, _snapshot_normal_vip_config(),
+        vip_data_recovery_per_domain,
+        MAX_IDLE_MS, TAU_DADOS_MS, VIP_DATA_RECOVERY_SESSION_MAX_AGE_S,
     )
     app.run(host=BIND_HOST, port=BIND_PORT, threaded=True)

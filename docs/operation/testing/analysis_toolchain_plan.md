@@ -34,7 +34,7 @@ Reference: [`./testing_overview.md`](testing_overview.md).
 |---|---|---|
 | Collector `collect_resource_stats.py` | writes `resource_stats.csv` (domain rows) | additionally writes `per_node_stats.csv` (one row per container per window) |
 | Post-processing | ad-hoc — manual CSV inspection | `python -m source.scripts.testing.analysis.cli_<name> --run-dir <dir>` produces PNGs and a `summary.md` under `<dir>/analysis/`; `cli_simple_compare` writes a separate comparison output directory |
-| Run directory layout | CSVs + controller logs | adds `per_node_stats.csv` and an `analysis/` subdirectory populated on demand |
+| Run directory layout | CSVs + controller logs | adds `per_node_stats.csv`, a `service_logs/` directory for edge/storage container logs, and an `analysis/` subdirectory populated on demand |
 
 No change to experiment execution, workload definition, or the traffic
 generator.
@@ -226,6 +226,17 @@ def load_run(run_dir: Path) -> Run:
 Grammar is permissive — misses degrade gracefully. The scale-down grammar is
 owned by the elasticity plan
 ([`../elasticy_manager/implementation/scale_down_instrumentation.md`](../elasticy_manager/implementation/scale_down_instrumentation.md)).
+
+Retained lifecycle timing exports should preserve three operations in
+`node_lifecycle_timings.csv`:
+
+- `add` for bootstrap completion (`NodeResult` / `StepTimings`);
+- `ready` for service admission (`vip_backend_registered`,
+  `rs_secondary_ready`, telemetry fallback promotion, or Tier 1 `ACTIVE`);
+- `remove` for scale-down cleanup completion.
+
+For storage and Tier 1, analysis that cares about user-visible elasticity
+latency should prefer `operation=ready` over `operation=add`.
 
 ```python
 # source/scripts/testing/analysis/events.py

@@ -83,6 +83,9 @@ CONTROLLER_LOG_PID2=""
 # PID of the container event poller (set by run_poll_container_events)
 CONTAINER_EVENTS_PID=""
 
+# PID of the service log capture helper (set by run_capture_service_logs)
+SERVICE_LOG_PID=""
+
 # ---------------------------------------------------------------------------
 # Flags
 # ---------------------------------------------------------------------------
@@ -149,6 +152,9 @@ CONTAINER_EVENTS_OUTPUT="${RUN_DIR}/container_events.csv"
 # Controller log capture — saved alongside resource stats
 CONTROLLER_LOG_LAN1="${RUN_DIR}/controller_lan1.log"
 CONTROLLER_LOG_LAN2="${RUN_DIR}/controller_lan2.log"
+
+# Service logs — one file per edge/storage container observed during the run
+SERVICE_LOG_DIR="${RUN_DIR}/service_logs"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -290,7 +296,28 @@ stop_capture_controller_logs() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4c — Container life-cycle poller (diff-based docker ps)
+# Step 4c — Capture edge/storage service logs during the run
+# ---------------------------------------------------------------------------
+
+run_capture_service_logs() {
+    step "Capturing service logs"
+    echo "  Output   : ${SERVICE_LOG_DIR}"
+    python3 "${SCRIPT_DIR}/capture_service_logs.py" \
+        --output-dir "$SERVICE_LOG_DIR" &
+    SERVICE_LOG_PID=$!
+    echo "  Helper PID: ${SERVICE_LOG_PID}"
+}
+
+stop_capture_service_logs() {
+    [[ -z "${SERVICE_LOG_PID:-}" ]] && return 0
+    echo; echo "==> Stopping service log capture (PID ${SERVICE_LOG_PID})"
+    kill -TERM "$SERVICE_LOG_PID" 2>/dev/null || true
+    wait "$SERVICE_LOG_PID" 2>/dev/null || true
+    SERVICE_LOG_PID=""
+}
+
+# ---------------------------------------------------------------------------
+# Step 4d — Container life-cycle poller (diff-based docker ps)
 # ---------------------------------------------------------------------------
 
 run_poll_container_events() {
@@ -360,8 +387,8 @@ echo " VIP         : ${VIP}"
 echo " Dry-run     : ${DRY_RUN}"
 echo "======================================================"
 
-# Stop the stats collector on any exit (normal, error, or signal)
-trap 'stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats' EXIT
+# Stop the run-scoped helpers on any exit (normal, error, or signal)
+trap 'stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats' EXIT
 
 prepare_run_outputs
 "$SKIP_CLIENTS"  || run_create_clients
@@ -369,9 +396,11 @@ prepare_run_outputs
 "$SKIP_SNAPSHOT" || run_snapshot
 run_collect_stats
 run_capture_controller_logs
+run_capture_service_logs
 run_poll_container_events
 run_traffic
 stop_poll_container_events
+stop_capture_service_logs
 stop_collect_stats
 
 step "Experiment complete"
@@ -381,3 +410,4 @@ echo "Container events: ${CONTAINER_EVENTS_OUTPUT}"
 echo "Phase config   : ${PHASES_SNAPSHOT_OUTPUT}"
 echo "Controller logs: ${CONTROLLER_LOG_LAN1}"
 echo "               : ${CONTROLLER_LOG_LAN2}"
+echo "Service logs   : ${SERVICE_LOG_DIR}"

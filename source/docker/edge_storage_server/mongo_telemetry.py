@@ -179,6 +179,21 @@ _sock: zmq.Socket | None = None
 logger = logging.getLogger("mongo_telemetry")
 
 
+def _local_mongo_client(timeout_ms: int = 2000) -> MongoClient:
+    """Return a client pinned to this container's local mongod.
+
+    The sidecar must inspect the MongoDB server running inside this container,
+    not whichever replica-set member PyMongo would otherwise select after
+    topology discovery. Using directConnection keeps readiness and telemetry
+    checks anchored to MONGO_URI (normally localhost:MONGO_PORT).
+    """
+    return MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=timeout_ms,
+        directConnection=True,
+    )
+
+
 def _get_server_mac() -> str:
     """Return the cached MAC, re-discovering if the interface wasn't available yet."""
     global SERVER_MAC
@@ -189,6 +204,8 @@ def _get_server_mac() -> str:
 _prev_opcounters: dict | None = None
 _last_send_ts: float = 0.0
 _sent_secondary_bootstrap = False
+_last_member_state: str | None = None
+_last_lag_bucket: str | None = None
 
 
 def _has_client_activity(current: dict, previous: dict | None) -> bool:
@@ -210,6 +227,39 @@ def _has_client_activity(current: dict, previous: dict | None) -> bool:
     # Do NOT use the `command` opcounter as an activity signal — in a replica
     # set, internal heartbeat/election commands inflate it every cycle.
     return False
+
+
+def _lag_bucket(repl_lag_s: float | None) -> str | None:
+    if repl_lag_s is None:
+        return None
+    if repl_lag_s < 1.0:
+        return "lt1s"
+    if repl_lag_s < 5.0:
+        return "lt5s"
+    return "ge5s"
+
+
+def _log_repl_transition(member_state: str | None, repl_lag_s: float | None) -> None:
+    global _last_member_state, _last_lag_bucket
+
+    if member_state != _last_member_state:
+        logger.info(
+            "Replica state transition: %s -> %s (lag_s=%s)",
+            _last_member_state,
+            member_state,
+            repl_lag_s,
+        )
+        _last_member_state = member_state
+
+    lag_bucket = _lag_bucket(repl_lag_s)
+    if lag_bucket != _last_lag_bucket:
+        logger.info(
+            "Replica lag bucket changed: %s -> %s (lag_s=%s)",
+            _last_lag_bucket,
+            lag_bucket,
+            repl_lag_s,
+        )
+        _last_lag_bucket = lag_bucket
 
 
 def _repl_lag_and_state(client: MongoClient) -> tuple[float | None, str | None]:
@@ -252,7 +302,7 @@ def _push_stats(*, force_bootstrap_secondary: bool = False) -> None:
     global _prev_opcounters, _last_send_ts, _sent_secondary_bootstrap
 
     logger.debug("Connecting to MongoDB at %s", MONGO_URI)
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
+    client = _local_mongo_client()
     try:
         server_status       = client.admin.command("serverStatus")
         connections_current = server_status.get("connections", {}).get("current", -1)
@@ -260,7 +310,12 @@ def _push_stats(*, force_bootstrap_secondary: bool = False) -> None:
         repl_lag, member_state = _repl_lag_and_state(client)
         logger.debug("Replication lag: %s s  state: %s", repl_lag, member_state)
     except PyMongoError as exc:
-        logger.info("Failed to query MongoDB stats: %s", exc)
+        logger.warning(
+            "Failed to query MongoDB stats via %s: exc_type=%s exc=%s",
+            MONGO_URI,
+            type(exc).__name__,
+            exc,
+        )
         connections_current = -1
         repl_lag            = None
         member_state        = None
@@ -272,6 +327,7 @@ def _push_stats(*, force_bootstrap_secondary: bool = False) -> None:
     opcounters = server_status.get("opcounters", {})
     activity   = _has_client_activity(opcounters, _prev_opcounters)
     _prev_opcounters = opcounters
+    _log_repl_transition(member_state, repl_lag)
 
     now = time.time()
 
@@ -487,7 +543,7 @@ def _wait_for_ready(timeout: float = RS_READY_TIMEOUT_S) -> str | None:
     last_progress = time.monotonic()
     while time.monotonic() < deadline:
         try:
-            client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
+            client = _local_mongo_client()
             try:
                 status = client.admin.command("replSetGetStatus")
             finally:
@@ -516,7 +572,12 @@ def _wait_for_ready(timeout: float = RS_READY_TIMEOUT_S) -> str | None:
 def main() -> None:
     global _sock
 
-    logger.info("mongo_telemetry starting: mac=%s interval=%.1fs", _get_server_mac(), INTERVAL_S)
+    logger.info(
+        "mongo_telemetry starting: mac=%s interval=%.1fs mongo_uri=%s",
+        _get_server_mac(),
+        INTERVAL_S,
+        MONGO_URI,
+    )
 
     # If RS_ADD_SELF is set, self-join the RS first (with retry/backoff).
     # _rs_self_join() calls _wait_for_network() internally, ensuring eth0
@@ -561,7 +622,11 @@ def main() -> None:
         try:
             _push_stats()
         except Exception as exc:
-            logger.info("Unexpected error in _push_stats: %s", exc)
+            logger.warning(
+                "Unexpected error in _push_stats: exc_type=%s exc=%s",
+                type(exc).__name__,
+                exc,
+            )
         time.sleep(INTERVAL_S)
 
 

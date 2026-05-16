@@ -28,9 +28,10 @@ until mongosh --port "${MONGO_PORT:-27018}" --quiet --eval "db.runCommand({ping:
     sleep 1
 done
 
-# Start the telemetry sidecar in the background.
+# Start the telemetry sidecar in the background with unbuffered output so
+# experiment log capture sees transitions promptly.
 # If it crashes, mongod (and therefore the container) keeps running.
-python3 /mongo_telemetry.py &
+python3 -u /mongo_telemetry.py &
 
 # The container lives as long as mongod does.
 wait $MONGOD_PID

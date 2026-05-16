@@ -100,19 +100,10 @@ _NODE_BIRTH_GRACE_S = float(os.environ.get("NODE_BIRTH_GRACE_S", "60"))
 
 # ── VIP warm-start knobs ───────────────────────────────────────────────
 _VIP_WARM_STORAGE_SECONDS = float(
-	os.environ.get("VIP_WARM_STORAGE_SECONDS", "15")
-)
-_VIP_WARM_STORAGE_SELECTIONS = int(
-	os.environ.get("VIP_WARM_STORAGE_SELECTIONS", "4")
+	os.environ.get("VIP_WARM_STORAGE_SECONDS", "30")
 )
 _VIP_WARM_SERVER_SECONDS = float(
-	os.environ.get("VIP_WARM_SERVER_SECONDS", "150")
-)
-_VIP_WARM_SERVER_SELECTIONS = int(
-	os.environ.get("VIP_WARM_SERVER_SELECTIONS", "8")
-)
-_VIP_DATA_WARM_REFRESH_TARGETS = int(
-	os.environ.get("VIP_DATA_WARM_REFRESH_TARGETS", "1")
+	os.environ.get("VIP_WARM_SERVER_SECONDS", "45")
 )
 
 # ── Tier 1 selective-sync knobs (see tier1_selective_sync/) ─────────────

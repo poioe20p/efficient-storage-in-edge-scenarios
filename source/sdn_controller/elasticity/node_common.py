@@ -100,6 +100,27 @@ class NodeInfo:
     primary_container: str = ""
     port:              int = 27018
     owner_lan:         str = ""   # selective_storage only: e.g. "lan1"
+    spawn_started_monotonic_s: float = 0.0
+    ready_logged: bool = False
+
+
+def log_ready_timing(
+    container_name: str,
+    node_type: str,
+    source: str,
+    total_s: float,
+    state: str = "READY",
+) -> None:
+    """Emit a stable ready-to-serve timing line for offline analysis."""
+    logger.info(
+        "[node_ready] timing  container=%s  node_type=%s  source=%s"
+        "  total=%.2fs  state=%s",
+        container_name,
+        node_type,
+        source,
+        total_s,
+        state,
+    )
 
 
 class _BaseNodeAdder:
@@ -195,7 +216,10 @@ class IpAllocator:
         .5  local_state_server (aggregator)
 
     Suffixes 56–105 are reserved for test clients (namespace-based).
-    Suffixes 253–254 are reserved for VIPs (VIP_SERVER, VIP_DATA).
+    Suffixes 252–254 are reserved for VIPs:
+        .252 recovery VIP_DATA for the LAN
+        .253 VIP_SERVER
+        .254 VIP_DATA
 
     Dynamic nodes start at suffix 6 to avoid IP collisions.
 

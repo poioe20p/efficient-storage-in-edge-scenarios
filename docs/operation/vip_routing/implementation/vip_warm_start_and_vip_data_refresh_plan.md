@@ -1,314 +1,340 @@
-# Plan: VIP Warm Start and VIP_DATA Client Refresh
+# Plan: VIP Warm Start and VIP_DATA Recovery Path
 
-This is the umbrella plan for the VIP warm-start work. It keeps the approved
-cross-cutting decisions in one place and delegates the detailed implementation
-work to smaller subplans.
+This is the umbrella plan for the approved storage-recovery redesign. It
+replaces the earlier refresh-centric idea in this file with a phased approach
+that preserves the current VIP-based control pattern:
+
+- the controller remains the only storage-backend selector
+- the edge server only chooses whether the next Mongo client uses the normal
+  VIP or a one-shot recovery VIP
+- no controller-driven `PUT /vip_data` refresh is used for this scenario
 
 ## TL;DR
 
-Implement the approved Approach A in one phase:
+Implement the storage fix in phases:
 
-- Reuse the existing edge-server `PUT /vip_data` control path in
-  [app.py](../../../../source/docker/edge_server/source/app.py) so the
-  controller can trigger eviction of the cached MongoDB client for a given
-  owner LAN.
-- Keep the controller as the only backend selector. The edge server does not
-  learn a concrete storage backend; it only drops the cached client so the next
-  request opens a fresh connection to `VIP_DATA`.
-- Add synchronized bounded warm-start preference for newly VIP-eligible
-  dynamic backends in
-  [vip_routing.py](../../../../source/sdn_controller/vip_routing.py).
-- Fix `HEARTBEAT_ENABLED` parsing in both telemetry senders, and keep the
-  static-node launch scripts/docs on `HEARTBEAT_ENABLED=true` before relying
-  on bootstrap telemetry as a new behavior.
-- Start the storage warm period when a dynamic storage node becomes
-  `SECONDARY`, pair it with one bootstrap `mongo_stats` event, record one
-  pending `VIP_DATA` refresh in Thread 2, and trigger a bounded refresh of
-  local edge-server Mongo clients only after a later Thread 2 telemetry pass
-  sees the promoted backend become visible in the concrete `VIP_DATA` pool.
-- Start the compute warm period when a dynamic compute node is added to the
-  `VIP_SERVER` pool, pair it with one bootstrap edge-server telemetry sample,
-  but keep compute traffic movement strictly passive: only natural new HTTP
-  connections or natural VIP flow expiry can land on the new backend.
-- Use a longer warm period for compute than for storage, and keep it at least
-  above the current `VIP_HARD_TIMEOUT`, because this phase does not force live
-  HTTP connection migration.
+1. **Phase 1 — fix warm node selection in the controller**
+   Land bounded warm storage leases in
+   [vip_routing.py](../../../../source/sdn_controller/vip_routing.py) and wire
+   storage promotion in [main_n1.py](../../../../source/sdn_controller/main_n1.py)
+   and [main_n2.py](../../../../source/sdn_controller/main_n2.py) to mark a
+   promoted storage backend warm.
 
----
+2. **Phase 2 — add one-shot recovery VIPs**
+   Add `VIP_DATA_RECOVERY_N1` and `VIP_DATA_RECOVERY_N2`, and make the edge
+   server in [app.py](../../../../source/docker/edge_server/source/app.py) use
+   them only on the next client creation after a main-path connection failure.
 
-## Decisions
+3. **Phase 3 — keep recovery narrow and temporary**
+   Recovery VIP flows are narrow and port-specific, recovered Mongo clients are
+   reused for a bounded recovery session, and then the edge server switches
+   back to the normal `VIP_DATA` path once the stale steady-state flow has had
+   time to expire naturally.
 
-- **Storage control surface:** reuse `PUT /vip_data` in
-  [app.py](../../../../source/docker/edge_server/source/app.py) instead of
-  adding a new endpoint.
-- **Selector ownership:** the controller still selects the storage backend via
-  `VIP_DATA`; the edge server never receives a direct `backend_ip` override.
-- **Warm policy:** use bounded warm leases (time + selection budget), not an
-  unbounded preference.
-- **Warm lease ownership:** keep warm-lease state in `VipRoutingMixin`, but
-  guard lease create/prune/consume operations with a small `threading.Lock`
-  because compute admission still happens from native Thread 3.
-- **Warm lease pruning:** prune only terminally stale leases (expired or out of
-  tokens). A backend that is not yet visible in the concrete VIP pool or not
-  yet claimable due to IP visibility lag is temporarily ineligible, not stale.
-- **Storage activation point:** mark a dynamic storage backend warm only after
-  it becomes `SECONDARY` and is admitted into the storage membership set;
-  refresh waits for the later concrete VIP-pool rebuild.
-- **Compute activation point:** mark a dynamic compute backend warm as soon as
-  it is added to `VIP_SERVER`.
-- **Heartbeat baseline:** fix `HEARTBEAT_ENABLED` parsing in both telemetry
-  senders before layering bootstrap telemetry on top, and keep the static-node
-  launch scripts/docs on `HEARTBEAT_ENABLED=true` in the same phase, so the
-  plan matches the existing docs model where dynamic nodes are otherwise
-  idle-silent.
-- **Heartbeat sender safety:** initialize request-telemetry heartbeat state
-  independently of the heartbeat thread so dynamic edge servers still emit
-  normal request telemetry when `HEARTBEAT_ENABLED=false`.
-- **Storage refresh trigger:** create the storage warm lease as soon as the
-  backend is promoted to `SECONDARY`, record a pending refresh in Thread 2,
-  and delay `_refresh_vip_data_clients()` until a later
-  `_on_telemetry_update()` sees the backend in `vip_storage_pool_*` with a
-  backend IP.
-- **Compute traffic movement:** no forced HTTP disconnect, no temporary
-  redirect rule, no per-connection VIP_SERVER flow specialization in this
-  phase.
-- **Compute warm duration:** the default compute warm window must be longer
-  than the current `VIP_HARD_TIMEOUT`, not shorter, because VIP_SERVER remains
-  affinity-sticky for existing clients.
-- **Mongo client safety:** centralize client retirement in one helper and use
-  it from `PUT /vip_data`, `AutoReconnect` recovery, and the `T_dados`
-  threshold path; future requests must stop reusing the client immediately,
-  while in-flight requests keep the old client until the grace period expires.
+4. **Phase 4 — optional follow-up**
+   Add short-lived "avoid last failed backend" memory only if runs still show
+   repeated reselection of the same unhealthy storage backend after Phases 1–3.
 
----
+## Current Starting Point
+
+This sequence starts from a mixed state in the current controller code:
+
+- [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
+  [main_n2.py](../../../../source/sdn_controller/main_n2.py) already mark
+  promoted storage backends warm, but they still retain the older
+  promotion-triggered `/vip_data` refresh queue that this redesign is meant to
+  retire.
+- [vip_routing.py](../../../../source/sdn_controller/vip_routing.py) already
+  contains the bounded warm-lease implementation and the controller-side
+  lifecycle helpers that Phase 1 required.
+- [app.py](../../../../source/docker/edge_server/source/app.py) still uses the
+  current `vip_data_per_domain` map and `/vip_data` endpoint. That endpoint
+  still retires the cached client for every provided LAN, even when the VIP
+  mapping did not change, and the later `VIP_DATA_RECOVERY_*` path described
+  in this plan is not implemented yet.
+
+This document describes the intended convergence sequence from that starting
+point to the approved recovery-VIP design.
+
+## Problem
+
+The remaining storage failure gap has two separate causes:
+
+1. The edge server already retires a bad Mongo client in
+   [app.py](../../../../source/docker/edge_server/source/app.py), but the
+   current broad `VIP_DATA` flow can still match the next Mongo reconnect, so
+   the controller may never get a fresh storage-selection opportunity.
+2. The old promotion-triggered `/vip_data` refresh path and the current
+  `/vip_data` endpoint semantics still try to create reconnect churn on the
+  normal VIP, but that does not reliably force a fresh controller-visible
+  selection. The promotion path in
+   [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
+   [main_n2.py](../../../../source/sdn_controller/main_n2.py) expects
+  storage promotion to make the backend eligible and warm, while the approved
+  design reserves failure-triggered reselection for the recovery VIP path.
+
+So the fix needs both:
+
+- a guaranteed fresh selection opportunity after a real storage-path failure
+- removal of the old refresh-centric path so recovery VIP is the only intended
+  post-failure reselection mechanism
+
+## Approved Decisions
+
+- **Selector ownership:** the controller remains the only place that chooses a
+  concrete storage backend.
+- **No refresh fan-out:** do not use controller-driven `PUT /vip_data` refresh
+  in this design; it risks disrupting healthy active connections.
+- **Config-only `/vip_data`:** keep `/vip_data` only as a domain-to-VIP mapping
+  surface; same-value updates are idempotent and must not retire the cached
+  client.
+- **No promotion-triggered refresh:** once Phase 2 lands, promotion-triggered
+  `/vip_data` refresh should be removed from
+  [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
+  [main_n2.py](../../../../source/sdn_controller/main_n2.py).
+- **Recovery trigger:** arm recovery only on connection-level failures that
+  retire the current Mongo client; generic query errors do not force recovery.
+- **Recovery transport:** use per-domain recovery VIPs instead of a new direct
+  synchronous side channel or MongoDB protocol metadata.
+- **Recovery VIP identity:** recovery dispatch must preserve the recovery VIP
+  IP/MAC identity inside the shared `_handle_vip_data(...)` path; the recovery
+  flag is not only a selector hint.
+- **Warm policy:** use short bounded warm leases with monotonic time expiry
+  only, not an unbounded preference.
+- **Warm identity safety:** dynamic backend IP/MAC identities are allocator-
+  recycled, so Phase 1 must explicitly clear warm-lease state on intentional
+  backend removal and still overwrite any prior lease on later admission
+  before the backend becomes claimable.
+- **Warm activation point:** mark a dynamic storage backend warm when it
+  becomes `SECONDARY` and is admitted into the storage membership set.
+- **Warm consumption model:** the bounded warm lease biases whichever eligible
+  fresh storage selections occur before it expires; later recovery path limits
+  exist to increase the odds that at least one such selection occurs within
+  that short time window.
+- **Warm timing model:** warm windows should stay close to the elasticity
+  reaction horizon that produced the node, not the full `VIP_HARD_TIMEOUT`.
+- **Recovery rule shape:** recovery flows must be narrower and shorter-lived
+  than the steady-state `VIP_DATA` rule; they should match the recovery VIP and
+  the Mongo client TCP source port.
+- **Recovered-client lifecycle:** do not close the recovered Mongo client after
+  every HTTP request; reuse it for a bounded recovery session and then switch
+  back to the normal `VIP_DATA` path.
+- **Switchback timing:** the recovery session max age should be slightly longer
+  than the normal `VIP_DATA` idle timeout so the stale broad steady-state flow
+  can expire naturally.
+- **Storage vs compute capture:** Phases 2 and 3 are the intended storage-side
+  answer to the fresh-selection gap; compute warm-start remains passive, so
+  lack of forced fresh selection is only an expected limitation for compute or
+  for a Phase-1-only rollout.
+- **Compute scope:** compute warm-start remains passive and separate; this plan
+  does not add compute scale-up logic or per-connection `VIP_SERVER` steering.
 
 ## Why This Shape
 
-The current code already exposes the two control points this plan needs:
+The current code already gives the system the right ownership boundaries:
 
-1. [vip_routing.py](../../../../source/sdn_controller/vip_routing.py) owns the
-   WSM backend choice for `VIP_SERVER` and `VIP_DATA`.
+1. [vip_routing.py](../../../../source/sdn_controller/vip_routing.py) owns
+   backend choice for `VIP_SERVER` and `VIP_DATA`.
 2. [app.py](../../../../source/docker/edge_server/source/app.py) already keeps
-   one cached `MongoClient` per owner LAN and already exposes `PUT /vip_data`.
+   one cached `MongoClient` per owner LAN and already retires it on
+   connection-level failure.
 
-That means storage can get an active warm-start without changing routing
-ownership: the controller tells the edge server to evict the cached client, the
-next request opens a new `VIP_DATA` connection, and the controller applies the
-warm-start preference at selection time.
+What is missing is a way to make the next post-failure Mongo connection hit a
+fresh controller decision without inventing a new controller-facing protocol.
+Using a recovery VIP keeps that hint in-band on the same VIP pattern the system
+already uses.
 
-Compute does not have an equivalent safe control boundary today. Because live
-HTTP cutover is intentionally avoided, compute warm-start must rely on natural
-new connections and therefore needs a longer grace period.
+MongoDB-level metadata does not solve this problem. Fields like `appname`,
+`comment`, read preference, or handshake metadata exist above TCP, while the
+controller only sees the packet headers that reach the OpenFlow pipeline.
 
-Both bootstrap telemetry pushes can reuse event shapes the aggregator already
-understands: an edge-server bootstrap can use the existing `heartbeat` shape,
-and the storage bootstrap can use the existing `mongo_stats` shape. That avoids
-introducing a new telemetry schema just for warm-start visibility.
+The recovery VIP also avoids the consistency problem of a new direct side
+channel. Controller-to-edge control can continue to use the current HTTP
+surface as a configuration surface only, and edge-to-controller async
+telemetry can continue to use the current aggregator path. The only new
+behavior is which VIP address the next Mongo client dials after a real
+connection-level failure.
 
-The plan also has to stay aligned with the current topology and threading
-contracts. `add_server_mac()` and `add_storage_mac()` update membership sets,
-not necessarily an immediately claimable pool snapshot, and compute admission
-still comes from the native elasticity thread. The warm-start logic therefore
-needs explicit synchronization and must treat pool-visibility lag as a
-temporary not-claimable state rather than a reason to delete the lease.
-
-For Tier 2 storage specifically, the existing Thread 2 mediator already owns
-both `rs_secondary_ready` handling and telemetry-fallback promotion inside
-`_on_telemetry_update()`. That makes Thread 2 the right place to record a
-one-shot pending refresh when promotion happens and to resolve that refresh on
-later telemetry passes once `vip_storage_pool_*` and `_mac_to_ip` show the new
-backend is actually claimable. A spawned poll helper would add another timing
-path without giving the controller a stronger correctness signal.
-
----
+Phase 1 is intentionally useful on its own: it fixes controller-side warm
+selection regardless of whether recovery VIPs already exist. Phases 2 and 3
+then decide when and how many fresh selection opportunities are created within
+that bounded warm-lease window.
 
 ## Scope
 
 ### In scope
 
-- Warm-start preference for newly eligible dynamic storage and compute nodes.
-- A controller-to-edge-server mechanism for evicting cached Mongo clients so
-  future requests open a fresh `VIP_DATA` connection.
-- Correct `HEARTBEAT_ENABLED` parsing so the telemetry baseline matches the
-  documented static-vs-dynamic heartbeat split before bootstrap sends are
-  layered on top.
-- Same-phase rollout updates for the static heartbeat launch scripts so the new
-  boolean contract does not disable static-node heartbeats.
-- One bootstrap telemetry push from both dynamic edge servers and dynamic
-  storage nodes when they first become routable through the normal VIP path.
-- Separate warm windows for storage and compute, with compute longer than
-  storage.
+- bounded warm-start preference for newly eligible dynamic storage backends
+- one-shot `VIP_DATA_RECOVERY_*` paths for fresh post-failure storage
+  selection
+- narrow, port-specific recovery flows that avoid reproducing the broad normal
+  `VIP_DATA` stickiness problem
+- bounded recovery-session reuse and automatic switchback to normal
+  `VIP_DATA`
+- the controller-side warm selection fix that lets promoted dynamic storage win
+  when the fresh selection opportunity occurs
 
 ### Out of scope
 
-- Forced VIP_SERVER migration of live HTTP connections.
-- Per-connection or 5-tuple VIP_SERVER rules.
-- Controller-driven targeted repunt for degraded-window reselection.
-- Direct backend steering inside the edge server.
-- Cross-controller fan-out of `VIP_DATA` refreshes to peer-LAN edge servers.
-  Phase 1 keeps the active refresh local to the controller that owns the edge
-  servers it can already address directly.
+- controller-driven `PUT /vip_data` refresh for this scenario
+- direct backend steering inside the edge server
+- closing the recovered Mongo client after every HTTP request
+- new direct synchronous controller hint channels
+- compute scale-up changes
+- per-connection `VIP_SERVER` routing
 
----
+## Multi-Phase Breakdown
 
-## Subplans
+### Phase 1 — Fix Warm Storage Selection in the Controller
 
-This umbrella plan delegates detailed implementation work to three smaller
-subplans.
+Reference: [vip_warm_leases_plan.md](./vip_warm_leases_plan.md)
 
-1. [vip_warm_leases_plan.md](./vip_warm_leases_plan.md)
-   Covers warm-start configuration, synchronized warm-lease state in
-   `VipRoutingMixin`, compute admission into `VIP_SERVER`, and the explicit
-   "natural-move only" boundary for compute traffic.
+Phase 1 stays controller-local. It lands the bounded warm-lease machinery in
+`VipRoutingMixin`, wires the existing promotion hooks to it, and makes the
+controller capable of preferring newly promoted dynamic storage on the next
+eligible fresh selection opportunity.
 
-2. [vip_data_thread2_refresh_plan.md](./vip_data_thread2_refresh_plan.md)
-   Covers Tier 2 storage promotion, Thread 2 pending-refresh bookkeeping,
-   bounded local `VIP_DATA` refresh fan-out, and Mongo client retirement
-   semantics in the edge server.
+This phase is now the live starting point for the remaining work. The next
+phases should build on the landed warm-lease helpers rather than still
+describing them as absent.
 
-3. [vip_bootstrap_telemetry_rollout_plan.md](./vip_bootstrap_telemetry_rollout_plan.md)
-   Covers `HEARTBEAT_ENABLED` normalization, bootstrap edge/storage telemetry,
-   and the static-node script rollout that preserves the documented heartbeat
-   baseline.
+Phase 1 alone does not solve the storage reconnect-capture problem. It only
+ensures that when a fresh storage selection opportunity reaches the controller,
+the promoted backend can win it. Phases 2 and 3 are the intended storage-side
+mechanism for creating those bounded fresh selections; compute remains
+natural-move only.
 
----
+### Phase 2 — Add Recovery VIPs and Edge Recovery Arming
 
-## Preferred Implementation Order
+Reference: [vip_data_recovery_vip_arming_plan.md](./vip_data_recovery_vip_arming_plan.md)
 
-1. Land [vip_warm_leases_plan.md](./vip_warm_leases_plan.md) first.
-   It provides the warm-lease primitives used by both the compute and storage
-   paths.
+Phase 2 introduces `VIP_DATA_RECOVERY_N1` and `VIP_DATA_RECOVERY_N2`, teaches
+the controller to answer and punt those VIPs, and adds one-shot recovery arming
+to the edge server so the next fresh `MongoClient` creation after a real
+connection-level failure reaches a fresh controller decision. As part of that
+convergence, the earlier promotion-triggered `/vip_data` refresh queue is
+removed and `/vip_data` remains config-only.
 
-2. Land [vip_bootstrap_telemetry_rollout_plan.md](./vip_bootstrap_telemetry_rollout_plan.md)
-   second.
-  It fixes the telemetry baseline before integrated validation relies on the
-  new bootstrap samples.
+### Phase 3 — Keep Recovery Narrow and Temporary
 
-3. Land [vip_data_thread2_refresh_plan.md](./vip_data_thread2_refresh_plan.md)
-   third.
-   It wires storage promotion and refresh behavior on top of the warm-lease
-   primitives and uses the corrected telemetry baseline during validation.
+Reference: [vip_data_recovery_flow_session_plan.md](./vip_data_recovery_flow_session_plan.md)
 
-4. Run integrated verification across all three subplans.
+Phase 3 narrows recovery flows by matching the recovery VIP and Mongo TCP
+source port, then bounds how long the recovered `MongoClient` stays on that
+temporary path before later fresh connections return to normal `VIP_DATA`.
 
-The implementation still lands as one coherent phase; the split only reduces
-document size and keeps each file aligned with one control surface.
+### Phase 4 — Optional Follow-Up: Failed-Backend Avoidance
 
----
+Reference: [vip_data_failed_backend_avoidance_plan.md](./vip_data_failed_backend_avoidance_plan.md)
 
-## Cross-Plan Integration Points
+Only if experiments after Phases 1–3 still show repeated selection of the same
+unhealthy backend, Phase 4 adds a short-lived controller-side avoid-last-failed
+memory keyed by `(edge_server, domain)`.
 
-- `VipRoutingMixin` remains the only place that chooses warm-preferred
-  backends for `VIP_SERVER` and `VIP_DATA` traffic.
-- Thread 2 in [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
-  [main_n2.py](../../../../source/sdn_controller/main_n2.py) owns storage
-  pending-refresh bookkeeping and the readiness check that resolves it.
-- `PUT /vip_data` remains an eviction-only control surface; the edge server is
-  never told which concrete storage backend to use.
-- [control_events.py](../../../../source/sdn_controller/control_events.py) can
-  keep its current callback contract if the controllers pass a wrapper.
-- [topology.py](../../../../source/sdn_controller/topology/topology.py) keeps
-  current VIP pool membership behavior; pool visibility lag is treated as
-  temporary non-claimability, not stale state.
-- `VIP_SERVER` remains natural-move only in this phase.
+## Supporting Plans
 
----
+- [vip_warm_leases_plan.md](./vip_warm_leases_plan.md)
+  Defines the bounded warm-lease machinery that Phase 1 relies on.
+- [vip_data_recovery_vip_arming_plan.md](./vip_data_recovery_vip_arming_plan.md)
+  Defines the controller recovery VIPs and edge-server one-shot arming used in
+  Phase 2.
+- [vip_data_recovery_flow_session_plan.md](./vip_data_recovery_flow_session_plan.md)
+  Defines the narrow recovery-flow rules and bounded recovered-client lifetime
+  used in Phase 3.
+- [vip_data_failed_backend_avoidance_plan.md](./vip_data_failed_backend_avoidance_plan.md)
+  Defines the optional avoid-last-failed controller memory for Phase 4.
 
 ## Consolidated File Ownership
 
-- [vip_warm_leases_plan.md](./vip_warm_leases_plan.md)
-  modifies [scaling_config.py](../../../../source/sdn_controller/scaling_config.py),
-  [vip_routing.py](../../../../source/sdn_controller/vip_routing.py), and
-  [elasticity.py](../../../../source/sdn_controller/elasticity/elasticity.py).
-- [vip_data_thread2_refresh_plan.md](./vip_data_thread2_refresh_plan.md)
-  modifies [main_n1.py](../../../../source/sdn_controller/main_n1.py),
-  [main_n2.py](../../../../source/sdn_controller/main_n2.py),
-  [vip_routing.py](../../../../source/sdn_controller/vip_routing.py), and
-  [app.py](../../../../source/docker/edge_server/source/app.py).
-- [vip_bootstrap_telemetry_rollout_plan.md](./vip_bootstrap_telemetry_rollout_plan.md)
-  modifies [telemetry.py](../../../../source/docker/edge_server/source/telemetry.py),
-  [mongo_telemetry.py](../../../../source/docker/edge_storage_server/mongo_telemetry.py),
-  [build_network_1.sh](../../../../source/scripts/network/build_network_1.sh),
-  and [build_network_2.sh](../../../../source/scripts/network/build_network_2.sh).
-
-Files intentionally unchanged in this phase:
-
-- [control_events.py](../../../../source/sdn_controller/control_events.py)
+- [vip_routing.py](../../../../source/sdn_controller/vip_routing.py)
+  Warm leases, warm-first storage selection, recovery-VIP ARP/IP punt rules,
+  and narrow recovery-flow installation.
+- [main_n1.py](../../../../source/sdn_controller/main_n1.py)
+  LAN1 storage promotion marks the backend warm; Phase 2 also removes the old
+  promotion-triggered `/vip_data` refresh queue here.
+- [main_n2.py](../../../../source/sdn_controller/main_n2.py)
+  LAN2 storage promotion marks the backend warm; Phase 2 also removes the old
+  promotion-triggered `/vip_data` refresh queue here.
 - [topology.py](../../../../source/sdn_controller/topology/topology.py)
+  Adds controller-side recovery VIP configuration.
+- [scaling_config.py](../../../../source/sdn_controller/scaling_config.py)
+  Holds the Phase 1 warm-lease knobs and is the source of truth for warm-start
+  timing once Phase 1 lands; `vip_routing.py` should import those constants
+  rather than re-parsing duplicate warm-start env vars.
+- [app.py](../../../../source/docker/edge_server/source/app.py)
+  Keeps `/vip_data` config-only and idempotent, arms one-shot recovery after
+  main-path connection failure, chooses the next normal or recovery VIP for
+  fresh client creation, and bounds the recovery session lifetime in later
+  phases.
+- [osken-controller.env](../../../../source/scripts/osken-controller.env)
+  Defines controller-side recovery VIP addresses, MACs, and later recovery-flow
+  timeout knobs.
+- [compute_node_manager.py](../../../../source/sdn_controller/elasticity/compute_node_manager.py)
+  Propagates recovery VIP env overrides into dynamically launched edge-server
+  containers so static and dynamic launches stay aligned.
+- [node_common.py](../../../../source/sdn_controller/elasticity/node_common.py)
+  Documents `.252`–`.254` as reserved VIP space once recovery VIPs are added.
+- [build_network_1.sh](../../../../source/scripts/network/build_network_1.sh)
+  Wires recovery-related env vars into the LAN1 edge-server container when
+  experiment control needs explicit container env.
+- [build_network_2.sh](../../../../source/scripts/network/build_network_2.sh)
+  Wires recovery-related env vars into the LAN2 edge-server container when
+  experiment control needs explicit container env.
+- [add_network_node.sh](../../../../source/scripts/network/add_network_node.sh)
+  Documents `.252` as reserved in the shell-side attachment path alongside the
+  other VIP suffixes.
 
----
+Potential follow-up file updates once implementation lands:
+
+- [create_test_clients.sh](../../../../source/scripts/network/clients/create_test_clients.sh)
+- [test_conectivity.sh](../../../../source/scripts/test_conectivity.sh)
 
 ## Consolidated Verification
 
-1. **Heartbeat baseline**
-   Dynamic nodes stay idle-silent by default, static nodes keep periodic
-   heartbeats after the `true`/`false` rollout, and normal edge-server request
-   telemetry still works when the heartbeat thread is disabled.
+Validate the sequence experimentally after each phase. Phase 1 should show
+warm-lease creation and claim in the controller. Phases 2 and 3 should then
+show that a real connection-level failure can force one or more bounded fresh
+storage selections through `VIP_DATA_RECOVERY_*`, reuse the recovered client
+for a limited interval, and eventually return traffic to the normal
+`VIP_DATA` path without relying on steady-state refresh fan-out as the desired
+failover mechanism.
 
-2. **Storage promotion path**
-   A Tier 2 storage backend becomes warm at `SECONDARY`, records exactly one
-  pending refresh in Thread 2, emits one bootstrap `mongo_stats` sample, and
-  triggers `PUT /vip_data` only after a later full telemetry pass sees it in
-  the concrete storage pool with a known backend IP.
-
-3. **Storage reconnect safety**
-   A `VIP_DATA` refresh retires the cached Mongo client for future requests
-   without breaking in-flight requests, and the same retirement path is used by
-   `/vip_data`, `AutoReconnect`, and `T_dados` eviction.
-
-4. **Warm selection and expiry**
-   The next eligible `VIP_DATA` or `VIP_SERVER` packet-in can consume the warm
-   lease before steady-state WSM resumes, and both lease types expire cleanly
-   by time or token budget.
-
-5. **No regression in drain/remove**
-   Existing compute drain and scale-down behavior still works after the Mongo
-   client retirement and warm-admission changes.
-
----
+Also confirm that same-value `/vip_data` updates are idempotent and that
+promotion to `SECONDARY` no longer triggers controller-driven refresh fan-out.
 
 ## Dependencies
 
-- No new external packages.
-- Reuse existing Flask, `requests`, PyMongo, and OS-Ken surfaces.
-- Reuse the aggregator's existing `heartbeat` and `mongo_stats` event shapes
-  for bootstrap visibility; no new telemetry schema is required.
-- Reuse the existing Tier 1 controller-to-edge-server HTTP control pattern in
-  [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
-  [main_n2.py](../../../../source/sdn_controller/main_n2.py) as the model for
-  the new `VIP_DATA` refresh fan-out, including per-target request-failure
-  handling.
-
----
+- no new external packages
+- reuse the current VIP ownership model in
+  [vip_routing.py](../../../../source/sdn_controller/vip_routing.py)
+- reuse the current edge-server Mongo-client lifecycle in
+  [app.py](../../../../source/docker/edge_server/source/app.py)
+- reuse the current controller env/config pattern in
+  [osken-controller.env](../../../../source/scripts/osken-controller.env)
+  and the current edge-server container wiring in
+  [build_network_1.sh](../../../../source/scripts/network/build_network_1.sh)
+  and [build_network_2.sh](../../../../source/scripts/network/build_network_2.sh)
 
 ## Documentation Updates
 
 Update these documents once implementation lands:
 
 - [vip_routing_overview.md](../vip_routing_overview.md)
-  Add a warm-lease subsection and explain that compute warm-up is passive while
-  storage warm-up can actively trigger future `VIP_DATA` reconnections.
-- [telemetry_overview.md](../../telemetry/telemetry_overview.md)
-  Document the corrected `HEARTBEAT_ENABLED` contract and both bootstrap
-  telemetry pushes.
-- [heartbeat_dynamic_node_gate_plan.md](../../other/heartbeat_dynamic_node_gate_plan.md)
-  Update examples and rollout notes to use the same strict `true` / `false`
-  contract as the implementation plan.
+  Document the distinction between the broad steady-state `VIP_DATA` path and
+  the one-shot `VIP_DATA_RECOVERY` path.
 - [system_mechanisms.md](../../system_mechanisms.md)
-  Describe the controller-driven Mongo-client eviction control, bounded warm
-  preference, bootstrap telemetry, and Thread 2 pending-refresh behavior.
+  Explain the failure-to-recovery sequence, bounded recovery session, and the
+  controller-side warm preference.
 - [elasticity_overview.md](../../elasticy_manager/elasticity_overview.md)
-  Note that compute admission into `VIP_SERVER` now creates a compute warm
-  lease, and storage promotion to `SECONDARY` creates a storage warm lease,
-  pending refresh record, and bootstrap `mongo_stats` sample.
-
----
+  Note that storage promotion to `SECONDARY` now creates a warm lease that is
+  consumed by the next eligible storage selection opportunity.
+- [telemetry_overview.md](../../telemetry/telemetry_overview.md)
+  Update any references that still imply active client refresh is the storage
+  failover path.
 
 ## Deferred Follow-Up
 
-These are intentionally deferred until this narrower phase is validated:
-
-- cross-controller `VIP_DATA` refresh fan-out for peer-LAN edge servers
-- degraded-window targeted reselection for future requests
-- VIP_SERVER soft-close or drain-assisted warm rebalance
-- per-connection VIP_SERVER steering
+- short-lived avoid-last-failed-backend memory
+- cross-controller coordination if future runs show a peer-LAN recovery gap
+- per-connection `VIP_SERVER` steering
+- compute recovery or elasticity changes tied to storage-path failures

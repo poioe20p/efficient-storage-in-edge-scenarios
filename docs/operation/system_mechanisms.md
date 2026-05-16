@@ -2,7 +2,13 @@
 
 This document describes the high-level workflows of the SDN-based edge orchestration architecture — how the components interact, what triggers actions, and how data flows through the system.
 
-For detailed implementation specifics, see the [implementation plans](implementation_plans/) subfolder.
+For detailed implementation specifics, see the subsystem overviews in
+[vip_routing/vip_routing_overview.md](vip_routing/vip_routing_overview.md),
+[telemetry/telemetry_overview.md](telemetry/telemetry_overview.md),
+[topology/topology_overview.md](topology/topology_overview.md),
+[elasticy_manager/elasticity_overview.md](elasticy_manager/elasticity_overview.md),
+and the phased storage-recovery plans in
+[vip_routing/implementation](vip_routing/implementation).
 
 ---
 
@@ -77,8 +83,10 @@ Thread 1 handles two independent traffic planes via `VipRoutingMixin`:
 | **VIP_SERVER** | `10.0.0.253` (env: `VIP_SERVER_IP`) | Client → Web Server | Multi-dimensional WSM cost: CPU utilization, RAM usage, request count, and hop distance |
 | **VIP_DATA_N1** | `10.0.0.254` (env: `VIP_DATA_N1_IP`) | Web Server → MongoDB (LAN 1) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
 | **VIP_DATA_N2** | `10.0.1.254` (env: `VIP_DATA_N2_IP`) | Web Server → MongoDB (LAN 2) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
+| **VIP_DATA_RECOVERY_N1** | `10.0.0.252` (env: `VIP_DATA_RECOVERY_N1_IP`) | Web Server → MongoDB recovery reconnect (LAN 1) | Same storage WSM selection, but only for post-failure Mongo TCP reconnects |
+| **VIP_DATA_RECOVERY_N2** | `10.0.1.252` (env: `VIP_DATA_RECOVERY_N2_IP`) | Web Server → MongoDB recovery reconnect (LAN 2) | Same storage WSM selection, but only for post-failure Mongo TCP reconnects |
 
-Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_N1_MAC`, `VIP_DATA_N2_MAC`) configured via environment variables, used for ARP replies and DNAT/SNAT rewriting.
+Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_N1_MAC`, `VIP_DATA_N2_MAC`, `VIP_DATA_RECOVERY_N1_MAC`, `VIP_DATA_RECOVERY_N2_MAC`) configured via environment variables, used for ARP replies and DNAT/SNAT rewriting.
 
 #### VIP Server Selection — Multi-Dimensional WSM Cost Formula
 
@@ -130,7 +138,7 @@ Per-dimension weights (configurable via `W_STORAGE_CPU`, `W_STORAGE_RAM`, `W_STO
 
 #### VIP Packet-In Flow
 
-For each `VIP_SERVER` Packet-In, Thread 1 evaluates the multi-dimensional WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each `VIP_DATA_N1` or `VIP_DATA_N2` Packet-In, Thread 1 evaluates the storage WSM cost function for the corresponding domain and installs an analogous DNAT+SNAT pair.
+For each `VIP_SERVER` Packet-In, Thread 1 evaluates the multi-dimensional WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each steady-state `VIP_DATA_N1` or `VIP_DATA_N2` Packet-In, Thread 1 evaluates the storage WSM cost function for the corresponding domain and installs an analogous DNAT+SNAT pair. Recovery `VIP_DATA_RECOVERY_*` Packet-Ins use the same storage WSM selection, but only accept TCP traffic for MongoDB port `27018` and install narrower DNAT+SNAT rules keyed by the recovery connection's TCP source/destination ports, with separate `VIP_DATA_RECOVERY_IDLE_TIMEOUT` / `VIP_DATA_RECOVERY_HARD_TIMEOUT` limits.
 
 The MongoDB driver in each web server sees only `VIP_DATA_N*:<port>` — a stable per-domain VIP address — and never discovers the physical `mongod` topology.
 
@@ -201,7 +209,10 @@ For cross-network backends, the SNAT return rule matches on `eth_src=ROUTER_MAC,
 
 Because the DNAT'd packet carries the real destination IP (and the router resolves the final backend MAC via its own ARP), the peer OVS switch delivers it via normal L2 forwarding — no second VIP PacketIn is triggered on the remote controller.
 
-> See [vip_interception_plan.md](implementation_plans/vip_interception_plan.md) for the full mixin implementation.
+> See [vip_routing/vip_routing_overview.md](vip_routing/vip_routing_overview.md)
+> and
+> [vip_routing/implementation/vip_warm_start_and_vip_data_refresh_plan.md](vip_routing/implementation/vip_warm_start_and_vip_data_refresh_plan.md)
+> for the current mixin behavior and the approved recovery-VIP rollout.
 
 ---
 
@@ -266,7 +277,7 @@ $$
 The telemetry `on_update` callback performs two functions:
 
 1. **Routing (Thread 1):** Calls `update_server_stats()` and `update_storage_stats()` to store per-server summaries keyed by MAC. Thread 1 reads these for the WSM cost functions.
-2. **Scaling (Thread 3):** Evaluates domain-level degradation scores using adaptive thresholds with configurable sliding windows, and submits typed alerts to the `ElasticityManager` queue. Also processes control events (`drain_complete` → cleanup alert, `rs_secondary_ready` → storage VIP promotion) and tracks node liveness for absent-node detection with a birth grace period for newly added nodes.
+2. **Scaling (Thread 3):** Evaluates domain-level degradation scores using adaptive thresholds with configurable sliding windows, and submits typed alerts to the `ElasticityManager` queue. Also processes control events (`drain_complete` → cleanup alert, `rs_secondary_ready` → storage VIP promotion plus warm-lease creation) and tracks node liveness for absent-node detection with a birth grace period for newly added nodes.
 
 | Metric | Thread 1 (Routing) | Thread 3 (Scaling) |
 | :--- | :---: | :---: |
@@ -381,8 +392,16 @@ Dynamic containers are named `{prefix}_{network_id}_dyn{counter}` (e.g. `edge_se
 2. `add_network_node.sh --lan <N> --name <name> --ip <ip> --mac <mac>` → veth + OVS.
 3. Controller returns (~5-12 s) — **RS join is performed asynchronously by the sidecar** inside the container. The `mongo_telemetry.py` sidecar discovers the primary via `RS_SEED_HOST`, performs `rs.add()` with retry/exponential backoff, and waits for SECONDARY state. This avoids blocking Thread 3 for the ~34-45 s initial sync.
 4. VIP registration is **deferred** until the node is ready, via dual-path promotion:
-   - **Fast path:** sidecar emits `rs_secondary_ready` control event → controller immediately calls `add_storage_mac()`.
-   - **Fallback path:** aggregator propagates `member_state` from telemetry → controller detects `SECONDARY` and promotes (~2-4 s delay).
+    - **Fast path:** sidecar emits `rs_secondary_ready` control event → controller calls the storage-promotion helper, which admits the backend into `VIP_DATA` and marks a short warm lease.
+    - **Fallback path:** aggregator propagates `member_state` from telemetry → controller detects `SECONDARY`, promotes, and marks the same short warm lease (~2-4 s delay).
+
+The later VIP-routing recovery phases no longer use controller-driven
+`/vip_data` refresh as the storage failover mechanism. Instead, the edge server
+maintains LAN-scoped epoch state seeded at startup. A real connection-level
+failure rotates the failed current epoch to a recovery epoch bound to
+`VIP_DATA_RECOVERY_*`, the controller installs narrow recovery rules for that
+Mongo TCP connection, and background housekeeping later rolls the current epoch
+back to a normal epoch after its bounded local recovery window expires.
 
 Before `docker run`, the node manager checks existing container state: running → skip creation; stopped → remove and recreate. For storage, stale volumes are cleaned up to avoid replica-set ID clashes.
 
@@ -465,7 +484,6 @@ graph LR
 ```
 
 > Edge storage freed, replication traffic stopped. Back to base state.
-
 > For full elasticity details, see the [Elasticity Overview](elasticy_manager/elasticity_overview.md).
 
 ---
@@ -518,7 +536,8 @@ This design ensures:
 - **Removals propagate:** `remove_server_mac()` removes from `_local_*` → next snapshot no longer includes it → peer replaces its `_peer_*` set wholesale → MAC disappears on both sides.
 - **No stale accumulation:** Full replacement (not union) of peer sets on each update; old MACs are automatically dropped.
 
-> See [topology_mixin_plan.md](implementation_plans/topology_mixin_plan.md) and [peer_mac_role_sharing_plan.md](implementation_plans/peer_mac_role_sharing_plan.md) for the full implementation.
+> See [topology/topology_overview.md](topology/topology_overview.md) for the
+> current topology worker, peer MAC-role sharing, and proactive flow behavior.
 
 ---
 
@@ -568,7 +587,24 @@ Each server is a lightweight Docker container running an HTTP application (Flask
 
 ### 2.1 Request Handling
 
-Each thread connects to the appropriate domain VIP (`VIP_DATA_N1` or `VIP_DATA_N2`) for MongoDB queries. The MongoDB driver sees only the VIP — a stable per-domain address — and never discovers the physical `mongod` topology. The SDN network performs the DNAT rewrite transparently.
+Each thread resolves the target LAN against a fixed startup-defined LAN set and
+leases the current epoch for that LAN inside `timed_db(lan)`. Startup requires
+both normal and recovery VIP mappings for every supported LAN; mismatched or
+missing LAN mappings fail fast before the app starts serving traffic.
+
+The leased epoch defines the request-owned storage path boundary: it owns the
+bound VIP (`VIP_DATA_N1`, `VIP_DATA_N2`, or the corresponding
+`VIP_DATA_RECOVERY_*`), the lazy `MongoClient`, and the request-visible
+recovery mode. The MongoDB driver still sees only the VIP and never discovers
+the physical `mongod` topology. The SDN network performs the DNAT rewrite
+transparently.
+
+If a real `AutoReconnect` or `/vip_data` update rotates the current epoch,
+older requests keep using their already leased epoch and bound VIP while newer
+admitted requests move onto the new current epoch. This changes the local
+client object and local VIP path without claiming controller-side backend
+exclusion; the controller may still choose the same backend again if its normal
+selection rules prefer it.
 
 ### 2.2 Telemetry Reporting — ZMQ PUSH
 
@@ -579,6 +615,12 @@ Each container identifies itself by its **MAC address**, discovered from `/sys/c
 The Flask app uses `@app.before_request` / `@app.after_request` hooks:
 - `before_request`: records `t_start = time.monotonic()` and initialises `t_dados_elapsed = 0.0`.
 - `after_request`: computes `t_total`, calls `push_metric()` which builds an event dict (including `cpu_percent` and `ram_used_mb` via `psutil`) and sends it via `zmq.NOBLOCK`.
+
+For MongoDB lifecycle control, request-end hooks now keep only the observation
+surface: they accumulate per-LAN `T_dados` and log threshold breaches, but they
+do not rotate epochs or force reconnection. Recovery rollback and retired-epoch
+cleanup run in a dedicated background housekeeping thread so bounded recovery
+expiry no longer depends on unrelated request traffic.
 
 Per-request metric event:
 
@@ -601,12 +643,24 @@ A daemon thread also sends a **heartbeat event** every 60 s when the server is i
 
 #### Edge Server Connection Model
 
-Each edge server maintains a module-level `MongoClient` per LAN with `maxPoolSize=1` and `maxIdleTimeMS` aligned with the VIP idle timeout. This amortises TCP handshake + MongoDB hello cost across requests while preserving DNAT re-evaluation: after the idle window, the driver closes the socket, and the next request opens a fresh TCP SYN → `packet_in` → controller re-evaluates WSM.
+Each edge server maintains LAN-scoped epoch state rather than a single shared
+`MongoClient` per LAN. For each configured LAN, the process owns one current
+epoch, zero or more retiring epochs, one circuit breaker, and LAN-local normal
+and recovery VIP configuration. Each epoch still uses `maxPoolSize=1` and
+`maxIdleTimeMS` aligned with the VIP idle timeout, so the controller's normal
+DNAT re-evaluation behavior remains unchanged once a socket goes idle.
+
+The difference is failure and cutover ownership: rotating an epoch produces a
+fresh local client object and bound VIP for newer requests while allowing older
+leased requests to drain on their previous epoch. This reduces the blast radius
+of a damaged connection without conflating request attribution, VIP binding,
+and cleanup into one mutable singleton.
 
 Two mechanisms protect edge servers from lingering connections to unreachable storage nodes:
 
 - **Per-LAN circuit breaker:** trips on `AutoReconnect`, stays OPEN for a configurable cooldown (default 5 s), then allows one probe request (HALF_OPEN). This prevents repeated 3 s timeout blocks.
-- **Per-LAN threshold eviction:** the `_check_tdados_threshold` after-request hook tracks cumulative MongoDB time per LAN. Only the LAN(s) whose individual time exceeds the threshold have their singleton client evicted; healthy LAN clients are preserved.
+- **Per-LAN `T_dados` observation:** the `_check_tdados_threshold` after-request hook tracks cumulative MongoDB time per LAN and logs threshold breaches, but it no longer evicts clients or rotates epochs.
+- **Background epoch housekeeping:** a daemon thread rolls expired recovery epochs back to normal and closes drained retiring epochs after their leases reach zero, logging overdue-drain warnings instead of force-closing active epochs.
 
 ```mermaid
 graph LR
@@ -626,7 +680,9 @@ For safe scale-down, each server exposes a `/drain` endpoint:
 
 The drain signal is sent via `docker exec curl` (not through the network stack) to bypass potentially stale OVS flow rules.
 
-> See [telemetry_aggregator_integration_plan.md](implementation_plans/telemetry_aggregator_integration_plan.md) and [node_removal_plan.md](implementation_plans/node_removal_plan.md) for the full implementation.
+> See [telemetry/telemetry_overview.md](telemetry/telemetry_overview.md) and
+> [elasticy_manager/elasticity_overview.md](elasticy_manager/elasticity_overview.md)
+> for the current telemetry and node-removal implementation details.
 
 ---
 
@@ -657,7 +713,8 @@ The aggregator routes events by the `event_type` field: absent → edge server p
 
 The aggregator's published summary includes a `"storage_nodes"` section with the latest snapshot per MongoDB instance.
 
-> See [telemetry_aggregator_integration_plan.md](implementation_plans/telemetry_aggregator_integration_plan.md) for the full sidecar and aggregator implementation.
+> See [telemetry/telemetry_overview.md](telemetry/telemetry_overview.md) for
+> the current sidecar and aggregator implementation.
 
 ---
 
@@ -751,7 +808,10 @@ Support `--graceful` and `--drain-timeout` flags for cooperative shutdown. Witho
 
 For testing VIP routing, lightweight `ip netns` namespaces (no Docker image needed) can be created via `create_test_clients.sh` / `remove_test_clients.sh`. These use separate veth ranges (50–69 for LAN 1, 70–89 for LAN 2) to avoid conflicting with Thread 3's dynamic node allocation ranges (10–19 / 30–49).
 
-> See [build_network_add_node_plan.md](implementation_plans/build_network_add_node_plan.md), [node_removal_plan.md](implementation_plans/node_removal_plan.md), and [test_client_scripts_plan.md](implementation_plans/test_client_scripts_plan.md) for the full implementation.
+> See [elasticy_manager/elasticity_overview.md](elasticy_manager/elasticity_overview.md)
+> for add/remove node lifecycle details and
+> [other/test_client_scripts_plan.md](other/test_client_scripts_plan.md) for
+> the namespace-based client implementation.
 
 ---
 

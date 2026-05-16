@@ -265,7 +265,9 @@ Expected signatures:
 
 Measure:
 
-- Time from first storage alert to `rs_secondary_ready`
+- Time from first storage alert to service readiness; when controller logs are
+  flattened this should map to the storage `operation=ready` row, sourced from
+  `rs_secondary_ready` or the telemetry fallback if the fast path is absent
 - Latency delta before and after readiness within the hotspot phases
 - Whether `demand_drop` is long enough to trigger storage and compute scale-in
 - Latency stability during infrastructure removal

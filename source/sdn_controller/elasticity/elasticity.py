@@ -13,18 +13,42 @@ import itertools
 import logging
 import queue
 import threading
+import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, Protocol
 
-from .node_common import IpAllocator, NodeInfo
+from .node_common import IpAllocator, NodeInfo, log_ready_timing
 from .compute_node_manager import ComputeNodeAdder, PendingDrain
 from .storage_node_manager import StorageNodeAdder
 from .selective_storage_manager import SelectiveStorageNodeAdder
 
-if TYPE_CHECKING:
-    from ..topology.topology import TopologyMixin
-
 logger = logging.getLogger("os_ken.elasticity")
+
+
+class ElasticityController(Protocol):
+    """Explicit contract between the injected controller and ElasticityManager.
+
+    In simple terms, this lists the controller-side methods that the composed controller 
+    exposes to Thread 3 for backend admission, removal, and drain-cancel handling.
+
+    The object passed here is the full composed controller from main_n*.py,
+    not a bare TopologyMixin.
+    """
+
+    def register_new_server_backend(self, mac: str, ip: str) -> None:
+        ...
+
+    def register_backend_ip(self, mac: str, ip: str) -> None:
+        ...
+
+    def unregister_server_backend(self, mac: str) -> None:
+        ...
+
+    def add_server_mac(self, mac: str) -> None:
+        ...
+
+    def unregister_storage_backend(self, mac: str, domain: str = "n1") -> None:
+        ...
 
 # Per-network sequence counter used to generate unique dynamic container names.
 _COUNTER: dict[str, int] = {}
@@ -206,7 +230,7 @@ class ElasticityManager:
 
     def __init__(
         self,
-        topology_mixin: TopologyMixin,
+        topology_mixin: ElasticityController,
         *,
         selective_sync_coordinator: Any = None,
         broadcast_tier1_manifest: Optional[Callable[[str, dict], None]] = None,
@@ -420,6 +444,7 @@ class ElasticityManager:
     def _handle_compute(self, alert: ComputeAlert) -> None:
         name = self._next_name("edge_server", alert.network_id)
         ip, mac = self._get_allocator(alert.lan).allocate()
+        spawn_started_monotonic_s = time.monotonic()
         logger.info("[elasticity] compute: spawning %s on LAN %d (ip=%s mac=%s)", name, alert.lan, ip, mac)
 
         result = self._compute_adder.add_edge_server(lan=alert.lan, name=name, ip=ip, mac=mac)
@@ -430,13 +455,14 @@ class ElasticityManager:
 
         if result.success and result.ip:
             if result.mac:
-                # Verify that re
-                register_backend = getattr(self._topo, "register_new_server_backend", None)
-                if callable(register_backend):
-                    register_backend(result.mac, result.ip)
-                else:
-                    self._topo.add_server_mac(result.mac)
-                    self._topo.register_backend_ip(result.mac, result.ip)
+
+                self._topo.register_new_server_backend(result.mac, result.ip)
+                log_ready_timing(
+                    name,
+                    "compute",
+                    "vip_backend_registered",
+                    time.monotonic() - spawn_started_monotonic_s,
+                )
                 logger.info(
                     "[elasticity] compute: %s online  ip=%s  mac=%s",
                     name, result.ip, result.mac,
@@ -445,6 +471,8 @@ class ElasticityManager:
                 info = NodeInfo(
                     mac=result.mac, lan=alert.lan, network_id=alert.network_id,
                     name=name, ip=result.ip, node_type="compute",
+                    spawn_started_monotonic_s=spawn_started_monotonic_s,
+                    ready_logged=True,
                 )
                 with self._addition_complete_lock:
                     self._addition_complete_infos.append(info)
@@ -460,6 +488,7 @@ class ElasticityManager:
     def _handle_data(self, alert: DataAlert) -> None:
         name = self._next_name("edge_storage", alert.network_id)
         ip, mac = self._get_allocator(alert.lan).allocate()
+        spawn_started_monotonic_s = time.monotonic()
         logger.info("[elasticity] data: spawning %s on LAN %d (ip=%s mac=%s)", name, alert.lan, ip, mac)
 
         result = self._storage_adder.add_storage_node(
@@ -494,6 +523,7 @@ class ElasticityManager:
                     rs_name=alert.rs_name,
                     primary_container=alert.primary_container,
                     port=alert.port,
+                    spawn_started_monotonic_s=spawn_started_monotonic_s,
                 )
                 with self._addition_complete_lock:
                     self._addition_complete_infos.append(info)
@@ -515,8 +545,11 @@ class ElasticityManager:
         """
         logger.info("[elasticity] scale_down_compute: removing %s (mac=%s)", alert.container_name, alert.mac)
 
-        # Immediately remove from VIP pool so no new DNAT flows are installed.
-        self._topo.remove_server_mac(alert.mac)
+        # Immediately remove the backend from the compute VIP surface so Thread 1
+        # stops creating new DNAT/SNAT flows toward it before drain begins.
+        # This controller helper is also responsible for clearing the compute
+        # warm lease tied to the same recyclable MAC/IP identity.
+        self._topo.unregister_server_backend(alert.mac)
 
         pending = self._compute_adder.initiate_drain(alert.lan, alert.container_name, alert.mac)
         if pending is None:
@@ -598,8 +631,11 @@ class ElasticityManager:
         """Storage removal: VIP isolation → rs.remove() → script teardown."""
         logger.info("[elasticity] scale_down_data: removing %s (mac=%s)", alert.container_name, alert.mac)
 
-        # Immediately remove from VIP pool so no new DNAT flows are installed.
-        self._topo.remove_storage_mac(alert.mac, domain=f"n{alert.lan}")
+        # Immediately remove the backend from the storage VIP surface so Thread 1
+        # stops installing new VIP_DATA flows before the replica-set removal runs.
+        # This controller helper also clears the storage warm lease for the same
+        # recyclable MAC/IP identity.
+        self._topo.unregister_storage_backend(alert.mac, domain=f"n{alert.lan}")
 
         result = self._storage_adder.remove_storage_node(
             lan=alert.lan,
@@ -647,6 +683,7 @@ class ElasticityManager:
         the ``SPAWNING -> ACTIVE`` flip and the first manifest broadcast."""
         name = self._next_name("sel_sync", alert.network_id)
         ip, mac = self._get_allocator(alert.lan).allocate()
+        spawn_started_monotonic_s = time.monotonic()
         logger.info(
             "[elasticity] tier1: spawning %s on LAN %d (ip=%s mac=%s owner_lan=%s)",
             name, alert.lan, ip, mac, alert.owner_lan,
@@ -679,6 +716,7 @@ class ElasticityManager:
             mac=result.mac, lan=alert.lan, network_id=alert.network_id,
             name=name, ip=result.ip, node_type="selective_storage",
             owner_lan=alert.owner_lan,
+            spawn_started_monotonic_s=spawn_started_monotonic_s,
         )
         with self._addition_complete_lock:
             self._addition_complete_infos.append(info)
@@ -692,6 +730,7 @@ class ElasticityManager:
                     container=name,
                     mac=result.mac,
                     ip=result.ip,
+                    spawn_started_monotonic_s=spawn_started_monotonic_s,
                 )
             except Exception:  
                 logger.exception("[tier1] coordinator.on_spawned raised")
@@ -703,6 +742,13 @@ class ElasticityManager:
                 "host":        f"{result.ip}:27018",
                 "collections": {c: list(ids) for c, ids in alert.collections.items()},
             })
+            log_ready_timing(
+                name,
+                "selective_storage",
+                "tier1_active",
+                time.monotonic() - spawn_started_monotonic_s,
+                state="ACTIVE",
+            )
         logger.info("[elasticity] tier1: %s online ip=%s mac=%s", name, result.ip, result.mac)
 
     def _handle_selective_sync_reconfigure(self, alert: SelectiveSyncReconfigureAlert) -> None:

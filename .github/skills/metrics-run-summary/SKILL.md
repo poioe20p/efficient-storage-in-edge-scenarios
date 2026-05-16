@@ -20,8 +20,9 @@ defer the summary or keep the folder untouched.
 
 After the summary is written and checked, clean the target run folder by deleting
 only transient per-phase client request CSV files and controller log files:
-`client_requests_*.csv` and `controller_lan[0-9].log`. Leave every other file in
-the run folder intact.
+`client_requests_*.csv` and `controller_lan[0-9].log`. Before deleting controller
+logs, parse and retain `elasticity_events.csv` and `node_lifecycle_timings.csv`.
+Leave every other file in the run folder intact.
 
 When the run folder lives on `cloud-vm`, this skill is also the default remote
 size-reduction step. Unless the user says controller logs still need to be kept
@@ -56,6 +57,9 @@ Read the run artifacts before writing conclusions:
 - `controller_lan1.log` and `controller_lan2.log` for alerts, spawn events,
   scale-down evaluations, cleanup failures, telemetry gaps, or exceptions.
   These are deleted only after the summary is complete.
+- `elasticity_events.csv` and `node_lifecycle_timings.csv`, when present, for
+  retained controller-log event and node add/remove timing evidence after raw
+  controller logs are trimmed.
 - Existing `run_summary.md`, if present, to understand whether this is a new
   summary, replacement, or update.
 
@@ -93,6 +97,12 @@ plotting CLIs:
 python -m pip install -r source/scripts/testing/analysis/requirements.txt
 ```
 
+When controller logs exist, parse them before cleanup and keep both CSV outputs:
+
+```powershell
+python source/scripts/tools/parse_elasticity_logs.py "<run_dir>/controller_lan1.log" "<run_dir>/controller_lan2.log" -o "<run_dir>/elasticity_events.csv" --timings-output "<run_dir>/node_lifecycle_timings.csv"
+```
+
 ## Analysis Procedure
 
 1. Identify the run and collect artifact availability.
@@ -103,6 +113,9 @@ python -m pip install -r source/scripts/testing/analysis/requirements.txt
 
 2. Generate statistics.
    - Run `metrics_stats.py` for latency and resource summaries.
+  - Run `parse_elasticity_logs.py` when controller logs exist, producing
+    `elasticity_events.csv` and `node_lifecycle_timings.csv` before any log
+    cleanup.
    - Run the analysis CLIs that match the available artifacts.
    - Prefer generated summary CSVs and analysis outputs for quantitative claims,
      but cross-check surprising results against raw CSV/log snippets.
@@ -214,7 +227,9 @@ and the summary is based on the data that will be removed.
 3. Delete only those candidates.
 4. Do not delete `resource_stats.csv`, `per_node_stats.csv`,
    `container_events.csv`, `phases_snapshot.json`, `latency_summary.csv`,
-   `resource_summary.csv`, `run_summary.md`, or anything under `analysis/`.
+  `resource_summary.csv`, `elasticity_events.csv`,
+  `node_lifecycle_timings.csv`, `run_summary.md`, or anything under
+  `analysis/`.
 5. Verify that no `client_requests_*.csv` or `controller_lan[0-9].log` files
    remain in that run folder.
 
@@ -242,6 +257,8 @@ Use this procedure when the analyzed run folder is on `cloud-vm`.
   anchors.
 - `latency_summary.csv` and `resource_summary.csv` exist when their source data
   was available.
+- `elasticity_events.csv` and `node_lifecycle_timings.csv` exist when controller
+  logs were available before cleanup.
 - Analysis PNGs or `analysis/summary.md` exist when the corresponding analysis
   CLIs were runnable.
 - The transient client request CSV and controller log files have been removed

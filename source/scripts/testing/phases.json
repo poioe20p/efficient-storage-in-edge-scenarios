@@ -2,7 +2,7 @@
   "phases": [
     {
       "name": "baseline",
-      "duration_s": 60,
+      "duration_s": 20,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "mix": {
@@ -13,7 +13,7 @@
     },
     {
       "name": "local_moderate",
-      "duration_s": 90,
+      "duration_s": 40,
       "rate_per_client": 5.0,
       "cross_region_ratio": 0.0,
       "mix": {
@@ -24,7 +24,7 @@
     },
     {
       "name": "storage_stress",
-      "duration_s": 240,
+      "duration_s": 105,
       "rate_per_client": 7.0,
       "cross_region_ratio": 0.5,
       "hotspot_direction": "lan2_to_lan1",
@@ -36,7 +36,7 @@
     },
     {
       "name": "cross_region_hotspot",
-      "duration_s": 300,
+      "duration_s": 120,
       "rate_per_client": 8.0,
       "cross_region_ratio": 0.85,
       "hotspot_direction": "lan2_to_lan1",
@@ -48,7 +48,7 @@
     },
     {
       "name": "reverse_hotspot",
-      "duration_s": 300,
+      "duration_s": 120,
       "rate_per_client": 8.0,
       "cross_region_ratio": 0.85,
       "hotspot_direction": "lan1_to_lan2",
@@ -60,8 +60,8 @@
     },
     {
       "name": "compute_ramp",
-      "duration_s": 120,
-      "rate_per_client": 11.0,
+      "duration_s": 80,
+      "rate_per_client": 14.0,
       "cross_region_ratio": 0.05,
       "hotspot_direction": "lan2_to_lan1",
       "mix": {
@@ -72,8 +72,8 @@
     },
     {
       "name": "compute_spike",
-      "duration_s": 150,
-      "rate_per_client": 17.0,
+      "duration_s": 120,
+      "rate_per_client": 24.0,
       "cross_region_ratio": 0.05,
       "hotspot_direction": "lan2_to_lan1",
       "mix": {
@@ -84,8 +84,8 @@
     },
     {
       "name": "sustained_plateau",
-      "duration_s": 120,
-      "rate_per_client": 10.0,
+      "duration_s": 90,
+      "rate_per_client": 16.0,
       "cross_region_ratio": 0.05,
       "hotspot_direction": "lan2_to_lan1",
       "mix": {
@@ -96,7 +96,7 @@
     },
     {
       "name": "demand_drop",
-      "duration_s": 300,
+      "duration_s": 205,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "mix": {

@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import time
@@ -214,6 +215,9 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "--name", name,
             "-e", f"LAN_ID=lan{lan}",
             "-e", f"CONTAINER_NAME={name}",
+            "-e", f"VIP_DATA_RECOVERY_N1_IP={os.environ.get('VIP_DATA_RECOVERY_N1_IP', '10.0.0.252')}",
+            "-e", f"VIP_DATA_RECOVERY_N2_IP={os.environ.get('VIP_DATA_RECOVERY_N2_IP', '10.0.1.252')}",
+            "-e", f"VIP_DATA_RECOVERY_SESSION_MAX_AGE_S={os.environ.get('VIP_DATA_RECOVERY_SESSION_MAX_AGE_S', '35')}",
             # Dynamic nodes inherit HEARTBEAT_ENABLED=0 (the image default).
             # Lifecycle is handled by scale-down (graceful) + telemetry-window
             # absence timeout (failure). See

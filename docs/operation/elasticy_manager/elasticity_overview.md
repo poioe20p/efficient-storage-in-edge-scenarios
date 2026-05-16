@@ -21,9 +21,8 @@ Thread 2 (Observer/ZMQ)     Thread 3 (Elasticity Mgr)      Infrastructure
        │                              │      ├─ add_network_node.sh  (timed)
        │                              │      └─ returns NodeResult (ip, mac, timings)
        │                              │
-       │                              │── TopologyMixin.add_server_mac()
-       │                              │── TopologyMixin.register_backend_ip()
-       │                              │      └─ Thread 1 picks up the new server via VIP pool
+  │                              │── TopologyMixin.register_new_server_backend()
+  │                              │      └─ Thread 1 picks up the new server via VIP pool + warm lease
 ```
 
 - **Thread 1** (SDN controller main loop) — handles OpenFlow events, reactive
@@ -129,7 +128,9 @@ with runtime defaults:
 - `CPU` scoring band recalibrated to `45–90 %` (`floor=45`, `span=45`)
 - compute trigger requires **3 of the last 5** windows
 - after a compute scale-up, compute scale-up evaluation is suppressed for **45 s**
-- hard cap: **4 dynamic compute nodes** per LAN
+- steady-state cap: **4 effective dynamic compute nodes** per LAN. Pending
+  compute drains are discounted during cancelable rebound, so a short-lived
+  extra live compute node may exist until later scale-down convergence.
 
 If the peer `DomainSummary` is unavailable, `peer_relief = 0` and the decision
 falls back to purely local adaptive compute scaling.
@@ -179,13 +180,13 @@ Seven mechanisms prevent scale-up / scale-down thrashing:
 
 | Mechanism                 | Description |
 | ------------------------- | ----------- |
-| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally. Pending compute drains do not block compute scale-up; instead they are subtracted from the effective dynamic compute count and canceled after `ComputeAlert` is submitted. Pending Tier 1 selective drains block neither compute nor storage scale-up |
+| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally. Pending compute drains do not block compute scale-up; instead they are subtracted from the effective dynamic compute count and canceled after `ComputeAlert` is submitted. This favors fast rebound and may temporarily leave one extra live compute node until later scale-down. Pending Tier 1 selective drains block neither compute nor storage scale-up |
 | Sliding window            | Requires sustained signal (not single-window spikes) |
 | Cross-direction reset     | Scale-up clears the scale-down window (and vice versa) |
 | Compute scale-up cooldown | After compute scale-up: suppress further compute scale-up evaluation for 45 s |
 | Per-tier cooldowns        | After scale-up: storage 120 s / compute 40 s before scale-down resumes |
 | Birth grace               | Newly added nodes skip absent-node detection for 60 s during bootstrap |
-| Hard caps                 | `MAX_DYNAMIC_STORAGE=5` / `MAX_DYNAMIC_COMPUTE=4` per LAN — structurally prevents container-saturation death spiral |
+| Hard caps                 | `MAX_DYNAMIC_STORAGE=5` / `MAX_DYNAMIC_COMPUTE=4` per LAN bound steady-state scale-up decisions. Compute rebound with a pending drain uses the effective count, so the live compute count may briefly exceed the cap by one until scale-down catches up |
 
 ### Environment Variables
 
@@ -216,7 +217,7 @@ with `SCALEUP_` to avoid collision with VIP routing weights):
 | `SCALEUP_STORAGE_CPU_SPAN`  | `45`   | Storage CPU: normalisation range (45 + 45 = 90 % saturation)                                        |
 | `SCALEUP_T_DB_FLOOR`        | `15`   | T_db (ms): below this → 0 contribution                                                             |
 | `SCALEUP_T_DB_SPAN`         | `50`   | T_db (ms): normalisation range (15 + 50 = 65 ms saturation)                                         |
-| `MAX_DYNAMIC_COMPUTE`      | `4`    | Hard cap: max dynamic compute nodes per LAN                                                          |
+| `MAX_DYNAMIC_COMPUTE`      | `4`    | Steady-state cap used by compute scale-up evaluation. Pending compute drains are discounted during rebound, so the live compute count may briefly exceed this until later scale-down |
 | `MAX_DYNAMIC_STORAGE`      | `5`    | Hard cap: max dynamic storage nodes per LAN (MongoDB ≤ 7 voting members)                            |
 Diminishing-increment storage scale-up threshold** (see [§ Diminishing-Increment Storage Threshold](#diminishing-increment-adaptive-storage-threshold))
 
@@ -437,13 +438,18 @@ and `NodeResult.mac`.
 
 On a successful `NodeResult`:
 
-- **Compute:** `add_server_mac(mac)` + `register_backend_ip(mac, ip)` — the new
-  server enters the VIP web pool immediately.
+- **Compute:** the approved Phase 1 path is
+  `register_new_server_backend(mac, ip)` — add to the VIP web pool, seed the
+  backend IP, and create a short compute warm lease in one controller-side
+  step. Until that helper lands, the code can still fall back to
+  `add_server_mac(mac)` + `register_backend_ip(mac, ip)`.
 - **Storage:** `register_backend_ip(mac, ip)` only — VIP registration is
   **deferred** until the sidecar emits `rs_secondary_ready` (fast path) or
   until the telemetry pipeline detects `member_state == "SECONDARY"` (fallback
-  path, ~2-4 s delay). This prevents routing traffic to a storage node that
-  hasn't finished its initial sync.
+  path, ~2-4 s delay). At promotion time the approved Phase 1 path also marks
+  a short storage warm lease. This prevents routing traffic to a storage node
+  that hasn't finished its initial sync while still giving the promoted node a
+  brief preference on the next fresh eligible selection.
 
 Both paths notify Thread 2 via `consume_addition_completions()` so it can
 track the new MAC for scale-down decisions. Compute scale-down now ranks
@@ -455,13 +461,19 @@ selection.
 
 1. **Fast path — `rs_secondary_ready` control event:** The sidecar emits a
    one-shot event when the node reaches SECONDARY. The controller's SUB
-   handler calls `add_storage_mac()` immediately.
+  handler calls the storage-promotion helper, which admits the backend into
+  the correct `VIP_DATA` pool and marks a short warm lease immediately.
 2. **Fallback — telemetry-based `member_state` detection:** The sidecar includes
    the RS `stateStr` in every `mongo_stats` and `heartbeat` event. The
    aggregator propagates it via `StorageServerSummary.member_state`. The
    controller's `_promote_storage_from_telemetry()` method checks each storage
-   node in the summary and promotes it to the VIP pool if SECONDARY and not
-   already registered.
+  node in the summary and promotes it to the VIP pool, with the same warm-
+  lease step, if SECONDARY and not already registered.
+
+This promotion logic is controller-local Phase 1 behavior. The later recovery-
+VIP phases are what create bounded fresh post-failure storage selections after
+real connection-level failures; Thread 3 itself does not drive `/vip_data`
+refresh fan-out in the approved design.
 
 ### Timing Model
 
@@ -475,6 +487,20 @@ Every `NodeResult` carries a `StepTimings` record:
 | `total_s`            | Wall clock from first step to last — includes inter-step overhead            | 1.5 – 15 s   |
 
 Timings are emitted at `INFO` level by `log_timings()`.
+
+`[node_add]` remains a bootstrap-completion marker for the Thread 3 add path.
+Ready-to-serve is emitted separately as `[node_ready]` when the node is
+actually admitted into service:
+
+- compute when the backend is registered into the VIP web pool;
+- storage when VIP admission happens on `rs_secondary_ready` or the telemetry
+  fallback sees `member_state == "SECONDARY"`;
+- Tier 1 selective sync when the coordinator flips the owner state to
+  `ACTIVE` and publishes the first manifest.
+
+Offline timing exports should therefore treat `operation=ready` as the
+end-to-end readiness boundary and keep `operation=add` for bootstrap
+decomposition only.
 
 ### Audit Trail
 
@@ -518,7 +544,8 @@ duration of in-flight request completion.
 
 **Phase A — `_handle_scale_down_compute(alert)` [Thread 3, <1 s]:**
 
-1. `remove_server_mac(mac)` — immediate; Thread 1 stops routing to this node.
+1. `remove_server_mac(mac)` and clear any compute warm lease for that MAC —
+  immediate; Thread 1 stops routing to this node.
 2. Discover veth via `nsenter` (container still running, netns alive).
 3. Store `PendingDrain(mac, veth, name, lan, ts)`.
 4. `docker exec curl -X POST http://localhost:5000/drain` (3-attempt retry).
@@ -551,7 +578,8 @@ VIP removal suffice. It assumes that underutilization means that no flows rules 
 
 **`_handle_scale_down_data(alert)` [Thread 3]:**
 
-1. `remove_storage_mac(mac, domain)` — immediate; no new DNAT flows installed.
+1. `remove_storage_mac(mac, domain)` and clear any storage warm lease for that
+  MAC — immediate; no new DNAT flows installed.
 2. `rs.remove(IP:PORT)` via the RS primary (Python-side):
    - `_find_rs_primary()` — queries `isMaster` on the known primary container.
    - `_rs_remove_member()` — executes `rs.remove()` via `mongosh`.
@@ -562,6 +590,11 @@ VIP removal suffice. It assumes that underutilization means that no flows rules 
    - Script handles: DNAT flow flush → `docker stop --time 15` → OVS port/veth
      deletion → `docker rm` → `docker volume rm`.
 4. Release IP; notify Thread 2.
+
+Explicit warm-lease invalidation matters because `IpAllocator` releases the IP
+on successful removal and later reuses the lowest free suffix. MAC/IP identity
+is therefore recyclable, so the VIP-routing plan clears warm state at removal
+instead of relying only on later overwrite-on-add behavior.
 
 **Possible Improvement:** Off all dynamically added nodes removed the one that the flows rules that are related to vip_data dont exist or havent been used for the longest time.
 

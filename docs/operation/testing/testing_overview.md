@@ -185,6 +185,14 @@ becomes the strongest positive mechanism once the storage-sensitive phases are
 long enough, while Tier 1 and the combined Tier 1 plus Tier 2 path remain
 defect-prone in the rerun artifacts.
 
+### 8. Ablation Batch 5 Plan — [`elasticity_ablation_batch5_plan.md`](elasticity_ablation_batch5_plan.md)
+
+Defines the next normal-workload validation batch for the post-Batch-4
+elasticity changes. The batch keeps the standard `phases.json` workload,
+isolates the updated Tier 2 storage path, reruns the combined Tier 1 plus Tier
+2 setting, and finishes with a full normal-policy run using
+`MAX_DYNAMIC_COMPUTE=2`.
+
 #### `resource_stats.csv` — Tier 1 columns
 
 The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/collect_resource_stats.py)) appends 16 Tier 1 observability columns derived by [`tier1_stats.py`](../../../source/scripts/testing/tier1_stats.py). The first eleven come from each aggregator's `TelemetrySummary`; the last five from the controller's coordinator-state PUB ([`state_publisher.py`](../../../source/sdn_controller/selective_sync/state_publisher.py)).
