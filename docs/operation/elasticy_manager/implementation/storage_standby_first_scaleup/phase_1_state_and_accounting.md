@@ -222,7 +222,7 @@ reachable.
 ### Docs
 
 - [../../elasticity_overview.md](../../elasticity_overview.md)
-- [../../../other/heartbeat_dynamic_node_gate_plan.md](../../../other/heartbeat_dynamic_node_gate_plan.md)
+- [../../../archive/other/heartbeat_dynamic_node_gate_plan.md](../../../archive/other/heartbeat_dynamic_node_gate_plan.md)
 
 ---
 

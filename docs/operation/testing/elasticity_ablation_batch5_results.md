@@ -3,7 +3,7 @@
 ## Purpose
 
 This document records the Batch 5 normal-workload cloud campaign from
-[`elasticity_ablation_batch5_plan.md`](./elasticity_ablation_batch5_plan.md).
+[`elasticity_ablation_batch5_plan.md`](../archive/testing/elasticity_ablation_batch5_plan.md).
 The batch reused the unchanged standard workload and compared four rows:
 static, storage-only, storage plus Tier 1, and the full policy with compute cap
 `2`.

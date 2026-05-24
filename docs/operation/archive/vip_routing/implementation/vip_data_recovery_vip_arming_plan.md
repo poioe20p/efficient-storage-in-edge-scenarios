@@ -1,4 +1,4 @@
-# VIP_DATA Recovery VIP and One-Shot Arming Plan
+﻿# VIP_DATA Recovery VIP and One-Shot Arming Plan
 
 Reference: [vip_warm_start_and_vip_data_refresh_plan.md](./vip_warm_start_and_vip_data_refresh_plan.md)
 Depends on: [vip_warm_leases_plan.md](./vip_warm_leases_plan.md)
@@ -82,7 +82,7 @@ VIP_DATA_RECOVERY_N2_MAC=aa:bb:cc:dd:ee:13
 Recommended allocator note update:
 
 ```python
-    Suffixes 252–254 are reserved for VIPs:
+    Suffixes 252â€“254 are reserved for VIPs:
         .252 recovery VIP_DATA for the LAN
         .253 VIP_SERVER
         .254 VIP_DATA
@@ -90,7 +90,7 @@ Recommended allocator note update:
 
 This is a documentation-only update in the allocator. No allocation logic
 change is required because the dynamic pool already remains bounded to
-suffixes `.6`–`.55`.
+suffixes `.6`â€“`.55`.
 
 Recommended shell reservation note update:
 
@@ -234,7 +234,7 @@ Recommended `_get_client(...)` integration:
 vip_ip, mode = _select_vip_ip_for_new_client(lan)
 url = f"mongodb://{vip_ip}:{DB_PORT}/"
 client = MongoClient(...)
-log.info("Created MongoClient for %s via %s path → %s", lan, mode, url)
+log.info("Created MongoClient for %s via %s path â†’ %s", lan, mode, url)
 ```
 
 What this achieves:
@@ -364,7 +364,7 @@ What this achieves:
   Define controller-side recovery VIP addresses and MACs.
 - [node_common.py](../../../../source/sdn_controller/elasticity/node_common.py)
   Update the allocator reservation comment so VIP space is documented as
-  `.252`–`.254` once recovery VIPs are introduced.
+  `.252`â€“`.254` once recovery VIPs are introduced.
 - [add_network_node.sh](../../../../source/scripts/network/add_network_node.sh)
   Update the shell-side reservation comment so `.252` is documented alongside
   the other VIP suffixes.

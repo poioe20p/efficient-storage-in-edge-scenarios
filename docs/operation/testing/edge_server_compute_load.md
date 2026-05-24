@@ -1,8 +1,11 @@
-# Edge Server Compute Load — Implementation Plan
+# Edge Server Compute Load
 
-This document specifies the changes needed to make the edge server endpoints produce **meaningful CPU work** so that $T_{proc} = T_{total} - T_{dados}$ is non-trivial and Phase 3 (Compute Spike) can trigger the Compute Manager.
+This document describes the implemented edge-server changes that make the
+endpoints produce **meaningful CPU work** so that $T_{proc} = T_{total} -
+T_{dados}$ is non-trivial and Phase 3 (Compute Spike) can trigger the Compute
+Manager.
 
-Currently, all three endpoints do near-zero compute: a boolean threshold comparison (`/device/.../latest`), a MongoDB-side aggregation (`/anomalies`), and a simple `value/threshold` division sort (`/dashboard`). The result is that $T_{proc} \approx 0$ regardless of request rate, making it impossible to demonstrate elastic compute scaling.
+Currently, all three endpoints do near-zero compute: a boolean threshold comparison (`/device/.../latest`), a lightweight local summary (`/service_pressure`), and a simple `value/threshold` division sort (`/dashboard`). The result is that $T_{proc} \approx 0$ regardless of request rate, making it impossible to demonstrate elastic compute scaling.
 
 **Location of changes:** `source/docker/edge_server/source/app.py`
 
@@ -22,8 +25,8 @@ Currently, all three endpoints do near-zero compute: a boolean threshold compari
 
 | Endpoint | Current Compute | Added Compute | Expected $T_{proc}$ Impact |
 |---|---|---|---|
-| `/device/<id>/latest` | `value >= threshold` boolean | Multi-level severity scoring + trend analysis from recent query_events | ~5–15 ms per request |
-| `/anomalies` | Returns raw aggregation results | Composite risk scoring with Z-score normalization + re-ranking | ~3–10 ms per request |
+| `/device/<id>/latest` | `value >= threshold` boolean | Multi-level severity scoring + trend analysis from recent local request activity | ~5–15 ms per request |
+| `/service_pressure` | Lightweight local buffer summary | Pressure scoring + tag/device ranking over recent local request activity | ~3–10 ms per request |
 | `/dashboard/<node_id>` | `value / threshold` sort | Multi-factor urgency with tag priority weighting + staleness decay + summary stats | ~5–20 ms per request |
 
 At Phase 3 rates (10 req/s/client × multiple clients), the cumulative $T_{proc}$ across the telemetry window should breach $\tau_{proc}$ and trigger compute scale-out.
@@ -72,7 +75,7 @@ TAG_PRIORITY = {
     "thermal":       1.2,
 }
 
-# How many recent query_events to use for trend analysis
+# How many recent local request events to use for trend analysis
 TREND_WINDOW_SIZE = 20
 
 # Staleness decay half-life in seconds (for dashboard ranking)
@@ -145,11 +148,11 @@ def score_device_severity(
 
 ### Function 2: `compute_trend`
 
-Used by `/device/<id>/latest`. Computes a linear regression slope over recent `query_events` latencies for this device — is the data access getting slower (rising) or improving (falling)?
+Used by `/device/<id>/latest`. Computes a linear regression slope over recent local request latencies for this device — is the data access getting slower (rising) or improving (falling)?
 
 ```python
-def compute_trend(query_events: list[dict]) -> dict:
-    """Compute a linear-regression trend over recent query_events for a device.
+def compute_trend(request_events: list[dict]) -> dict:
+    """Compute a linear-regression trend over recent request events for a device.
 
     Each event is expected to have 'latency_ms' and 'timestamp' fields.
 
@@ -162,18 +165,18 @@ def compute_trend(query_events: list[dict]) -> dict:
             "latency_std": float,
         }
     """
-    if len(query_events) < 3:
+    if len(request_events) < 3:
         return {
             "trend_slope": 0.0,
             "trend_label": "insufficient_data",
-            "sample_count": len(query_events),
+            "sample_count": len(request_events),
             "latency_mean": 0.0,
             "latency_std": 0.0,
         }
 
     # Extract (timestamp_epoch, latency_ms) pairs
     points = []
-    for ev in query_events:
+    for ev in request_events:
         lat = ev.get("latency_ms")
         ts = ev.get("timestamp")
         if lat is None or ts is None:
@@ -228,57 +231,24 @@ def compute_trend(query_events: list[dict]) -> dict:
 
 ---
 
-### Function 3: `score_anomaly_results`
+### Function 3: `compute_service_pressure`
 
-Used by `/anomalies`. Takes the raw aggregation results (list of hot devices with `query_count`, `avg_latency_ms`, and sensor status) and computes a Z-score-normalized composite risk score for each.
+Used by `/service_pressure`. Takes recent local request activity and produces a summary plus the top devices and tags contributing to local edge pressure.
 
 ```python
-def score_anomaly_results(hot_devices: list[dict]) -> list[dict]:
-    """Compute composite risk scores for anomaly detection results.
+def compute_service_pressure(
+    events: list[dict],
+    limit: int,
+    region: str,
+    window_seconds: float,
+) -> dict:
+    """Summarize recent local request activity for the serving edge server.
 
-    For each device, the risk score combines:
-      - Z-score of query_count (popularity pressure)
-      - Z-score of avg_latency_ms (access cost)
-      - Threshold proximity (value / alert_threshold from sensor data)
-
-    The list is re-sorted by composite_risk descending.
+    Returns request-rate, latency, a read-weighted Tier 1 hit ratio,
+    top-device concentration, a composite pressure score, and ranked
+    device/tag breakdowns.
     """
-    if len(hot_devices) < 2:
-        for d in hot_devices:
-            d["composite_risk"] = 1.0
-            d["z_query_count"] = 0.0
-            d["z_latency"] = 0.0
-        return hot_devices
-
-    # Extract vectors
-    counts = [d.get("query_count", 0) for d in hot_devices]
-    latencies = [d.get("avg_latency_ms", 0) for d in hot_devices]
-
-    # Z-score normalization
-    count_mean = statistics.mean(counts)
-    count_std = statistics.pstdev(counts)
-    lat_mean = statistics.mean(latencies)
-    lat_std = statistics.pstdev(latencies)
-
-    for d in hot_devices:
-        z_count = (d.get("query_count", 0) - count_mean) / count_std if count_std > 0 else 0.0
-        z_lat = (d.get("avg_latency_ms", 0) - lat_mean) / lat_std if lat_std > 0 else 0.0
-
-        # Threshold proximity from sensor data (0.0 if not available)
-        value = d.get("value")
-        threshold = d.get("threshold")  # filled from sensor_reports metadata
-        proximity = (value / threshold) if (value and threshold) else 0.0
-
-        # Composite risk: weighted sum of z-scores + proximity
-        composite = 0.35 * z_count + 0.30 * z_lat + 0.35 * proximity
-
-        d["z_query_count"] = round(z_count, 4)
-        d["z_latency"] = round(z_lat, 4)
-        d["composite_risk"] = round(composite, 4)
-
-    # Re-sort by composite risk descending
-    hot_devices.sort(key=lambda d: d["composite_risk"], reverse=True)
-    return hot_devices
+    ...
 ```
 
 ---
@@ -416,7 +386,7 @@ Add at the top of `app.py`, after the existing imports:
 from compute import (
     score_device_severity,
     compute_trend,
-    score_anomaly_results,
+    compute_service_pressure,
     score_dashboard_urgency,
     compute_dashboard_summary,
     TREND_WINDOW_SIZE,
@@ -448,7 +418,7 @@ from compute import (
         alert = severity_result["alert"]
 ```
 
-**Current code** (after the `query_events.insert_one`, before building the response):
+**Current code** (after recording the local support event, before building the response):
 
 ```python
         doc["_id"]   = str(doc["_id"])
@@ -459,19 +429,11 @@ from compute import (
 **Replace with:**
 
 ```python
-        # --- Compute: trend analysis from recent query_events ---
-        try:
-            with timed_db(LAN_ID) as db:
-                recent_events = list(
-                    db.query_events.find(
-                        {"device_id": device_id},
-                        {"latency_ms": 1, "timestamp": 1, "_id": 0},
-                    )
-                    .sort("timestamp", -1)
-                    .limit(TREND_WINDOW_SIZE)
-                )
-        except PyMongoError:
-            recent_events = []
+        # --- Compute: trend analysis from recent local request activity ---
+        recent_events = _local_request_state.recent_for_device(
+            device_id,
+            TREND_WINDOW_SIZE,
+        )
 
         trend_result = compute_trend(recent_events)
 
@@ -482,52 +444,38 @@ from compute import (
         return jsonify(doc), 200
 ```
 
-> **Note on the trend query:** This adds one extra DB read (`query_events.find` with sort + limit). This is intentional — its $T_{dados}$ contribution is small (indexed query, limited to 20 docs), but the `compute_trend` linear regression that follows is CPU work that contributes to $T_{proc}$. The index on `device_id` + `timestamp` is already created by `create_indexes.py`.
+> **Note on the trend input:** The trend calculation now reads from the serving edge server's bounded local request buffer. This removes support-state Mongo traffic from the synchronous path while keeping the regression itself as edge CPU work that contributes to $T_{proc}$.
 
 ---
 
-### Endpoint 2: `/anomalies`
+### Endpoint 2: `/service_pressure`
 
-**Current code** (after building the `hot_devices` list with sensor status, before the return):
-
-```python
-        return jsonify({"region": region, "window_hours": window_h, "results": hot_devices}), 200
-```
-
-Add the composite risk scoring **before** the return. Also enrich each device with the threshold from `sensor_reports` metadata so `score_anomaly_results` can use it:
+`/service_pressure` is now a local-only support analytics route. It does not
+perform any MongoDB reads. Instead it scans the serving edge's recent request
+buffer and computes:
 
 ```python
-        # Enrich with threshold for composite scoring
-        for d in hot_devices:
-            status = status_map.get(d["device_id"], {})
-            d["threshold"] = status.get("metadata", {}).get("alert_threshold")
-
-        # --- Compute: composite risk scoring ---
-        hot_devices = score_anomaly_results(hot_devices)
-
-        return jsonify({"region": region, "window_hours": window_h, "results": hot_devices}), 200
+        cutoff_epoch = time.time() - window_min * 60
+        events, truncated = _local_request_state.events_since_with_truncation(cutoff_epoch)
+        retained_window_seconds = window_min * 60
+        if truncated and events:
+            retained_window_seconds = max(
+                1.0,
+                time.time() - min(float(ev.get("timestamp", time.time())) for ev in events),
+            )
+        response = compute_service_pressure(
+            events,
+            limit=limit,
+            region=LAN_ID,
+            window_seconds=retained_window_seconds,
+        )
 ```
 
-This requires a small change to the earlier `sensor_reports.find` projection — add `"metadata.alert_threshold": 1`:
-
-**Current projection:**
-
-```python
-                for d in db.sensor_reports.find(
-                    {"_id": {"$in": ids}},
-                    {"payload.status": 1, "payload.value": 1, "device_type": 1, "tags": 1},
-                ):
-```
-
-**New projection:**
-
-```python
-                for d in db.sensor_reports.find(
-                    {"_id": {"$in": ids}},
-                    {"payload.status": 1, "payload.value": 1, "device_type": 1, "tags": 1,
-                     "metadata.alert_threshold": 1},
-                ):
-```
+This keeps the route compute-visible while making its storage semantics
+explicitly local to the serving edge server. When the in-memory safety cap
+clips the requested look-back horizon, the response now reports
+`window_truncated` plus `retained_window_seconds` so request-rate and pressure
+math are interpreted against the retained span rather than the nominal window.
 
 ---
 

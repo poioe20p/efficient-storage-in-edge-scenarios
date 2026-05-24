@@ -1,4 +1,4 @@
-# System Mechanisms Reference
+﻿# System Mechanisms Reference
 
 This document describes the high-level workflows of the SDN-based edge orchestration architecture — how the components interact, what triggers actions, and how data flows through the system.
 
@@ -83,8 +83,8 @@ Thread 1 handles two independent traffic planes via `VipRoutingMixin`:
 | **VIP_SERVER** | `10.0.0.253` (env: `VIP_SERVER_IP`) | Client → Web Server | Multi-dimensional WSM cost: CPU utilization, RAM usage, request count, and hop distance |
 | **VIP_DATA_N1** | `10.0.0.254` (env: `VIP_DATA_N1_IP`) | Web Server → MongoDB (LAN 1) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
 | **VIP_DATA_N2** | `10.0.1.254` (env: `VIP_DATA_N2_IP`) | Web Server → MongoDB (LAN 2) | Multi-dimensional WSM cost: CPU utilization, RAM usage, active connections, replication lag, and hop distance |
-| **VIP_DATA_RECOVERY_N1** | `10.0.0.252` (env: `VIP_DATA_RECOVERY_N1_IP`) | Web Server → MongoDB recovery reconnect (LAN 1) | Same storage WSM selection, but only for post-failure Mongo TCP reconnects |
-| **VIP_DATA_RECOVERY_N2** | `10.0.1.252` (env: `VIP_DATA_RECOVERY_N2_IP`) | Web Server → MongoDB recovery reconnect (LAN 2) | Same storage WSM selection, but only for post-failure Mongo TCP reconnects |
+| **VIP_DATA_RECOVERY_N1** | `10.0.0.252` (env: `VIP_DATA_RECOVERY_N1_IP`) | Web Server → MongoDB recovery reconnect (LAN 1) | Recovery-only storage selection: avoid the remembered last-normal backend when another candidate exists, then run warm-first/WSM; only for post-failure Mongo TCP reconnects |
+| **VIP_DATA_RECOVERY_N2** | `10.0.1.252` (env: `VIP_DATA_RECOVERY_N2_IP`) | Web Server → MongoDB recovery reconnect (LAN 2) | Recovery-only storage selection: avoid the remembered last-normal backend when another candidate exists, then run warm-first/WSM; only for post-failure Mongo TCP reconnects |
 
 Each VIP also has a virtual MAC address (`VIP_SERVER_MAC`, `VIP_DATA_N1_MAC`, `VIP_DATA_N2_MAC`, `VIP_DATA_RECOVERY_N1_MAC`, `VIP_DATA_RECOVERY_N2_MAC`) configured via environment variables, used for ARP replies and DNAT/SNAT rewriting.
 
@@ -132,13 +132,14 @@ Per-dimension weights (configurable via `W_STORAGE_CPU`, `W_STORAGE_RAM`, `W_STO
 | Replication lag (s) | `0.2` | Data freshness for secondaries |
 | Network hop distance | `0.3` | Data locality |
 
-- `select_storage(domain, client_mac)` iterates over the domain's storage pool, scores each entry, collects ties, and round-robin picks among them.
+- `select_storage(domain, client_mac, *, recovery=False)` iterates over the domain's storage pool, scores each entry, collects ties, and round-robin picks among them.
 - **Round-robin tie-breaking:** identical to `select_server`, but uses a per-domain counter so that N1 and N2 storage pools cycle independently.
 - **Unknown telemetry:** backends without stats are assigned worst-case normalized scores (`1.0`) across all resource dimensions.
+- **Last-normal attribution:** normal `VIP_DATA` selections also record the chosen backend per `(edge_server_mac, domain)` under the controller's warm-state lock; recovery selections pass `recovery=True` so they reuse that remembered normal backend as a recovery-only avoidance filter and do not overwrite it. Local `unregister_storage_backend(...)` cleanup clears remembered entries that still point at removed backends, while peer disappearance remains safe because recovery filtering falls back when the remembered backend is no longer in the current pool.
 
 #### VIP Packet-In Flow
 
-For each `VIP_SERVER` Packet-In, Thread 1 evaluates the multi-dimensional WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each steady-state `VIP_DATA_N1` or `VIP_DATA_N2` Packet-In, Thread 1 evaluates the storage WSM cost function for the corresponding domain and installs an analogous DNAT+SNAT pair. Recovery `VIP_DATA_RECOVERY_*` Packet-Ins use the same storage WSM selection, but only accept TCP traffic for MongoDB port `27018` and install narrower DNAT+SNAT rules keyed by the recovery connection's TCP source/destination ports, with separate `VIP_DATA_RECOVERY_IDLE_TIMEOUT` / `VIP_DATA_RECOVERY_HARD_TIMEOUT` limits.
+For each `VIP_SERVER` Packet-In, Thread 1 evaluates the multi-dimensional WSM cost function, installs a DNAT+SNAT rule pair (priority 200, with configurable idle/hard timeouts via `VIP_IDLE_TIMEOUT` / `VIP_HARD_TIMEOUT`), and sends a Packet-Out for the first packet. For each steady-state `VIP_DATA_N1` or `VIP_DATA_N2` Packet-In, Thread 1 evaluates the storage selector for the corresponding domain and installs an analogous DNAT+SNAT pair. Normal selections refresh the remembered last-normal backend for that `(edge_server_mac, domain)`. Recovery `VIP_DATA_RECOVERY_*` Packet-Ins pass `recovery=True` into the same storage selector, which first excludes that remembered normal backend when another candidate exists and otherwise falls back to the full pool before applying the usual warm-first/WSM order. The recovery path still accepts only TCP traffic for MongoDB port `27018` and installs narrower DNAT+SNAT rules keyed by the recovery connection's TCP source/destination ports, with separate `VIP_DATA_RECOVERY_IDLE_TIMEOUT` / `VIP_DATA_RECOVERY_HARD_TIMEOUT` limits; those recovery selections still do not overwrite the remembered normal backend.
 
 The MongoDB driver in each web server sees only `VIP_DATA_N*:<port>` — a stable per-domain VIP address — and never discovers the physical `mongod` topology.
 
@@ -154,7 +155,7 @@ The MongoDB driver in each web server sees only `VIP_DATA_N*:<port>` — a stabl
 | 1 | ARP flood | Floods all ARP traffic (installed by `TopologyMixin`) |
 | 0 | Table-miss | Sends unmatched packets to controller (installed by `TopologyMixin`) |
 
-#### IP ↔ MAC Learning
+#### IP <-> MAC Learning
 
 `VipRoutingMixin` snoops every ARP packet that passes through the switch (via `_snoop_arp()`) to build an `_ip_to_mac` / `_mac_to_ip` mapping. This is required because DNAT actions need the backend's IP address, which is not known from the VIP Packet-In alone.
 
@@ -194,15 +195,15 @@ If none of the three steps resolve a port, the packet is dropped with a warning 
 ##### End-to-end packet path
 
 ```
-Client ──► Local OVS (PacketIn → controller)
-               │
-               ├─ Controller: select_server() picks peer backend
-               ├─ Controller: DNAT rewrite (eth_dst=ROUTER_MAC, ipv4_dst=real_IP)
-               ├─ Controller: output=ROUTER_OVS_PORT
-               │
-               ▼
-         Inter-LAN Router ──► Peer OVS Switch ──► Peer Backend
-                                (L2 forwarding)    (no second PacketIn)
+Client -> Local OVS (PacketIn -> controller)
+        |
+        +-> Controller: select_server() picks peer backend
+        +-> Controller: DNAT rewrite (eth_dst=ROUTER_MAC, ipv4_dst=real_IP)
+        +-> Controller: output=ROUTER_OVS_PORT
+        |
+        v
+Inter-LAN Router -> Peer OVS Switch -> Peer Backend
+             (L2 forwarding)    (no second PacketIn)
 ```
 
 For cross-network backends, the SNAT return rule matches on `eth_src=ROUTER_MAC, eth_dst=client_mac` (not the real backend MAC, since the router rewrites `eth_src` during L3 forwarding) and rewrites the source back to the VIP MAC/IP before forwarding to the client's ingress port. For local backends, the SNAT rule matches `eth_src=backend_mac` directly.
@@ -211,7 +212,7 @@ Because the DNAT'd packet carries the real destination IP (and the router resolv
 
 > See [vip_routing/vip_routing_overview.md](vip_routing/vip_routing_overview.md)
 > and
-> [vip_routing/implementation/vip_warm_start_and_vip_data_refresh_plan.md](vip_routing/implementation/vip_warm_start_and_vip_data_refresh_plan.md)
+> [archive/vip_routing/implementation/vip_warm_start_and_vip_data_refresh_plan.md](archive/vip_routing/implementation/vip_warm_start_and_vip_data_refresh_plan.md)
 > for the current mixin behavior and the approved recovery-VIP rollout.
 
 ---
@@ -225,10 +226,10 @@ Because the DNAT'd packet carries the real destination IP (and the router resolv
 The telemetry path is fully ZeroMQ-based. There is no database in the telemetry pipeline.
 
 ```
-Edge Servers ──(ZMQ PUSH)──┐
-                            ├──► Aggregator (per network) ──(ZMQ PUB)──► Controller (ZMQ SUB)
-Storage Sidecars ─(PUSH)───┘                                              ├─ _latest dict (Thread 1 reads)
-                                                                           └─ on_update callback (→ Thread 3 queue)
+Edge Servers ----(ZMQ PUSH)----\
+                                +--> Aggregator (per network) --(ZMQ PUB)--> Controller (ZMQ SUB)
+Storage Sidecars -(PUSH)-------/                                              +--> _latest dict (Thread 1 reads)
+                                                                               +--> on_update callback (-> Thread 3 queue)
 ```
 
 The implementation uses a `TelemetryEventSource` abstract interface with a single concrete implementation — `ZmqTelemetrySource`:
@@ -246,7 +247,7 @@ Each container identifies itself by its **MAC address**, discovered from `/sys/c
 
 **Per-request events** are emitted via ZMQ PUSH after every HTTP request using Flask `before_request`/`after_request` hooks. Each event includes `time_total_ms`, `time_db_ms`, `cpu_percent`, `ram_used_mb`, `status_code`, and `request_type`. The `time_db_ms` field is accumulated via a `timed_db()` context manager wrapping all MongoDB calls. `zmq.NOBLOCK` ensures the hook never blocks the HTTP response — events are silently dropped if the aggregator is temporarily unavailable.
 
-**Heartbeat events** are sent by a daemon thread every 60 s when the server is idle. The countdown resets after every request-driven event, so a busy server never sends redundant heartbeats. These carry CPU and RAM and serve primarily as liveness signals. **Only static nodes** (`edge_server_n{1,2}`, `edge_storage_server_n{1,2}`) emit periodic heartbeats: the image default is `HEARTBEAT_ENABLED=false`, and static containers opt in explicitly with `HEARTBEAT_ENABLED=true` in their docker run commands. Dynamic nodes keep the default disabled and emit nothing while idle — their lifecycle is handled by scale-down plus the telemetry-window absence timeout — see [other/heartbeat_dynamic_node_gate_plan.md](other/heartbeat_dynamic_node_gate_plan.md). Each dynamic edge server still sends one bootstrap `heartbeat`-shape sample after MAC discovery, and each storage sidecar sends one bootstrap `mongo_stats` sample on first `SECONDARY`, so newly added backends become visible without reviving periodic idle heartbeats.
+**Heartbeat events** are sent by a daemon thread every 60 s when the server is idle. The countdown resets after every request-driven event, so a busy server never sends redundant heartbeats. These carry CPU and RAM and serve primarily as liveness signals. **Only static nodes** (`edge_server_n{1,2}`, `edge_storage_server_n{1,2}`) emit periodic heartbeats: the image default is `HEARTBEAT_ENABLED=false`, and static containers opt in explicitly with `HEARTBEAT_ENABLED=true` in their docker run commands. Dynamic nodes keep the default disabled and emit nothing while idle — their lifecycle is handled by scale-down plus the telemetry-window absence timeout — see [archive/other/heartbeat_dynamic_node_gate_plan.md](archive/other/heartbeat_dynamic_node_gate_plan.md). Each dynamic edge server still sends one bootstrap `heartbeat`-shape sample after MAC discovery, and each storage sidecar sends one bootstrap `mongo_stats` sample on first `SECONDARY`, so newly added backends become visible without reviving periodic idle heartbeats.
 
 **MongoDB sidecar events** (`mongo_stats`) are pushed by the `mongo_telemetry.py` sidecar in each storage container. The sidecar uses opcounter delta tracking to detect real client activity — only CRUD opcounters (`insert`, `query`, `update`, `delete`, `getmore`) are checked; the `command` opcounter is ignored because internal replica set heartbeats inflate it every cycle even when idle. The first poll captures a baseline without reporting, preventing the sidecar's own admin connections from producing a spurious event. Each `mongo_stats` event includes `repl_lag_s`, `member_state` (RS state string, e.g. `"SECONDARY"`, `"PRIMARY"`), `connections_current`, `cpu_percent`, and `ram_used_mb`.
 
@@ -332,7 +333,7 @@ Thread 2 (storage / compute scaling policy) and the consumer-side `PromotionCoor
 | 6 | `CleanupSelectiveAlert` | `drain_complete` event (Tier 1 supervisor) or telemetry timeout | OVS teardown + `docker rm` of the drained Tier 1 container (Phase B) |
 | 7 | `CancelComputeDrainAlert` | Compute scale-up fired while a compute drain is pending | Cancel the pending compute drain and re-add the MAC to the VIP pool |
 | 8 | `ScaleDownDataAlert` | Storage underutilisation (7-of-12 sliding window) or telemetry timeout | Remove storage node from RS and teardown |
-| 9 | `ScaleDownSelectiveAlert` | Coordinator: cold set, staleness, or (dormant) Tier 2 supersede of a cross-LAN `DataAlert` | Phase A drain — revoke manifest, `POST /drain`, record `PendingDrain` |
+| 9 | `ScaleDownSelectiveAlert` | Coordinator: cold set, staleness, or (dormant) Tier 2 supersede of a cross-LAN `DataAlert` | Phase A drain — reioke manifest, `POST /drain`, record `PendingDrain` |
 | 10 | `ScaleDownComputeAlert` | Compute underutilisation (7-of-12 sliding window) or telemetry timeout | Drain and teardown compute node |
 
 Tie-breaking within the same priority uses a monotonic sequence counter (FIFO). Full alert-lifecycle write-up: [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md#elasticity-alerts).
@@ -378,7 +379,7 @@ Six mechanisms prevent scale-up / scale-down oscillation:
 
 #### Node Addition Lifecycle
 
-Dynamic containers are named `{prefix}_{network_id}_dyn{counter}` (e.g. `edge_server_lan1_dyn1`). IP and MAC are pre-assigned from a per-LAN `IpAllocator` pool (suffixes 6–55, deterministic MACs), eliminating the O(N) container scan previously required by the shell scripts. Each step is individually timed and produces a `NodeResult` with full timing and state tracking.
+Dynamic containers are named `{prefix}_{network_id}_dyn{counter}` (e.g. `edge_server_lan1_dyn1`). IP and MAC are pre-assigned from a per-LAN `IpAllocator` pool (suffixes 6-55, deterministic MACs), eliminating the O(N) container scan previously required by the shell scripts. Each step is individually timed and produces a `NodeResult` with full timing and state tracking.
 
 **Compute node (`ComputeNodeAdder.add_edge_server`):**
 
@@ -527,8 +528,8 @@ Each controller maintains **separate** local and peer MAC sets:
 ```
 _local_server_macs  (from env vars + Thread 3 additions)
 _peer_server_macs   (replaced wholesale on each peer topology update)
-─────────────────────────────────────────────────────────
-_server_macs (property) = _local | _peer   ← used by VIP pool rebuild
+---------------------------------------------------------------
+_server_macs (property) = _local | _peer   <- used by VIP pool rebuild
 ```
 
 This design ensures:
@@ -577,27 +578,30 @@ The Selective Sync Node is the lightweight intermediate tier between direct rout
 | User B reads Data A (burst demand) | Cross-network | **Selective Sync Node (Tier 1)** | Only hot collections synced locally |
 | User B reads Data A (sustained demand) | Cross-network | **Full replica via `rs.add()` (Tier 2)** | Full autonomous replication justified |
 
-When implemented, this would also require a **MDVBP (Metadata-Driven VIP Backend Picker)** tier map in Thread 1's `VIP_DATA_N*` selection logic if Tier 1 were ever VIP-routed. It is not — Tier 1 selection is **client-side** in the edge-server `cached_collection` wrapper, which consults the `tier1_manifest` broadcast by the controller.
+When implemented, this would also require a **MDVBP (Metadata-Driven VIP Backend Picker)** tier map in Thread 1's `VIP_DATA_N*` selection logic if Tier 1 were eier VIP-routed. It is not — Tier 1 selection is **client-side** in the edge-server `cached_collection` wrapper, which consults the `tier1_manifest` broadcast by the controller.
 
 ---
 
 ## 2. The Server (Application Container)
 
-Each server is a lightweight Docker container running an HTTP application (Flask). It handles each client request in a **dedicated thread** that follows a short-lived connection model: open connection → execute query → return response → close connection. Connection lifetime equals HTTP request lifetime — no connection pool management is required, and tier transitions take effect on the very next HTTP request after an OVS flow rule expires.
+Each server is a lightweight Docker container running an HTTP application (Flask). It handles each client request in a **dedicated thread** that follows a short-lived connection model: open connection → execute query → return response → close connection. Connection lifetime equals HTTP request lifetime — no connection pool management is required, and tier transitions take effect on the iery next HTTP request after an OVS flow rule expires.
 
 ### 2.1 Request Handling
 
-Each thread resolves the target LAN against a fixed startup-defined LAN set and
-leases the current epoch for that LAN inside `timed_db(lan)`. Startup requires
-both normal and recovery VIP mappings for every supported LAN; mismatched or
-missing LAN mappings fail fast before the app starts serving traffic.
+Each thread resolies the target LAN against a fixed startup-defined LAN set.
+The first `timed_db(lan)` access for an owner LAN binds one request-local lease
+to the current epoch, later `timed_db(lan)` blocks in the same HTTP request
+reuse that same lease, and request teardown releases all held leases once per
+LAN. Startup requires both normal and recovery VIP mappings for every
+supported LAN; mismatched or missing LAN mappings fail fast before the app
+starts serving traffic.
 
-The leased epoch defines the request-owned storage path boundary: it owns the
-bound VIP (`VIP_DATA_N1`, `VIP_DATA_N2`, or the corresponding
-`VIP_DATA_RECOVERY_*`), the lazy `MongoClient`, and the request-visible
-recovery mode. The MongoDB driver still sees only the VIP and never discovers
-the physical `mongod` topology. The SDN network performs the DNAT rewrite
-transparently.
+The request lease points to the epoch that defines the request-owned storage
+path boundary. That epoch owns the bound VIP (`VIP_DATA_N1`, `VIP_DATA_N2`, or
+the corresponding `VIP_DATA_RECOVERY_*`), the lazy `MongoClient`, and the
+request-visible recovery mode. The MongoDB driver still sees only the VIP and
+never discovers the physical `mongod` topology. The SDN network performs the
+DNAT rewrite transparently.
 
 If a real `AutoReconnect` or `/vip_data` update rotates the current epoch,
 older requests keep using their already leased epoch and bound VIP while newer
@@ -605,6 +609,14 @@ admitted requests move onto the new current epoch. This changes the local
 client object and local VIP path without claiming controller-side backend
 exclusion; the controller may still choose the same backend again if its normal
 selection rules prefer it.
+
+This request-owned lease behavior and the controller's recovery-only avoidance
+filter are now part of the implemented baseline. Use this document,
+`vip_routing_overview.md`, `vip_data_recovery_epoch_model.md`, and
+`edge_storage_connection_epoch_visuals.md` as the current reference surface;
+the `02_` and `03_` plan folders remain mainly as phased implementation
+history, with only the optional replay-safety refinement in `02_` Phase 4
+still open.
 
 ### 2.2 Telemetry Reporting — ZMQ PUSH
 
@@ -690,7 +702,7 @@ The drain signal is sent via `docker exec curl` (not through the network stack) 
 
 Each `edge_storage_server` container runs a bare `mongod` with a Python sidecar (`mongo_telemetry.py`) that pushes periodic snapshots to the same aggregator PULL socket used by edge servers.
 
-### Activity-Based Push
+### Actiiity-Based Push
 
 The sidecar uses `serverStatus.opcounters` delta tracking to avoid flooding the aggregator with identical snapshots when MongoDB is idle:
 - **Active:** CRUD opcounters (`insert`, `query`, `update`, `delete`, `getmore`) delta > 0 → push `mongo_stats` event. The `command` opcounter is ignored because internal replica set heartbeats inflate it every cycle even when idle. The first poll captures a baseline without reporting, preventing the sidecar's own admin connections from producing a spurious event.
@@ -709,7 +721,7 @@ The sidecar uses `serverStatus.opcounters` delta tracking to avoid flooding the 
 }
 ```
 
-The aggregator routes events by the `event_type` field: absent → edge server per-request metric (windowed averaging); `"mongo_stats"` → latest snapshot per `server_id`; `"heartbeat"` → liveness only.
+The aggregator routes events by the `event_type` field: absent → edge server per-request metric (windowed aieraging); `"mongo_stats"` → latest snapshot per `server_id`; `"heartbeat"` → liveness only.
 
 The aggregator's published summary includes a `"storage_nodes"` section with the latest snapshot per MongoDB instance.
 
@@ -725,10 +737,9 @@ All inter-component communication uses **ZeroMQ** exclusively. There is no share
 ### 3.1 Telemetry Path — ZMQ PUSH/PUB/SUB
 
 ```
-Edge Servers ──(ZMQ PUSH)──┐
-                            ├──► Aggregator (per network) ──(ZMQ PUB :5556)──► Controller SUB
-MongoDB Sidecars ─(PUSH)───┘         │
-                                     └─ Windowed summary every WINDOW_S (default 10 s)
+Edge Servers ------(ZMQ PUSH)------\
+                                     +--> Aggregator (per network) --(ZMQ PUB :5556)--> Controller SUB
+MongoDB Sidecars --(PUSH)-----------/      publishes one windowed summary every WINDOW_S (default 10 s)
 ```
 
 One aggregator container per network, deployed by `build_network_*.sh`, attached to the OVS bridge like any other node. The aggregator:
@@ -740,8 +751,8 @@ One aggregator container per network, deployed by `build_network_*.sh`, attached
 ### 3.2 Topology Path — ZMQ PUB/SUB
 
 ```
-Controller A ──(ZMQ PUB :5557)──► Controller B (SUB)
-Controller B ──(ZMQ PUB :5557)──► Controller A (SUB)
+Controller A --(ZMQ PUB :5557)--> Controller B (SUB)
+Controller B --(ZMQ PUB :5557)--> Controller A (SUB)
 ```
 
 Each controller's topology PUB socket is an additional `connect()` on the existing SUB socket in `ZmqTelemetrySource`. Messages are disambiguated by `"type"`:
@@ -806,11 +817,11 @@ Support `--graceful` and `--drain-timeout` flags for cooperative shutdown. Witho
 
 ### 4.4 Test Clients — Namespace-Based
 
-For testing VIP routing, lightweight `ip netns` namespaces (no Docker image needed) can be created via `create_test_clients.sh` / `remove_test_clients.sh`. These use separate veth ranges (50–69 for LAN 1, 70–89 for LAN 2) to avoid conflicting with Thread 3's dynamic node allocation ranges (10–19 / 30–49).
+For testing VIP routing, lightweight `ip netns` namespaces (no Docker image needed) can be created via `create_test_clients.sh` / `remove_test_clients.sh`. These use separate veth ranges (50-69 for LAN 1, 70-89 for LAN 2) to avoid conflicting with Thread 3's dynamic node allocation ranges (10-19 / 30-49).
 
 > See [elasticy_manager/elasticity_overview.md](elasticy_manager/elasticity_overview.md)
 > for add/remove node lifecycle details and
-> [other/test_client_scripts_plan.md](other/test_client_scripts_plan.md) for
+> [other/test_client_scripts.md](other/test_client_scripts.md) for
 > the namespace-based client implementation.
 
 ---
@@ -842,3 +853,4 @@ The architecture's contribution to the state of the art is the integration of th
 By coupling these three layers under a single control loop, the system eliminates the coordination gaps that arise when network, compute, and storage are managed by independent subsystems. The Double-VIP model ensures that routing intelligence resides entirely in the SDN layer: the MongoDB driver in each web server never performs topology discovery, never sends heartbeats, and never makes data-routing decisions. The network decides.
 
 **Client-side exception — Tier 1 manifest routing.** Tier 0 and Tier 2 are fully network-decided (driver sees only `VIP_DATA_N*`). Tier 1 is the only case where the data path is shaped inside the edge-server container: `source/docker/edge_server/source/platform_cache.py`'s `cached_collection(...)` wrapper consults the controller-broadcast `tier1_manifest` and short-circuits point-lookups in the hot set to the local standalone `mongod`; everything else still falls through to `VIP_DATA`. This is deliberate — routing Tier 1 through the SDN layer would require MongoDB wire-protocol inspection in the controller, which is rejected on principle. Tier 1 is therefore the first (and only) example of platform-assisted data-path logic in this architecture. Details: [`selective_sync/selective_sync_overview.md`](selective_sync/selective_sync_overview.md).
+

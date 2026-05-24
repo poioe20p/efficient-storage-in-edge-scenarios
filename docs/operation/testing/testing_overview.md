@@ -79,37 +79,76 @@ VIP\_DATA routing → storage node).
 
 ---
 
+## Client-Facing Workload Requests
+
+The active client workload is deliberately simple and effectively read-only.
+Test clients do not perform ordinary online MongoDB writes. Instead they send
+three HTTP GET request types through `VIP_SERVER` to the edge-server service,
+and each request type exists to stress a different part of the architecture.
+
+| Request type | Endpoint | Purpose | Main pressure created |
+| --- | --- | --- | --- |
+| `device_status` | `/device/<device_id>/latest?node_id=<node_id>` | Fetch the latest state of one device for a monitoring node, enrich it with node-specific threshold overrides, compute severity, and derive a short local trend. | Storage-locality pressure via targeted reads to `sensor_reports` and `device_registry` |
+| `service_pressure` | `/service_pressure?window_min=<minutes>&limit=<N>` | Ask one edge server how much recent demand it has been under by summarizing its local in-memory request buffer. | Edge-local CPU pressure from local analytics, with no synchronous MongoDB read/write path |
+| `dashboard` | `/dashboard/<node_id>?limit=<N>` | Return a ranked overview of the most urgent devices relevant to one monitoring node. | Compute pressure from multi-LAN reads, urgency scoring, sorting, and fleet summarization |
+
+Useful shorthand:
+
+- `device_status` = one-device lookup and the primary storage-oriented request
+- `dashboard` = many-device ranked overview and the primary compute-oriented request
+- `service_pressure` = edge-server introspection over recent local request activity
+
+These are the only client-facing workload requests in the current testing
+model. Other HTTP routes exposed by the edge server belong to the control
+plane or test harness, not to the normal client mix.
+
+---
+
 ## Components
 
 ### 1. Workload Design — [`testing_workloads.md`](testing_workloads.md)
 
 Defines the experimental workload: a multi-region IoT edge monitoring platform
-with 3 MongoDB collections (`sensor_reports`, `device_registry`,
-`query_events`) and 3 edge server endpoints (`/device/<id>/latest`,
-`/anomalies`, `/dashboard/<node_id>`).
+with 2 MongoDB collections (`sensor_reports`, `device_registry`), 1 bounded
+edge-local support-state buffer (`local_request_activity`), and 3 edge server
+endpoints (`/device/<id>/latest`, `/service_pressure`, `/dashboard/<node_id>`).
 
 Key decisions:
 
-- **Read-heavy, aggregation-rich** workload that justifies MongoDB beyond simple
-  replication (flexible schema, `$lookup` pipelines, TTL indexes, array
-  queries).
-- **9-phase long-cycle demand progression** that separates storage pressure
-  from compute pressure: `storage_stress` acts as a Tier 2 buildup window,
-  `cross_region_hotspot` and `reverse_hotspot` are long post-trigger
-  observation phases, the compute phases keep cross-region traffic low, and
-  `demand_drop` is long enough to expose cooldown-gated scale-in.
+- **Read-heavy, metadata-rich** workload that justifies MongoDB beyond simple
+  replication (flexible schema, array queries, secondary reads, and
+  application-side enrichment from heterogeneous documents) while keeping
+  support-state analytics local to the edge server.
+- **Request-scoped local pressure accounting** that records both
+  `device_status` and `dashboard` demand in the edge-local buffer, computes
+  Tier 1 hit ratio from actual Tier 1-eligible point reads, and surfaces
+  truncation explicitly if the in-memory safety cap is reached.
+- **9-phase two-regime demand progression** that separates storage-locality
+  pressure from compute-analytics pressure: `storage_stress` acts as a Tier 2
+  buildup window, `cross_region_hotspot` and `reverse_hotspot` are long
+  post-trigger observation phases, the compute phases are intentionally
+  dashboard-dominant while keeping cross-region traffic low, and `demand_drop`
+  is long enough to expose cooldown-gated scale-in.
 - **Measurable outcomes**: time-to-replica, latency reduction after tier
   escalation, CPU distribution after scale-out, resource reclamation timing.
 
-### 2. Traffic Generator — [`traffic_generator_plan.md`](traffic_generator_plan.md)
+### 2. Traffic Generator — [`traffic_generator.md`](traffic_generator.md)
 
-Implementation plan for the client-side experiment driver.
+Current reference for the client-side experiment driver.
 
 | Script | Purpose |
 |---|---|
 | `export_workload_snapshot.py` | Pre-exports device/node data from MongoDB to JSON — decouples traffic generation from live DB access |
 | `traffic_generator.py` | Async Python script: phases × clients → `curl` inside network namespaces through `VIP_SERVER` |
 | `phases.json` | Declarative 9-phase config (duration, rate, cross-region ratio, request mix) |
+
+The shared runner [`run_experiment.sh`](../../../source/scripts/testing/run_experiment.sh)
+now also accepts `--phases-config <file>` and `--fault-plan <file>`. The
+phase override keeps the usual run-directory layout while allowing short
+targeted-validation recipes, and the fault-plan path starts
+[`fault_injector.py`](../../../source/scripts/testing/fault_injector.py) in the
+background. Fault-aware runs snapshot the plan into `fault_plan_snapshot.json`
+and write explicit injection rows to `experiment_fault_events.csv`.
 
 Output: aggregate `metrics/client_requests.csv` with per-request timestamp,
 phase, endpoint, target region, HTTP status, and latency, plus matching
@@ -119,25 +158,27 @@ Current default schedule: `baseline` 60 s, `local_moderate` 90 s,
 `storage_stress` 240 s, `cross_region_hotspot` 300 s,
 `reverse_hotspot` 300 s, `compute_ramp` 120 s, `compute_spike` 150 s,
 `sustained_plateau` 120 s, `demand_drop` 300 s. Total duration: about
-28 minutes.
+28 minutes. Interpret this as one application with two regimes: storage phases
+are `device_status`-dominant, while compute phases are `dashboard`-dominant.
 
-### 3. Edge Server Compute Load — [`edge_server_compute_load_plan.md`](edge_server_compute_load_plan.md)
+### 3. Edge Server Compute Load — [`edge_server_compute_load.md`](edge_server_compute_load.md)
 
-Implementation plan for making edge server endpoints produce meaningful CPU
-work so that $T_{proc} = T_{total} - T_{dados}$ is non-trivial.
+Current reference for the implemented edge-server CPU work that makes the
+endpoints produce meaningful CPU work so that $T_{proc} = T_{total} - T_{dados}$
+is non-trivial.
 
 | Endpoint | Added Compute | $T_{proc}$ Impact |
 |---|---|---|
 | `/device/<id>/latest` | Multi-level severity scoring + linear regression trend analysis | ~5–15 ms |
-| `/anomalies` | Z-score normalization + composite risk re-ranking | ~3–10 ms |
+| `/service_pressure` | Local pressure summary, concentration scoring, and tag/device ranking | ~3–10 ms |
 | `/dashboard/<node_id>` | Multi-factor urgency scoring (tag priority, staleness decay) + fleet summary stats | ~5–20 ms |
 
 All compute is implemented in a pure-stdlib module (`compute.py`) with no I/O
 dependencies — execution time flows entirely into $T_{proc}$.
 
-### 4. Request Trace — [`trace_request_plan.md`](trace_request_plan.md)
+### 4. Request Trace — [`trace_request.md`](trace_request.md)
 
-Implementation plan for a debugging/demonstration script that traces a single
+Current reference for a debugging/demonstration script that traces a single
 request end-to-end through the platform.
 
 ```
@@ -150,7 +191,7 @@ CLIENT (namespace) → VIP_SERVER (SDN selects edge server)
 Collects `docker logs` from controllers and edge servers within the request's
 time window and formats a color-coded trace showing each routing decision.
 
-### 5. Run Analysis Toolchain — [`analysis_toolchain_plan.md`](analysis_toolchain_plan.md)
+### 5. Run Analysis Toolchain — [`analysis_toolchain.md`](analysis_toolchain.md)
 
 Offline package that ingests a run directory and emits phase-aligned plots and
 diagnostic tables. Read-only — does not modify telemetry, scaling, or the
@@ -170,6 +211,33 @@ Consumes `resource_stats.csv` (domain), `per_node_stats.csv` (per-container),
 `phases_snapshot.json`, and the controller log files. Missing fields on older
 runs degrade gracefully with warnings.
 
+The analysis package now also includes
+[`cli_recovery_validation.py`](../../../source/scripts/testing/analysis/cli_recovery_validation.py),
+which correlates `experiment_fault_events.csv`, request-lease outcome logs,
+controller recovery-avoidance markers, and short-window request failures into
+a targeted recovery-validation summary.
+
+### 5a. Hybrid Recovery Validation — [`experiment_hybrid_recovery_validation.md`](experiment_hybrid_recovery_validation.md)
+
+Current reference for the hybrid run family that validates the MongoDB
+request-lease state machine and controller failed-backend avoidance with two
+short deterministic runs before reusing the standard long-cycle workload for
+broader architecture observation.
+
+This run family adds:
+
+- one targeted `n1` validation recipe and one targeted `n2` recipe via
+  `--phases-config`;
+- a phase-aware hard-stop helper in
+  [`fault_injector.py`](../../../source/scripts/testing/fault_injector.py);
+- an explicit fault artifact, `experiment_fault_events.csv`;
+- a focused offline summary through
+  [`cli_recovery_validation.py`](../../../source/scripts/testing/analysis/cli_recovery_validation.py);
+- an image-rebuild gate: host-side harness and controller-script changes do
+  not require image rebuilds, but a stale `edge_server` image still must be
+  rebuilt before execution if the request-lease implementation in the remote
+  image is uncertain.
+
 ### 6. Ablation Batch Results — [`elasticity_ablation_batch1_results.md`](elasticity_ablation_batch1_results.md)
 
 Records the first completed `C0-C4` comparison batch for the elasticity
@@ -185,13 +253,12 @@ becomes the strongest positive mechanism once the storage-sensitive phases are
 long enough, while Tier 1 and the combined Tier 1 plus Tier 2 path remain
 defect-prone in the rerun artifacts.
 
-### 8. Ablation Batch 5 Plan — [`elasticity_ablation_batch5_plan.md`](elasticity_ablation_batch5_plan.md)
+### 8. Ablation Batch 5 Results — [`elasticity_ablation_batch5_results.md`](elasticity_ablation_batch5_results.md)
 
-Defines the next normal-workload validation batch for the post-Batch-4
-elasticity changes. The batch keeps the standard `phases.json` workload,
-isolates the updated Tier 2 storage path, reruns the combined Tier 1 plus Tier
-2 setting, and finishes with a full normal-policy run using
-`MAX_DYNAMIC_COMPUTE=2`.
+Records the completed normal-workload validation batch for the post-Batch-4
+elasticity changes. It compares the static, storage-only, combined, and full
+policy rows under the unchanged standard workload and captures the resulting
+Tier 1, Tier 2, and compute-elasticity evidence.
 
 #### `resource_stats.csv` — Tier 1 columns
 
@@ -401,10 +468,16 @@ for details.
 docs/operation/testing/
 ├── testing_overview.md              ← this file
 ├── testing_workloads.md             ← workload design & phase definitions
-├── traffic_generator_plan.md        ← traffic generator implementation plan
-├── edge_server_compute_load_plan.md ← compute.py & app.py changes
-├── trace_request_plan.md            ← trace_request.sh implementation plan
-└── analysis_toolchain_plan.md       ← offline run analysis package (NEW)
+├── traffic_generator.md             ← traffic generator reference
+├── edge_server_compute_load.md      ← compute.py & app.py changes
+├── trace_request.md                 ← trace_request.sh reference
+├── analysis_toolchain.md            ← offline run analysis package
+├── elasticity_ablation_batch*_results.md
+└── experiment_campaign_brief.md     ← campaign record and operator workflow
+
+docs/operation/archive/testing/
+├── elasticity_ablation_batch4_plan.md
+└── elasticity_ablation_batch5_plan.md
 
 source/scripts/testing/
 ├── collect_resource_stats.py    ← now also writes per_node_stats.csv

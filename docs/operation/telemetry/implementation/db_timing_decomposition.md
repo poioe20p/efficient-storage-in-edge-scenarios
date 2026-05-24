@@ -1,4 +1,4 @@
-# DB Timing Decomposition
+﻿# DB Timing Decomposition
 
 ## Objective
 
@@ -9,7 +9,7 @@ and so that the elasticity layer has a diagnostic signal for why `T_db` moves
 independently from request rate.
 
 Three new per-request fields are added to the telemetry event schema and
-propagated end-to-end: edge server → aggregator → controller → CSV.
+propagated end-to-end: edge server â†’ aggregator â†’ controller â†’ CSV.
 
 | Field | Unit | Semantics |
 |---|---|---|
@@ -46,10 +46,10 @@ and aggregates it to milliseconds at CSV-write time. This keeps the
 controller-side pydantic models focused on request-path latency and avoids
 pushing a storage-only field through the shared domain summary.
 
-### CSV column naming — `avg_*` instead of `median_*`
+### CSV column naming â€” `avg_*` instead of `median_*`
 
 Every existing column in `resource_stats.csv` uses the `median_*` prefix
-(`median_time_proc_ms`, `median_time_db_ms`, `median_cpu_percent`, …) because
+(`median_time_proc_ms`, `median_time_db_ms`, `median_cpu_percent`, â€¦) because
 it records the per-window central tendency across servers. The four new
 columns deliberately use the `avg_*` prefix instead:
 
@@ -67,10 +67,10 @@ could add medians as separate columns without renaming these.
 
 ### Known non-identity
 
-`time_db_read_ms + time_db_write_ms ≠ time_db_ms` exactly. `time_db_ms` wraps
+`time_db_read_ms + time_db_write_ms â‰  time_db_ms` exactly. `time_db_ms` wraps
 the `timed_db` block (includes connection checkout, server selection,
 serialization); the listener measures only command RTT. The gap is itself
-diagnostic — a large gap means the driver is blocking outside command
+diagnostic â€” a large gap means the driver is blocking outside command
 execution.
 
 ### Filtered commands
@@ -101,9 +101,9 @@ count correctly.
 
 ## Execution order
 
-### 1. Edge server — `CommandListener`
+### 1. Edge server â€” `CommandListener`
 
-pymongo (unpinned ≥ 4.0) invokes `CommandListener` callbacks synchronously on
+pymongo (unpinned â‰¥ 4.0) invokes `CommandListener` callbacks synchronously on
 the thread that issued the command, so Flask's request-local `g` is safe to
 use directly. The listener wraps `g` access in `try/except RuntimeError` so
 driver-internal operations outside a request context (e.g. connection pool
@@ -151,7 +151,7 @@ class _DbTimingListener(monitoring.CommandListener):
                 g.time_db_write_s = getattr(g, "time_db_write_s", 0.0) + dur_s
             g.time_db_cmd_count = getattr(g, "time_db_cmd_count", 0) + 1
         except RuntimeError:
-            # Outside Flask request context (driver-internal op) — ignore.
+            # Outside Flask request context (driver-internal op) â€” ignore.
             pass
 
 
@@ -167,14 +167,14 @@ def register() -> None:
     _listener_registered = True
 ```
 
-**`source/docker/edge_server/source/app.py`** — register before any `MongoClient`:
+**`source/docker/edge_server/source/app.py`** â€” register before any `MongoClient`:
 
 ```python
 from db_monitor import register as _register_db_monitor
 _register_db_monitor()
 ```
 
-**`source/docker/edge_server/source/telemetry.py`** — reset per request and
+**`source/docker/edge_server/source/telemetry.py`** â€” reset per request and
 extend the event:
 
 ```python
@@ -223,10 +223,10 @@ event = _build_event(
 ```
 
 **Acceptance:** emitted HTTP events carry the three new fields; a sample of
-real traffic shows `time_db_ms ≥ time_db_read_ms + time_db_write_ms` and the
+real traffic shows `time_db_ms â‰¥ time_db_read_ms + time_db_write_ms` and the
 gap is small relative to command RTT.
 
-### 2. Aggregator — per-server and domain means
+### 2. Aggregator â€” per-server and domain means
 
 Use `.get(..., 0)` when reading event fields so a pre-Step-1 edge server
 doesn't crash aggregation during rolling upgrades.
@@ -251,7 +251,7 @@ summary["domain_summary"].update({
 **Acceptance:** subscribing a raw ZMQ SUB to the aggregator PUB socket shows
 the three new fields on both per-server and domain summaries.
 
-### 3. Controller — extend pydantic models
+### 3. Controller â€” extend pydantic models
 
 ```python
 # source/sdn_controller/telemetry/models.py
@@ -264,7 +264,7 @@ class ServerSummary(BaseModel):
     avg_cpu_percent: float
     avg_ram_used_mb: float
     last_report_ts: float = 0.0
-    # New — defaulted for backward compatibility with pre-Step 2 aggregators.
+    # New â€” defaulted for backward compatibility with pre-Step 2 aggregators.
     avg_time_db_read_ms: float = 0.0
     avg_time_db_write_ms: float = 0.0
     avg_time_db_cmd_count: float = 0.0
@@ -285,11 +285,11 @@ class DomainSummary(BaseModel):
 **Acceptance:** controller parses payloads from both new and legacy
 aggregators; no schema errors in logs.
 
-### 4. Collector — append domain CSV columns
+### 4. Collector â€” append domain CSV columns
 
 Only the four domain-level columns are added here. The new `per_node_stats.csv`
 output is defined in the testing plan
-[`analysis_toolchain_plan.md`](../../testing/analysis_toolchain_plan.md).
+[`analysis_toolchain.md`](../../testing/analysis_toolchain.md).
 
 ```python
 # source/scripts/testing/collect_resource_stats.py
@@ -320,7 +320,7 @@ row["avg_time_db_write_ms"]   = domain.get("avg_time_db_write_ms", "")
 row["avg_time_db_cmd_count"]  = domain.get("avg_time_db_cmd_count", "")
 ```
 
-**Acceptance:** after a ≥ 60 s collection, `resource_stats.csv` contains the
+**Acceptance:** after a â‰¥ 60 s collection, `resource_stats.csv` contains the
 four new columns with non-zero values during any request-carrying phase.
 
 ---
@@ -329,17 +329,17 @@ four new columns with non-zero values during any request-carrying phase.
 
 | Risk | Mitigation |
 |---|---|
-| Listener fires outside a Flask context → `RuntimeError` from `g` | `try/except RuntimeError` in `_record`; driver connection monitors silently ignored |
+| Listener fires outside a Flask context â†’ `RuntimeError` from `g` | `try/except RuntimeError` in `_record`; driver connection monitors silently ignored |
 | Identity `read+write==total` doesn't hold | Documented as expected; the gap is diagnostic |
 | pymongo major version bump changes listener threading | Step 1 acceptance covers this; if sync semantics ever change, `g` access must be replaced with a thread-local keyed by `threading.get_ident()` correlated to request id |
 | Mixed-version rolling upgrade | `.get(..., 0)` in aggregator; `= 0.0` defaults in pydantic models |
 
-## Overview file changes — `telemetry_overview.md`
+## Overview file changes â€” `telemetry_overview.md`
 
 The following edits to [`../telemetry_overview.md`](../telemetry_overview.md) are
 required so the overview reflects the new schema once this plan ships.
 
-### 1. Per-Request Events — add three fields to the example and field table
+### 1. Per-Request Events â€” add three fields to the example and field table
 
 Extend the JSON example under **"Per-Request Events"**:
 
@@ -372,21 +372,21 @@ Add a short note after the table:
 > `time_db_read_ms + time_db_write_ms` is not expected to equal `time_db_ms`
 > exactly. `time_db_ms` wraps the `timed_db` block (connection checkout, server
 > selection, serialization); the listener measures only command RTT. The gap is
-> diagnostic — see [implementation/db_timing_decomposition.md](implementation/db_timing_decomposition.md).
+> diagnostic â€” see [implementation/db_timing_decomposition.md](implementation/db_timing_decomposition.md).
 
-### 2. File Layout — add `db_monitor.py`
+### 2. File Layout â€” add `db_monitor.py`
 
 Under **"Telemetry Senders"**, add the new module:
 
 ```
 source/docker/edge_server/source/
   telemetry.py          # MetricSender ABC, ZmqMetricSender, Flask hooks, heartbeat loop
-  db_monitor.py         # pymongo CommandListener — per-request read/write DB time
+  db_monitor.py         # pymongo CommandListener â€” per-request read/write DB time
 ```
 
-### 3. Aggregator — extend the per-server and domain tables
+### 3. Aggregator â€” extend the per-server and domain tables
 
-Under **"Windowed Aggregation → Per-server HTTP stats"**, add three rows:
+Under **"Windowed Aggregation â†’ Per-server HTTP stats"**, add three rows:
 
 | Output Field | Computation |
 |---|---|
@@ -397,7 +397,7 @@ Under **"Windowed Aggregation → Per-server HTTP stats"**, add three rows:
 Under **"Domain summary"**, add the same three rows (keyed off
 `http_events`).
 
-### 4. Controller-Side Receiver — note optional fields
+### 4. Controller-Side Receiver â€” note optional fields
 
 Under **"Pydantic Models"**, append a bullet after the `last_report_ts`
 compatibility note:
@@ -409,5 +409,5 @@ compatibility note:
 
 ## Cross-references
 
-- Umbrella investigation: [`../../elasticy_manager/implementation/metric_drivers_investigation_plan.md`](../../elasticy_manager/implementation/metric_drivers_investigation_plan.md)
-- Consumes the new fields: [`../../testing/analysis_toolchain_plan.md`](../../testing/analysis_toolchain_plan.md) (CLI `cli_tdb_drivers`)
+- Umbrella investigation: [`../../elasticy_manager/implementation/plans/metric_drivers_investigation_plan.md`](../../elasticy_manager/implementation/plans/metric_drivers_investigation_plan.md)
+- Consumes the new fields: [`../../testing/analysis_toolchain.md`](../../testing/analysis_toolchain.md) (CLI `cli_tdb_drivers`)

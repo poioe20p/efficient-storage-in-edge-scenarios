@@ -1,12 +1,37 @@
-# Traffic Generator — Implementation Plan
+# Traffic Generator
 
-This document specifies the implementation of the HTTP traffic generator that drives the current 9-phase long-cycle experiment described in [testing_workloads.md](testing_workloads.md). All three edge server endpoints (`/device/<id>/latest`, `/anomalies`, `/dashboard/<node_id>`) are already implemented in the [edge server](../../../source/docker/edge_server/source/app.py). The missing piece is client-side request generation with phase orchestration.
+This document describes the HTTP traffic generator that drives the current
+9-phase long-cycle experiment described in
+[testing_workloads.md](testing_workloads.md). All three edge server endpoints
+(`/device/<id>/latest`, `/service_pressure`, `/dashboard/<node_id>`) are already
+implemented in the [edge server](../../../source/docker/edge_server/source/app.py).
+Client-side request generation and phase orchestration are implemented through
+the scripts documented here.
+
+The workload is interpreted in two regimes:
+
+- **Storage-locality regime**: phases dominated by `device_status` traffic so
+    cross-region reads remain the main independent pressure.
+- **Compute-analytics regime**: phases dominated by `dashboard` traffic so
+    edge-server CPU work increases while cross-region pressure stays low.
+
+The client mix itself is read-only. The traffic generator sends only three
+client-facing GET request types through `VIP_SERVER`:
+
+| Request type | Endpoint shape | Purpose in the workload |
+| --- | --- | --- |
+| `device_status` | `/device/<device_id>/latest?node_id=<node_id>` | One-device lookup with enrichment and trend analysis; the main storage-locality driver |
+| `service_pressure` | `/service_pressure?window_min=<minutes>&limit=<N>` | Local pressure introspection on the serving edge; a secondary analytics path that adds CPU work without MongoDB traffic |
+| `dashboard` | `/dashboard/<node_id>?limit=<N>` | Multi-device ranked overview for one node; the main compute-heavy request |
+
+Other edge-server routes are control-plane or testing helpers and are not part
+of the generated client request mix.
 
 ---
 
 ## Overview
 
-Two new scripts:
+Core scripts:
 
 | Script | Purpose |
 | --- | --- |
@@ -72,17 +97,28 @@ python3 source/scripts/testing/export_workload_snapshot.py \
   {
     "_id": "lan1::node::001",
     "home_region": "lan1",
-    "subscribed_tags": ["industrial", "thermal"],
+        "subscribed_tags": ["industrial", "thermal"],
     "watched_devices": []
   },
   {
     "_id": "lan2::node::005",
     "home_region": "lan2",
-    "subscribed_tags": ["mechanical", "high-priority"],
+        "subscribed_tags": ["mechanical", "high-priority", "thermal", "industrial"],
     "watched_devices": ["lan1::device::012", "lan1::device::034"]
   }
 ]
 ```
+
+The snapshot should contain a mix of seeded node-profile families expressed via
+`subscribed_tags` breadth:
+
+- focused-local nodes with 1-2 tags
+- regional-operator nodes with 3-4 tags
+- global-operator nodes with 4-6 tags
+
+The traffic generator does not need special node weighting for the baseline;
+the heavier compute behavior comes from choosing ordinary node IDs whose seeded
+tag breadth already creates broader dashboard fan-out.
 
 ### Implementation
 
@@ -168,7 +204,14 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
 | `rate_per_client` | float | Target requests/second per client namespace |
 | `cross_region_ratio` | float 0–1 | Fraction of `device_status` requests targeting foreign-region devices |
 | `hotspot_direction` | string | `"lan2_to_lan1"` or `"lan1_to_lan2"` — which region's clients hit the other (default: `"lan2_to_lan1"`) |
-| `mix` | object | Request type distribution: `device_status` + `dashboard` + `anomalies` (must sum to 1.0) |
+| `mix` | object | Request type distribution: `device_status` + `dashboard` + `service_pressure` (must sum to 1.0) |
+
+The standard profile uses one application with two operating regimes:
+
+- storage phases (`storage_stress`, `cross_region_hotspot`, `reverse_hotspot`)
+    are `device_status`-dominant
+- compute phases (`compute_ramp`, `compute_spike`, `sustained_plateau`) are
+    `dashboard`-dominant
 
 ### Default Configuration
 
@@ -183,7 +226,7 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
       "mix": {
                 "device_status": 0.35,
                 "dashboard": 0.35,
-                "anomalies": 0.30
+                "service_pressure": 0.30
             }
         },
         {
@@ -194,7 +237,7 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
             "mix": {
                 "device_status": 0.35,
                 "dashboard": 0.35,
-                "anomalies": 0.30
+                "service_pressure": 0.30
             }
         },
         {
@@ -206,7 +249,7 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
             "mix": {
                 "device_status": 0.8,
                 "dashboard": 0.1,
-                "anomalies": 0.1
+                "service_pressure": 0.1
       }
     },
     {
@@ -218,7 +261,7 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
       "mix": {
         "device_status": 0.8,
         "dashboard": 0.1,
-        "anomalies": 0.1
+        "service_pressure": 0.1
       }
     },
     {
@@ -230,7 +273,7 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
       "mix": {
                 "device_status": 0.8,
                 "dashboard": 0.1,
-                "anomalies": 0.1
+                "service_pressure": 0.1
             }
         },
         {
@@ -240,9 +283,9 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
             "cross_region_ratio": 0.05,
             "hotspot_direction": "lan2_to_lan1",
             "mix": {
-                "device_status": 0.7,
-                "dashboard": 0.2,
-                "anomalies": 0.1
+                "device_status": 0.35,
+                "dashboard": 0.50,
+                "service_pressure": 0.15
             }
         },
         {
@@ -252,9 +295,9 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
             "cross_region_ratio": 0.05,
             "hotspot_direction": "lan2_to_lan1",
             "mix": {
-                "device_status": 0.75,
-                "dashboard": 0.2,
-                "anomalies": 0.05
+                "device_status": 0.25,
+                "dashboard": 0.60,
+                "service_pressure": 0.15
             }
         },
         {
@@ -264,9 +307,9 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
             "cross_region_ratio": 0.05,
             "hotspot_direction": "lan2_to_lan1",
             "mix": {
-                "device_status": 0.7,
-                "dashboard": 0.2,
-                "anomalies": 0.1
+                "device_status": 0.30,
+                "dashboard": 0.55,
+                "service_pressure": 0.15
       }
     },
     {
@@ -277,7 +320,7 @@ The JSON config file drives the 9-phase demand shift. Each phase defines:
       "mix": {
         "device_status": 0.6,
         "dashboard": 0.3,
-        "anomalies": 0.1
+        "service_pressure": 0.1
       }
     }
   ]
@@ -457,7 +500,7 @@ def pick_target(
         node_id = random.choice(snap.nodes_by_region[home])
         return {"device_id": "", "node_id": node_id, "target_region": home}
 
-    elif request_type == "anomalies":
+    elif request_type == "service_pressure":
         return {"device_id": "", "node_id": "", "target_region": home}
 
     return {}
@@ -493,9 +536,8 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
         node_id = target["node_id"]
         return f"{base}/dashboard/{node_id}?limit=10"
 
-    elif request_type == "anomalies":
-        region = target["target_region"]
-        return f"{base}/anomalies?region={region}&window=1"
+    elif request_type == "service_pressure":
+        return f"{base}/service_pressure?window_min=10&limit=10"
 
     return base
 ```
@@ -699,7 +741,7 @@ One row per request:
 | `phase` | string | `cross_region_hotspot` |
 | `client_ns` | string | `test_client_2` |
 | `client_lan` | string | `lan1` |
-| `endpoint` | string | `device_status` / `dashboard` / `anomalies` |
+| `endpoint` | string | `device_status` / `dashboard` / `service_pressure` |
 | `device_id` | string | `lan1::device::042` |
 | `node_id` | string | `lan2::node::005` |
 | `target_region` | string | `lan1` |
@@ -745,7 +787,7 @@ cat > /tmp/smoke.json << 'EOF'
 {
   "phases": [
     {"name": "smoke_test", "duration_s": 30, "rate_per_client": 1.0,
-     "cross_region_ratio": 0.0, "mix": {"device_status": 0.6, "dashboard": 0.3, "anomalies": 0.1}}
+     "cross_region_ratio": 0.0, "mix": {"device_status": 0.6, "dashboard": 0.3, "service_pressure": 0.1}}
   ]
 }
 EOF

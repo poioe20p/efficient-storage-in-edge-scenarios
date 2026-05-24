@@ -115,6 +115,7 @@ Flask hooks emit a ZMQ PUSH event after every HTTP request:
   "time_db_cmd_count": 6,
   "status_code":       200,
   "request_type":      "read",
+  "request_lease_outcomes": [],
   "cpu_percent":       34.7,
   "ram_used_mb":       128.3
 }
@@ -130,6 +131,7 @@ Flask hooks emit a ZMQ PUSH event after every HTTP request:
 | `cpu_percent`   | `psutil.cpu_percent()`                                                      |
 | `ram_used_mb`   | `psutil.virtual_memory().used / 1 MiB`                                      |
 | `request_type`  | `"write"` for POST/PUT/PATCH/DELETE, `"read"` otherwise                   |
+| `request_lease_outcomes` | Finalized per-owner-LAN request-lease outcomes projected by `app.py` near response end; shape: `[{lan, epoch_id, epoch_mode, lifecycle, outcome, rebinds_used, replay_safe, terminal_reason}, ...]` |
 
 > `time_db_read_ms + time_db_write_ms` is not expected to equal `time_db_ms`
 > exactly. `time_db_ms` wraps the `timed_db` block (connection checkout, server
@@ -138,6 +140,12 @@ Flask hooks emit a ZMQ PUSH event after every HTTP request:
 
 `zmq.NOBLOCK` ensures the hook never blocks the HTTP response — events are
 silently dropped if the aggregator is temporarily unavailable.
+
+`request_lease_outcomes` is request-scoped observability for the Phase 2 lease
+state machine. It stays on the raw edge-server request frame and in edge-server
+logs; the aggregator does not currently fold it into window summaries, and the
+controller-side failed-backend follow-up continues to use a separate dedicated
+`control_events` path for terminal-failure signaling.
 
 ### Tier 1 Selective-Sync Fields (piggyback)
 
@@ -184,7 +192,7 @@ scale-down path; true failure is handled by the telemetry-window absence
 timeout, `TELEMETRY_TIMEOUT_WINDOWS × WINDOW_S`, default 180 s). Static
 containers opt in explicitly via `HEARTBEAT_ENABLED=true` in their docker run
 commands. See
-[../other/heartbeat_dynamic_node_gate_plan.md](../other/heartbeat_dynamic_node_gate_plan.md)
+[../archive/other/heartbeat_dynamic_node_gate_plan.md](../archive/other/heartbeat_dynamic_node_gate_plan.md)
 for the rationale.
 
 Each `edge_server` also emits one bootstrap `heartbeat`-shape sample once a

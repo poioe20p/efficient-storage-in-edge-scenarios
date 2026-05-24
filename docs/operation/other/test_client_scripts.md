@@ -1,8 +1,9 @@
-# Plan: Test Client Scripts — Namespace-based HTTP Clients
+# Test Client Scripts — Namespace-based HTTP Clients
 
 ## Goal
 
-Create two scripts under `source/scripts/network/clients/` that manage
+This document describes the implemented scripts under
+`source/scripts/network/clients/` that manage
 **lightweight Linux network namespace clients** for testing VIP routing. These
 clients have no container image — they are pure namespace + veth pairs, each
 with a unique MAC and IP, connected to an OVS bridge exactly like any other

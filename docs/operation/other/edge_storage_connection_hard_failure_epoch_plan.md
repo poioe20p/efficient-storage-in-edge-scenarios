@@ -4,9 +4,10 @@
 **Scope:** Edge-server MongoDB client lifecycle for LAN-scoped storage access
 
 This plan assumes a fixed startup-defined LAN set. Every supported LAN must have both a normal VIP and a recovery VIP resolved by startup, whether those values come from fixed defaults or environment configuration. Runtime `PUT /vip_data` requests may update the normal VIP of an existing LAN, but they do not create new LANs or provision missing recovery VIP mappings.
-**Primary file:**
+**Primary files:**
 
-- `source/docker/edge_server/source/app.py`
+- `source/docker/edge_server/source/vip_data_mongo_runtime.py`
+- `source/docker/edge_server/source/app.py` (bootstrap and registration order only)
 
 ---
 
@@ -769,7 +770,7 @@ Required follow-up:
 
 1. Update `docs/operation/vip_routing/vip_routing_overview.md` to explain that epoch now defines the request-owned storage path boundary: client object, bound VIP, recovery mode, and handoff between old and new requests.
 2. Update `docs/operation/system_mechanisms.md` to clarify the edge-server assumptions that the plan now depends on: fixed startup-defined LAN set, normal and recovery VIP mappings for every LAN resolved by startup, and the fact that epoch rotation changes the local client object and bound VIP without claiming backend exclusion.
-3. Update `docs/operation/vip_routing/implementation/vip_data_recovery_flow_session_plan.md` so it no longer describes the older one-shot recovery-client model and instead matches the approved epoch lifecycle, bounded recovery rollback, and housekeeping behavior.
+3. Update `docs/operation/vip_routing/implementation/vip_data_recovery_epoch_model.md` so it no longer describes the older one-shot recovery-client model and instead matches the approved epoch lifecycle, bounded recovery rollback, and housekeeping behavior.
 4. Create `docs/operation/other/edge_storage_connection_epoch_visuals.md` if a dedicated visuals note is still wanted, and create or update the associated diagrams so the visuals show that epoch ownership now includes request leasing, LAN-local VIP state, breaker singleton ownership, and background cleanup of retiring epochs.
 5. Add a short rationale section in the final implementation-facing docs stating that epoch started as a shared-client blast-radius reduction mechanism but had to absorb request attribution, VIP-path binding, recovery lifecycle, control-plane validation, and concurrency ownership so the runtime behavior stayed coherent under overlapping failures and VIP updates.
 

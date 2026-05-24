@@ -1,0 +1,49 @@
+Updated todo list
+
+I’m pulling the explanation directly from the new 02 plan set so I can summarize the intent and the phase split without drifting from the actual docs.
+
+Read [](file:///c%3A/Users/themo/Documents/Trabalhos%20Academicos/Mestrado%20-%20Tese/efficient-storage-in-edge-scenarios/docs/operation/vip_routing/implementation/plans/implemented_02_mongodb_lease_request_state_machine/README.md)
+
+Read [](file:///c%3A/Users/themo/Documents/Trabalhos%20Academicos/Mestrado%20-%20Tese/efficient-storage-in-edge-scenarios/docs/operation/vip_routing/implementation/plans/implemented_02_mongodb_lease_request_state_machine/phase_1_request_lease_registry_and_teardown.md)
+
+Read [](file:///c%3A/Users/themo/Documents/Trabalhos%20Academicos/Mestrado%20-%20Tese/efficient-storage-in-edge-scenarios/docs/operation/vip_routing/implementation/plans/implemented_02_mongodb_lease_request_state_machine/phase_2_bounded_recovery_cutover_and_replay_gate.md)
+
+Read [](file:///c%3A/Users/themo/Documents/Trabalhos%20Academicos/Mestrado%20-%20Tese/efficient-storage-in-edge-scenarios/docs/operation/vip_routing/implementation/plans/implemented_02_mongodb_lease_request_state_machine/phase_3_request_lease_outcome_visibility.md)
+
+Read [](file:///c%3A/Users/themo/Documents/Trabalhos%20Academicos/Mestrado%20-%20Tese/efficient-storage-in-edge-scenarios/docs/operation/vip_routing/implementation/plans/implemented_02_mongodb_lease_request_state_machine/phase_4_optional_replay_safety_refinement.md)
+
+The objective of implemented_02_mongodb_lease_request_state_machine/README.md is to add a request-scoped MongoDB lease layer on top of the already-implemented LAN-scoped epoch model.
+
+In practical terms, it is trying to make one HTTP request behave like this:
+
+- the request binds once to a storage path for a given owner LAN
+- later MongoDB work in that same request reuses the same bound path instead of looking like a fresh checkout every time
+- if there is a hard MongoDB connection failure, the request may cut over once to recovery
+- if replay would be unsafe, the request fails instead of silently rebinding to a different backend path
+
+The important architectural point is that this plan does not replace the epoch model. The epoch still owns the MongoClient, the bound VIP, the breaker, and retirement/rollback. The new request lease is a higher-level correctness layer above that baseline. The main code surfaces are app.py, platform_cache.py, and later telemetry.py.
+
+It is divided into these subplans:
+
+1. Phase 1 - Request Lease Registry And Teardown
+This is the ownership phase. Today the current flow leases an epoch on each timed_db entry and releases it in that block’s finally path. Phase 1 changes that so one request owns one lease per owner LAN, reuses it across repeated DB blocks, and releases it once at request teardown. This is mostly an app.py change.
+
+2. Phase 2 - Bounded Recovery Cutover And Replay Gate
+This is the failure-semantics phase. It adds explicit request-lease state, tracks whether replay is safe, and allows at most one normal-to-recovery cutover per request and owner LAN. The key reason this is its own phase is that the current timed_db shape cannot safely replay arbitrary MongoDB work after it has already yielded the DB handle. So this phase likely needs an explicit helper boundary for retryable DB work. This touches app.py and platform_cache.py.
+
+3. Phase 3 - Request Lease Outcome Visibility
+This is the observability phase. Once request-local leases exist, the runtime needs to tell apart healthy completion, healthy completion after one recovery cutover, and terminal failure. The plan adds request-local outcome recording, logs, and telemetry fields so experiments can see what actually happened. This is mainly app.py plus telemetry.py.
+
+4. Phase 4 - Optional Replay Safety Refinement
+This is an optional tightening phase, not part of the mandatory core. Phase 2 starts conservative: if an operation is mutating or ambiguous, it is treated as replay-unsafe. Phase 4 exists only if that turns out to be too restrictive in experiments. The idea is to explicitly annotate which operations are safe to replay, rather than trying to infer that implicitly. This mainly affects platform_cache.py and app.py.
+
+If you want the shortest possible summary, it is this:
+
+- Phase 1: who owns the lease during a request
+- Phase 2: what happens on failure
+- Phase 3: how we see the outcome
+- Phase 4: optional refinement of what is safe to replay
+
+A useful next step would be to walk through Phase 1 against the current app.py so you can see exactly what would change first and why.
+
+Updated todo list

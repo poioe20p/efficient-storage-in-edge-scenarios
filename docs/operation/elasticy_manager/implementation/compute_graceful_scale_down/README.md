@@ -1,10 +1,10 @@
-# Compute Graceful Scale-Down Plan
+# Compute Graceful Scale-Down
 
 **Status:** Implemented  
 **Scope:** Compute scale-down only  
 **Implementation model:** Controller-selected, edge-driven, cancelable quiesce
 
-This folder is the phased implementation plan for replacing the current
+This folder documents the phased implementation that replaced the current
 one-way compute drain with a slower but safer workflow where the controller
 starts scale-down, the edge server stays responsible for declaring completion,
 and pending drains can be canceled after new compute scale-up has already been

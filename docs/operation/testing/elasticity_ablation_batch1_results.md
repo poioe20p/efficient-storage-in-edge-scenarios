@@ -12,7 +12,7 @@ elasticity ablation matrix:
 - `C4` full current policy
 
 It complements
-[`../other/elasticity_ablation_matrix_plan.md`](../other/elasticity_ablation_matrix_plan.md)
+[`../archive/other/elasticity_ablation_matrix_plan.md`](../archive/other/elasticity_ablation_matrix_plan.md)
 by capturing what the batch actually showed. If a later rerun is produced,
 keep this document as the stable Batch 1 reference and compare the rerun as a
 new batch instead of rewriting the current conclusions in place.

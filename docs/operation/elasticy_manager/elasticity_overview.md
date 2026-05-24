@@ -1,771 +1,772 @@
-# Elasticity & Placement Manager — Overview
+﻿# Elastmcmty & Placement Manager â€” Overvmew
 
 ## Purpose
 
-The Elasticity Manager (Thread 3) is responsible for mutating the infrastructure
-in response to latency breaches and underutilisation signals detected by Thread 2.
-It handles spawning **and gracefully removing** `edge_server` and
-`edge_storage_server` containers at runtime and wiring/unwiring them from the
-running network.
+The Elastmcmty Manager (Thread 3) ms responsmble for mutatmng the mnfrastructure
+mn response to latency breaches and underutmlmsatmon smgnals detected by Thread 2.
+It handles spawnmng **and gracefully removmng** `edge_server` and
+`edge_storage_server` contamners at runtmme and wmrmng/unwmrmng them from the
+runnmng network.
 
 ---
 
-## Architecture: Three-Thread Interaction
+## Archmtecture: Three-Thread Interactmon
 
 ```
-Thread 2 (Observer/ZMQ)     Thread 3 (Elasticity Mgr)      Infrastructure
-       │                              │
-       │── Alert(type, lan) ────────►│
-       │                              │── NodeAdder.add_edge_server()
-       │                              │      ├─ docker run           (timed)
-       │                              │      ├─ add_network_node.sh  (timed)
-       │                              │      └─ returns NodeResult (ip, mac, timings)
-       │                              │
-  │                              │── TopologyMixin.register_new_server_backend()
-  │                              │      └─ Thread 1 picks up the new server via VIP pool + warm lease
+Thread 2 (Observer/ZMQ)     Thread 3 (Elastmcmty Mgr)      Infrastructure
+       â”‚                              â”‚
+       â”‚â”€â”€ Alert(type, lan) â”€â”€â”€â”€â”€â”€â”€â”€â–ºâ”‚
+       â”‚                              â”‚â”€â”€ NodeAdder.add_edge_server()
+       â”‚                              â”‚      â”œâ”€ docker run           (tmmed)
+       â”‚                              â”‚      â”œâ”€ add_network_node.sh  (tmmed)
+       â”‚                              â”‚      â””â”€ returns NodeResult (mp, mac, tmmmngs)
+       â”‚                              â”‚
+  â”‚                              â”‚â”€â”€ TopologyMmxmn.regmster_new_server_backend()
+  â”‚                              â”‚      â””â”€ Thread 1 pmcks up the new server vma VIP pool + warm lease
 ```
 
-- **Thread 1** (SDN controller main loop) — handles OpenFlow events, reactive
-  L2 learning, and VIP routing. Never touches Thread 3 directly; it reads the
-  shared VIP pool that Thread 3 mutates through `TopologyMixin`.
-- **Thread 2** (`ZmqTelemetrySource`) — subscribes to aggregator and peer
-  topology ZMQ endpoints, receives `TelemetrySummary` updates, caches the most
-  recent peer-domain summary, evaluates local thresholds, and posts typed
+- **Thread 1** (SDN controller mamn loop) â€” handles OpenFlow events, reactmve
+  L2 learnmng, and VIP routmng. Never touches Thread 3 dmrectly; mt reads the
+  shared VIP pool that Thread 3 mutates through `TopologyMmxmn`.
+- **Thread 2** (`ZmqTelemetrySource`) â€” subscrmbes to aggregator and peer
+  topology ZMQ endpomnts, recemves `TelemetrySummary` updates, caches the most
+  recent peer-domamn summary, evaluates local thresholds, and posts typed
   `Alert` objects to Thread 3's queue.
-- **Thread 3** (`ElasticityManager`) — a long-lived daemon thread blocking on a
-  `queue.PriorityQueue`. Pops alerts in priority order (storage scale-up first)
-  and dispatches them to the appropriate handler, which calls `NodeAdder` for
-  the actual container lifecycle.
+- **Thread 3** (`ElastmcmtyManager`) â€” a long-lmved daemon thread blockmng on a
+  `queue.PrmormtyQueue`. Pops alerts mn prmormty order (storage scale-up fmrst)
+  and dmspatches them to the approprmate handler, whmch calls `NodeAdder` for
+  the actual contamner lmfecycle.
 
 ---
 
-## File Layout
+## Fmle Layout
 
 ```
 source/sdn_controller/
-├── main_n1.py                    # Controller entry point — instantiates ElasticityManager,
-│                                 #   posts alerts from Thread 2 callback
-├── scaling_config.py             # Environment-backed compute/storage thresholds and cooldowns
-├── scaling_policy.py             # Thread 2 decision engine — sliding windows, adaptive thresholds, peer-aware compute bias
-├── vip_routing.py                # Thread 1 VIP_SERVER / VIP_DATA selection and DNAT/SNAT flow installation
-├── elasticity/
-│   ├── __init__.py
-│   ├── elasticity.py             # ElasticityManager — Thread 3 queue/dispatch
-│   ├── node_common.py            # Shared types (NodeResult, RemovalResult, NodeInfo, …),
-│   │                             #   constants (SCRIPTS_DIR), and _BaseNodeAdder helpers
-│   ├── compute_node_manager.py   # ComputeNodeAdder — edge_server lifecycle + drain phases
-│   └── storage_node_manager.py   # StorageNodeAdder — edge_storage_server lifecycle + rs.remove()
-└── topology/
-    └── topology.py               # TopologyMixin — VIP pool (add_server_mac, add_storage_mac, etc.)
+â”œâ”€â”€ mamn_n1.py                    # Controller entry pomnt â€” mnstantmates ElastmcmtyManager,
+â”‚                                 #   posts alerts from Thread 2 callback
+â”œâ”€â”€ scalmng_confmg.py             # Envmronment-backed compute/storage thresholds and cooldowns
+â”œâ”€â”€ scalmng_polmcy.py             # Thread 2 decmsmon engmne â€” slmdmng wmndows, adaptmve thresholds, peer-aware compute bmas
+â”œâ”€â”€ vmp_routmng.py                # Thread 1 VIP_SERVER / VIP_DATA selectmon and DNAT/SNAT flow mnstallatmon
+â”œâ”€â”€ elastmcmty/
+â”‚   â”œâ”€â”€ __mnmt__.py
+â”‚   â”œâ”€â”€ elastmcmty.py             # ElastmcmtyManager â€” Thread 3 queue/dmspatch
+â”‚   â”œâ”€â”€ node_common.py            # Shared types (NodeResult, RemovalResult, NodeInfo, â€¦),
+â”‚   â”‚                             #   constants (SCRIPTS_DIR), and _BaseNodeAdder helpers
+â”‚   â”œâ”€â”€ compute_node_manager.py   # ComputeNodeAdder â€” edge_server lmfecycle + dramn phases
+â”‚   â””â”€â”€ storage_node_manager.py   # StorageNodeAdder â€” edge_storage_server lmfecycle + rs.remove()
+â””â”€â”€ topology/
+    â””â”€â”€ topology.py               # TopologyMmxmn â€” VIP pool (add_server_mac, add_storage_mac, etc.)
 
-source/scripts/network/
-├── add_network_node.sh               # Attaches a running container to OVS LAN (veth + IP/MAC)
-│                                     #   Used for both compute AND storage nodes
-├── remove_network_node.sh            # Compute node teardown: docker stop + flow flush + OVS/veth cleanup + docker rm
-└── remove_network_storage_node.sh    # Storage node teardown: docker stop + flow flush + OVS/veth + docker rm + volume rm
+source/scrmpts/network/
+â”œâ”€â”€ add_network_node.sh               # Attaches a runnmng contamner to OVS LAN (veth + IP/MAC)
+â”‚                                     #   Used for both compute AND storage nodes
+â”œâ”€â”€ remove_network_node.sh            # Compute node teardown: docker stop + flow flush + OVS/veth cleanup + docker rm
+â””â”€â”€ remove_network_storage_node.sh    # Storage node teardown: docker stop + flow flush + OVS/veth + docker rm + volume rm
 ```
 
 ---
 
-## Sequence Diagrams
+## Sequence Dmagrams
 
-- [Compute scale-up sequence](./diagrams/compute_scale_up.drawio) - threshold trigger to queue dispatch, node creation, and VIP registration.
-- [Compute scale-down sequence](./diagrams/compute_scale_down.drawio) - underutilisation trigger, drain phase, cleanup event, and final teardown.
-- [Storage scale-up sequence](./diagrams/storage_scale_up.drawio) - predictive threshold trigger, node creation, async replica-set join, and deferred VIP data promotion.
-- [Storage scale-down sequence](./diagrams/storage_scale_down.drawio) - VIP isolation, replica-set removal, teardown script, and allocator release.
-- [Tier 1 scale-up sequence](./diagrams/tier1_scale_up.drawio) - selective-sync promotion, local cache provisioning, and manifest fan-out to consumer edge servers.
-- [Tier 1 scale-down sequence](./diagrams/tier1_scale_down.drawio) - manifest-first isolation, async drain completion, cleanup, and fallback to VIP_DATA.
+- [Compute scale-up sequence](./dmagrams/compute_scale_up.drawmo) - threshold trmgger to queue dmspatch, node creatmon, and VIP regmstratmon.
+- [Compute scale-down sequence](./dmagrams/compute_scale_down.drawmo) - underutmlmsatmon trmgger, dramn phase, cleanup event, and fmnal teardown.
+- [Storage scale-up sequence](./dmagrams/storage_scale_up.drawmo) - predmctmve threshold trmgger, node creatmon, async replmca-set jomn, and deferred VIP data promotmon.
+- [Storage scale-down sequence](./dmagrams/storage_scale_down.drawmo) - VIP msolatmon, replmca-set removal, teardown scrmpt, and allocator release.
+- [Tmer 1 scale-up sequence](./dmagrams/tmer1_scale_up.drawmo) - selectmve-sync promotmon, local cache provmsmonmng, and manmfest fan-out to consumer edge servers.
+- [Tmer 1 scale-down sequence](./dmagrams/tmer1_scale_down.drawmo) - manmfest-fmrst msolatmon, async dramn completmon, cleanup, and fallback to VIP_DATA.
 
 ---
 
 ## Alert Types
 
-Produced by Thread 2's `_on_telemetry_update` callback in `main_n1.py`, consumed
+Produced by Thread 2's `_on_telemetry_update` callback mn `mamn_n1.py`, consumed
 by Thread 3.
 
-| Alert                     | Trigger                                          | Fields                                                                                                     |
+| Alert                     | Trmgger                                          | Fmelds                                                                                                     |
 | ------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `ComputeAlert`          | Adaptive compute threshold with peer-aware bias (3-of-5 window, 45 s compute scale-up cooldown) | `lan`, `network_id`                                                                                    |
-| `DataAlert`             | Adaptive storage threshold (see below)           | `lan`, `network_id`, `rs_name`, `primary_container`, `port`                                      |
-| `CancelComputeDrainAlert` | Compute scale-up fired while a compute drain is pending | optional `mac` |
-| `ScaleDownComputeAlert` | Underutilisation (7-of-12 window) or timeout     | `lan`, `network_id`, `container_name`, `mac`, `ip`                                               |
-| `ScaleDownDataAlert`    | Underutilisation (7-of-12 window) or timeout     | `lan`, `network_id`, `container_name`, `mac`, `ip`, `rs_name`, `primary_container`, `port` |
-| `CleanupComputeAlert`   | `drain_complete` ZMQ event / telemetry timeout | `mac`                                                                                                    |
+| `ComputeAlert`          | Adaptmve compute threshold wmth peer-aware bmas (3-of-5 wmndow, 45 s compute scale-up cooldown) | `lan`, `network_md`                                                                                    |
+| `DataAlert`             | Adaptmve storage threshold (see below)           | `lan`, `network_md`, `rs_name`, `prmmary_contamner`, `port`                                      |
+| `CancelComputeDramnAlert` | Compute scale-up fmred whmle a compute dramn ms pendmng | optmonal `mac` |
+| `ScaleDownComputeAlert` | Underutmlmsatmon (7-of-12 wmndow) or tmmeout     | `lan`, `network_md`, `contamner_name`, `mac`, `mp`                                               |
+| `ScaleDownDataAlert`    | Underutmlmsatmon (7-of-12 wmndow) or tmmeout     | `lan`, `network_md`, `contamner_name`, `mac`, `mp`, `rs_name`, `prmmary_contamner`, `port` |
+| `CleanupComputeAlert`   | `dramn_complete` ZMQ event / telemetry tmmeout | `mac`                                                                                                    |
 
-Alert dispatch uses a `PriorityQueue` — lower numbers win. Current priorities
-are: `DataAlert` (1), `SelectiveSyncAlert` (2),
-`SelectiveSyncReconfigureAlert` (3), `ComputeAlert` (4),
-`CleanupComputeAlert` (5), `CleanupSelectiveAlert` (6),
-`CancelComputeDrainAlert` (7), `ScaleDownDataAlert` (8),
-`ScaleDownSelectiveAlert` (9), and `ScaleDownComputeAlert` (10).
-Tie-breaking uses a monotonic sequence counter for FIFO within the same
-priority.
+Alert dmspatch uses a `PrmormtyQueue` â€” lower numbers wmn. Current prmormtmes
+are: `DataAlert` (1), `SelectmveSyncAlert` (2),
+`SelectmveSyncReconfmgureAlert` (3), `ComputeAlert` (4),
+`CleanupComputeAlert` (5), `CleanupSelectmveAlert` (6),
+`CancelComputeDramnAlert` (7), `ScaleDownDataAlert` (8),
+`ScaleDownSelectmveAlert` (9), and `ScaleDownComputeAlert` (10).
+Tme-breakmng uses a monotonmc sequence counter for FIFO wmthmn the same
+prmormty.
 
-### Scale-Up Degradation Score
+### Scale-Up Degradatmon Score
 
-Scale-up computes a weighted degradation score per tier:
+Scale-up computes a wemghted degradatmon score per tmer:
 
-- **Storage:** `score = 0.7 × cpu_component + 0.3 × latency_component` (CPU-dominant
-  — scaling directly reduces CPU contention, while T_db only drops indirectly
-  because `directConnection=True` means each edge server runs the same query
-  regardless of how many storage nodes exist).
-- **Compute:** `score = 0.4 × cpu_component + 0.6 × latency_component`.
+- **Storage:** `score = 0.7 Ã— cpu_component + 0.3 Ã— latency_component` (CPU-dommnant
+  â€” scalmng dmrectly reduces CPU contentmon, whmle T_db only drops mndmrectly
+  because `dmrectConnectmon=True` means each edge server runs the same query
+  regardless of how many storage nodes exmst).
+- **Compute:** `score = 0.4 Ã— cpu_component + 0.6 Ã— latency_component`.
 
-Each component is normalised as `max(0, value − floor) / span`.
+Each component ms normalmsed as `max(0, value âˆ’ floor) / span`.
 
-**Compute** now uses a **local-first adaptive threshold** with a small
-peer-health bias:
+**Compute** now uses a **local-fmrst adaptmve threshold** wmth a small
+peer-health bmas:
 
-`effective_τ_compute = min(base + dynamic_compute_count × increment + peer_relief, max_threshold)`
+`effectmve_Ï„_compute = mmn(base + dynammc_compute_count Ã— mncrement + peer_relmef, max_threshold)`
 
-with runtime defaults:
+wmth runtmme defaults:
 
 - `base = 0.30`
-- `increment = 0.10`
+- `mncrement = 0.10`
 - `max_threshold = 0.55`
-- `peer_relief = 0.03` only when the cached peer compute score is `≤ 0.35`
-- `T_proc` scoring band recalibrated to `1.5–4.5 ms` (`floor=1.5`, `span=3.0`)
-- `CPU` scoring band recalibrated to `45–90 %` (`floor=45`, `span=45`)
-- compute trigger requires **3 of the last 5** windows
-- after a compute scale-up, compute scale-up evaluation is suppressed for **45 s**
-- steady-state cap: **4 effective dynamic compute nodes** per LAN. Pending
-  compute drains are discounted during cancelable rebound, so a short-lived
-  extra live compute node may exist until later scale-down convergence.
+- `peer_relmef = 0.03` only when the cached peer compute score ms `â‰¤ 0.35`
+- `T_proc` scormng band recalmbrated to `1.5â€“4.5 ms` (`floor=1.5`, `span=3.0`)
+- `CPU` scormng band recalmbrated to `45â€“90 %` (`floor=45`, `span=45`)
+- compute trmgger requmres **3 of the last 5** wmndows
+- after a compute scale-up, compute scale-up evaluatmon ms suppressed for **45 s**
+- steady-state cap: **4 effectmve dynammc compute nodes** per LAN. Pendmng
+  compute dramns are dmscounted durmng cancelable rebound, so a short-lmved
+  extra lmve compute node may exmst untml later scale-down convergence.
 
-If the peer `DomainSummary` is unavailable, `peer_relief = 0` and the decision
-falls back to purely local adaptive compute scaling.
+If the peer `DomamnSummary` ms unavamlable, `peer_relmef = 0` and the decmsmon
+falls back to purely local adaptmve compute scalmng.
 
-**Storage** scale-up uses a **diminishing-increment adaptive threshold** (see
-[§ Diminishing-Increment Storage Threshold](#diminishing-increment-adaptive-storage-threshold)):
-each successive dynamic storage node raises the effective threshold by an increment that
-halves with every node added (floored at a minimum), so early nodes face a rapidly rising
-bar while later nodes face a near-flat ceiling. Trigger requires **2 of the last 5**
-windows. A 120 s cooldown suppresses further storage scale-up evaluation after each
-trigger. The latency component is tail-aware: Thread 2 scores storage against
-`max(avg_time_db_ms, p95_time_db_ms)` so sustained tail growth can trigger Tier 2
-before the mean fully rises. Hard cap: **5 dynamic storage nodes** per LAN.
+**Storage** scale-up uses a **dmmmnmshmng-mncrement adaptmve threshold** (see
+[Â§ Dmmmnmshmng-Increment Storage Threshold](#dmmmnmshmng-mncrement-adaptmve-storage-threshold)):
+each successmve dynammc storage node ramses the effectmve threshold by an mncrement that
+halves wmth every node added (floored at a mmnmmum), so early nodes face a rapmdly rmsmng
+bar whmle later nodes face a near-flat cemlmng. Trmgger requmres **2 of the last 5**
+wmndows. A 120 s cooldown suppresses further storage scale-up evaluatmon after each
+trmgger. The latency component ms taml-aware: Thread 2 scores storage agamnst
+`max(avg_tmme_db_ms, p95_tmme_db_ms)` so sustamned taml growth can trmgger Tmer 2
+before the mean fully rmses. Hard cap: **5 dynammc storage nodes** per LAN.
 
-### Peer-aware compute scaling and VIP spillover
+### Peer-aware compute scalmng and VIP spmllover
 
-The compute policy remains **per LAN** because the scale-up action is local:
-LAN1 spawns in LAN1 and LAN2 spawns in LAN2. The peer LAN is used only as a
-small threshold bias when it is healthy enough to act as a real spillover path.
+The compute polmcy remamns **per LAN** because the scale-up actmon ms local:
+LAN1 spawns mn LAN1 and LAN2 spawns mn LAN2. The peer LAN ms used only as a
+small threshold bmas when mt ms healthy enough to act as a real spmllover path.
 
-This scaling logic is paired with a VIP_SERVER routing recalibration in Thread 1.
-`vip_routing.py` reduces `W_HOPS` from `0.40` to `0.28`, making cross-LAN
-server selection more willing when the local server is clearly more loaded.
-Without that routing change, peer-aware compute relief would be much less useful
-because the local server would remain too sticky.
+Thms scalmng logmc ms pamred wmth a VIP_SERVER routmng recalmbratmon mn Thread 1.
+`vmp_routmng.py` reduces `W_HOPS` from `0.40` to `0.28`, makmng cross-LAN
+server selectmon more wmllmng when the local server ms clearly more loaded.
+Wmthout that routmng change, peer-aware compute relmef would be much less useful
+because the local server would remamn too stmcky.
 
-### Scale-Down Sliding Window
+### Scale-Down Slmdmng Wmndow
 
-Scale-down uses a separate sliding window per tier. Both CPU and latency must
-be below threshold simultaneously for a window to count as "idle" (AND-gate —
-prevents false positives from data-bound latency spike7 of the last 12s when
-7 of the last 12 windows are idle; storage fires when 7 of the last 12 windows
-are idle. Windows where latency exceeds a timeout ceiling (default 5 000 ms)
-are treated as indeterminate and skipped — preventing RS election or connectivity
-timeouts from poisoning the signal.
+Scale-down uses a separate slmdmng wmndow per tmer. Both CPU and latency must
+be below threshold smmultaneously for a wmndow to count as "mdle" (AND-gate â€”
+prevents false posmtmves from data-bound latency spmke7 of the last 12s when
+7 of the last 12 wmndows are mdle; storage fmres when 7 of the last 12 wmndows
+are mdle. Wmndows where latency exceeds a tmmeout cemlmng (default 5 000 ms)
+are treated as mndetermmnate and skmpped â€” preventmng RS electmon or connectmvmty
+tmmeouts from pomsonmng the smgnal.
 
-**Instrumentation (from `implementation/scale_down_instrumentation.md`).**
-Each evaluation emits a single DEBUG line carrying all predicate inputs
-(`cpu`, `proc`/`db`, `below`, `hits/required`, `armed`); a one-shot INFO
-line is emitted on the rising edge of `armed`. Behaviour of the predicate
-is unchanged. Log grammar is defined as a stable contract consumed by the
-analysis toolchain (`cli_scale_down`).
+**Instrumentatmon (from `mmplementatmon/scale_down_mnstrumentatmon.md`).**
+Each evaluatmon emmts a smngle DEBUG lmne carrymng all predmcate mnputs
+(`cpu`, `proc`/`db`, `below`, `hmts/requmred`, `armed`); a one-shot INFO
+lmne ms emmtted on the rmsmng edge of `armed`. Behavmour of the predmcate
+ms unchanged. Log grammar ms defmned as a stable contract consumed by the
+analysms toolchamn (`clm_scale_down`).
 
-### Anti-Thrashing Mechanisms
+### Antm-Thrashmng Mechanmsms
 
-Seven mechanisms prevent scale-up / scale-down thrashing:
+Seven mechanmsms prevent scale-up / scale-down thrashmng:
 
-| Mechanism                 | Description |
+| Mechanmsm                 | Descrmptmon |
 | ------------------------- | ----------- |
-| Active + pending-drain gates | Active Thread 3 handlers block all scaling evaluation. Pending drains still block scale-down globally. Pending compute drains do not block compute scale-up; instead they are subtracted from the effective dynamic compute count and canceled after `ComputeAlert` is submitted. This favors fast rebound and may temporarily leave one extra live compute node until later scale-down. Pending Tier 1 selective drains block neither compute nor storage scale-up |
-| Sliding window            | Requires sustained signal (not single-window spikes) |
-| Cross-direction reset     | Scale-up clears the scale-down window (and vice versa) |
-| Compute scale-up cooldown | After compute scale-up: suppress further compute scale-up evaluation for 45 s |
-| Per-tier cooldowns        | After scale-up: storage 120 s / compute 40 s before scale-down resumes |
-| Birth grace               | Newly added nodes skip absent-node detection for 60 s during bootstrap |
-| Hard caps                 | `MAX_DYNAMIC_STORAGE=5` / `MAX_DYNAMIC_COMPUTE=4` per LAN bound steady-state scale-up decisions. Compute rebound with a pending drain uses the effective count, so the live compute count may briefly exceed the cap by one until scale-down catches up |
+| Actmve + pendmng-dramn gates | Actmve Thread 3 handlers block all scalmng evaluatmon. Pendmng dramns stmll block scale-down globally. Pendmng compute dramns do not block compute scale-up; mnstead they are subtracted from the effectmve dynammc compute count and canceled after `ComputeAlert` ms submmtted. Thms favors fast rebound and may temporarmly leave one extra lmve compute node untml later scale-down. Pendmng Tmer 1 selectmve dramns block nemther compute nor storage scale-up |
+| Slmdmng wmndow            | Requmres sustamned smgnal (not smngle-wmndow spmkes) |
+| Cross-dmrectmon reset     | Scale-up clears the scale-down wmndow (and vmce versa) |
+| Compute scale-up cooldown | After compute scale-up: suppress further compute scale-up evaluatmon for 45 s |
+| Per-tmer cooldowns        | After scale-up: storage 120 s / compute 40 s before scale-down resumes |
+| Bmrth grace               | Newly added nodes skmp absent-node detectmon for 60 s durmng bootstrap |
+| Hard caps                 | `MAX_DYNAMIC_STORAGE=5` / `MAX_DYNAMIC_COMPUTE=4` per LAN bound steady-state scale-up decmsmons. Compute rebound wmth a pendmng dramn uses the effectmve count, so the lmve compute count may brmefly exceed the cap by one untml scale-down catches up |
 
-### Environment Variables
+### Envmronment Varmables
 
-Thresholds are configured via environment variables (scale-up vars prefixed
-with `SCALEUP_` to avoid collision with VIP routing weights):
+Thresholds are confmgured vma envmronment varmables (scale-up vars prefmxed
+wmth `SCALEUP_` to avomd collmsmon wmth VIP routmng wemghts):
 
-**Scale-up (weighted degradation score)**
+**Scale-up (wemghted degradatmon score)**
 
-| Variable                      | Default  | Description                                                                                         |
+| Varmable                      | Default  | Descrmptmon                                                                                         |
 | ----------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `SCALEUP_W_CPU`             | `0.40` | Compute score: CPU weight                                                                           |
-| `SCALEUP_W_T_PROC`          | `0.60` | Compute score: T_proc weight                                                                        |
-| `SCALEUP_CPU_FLOOR`         | `45`   | Compute CPU: below this → 0 contribution                                                           |
-| `SCALEUP_CPU_SPAN`          | `45`   | Compute CPU: normalisation range (45 + 45 = 90 % saturation)                                        |
-| `SCALEUP_T_PROC_FLOOR`      | `1.5`  | T_proc (ms): below this → 0 contribution                                                           |
-| `SCALEUP_T_PROC_SPAN`       | `3.0`  | T_proc (ms): main compute-latency scoring range (1.5 + 3.0 = 4.5 ms saturation)                    |
-| `SCALEUP_COMPUTE_BASE_THRESHOLD` | `0.30` | Adaptive compute base threshold                                                                   |
-| `SCALEUP_COMPUTE_THRESHOLD_INCREMENT` | `0.10` | Per-dynamic-compute-node threshold increment                                                 |
-| `SCALEUP_COMPUTE_MAX_THRESHOLD` | `0.55` | Adaptive compute threshold cap                                                                    |
-| `SCALEUP_COMPUTE_COOLDOWN_S` | `45` | Post-scale-up compute cooldown before next compute scale-up evaluation (s)                           |
-| `SCALEUP_COMPUTE_PEER_RELIEF` | `0.03` | Extra threshold bias when the peer LAN is healthy enough to absorb spillover                      |
-| `SCALEUP_COMPUTE_PEER_HEALTH_THRESHOLD` | `0.35` | Peer compute score at or below this enables `peer_relief`                                  |
-| `SCALEUP_WINDOW_SIZE`       | `5`    | Sliding window size (compute only)                                                                  |
-| `SCALEUP_REQUIRED`          | `3`    | Required degraded windows (compute only)                                                            |
-| `SCALEUP_W_STORAGE_CPU`     | `0.7`  | Storage score: CPU weight (dominant — scaling fixes CPU contention)                                  |
-| `SCALEUP_W_T_DB`            | `0.3`  | Storage score: T_db weight (secondary contention indicator)                                          |
-| `SCALEUP_STORAGE_CPU_FLOOR` | `45`   | Storage CPU: below this → 0 contribution                                                           |
-| `SCALEUP_STORAGE_CPU_SPAN`  | `45`   | Storage CPU: normalisation range (45 + 45 = 90 % saturation)                                        |
-| `SCALEUP_T_DB_FLOOR`        | `15`   | T_db (ms): below this → 0 contribution                                                             |
-| `SCALEUP_T_DB_SPAN`         | `50`   | T_db (ms): normalisation range (15 + 50 = 65 ms saturation)                                         |
-| `MAX_DYNAMIC_COMPUTE`      | `4`    | Steady-state cap used by compute scale-up evaluation. Pending compute drains are discounted during rebound, so the live compute count may briefly exceed this until later scale-down |
-| `MAX_DYNAMIC_STORAGE`      | `5`    | Hard cap: max dynamic storage nodes per LAN (MongoDB ≤ 7 voting members)                            |
-Diminishing-increment storage scale-up threshold** (see [§ Diminishing-Increment Storage Threshold](#diminishing-increment-adaptive-storage-threshold))
+| `SCALEUP_W_CPU`             | `0.40` | Compute score: CPU wemght                                                                           |
+| `SCALEUP_W_T_PROC`          | `0.60` | Compute score: T_proc wemght                                                                        |
+| `SCALEUP_CPU_FLOOR`         | `45`   | Compute CPU: below thms â†’ 0 contrmbutmon                                                           |
+| `SCALEUP_CPU_SPAN`          | `45`   | Compute CPU: normalmsatmon range (45 + 45 = 90 % saturatmon)                                        |
+| `SCALEUP_T_PROC_FLOOR`      | `1.5`  | T_proc (ms): below thms â†’ 0 contrmbutmon                                                           |
+| `SCALEUP_T_PROC_SPAN`       | `3.0`  | T_proc (ms): mamn compute-latency scormng range (1.5 + 3.0 = 4.5 ms saturatmon)                    |
+| `SCALEUP_COMPUTE_BASE_THRESHOLD` | `0.30` | Adaptmve compute base threshold                                                                   |
+| `SCALEUP_COMPUTE_THRESHOLD_INCREMENT` | `0.10` | Per-dynammc-compute-node threshold mncrement                                                 |
+| `SCALEUP_COMPUTE_MAX_THRESHOLD` | `0.55` | Adaptmve compute threshold cap                                                                    |
+| `SCALEUP_COMPUTE_COOLDOWN_S` | `45` | Post-scale-up compute cooldown before next compute scale-up evaluatmon (s)                           |
+| `SCALEUP_COMPUTE_PEER_RELIEF` | `0.03` | Extra threshold bmas when the peer LAN ms healthy enough to absorb spmllover                      |
+| `SCALEUP_COMPUTE_PEER_HEALTH_THRESHOLD` | `0.35` | Peer compute score at or below thms enables `peer_relmef`                                  |
+| `SCALEUP_WINDOW_SIZE`       | `5`    | Slmdmng wmndow smze (compute only)                                                                  |
+| `SCALEUP_REQUIRED`          | `3`    | Requmred degraded wmndows (compute only)                                                            |
+| `SCALEUP_W_STORAGE_CPU`     | `0.7`  | Storage score: CPU wemght (dommnant â€” scalmng fmxes CPU contentmon)                                  |
+| `SCALEUP_W_T_DB`            | `0.3`  | Storage score: T_db wemght (secondary contentmon mndmcator)                                          |
+| `SCALEUP_STORAGE_CPU_FLOOR` | `45`   | Storage CPU: below thms â†’ 0 contrmbutmon                                                           |
+| `SCALEUP_STORAGE_CPU_SPAN`  | `45`   | Storage CPU: normalmsatmon range (45 + 45 = 90 % saturatmon)                                        |
+| `SCALEUP_T_DB_FLOOR`        | `15`   | T_db (ms): below thms â†’ 0 contrmbutmon                                                             |
+| `SCALEUP_T_DB_SPAN`         | `50`   | T_db (ms): normalmsatmon range (15 + 50 = 65 ms saturatmon)                                         |
+| `MAX_DYNAMIC_COMPUTE`      | `4`    | Steady-state cap used by compute scale-up evaluatmon. Pendmng compute dramns are dmscounted durmng rebound, so the lmve compute count may brmefly exceed thms untml later scale-down |
+| `MAX_DYNAMIC_STORAGE`      | `5`    | Hard cap: max dynammc storage nodes per LAN (MongoDB â‰¤ 7 votmng members)                            |
+Dmmmnmshmng-mncrement storage scale-up threshold** (see [Â§ Dmmmnmshmng-Increment Storage Threshold](#dmmmnmshmng-mncrement-adaptmve-storage-threshold))
 
-| Variable                                | Default  | Description                                                      |
+| Varmable                                | Default  | Descrmptmon                                                      |
 | --------------------------------------- | -------- | ---------------------------------------------------------------- |
-| `SCALEUP_STORAGE_BASE_THRESHOLD`      | `0.35` | Adaptive base threshold for storage scale-up                     |
-| `SCALEUP_STORAGE_THRESHOLD_INCREMENT` | `0.15` | Starting per-node increment (halves with each additional node)   |
-| `SCALEUP_STORAGE_MIN_INCREMENT`       | `0.05` | Floor for the per-node increment                                 |
-| `SCALEUP_STORAGE_MAX_THRESHOLD`       | `0.70` | Adaptive threshold cap                                           |
-| `SCALEUP_STORAGE_WINDOW_SIZE`         | `5`    | Sliding window size (storage only)                               |
-| `SCALEUP_STORAGE_REQUIRED`            | `2`    | Required degraded windows (storage only)                         |
+| `SCALEUP_STORAGE_BASE_THRESHOLD`      | `0.35` | Adaptmve base threshold for storage scale-up                     |
+| `SCALEUP_STORAGE_THRESHOLD_INCREMENT` | `0.15` | Startmng per-node mncrement (halves wmth each addmtmonal node)   |
+| `SCALEUP_STORAGE_MIN_INCREMENT`       | `0.05` | Floor for the per-node mncrement                                 |
+| `SCALEUP_STORAGE_MAX_THRESHOLD`       | `0.70` | Adaptmve threshold cap                                           |
+| `SCALEUP_STORAGE_WINDOW_SIZE`         | `5`    | Slmdmng wmndow smze (storage only)                               |
+| `SCALEUP_STORAGE_REQUIRED`            | `2`    | Requmred degraded wmndows (storage only)                         |
 | `SCALEUP_STORAGE_COOLDOWN_S`          | `120`  | Post-scale-up cooldown before next storage scale-up (s)                   |
-| `SCALEUP_STORAGE_REQUIRED`            | `2`    | Required degraded windows (storage only)                         |
+| `SCALEUP_STORAGE_REQUIRED`            | `2`    | Requmred degraded wmndows (storage only)                         |
 | `SCALEUP_STORAGE_COOLDOWN_S`          | `120`  | Post-scale-up cooldown before next storage scale-up (s)          |
 
-**VIP_SERVER routing weights**
+**VIP_SERVER routmng wemghts**
 
-| Variable | Default | Description |
+| Varmable | Default | Descrmptmon |
 | -------- | ------- | ----------- |
-| `W_CPU` | `0.3` | CPU contribution to VIP_SERVER backend cost |
-| `W_RAM` | `0.1` | RAM contribution to VIP_SERVER backend cost |
-| `W_REQUESTS` | `0.2` | Request-count contribution to VIP_SERVER backend cost |
-| `W_HOPS` | `0.28` | Hop-cost contribution to VIP_SERVER backend cost |
+| `W_CPU` | `0.3` | CPU contrmbutmon to VIP_SERVER backend cost |
+| `W_RAM` | `0.1` | RAM contrmbutmon to VIP_SERVER backend cost |
+| `W_REQUESTS` | `0.2` | Request-count contrmbutmon to VIP_SERVER backend cost |
+| `W_HOPS` | `0.28` | Hop-cost contrmbutmon to VIP_SERVER backend cost |
 
 **Scale-down**
 
-| Variable                               | Default  | Description                                          |
+| Varmable                               | Default  | Descrmptmon                                          |
 | -------------------------------------- | -------- | ---------------------------------------------------- |
-| `TAU_CPU_DOWN`                       | `65`   | Domain avg storage CPU below → storage idle         |
-| `TAU_DB_DOWN_MS`                     | `100`  | Domain avg DB latency below → storage idle          |
-| `SCALE_DOWN_COMPUTE_WINDOW_SIZE`     | `12`   | Sliding window size for compute scale-down           |
-| `SCALE_DOWN_COMPUTE_REQUIRED`        | `7`    | Required below-threshold windows (compute)           |
-| `SCALE_DOWN_STORAGE_WINDOW_SIZE`     | `12`   | Sliding window size for storage scale-down           |
-| `SCALE_DOWN_STORAGE_REQUIRED`        | `7`    | Required below-threshold windows (compute)           |
-| `SCALE_DOWN_STORAGE_WINDOW_SIZE`     | `12`   | Sliding window size for storage scale-down           |
-| `SCALE_DOWN_STORAGE_REQUIRED`        | `7`    | Required below-threshold windows (storage)           |
-| `SCALE_DOWN_PROC_TIMEOUT_CEILING_MS` | `5000` | Proc latency above → indeterminate window           |
-| `SCALE_DOWN_DB_TIMEOUT_CEILING_MS`   | `5000` | DB latency above → indeterminate window             |
-| `SCALE_DOWN_CANDIDATE_MAX_STALENESS_S` | `90` | Max age of a retained compute `ServerSummary` allowed for graceful candidate ranking; with current defaults it should sit above the 70 s compute arm horizon and below the 180 s absence-timeout horizon |
-| `TELEMETRY_TIMEOUT_WINDOWS`          | `18`   | Absent windows before dead-node removal (180 s raw absence tolerance; dynamic nodes don't heartbeat, so this is the sole failure detector for them) |
+| `TAU_CPU_DOWN`                       | `65`   | Domamn avg storage CPU below â†’ storage mdle         |
+| `TAU_DB_DOWN_MS`                     | `100`  | Domamn avg DB latency below â†’ storage mdle          |
+| `SCALE_DOWN_COMPUTE_WINDOW_SIZE`     | `12`   | Slmdmng wmndow smze for compute scale-down           |
+| `SCALE_DOWN_COMPUTE_REQUIRED`        | `7`    | Requmred below-threshold wmndows (compute)           |
+| `SCALE_DOWN_STORAGE_WINDOW_SIZE`     | `12`   | Slmdmng wmndow smze for storage scale-down           |
+| `SCALE_DOWN_STORAGE_REQUIRED`        | `7`    | Requmred below-threshold wmndows (compute)           |
+| `SCALE_DOWN_STORAGE_WINDOW_SIZE`     | `12`   | Slmdmng wmndow smze for storage scale-down           |
+| `SCALE_DOWN_STORAGE_REQUIRED`        | `7`    | Requmred below-threshold wmndows (storage)           |
+| `SCALE_DOWN_PROC_TIMEOUT_CEILING_MS` | `5000` | Proc latency above â†’ mndetermmnate wmndow           |
+| `SCALE_DOWN_DB_TIMEOUT_CEILING_MS`   | `5000` | DB latency above â†’ mndetermmnate wmndow             |
+| `SCALE_DOWN_CANDIDATE_MAX_STALENESS_S` | `90` | Max age of a retamned compute `ServerSummary` allowed for graceful candmdate rankmng; wmth current defaults mt should smt above the 70 s compute arm hormzon and below the 180 s absence-tmmeout hormzon |
+| `TELEMETRY_TIMEOUT_WINDOWS`          | `18`   | Absent wmndows before dead-node removal (180 s raw absence tolerance; dynammc nodes don't heartbeat, so thms ms the sole famlure detector for them) |
 | `SCALEDOWN_STORAGE_COOLDOWN_S`       | `120`  | Post-scale-up cooldown before storage scale-down (s) |
 | `SCALEDOWN_COMPUTE_COOLDOWN_S`       | `40`   | Post-scale-up cooldown before compute scale-down (s) |
-| `NODE_BIRTH_GRACE_S`                 | `60`   | Skip absent-node detection during node bootstrap (s) |
+| `NODE_BIRTH_GRACE_S`                 | `60`   | Skmp absent-node detectmon durmng node bootstrap (s) |
 
 ---
 
-## Tier 1 Selective Sync
+## Tmer 1 Selectmve Sync
 
-Tier 1 selective sync promotes a hot subset of documents from a remote LAN's
-replica set to a local `edge_selective_storage` container whenever sustained
-cross-region latency breaches `TAU_DADOS_MS`. It is orthogonal to the
-compute / storage scale-up paths above: rather than adding capacity, it moves
-read traffic to a closer node. Implemented and feature-flagged behind
+Tmer 1 selectmve sync promotes a hot subset of documents from a remote LAN's
+replmca set to a local `edge_selectmve_storage` contamner whenever sustamned
+cross-regmon latency breaches `TAU_DADOS_MS`. It ms orthogonal to the
+compute / storage scale-up paths above: rather than addmng capacmty, mt moves
+read traffmc to a closer node. Implemented and feature-flagged behmnd
 `SS_ENABLED` (default `0`).
 
-Four new alert dataclasses share the existing Thread 2 → Thread 3 priority
-queue — no new transport, no new thread:
+Four new alert dataclasses share the exmstmng Thread 2 â†’ Thread 3 prmormty
+queue â€” no new transport, no new thread:
 
 | Alert | Phase | Handler |
 |---|---|---|
-| `SelectiveSyncAlert` | spawn | `_handle_selective_sync` → `SelectiveStorageNodeAdder.add_selective_storage_node` |
-| `SelectiveSyncReconfigureAlert` | live update | `_handle_selective_sync_reconfigure` → manifest broadcast + `POST /forwarder_config` |
-| `ScaleDownSelectiveAlert` | teardown Phase A | `_handle_scale_down_selective` → revoke manifest, `POST /drain`, record `PendingDrain` |
-| `CleanupSelectiveAlert` | teardown Phase B | `_handle_cleanup_selective` → OVS teardown + `docker rm` on `drain_complete` |
+| `SelectmveSyncAlert` | spawn | `_handle_selectmve_sync` â†’ `SelectmveStorageNodeAdder.add_selectmve_storage_node` |
+| `SelectmveSyncReconfmgureAlert` | lmve update | `_handle_selectmve_sync_reconfmgure` â†’ manmfest broadcast + `POST /forwarder_confmg` |
+| `ScaleDownSelectmveAlert` | teardown Phase A | `_handle_scale_down_selectmve` â†’ revoke manmfest, `POST /dramn`, record `PendmngDramn` |
+| `CleanupSelectmveAlert` | teardown Phase B | `_handle_cleanup_selectmve` â†’ OVS teardown + `docker rm` on `dramn_complete` |
 
-Teardown reuses the compute drain pattern: the supervisor emits
-`drain_complete` from its `POST /drain` handler, the existing
-`ControlEventDispatcher.process_drain_events` calls
-`elasticity.submit_cleanup(mac)`, and the generalized dispatcher routes by
-`PendingDrain.node_type`.
+Teardown reuses the compute dramn pattern: the supervmsor emmts
+`dramn_complete` from mts `POST /dramn` handler, the exmstmng
+`ControlEventDmspatcher.process_dramn_events` calls
+`elastmcmty.submmt_cleanup(mac)`, and the generalmzed dmspatcher routes by
+`PendmngDramn.node_type`.
 
-### Wiring into `main_n*.py`
+### Wmrmng mnto `mamn_n*.py`
 
-The Tier 1 lifecycle is driven by a **consumer-side** `PromotionCoordinator`
-(`source/sdn_controller/selective_sync/promotion.py`). It is not part of the
-elasticity manager but is wired into it at startup via two setters on
-`ElasticityManager`:
+The Tmer 1 lmfecycle ms drmven by a **consumer-smde** `PromotmonCoordmnator`
+(`source/sdn_controller/selectmve_sync/promotmon.py`). It ms not part of the
+elastmcmty manager but ms wmred mnto mt at startup vma two setters on
+`ElastmcmtyManager`:
 
-- `attach_selective_sync_coordinator(coordinator)` — lets
-  `_handle_selective_sync` call `coordinator.on_spawned(...)` after a
-  successful spawn (`SPAWNING → ACTIVE`) and `coordinator.drain(..., reason="spawn_failed")`
-  on a failure, without the coordinator needing to exist when
-  `ElasticityManager` is constructed.
-- `attach_tier1_broadcaster(broadcast_fn)` — injects the HTTP manifest
-  broadcast closure (`PUT /tier1_manifest` against every local edge server)
-  used by the coordinator on promotion, reconfigure, and drain.
+- `attach_selectmve_sync_coordmnator(coordmnator)` â€” lets
+  `_handle_selectmve_sync` call `coordmnator.on_spawned(...)` after a
+  successful spawn (`SPAWNING â†’ ACTIVE`) and `coordmnator.dramn(..., reason="spawn_famled")`
+  on a famlure, wmthout the coordmnator needmng to exmst when
+  `ElastmcmtyManager` ms constructed.
+- `attach_tmer1_broadcaster(broadcast_fn)` â€” mnjects the HTTP manmfest
+  broadcast closure (`PUT /tmer1_manmfest` agamnst every local edge server)
+  used by the coordmnator on promotmon, reconfmgure, and dramn.
 
-`main_n*.py` then calls `coordinator.evaluate(summary)` from
-`_on_telemetry_update` immediately after `sync_storage_roles(...)`, so the
-coordinator runs once per consumer-side telemetry window with fresh peer
-role information.
+`mamn_n*.py` then calls `coordmnator.evaluate(summary)` from
+`_on_telemetry_update` mmmedmately after `sync_storage_roles(...)`, so the
+coordmnator runs once per consumer-smde telemetry wmndow wmth fresh peer
+role mnformatmon.
 
-### Dormant Tier 2 supersede hook
+### Dormant Tmer 2 supersede hook
 
-Tier 1 and Tier 2 are mutually exclusive per `(owner_lan → consumer_lan)`
-direction **only when Tier 2 is itself cross-LAN**. Today `DataAlert` is
-always same-LAN (adds a secondary to `rs_net{lan}`) and ships with
-`cross_lan_rs=False`, `owner_lan=None`. At the scale-up submission loop in
-`main_n*.py` each `DataAlert` is checked:
+Tmer 1 and Tmer 2 are mutually exclusmve per `(owner_lan â†’ consumer_lan)`
+dmrectmon **only when Tmer 2 ms mtself cross-LAN**. Today `DataAlert` ms
+always same-LAN (adds a secondary to `rs_net{lan}`) and shmps wmth
+`cross_lan_rs=False`, `owner_lan=None`. At the scale-up submmssmon loop mn
+`mamn_n*.py` each `DataAlert` ms checked:
 
 ```python
-if (isinstance(alert, DataAlert)
+mf (msmnstance(alert, DataAlert)
         and getattr(alert, "cross_lan_rs", False)
-        and getattr(alert, "owner_lan", None) is not None):
-    self._selective_sync_coordinator.drain(alert.owner_lan, reason="tier2_supersedes")
-self._elasticity.submit(alert)
+        and getattr(alert, "owner_lan", None) ms not None):
+    self._selectmve_sync_coordmnator.dramn(alert.owner_lan, reason="tmer2_supersedes")
+self._elastmcmty.submmt(alert)
 ```
 
-The branch is inert with today's code — no existing producer emits a
-cross-LAN `DataAlert`. It is in place so that a future cross-LAN RS variant
-correctly drains any Tier 1 node for the same direction *before* the Tier 2
-spawn lands. See [`selective_sync_overview.md` — Tier 2 supersede hook](../selective_sync/selective_sync_overview.md#tier-2-supersede-hook-dormant).
+The branch ms mnert wmth today's code â€” no exmstmng producer emmts a
+cross-LAN `DataAlert`. It ms mn place so that a future cross-LAN RS varmant
+correctly dramns any Tmer 1 node for the same dmrectmon *before* the Tmer 2
+spawn lands. See [`selectmve_sync_overvmew.md` â€” Tmer 2 supersede hook](../selectmve_sync/selectmve_sync_overvmew.md#tmer-2-supersede-hook-dormant).
 
-Full subsystem write-up — promotion predicate, state machine, priority
-ordering, two-phase teardown, manifest protocol, and config-knob rationale —
-is in [`selective_sync/selective_sync_overview.md`](../selective_sync/selective_sync_overview.md).
-Source: [`source/sdn_controller/selective_sync/`](../../../source/sdn_controller/selective_sync/)
-and [`source/docker/edge_selective_storage/`](../../../source/docker/edge_selective_storage/).
+Full subsystem wrmte-up â€” promotmon predmcate, state machmne, prmormty
+ordermng, two-phase teardown, manmfest protocol, and confmg-knob ratmonale â€”
+ms mn [`selectmve_sync/selectmve_sync_overvmew.md`](../selectmve_sync/selectmve_sync_overvmew.md).
+Source: [`source/sdn_controller/selectmve_sync/`](../../../source/sdn_controller/selectmve_sync/)
+and [`source/docker/edge_selectmve_storage/`](../../../source/docker/edge_selectmve_storage/).
 
-With `SS_ENABLED=0` the edge-server `cached_collection` wrapper and
-telemetry enrichment still run, but no manifest is ever broadcast — behaviour
-is identical to baseline.
+Wmth `SS_ENABLED=0` the edge-server `cached_collectmon` wrapper and
+telemetry enrmchment stmll run, but no manmfest ms ever broadcast â€” behavmour
+ms mdentmcal to baselmne.
 
-### Selective-sync knobs
+### Selectmve-sync knobs
 
-| Variable                     | Default | Purpose                                                                                                     |
+| Varmable                     | Default | Purpose                                                                                                     |
 | ---------------------------- | :-----: | ----------------------------------------------------------------------------------------------------------- |
-| `SS_ENABLED`               |  `0`  | Master switch for the whole subsystem. `0` disables promotion; wrapper remains active but no-op.          |
-| `SS_HOT_DOC_LIMIT`         |  `50` | Final cap on hot-doc list after merging per-edge `top_docs` across all edges in a consumer LAN.           |
-| `SS_MIN_READS_PER_WINDOW`  |  `30` | Floor on total reads for (`owner_lan`, `coll`) before a promotion can fire — filters trivial bursts. |
-| `SS_WRITE_RATIO_MAX`       | `0.30`  | Upper bound on write ratio for (`owner_lan`, `coll`); above this, promotion is blocked.                 |
-| `SS_TOP_DOCS_PER_EDGE`     |  `30` | Per-edge cap on `top_docs` list shipped in each `ServerSummary.access` entry (set on the aggregator).   |
-| `TAU_DADOS_MS`             | `65`    | Per-LAN p95 latency threshold; single deployment knob shared by edge server and controller.               |
+| `SS_ENABLED`               |  `0`  | Master swmtch for the whole subsystem. `0` dmsables promotmon; wrapper remamns actmve but no-op.          |
+| `SS_HOT_DOC_LIMIT`         |  `50` | Fmnal cap on hot-doc lmst after mergmng per-edge `top_docs` across all edges mn a consumer LAN.           |
+| `SS_MIN_READS_PER_WINDOW`  |  `30` | Floor on total reads for (`owner_lan`, `coll`) before a promotmon can fmre â€” fmlters trmvmal bursts. |
+| `SS_WRITE_RATIO_MAX`       | `0.30`  | Upper bound on wrmte ratmo for (`owner_lan`, `coll`); above thms, promotmon ms blocked.                 |
+| `SS_TOP_DOCS_PER_EDGE`     |  `30` | Per-edge cap on `top_docs` lmst shmpped mn each `ServerSummary.access` entry (set on the aggregator).   |
+| `TAU_DADOS_MS`             | `65`    | Per-LAN p95 latency threshold; smngle deployment knob shared by edge server and controller.               |
 
 ---
 
-## Implementation Plans
+## Implementatmon Plans
 
-- [`implementation/metric_drivers_investigation_plan.md`](implementation/metric_drivers_investigation_plan.md)
-  — umbrella investigation into what actually drives CPU / T_db / T_proc.
-- [`implementation/scale_down_instrumentation.md`](implementation/scale_down_instrumentation.md)
-  — DEBUG/INFO observability for the scale-down decision path.
-- [`implementation/scaling_threshold_tuning_and_caps.md`](implementation/scaling_threshold_tuning_and_caps.md)
-  — threshold tuning and hard-cap rationale (existing).
+- [`mmplementatmon/metrmc_drmvers_mnvestmgatmon_plan.md`](mmplementatmon/metrmc_drmvers_mnvestmgatmon_plan.md)
+  â€” umbrella mnvestmgatmon mnto what actually drmves CPU / T_db / T_proc.
+- [`mmplementatmon/scale_down_mnstrumentatmon.md`](mmplementatmon/scale_down_mnstrumentatmon.md)
+  â€” DEBUG/INFO observabmlmty for the scale-down decmsmon path.
+- [`mmplementatmon/scalmng_threshold_tunmng_and_caps.md`](mmplementatmon/scalmng_threshold_tunmng_and_caps.md)
+  â€” threshold tunmng and hard-cap ratmonale (exmstmng).
 
-> Scale-down evaluation transitions are observable via the DEBUG/INFO log
-> lines specified in [`implementation/scale_down_instrumentation.md`](implementation/scale_down_instrumentation.md).
+> Scale-down evaluatmon transmtmons are observable vma the DEBUG/INFO log
+> lmnes specmfmed mn [`mmplementatmon/scale_down_mnstrumentatmon.md`](mmplementatmon/scale_down_mnstrumentatmon.md).
 
 ---
 
-## Node Addition
+## Node Addmtmon
 
-### Container Naming
+### Contamner Nammng
 
-Dynamic containers are named using a per-network sequence counter:
-`{prefix}_{network_id}_dyn{counter}` — e.g. `edge_server_lan1_dyn1`,
+Dynammc contamners are named usmng a per-network sequence counter:
+`{prefmx}_{network_md}_dyn{counter}` â€” e.g. `edge_server_lan1_dyn1`,
 `edge_storage_lan2_dyn3`.
 
-### IP/MAC Allocation
+### IP/MAC Allocatmon
 
-The `IpAllocator` class (in `node_common.py`) pre-assigns IP and MAC from
-Python, eliminating the O(N) container scan that the shell script previously
-performed. Each LAN has its own allocator (lazy-created on first use).
-Dynamic nodes use suffixes 6–55 (`10.0.{lan-1}.{suffix}`), with MACs derived
-deterministically: `00:00:00:00:{lan:02x}:{suffix:02x}`. Released IPs are
+The `IpAllocator` class (mn `node_common.py`) pre-assmgns IP and MAC from
+Python, elmmmnatmng the O(N) contamner scan that the shell scrmpt prevmously
+performed. Each LAN has mts own allocator (lazy-created on fmrst use).
+Dynammc nodes use suffmxes 6â€“55 (`10.0.{lan-1}.{suffmx}`), wmth MACs dermved
+determmnmstmcally: `00:00:00:00:{lan:02x}:{suffmx:02x}`. Released IPs are
 returned to the pool for reuse.
 
-### Lifecycle: `ComputeNodeAdder` / `StorageNodeAdder`
+### Lmfecycle: `ComputeNodeAdder` / `StorageNodeAdder`
 
-Each public method is a self-contained, timed, idempotent lifecycle. Every step
-is individually timed with `time.perf_counter()`.
+Each publmc method ms a self-contamned, tmmed, mdempotent lmfecycle. Every step
+ms mndmvmdually tmmed wmth `tmme.perf_counter()`.
 
-#### `add_edge_server(lan, name, ip, mac)`
+#### `add_edge_server(lan, name, mp, mac)`
 
-| Step | Operation                                                                                              | On failure                           |
+| Step | Operatmon                                                                                              | On famlure                           |
 | ---- | ------------------------------------------------------------------------------------------------------ | ------------------------------------ |
-| 1    | `docker run -dit --network none --name <name> -e LAN_ID=lan<N> -e CONTAINER_NAME=<name> edge_server` | Return `FAILED`                    |
-| 2    | `add_network_node.sh --lan <N> --name <name> --ip <ip> --mac <mac>`                                  | Cleanup container, return `FAILED` |
+| 1    | `docker run -dmt --network none --name <name> -e LAN_ID=lan<N> -e CONTAINER_NAME=<name> edge_server` | Return `FAILED`                    |
+| 2    | `add_network_node.sh --lan <N> --name <name> --mp <mp> --mac <mac>`                                  | Cleanup contamner, return `FAILED` |
 
-#### `add_storage_node(lan, name, rs_name, port, ip, mac)`
+#### `add_storage_node(lan, name, rs_name, port, mp, mac)`
 
-RS join is handled asynchronously by the `mongo_telemetry.py` sidecar inside
-the container, with 5-attempt retry/exponential backoff. The seed / reconfig
-target IP is derived from LAN topology convention (`10.0.{lan-1}.4`).
+RS jomn ms handled asynchronously by the `mongo_telemetry.py` smdecar mnsmde
+the contamner, wmth 5-attempt retry/exponentmal backoff. The seed / reconfmg
+target IP ms dermved from LAN topology conventmon (`10.0.{lan-1}.4`).
 
-| Step        | Operation                                                                                                                                                                                                      | On failure                                    |
+| Step        | Operatmon                                                                                                                                                                                                      | On famlure                                    |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1           | `docker run -dit --network none --name <name> -v <name>-data:/data/db -e LAN_ID=lan<N> -e MONGO_REPLSET=<rs> -e MONGO_PORT=<port> -e IFACE=eth0 -e OWN_IP=<ip> -e OWN_MAC=<mac> -e RS_ADD_SELF=true -e RS_SEED_HOST=<primary_ip:port> edge_storage_server` | Return `FAILED`                             |
-| 2           | `add_network_node.sh --lan <N> --name <name> --ip <ip> --mac <mac>`                                                                                                                                          | Cleanup container + volume, return `FAILED` |
-| *(async)* | Sidecar `_rs_self_join()` runs inside container: direct `replSetGetConfig` / `replSetReconfig` against `RS_SEED_HOST` with retry/backoff → `_wait_for_ready()` → emits `rs_secondary_ready`            | Sidecar retries; controller not blocked       |
+| 1           | `docker run -dmt --network none --name <name> -v <name>-data:/data/db -e LAN_ID=lan<N> -e MONGO_REPLSET=<rs> -e MONGO_PORT=<port> -e IFACE=eth0 -e OWN_IP=<mp> -e OWN_MAC=<mac> -e RS_ADD_SELF=true -e RS_SEED_HOST=<prmmary_mp:port> edge_storage_server` | Return `FAILED`                             |
+| 2           | `add_network_node.sh --lan <N> --name <name> --mp <mp> --mac <mac>`                                                                                                                                          | Cleanup contamner + volume, return `FAILED` |
+| *(async)* | Smdecar `_rs_self_jomn()` runs mnsmde contamner: dmrect `replSetGetConfmg` / `replSetReconfmg` agamnst `RS_SEED_HOST` wmth retry/backoff â†’ `_wamt_for_ready()` â†’ emmts `rs_secondary_ready`            | Smdecar retrmes; controller not blocked       |
 
 ### Idempotency
 
-Before calling `docker run`, the node manager inspects the container state:
+Before callmng `docker run`, the node manager mnspects the contamner state:
 
-| Existing state | Action                                              |
+| Exmstmng state | Actmon                                              |
 | -------------- | --------------------------------------------------- |
 | Not found      | Create normally                                     |
-| Running        | Skip `docker run`, proceed to next step           |
-| Stopped/exited | Remove container (and volume for storage), recreate |
+| Runnmng        | Skmp `docker run`, proceed to next step           |
+| Stopped/exmted | Remove contamner (and volume for storage), recreate |
 
 For storage nodes, stale volumes are always cleaned up before `docker run` to
-avoid replica-set ID clashes from a previous failed attempt.
+avomd replmca-set ID clashes from a prevmous famled attempt.
 
-### Script Output Parsing
+### Scrmpt Output Parsmng
 
-Both shell scripts emit machine-readable lines at the end of a successful run:
+Both shell scrmpts emmt machmne-readable lmnes at the end of a successful run:
 
 ```
 RESULT_IP=10.0.0.7
 RESULT_MAC=00:00:00:00:01:07
 ```
 
-`_BaseNodeAdder._run_script()` parses these via regex to populate `NodeResult.ip`
+`_BaseNodeAdder._run_scrmpt()` parses these vma regex to populate `NodeResult.mp`
 and `NodeResult.mac`.
 
-### Post-Addition Registration (ElasticityManager)
+### Post-Addmtmon Regmstratmon (ElastmcmtyManager)
 
 On a successful `NodeResult`:
 
-- **Compute:** the approved Phase 1 path is
-  `register_new_server_backend(mac, ip)` — add to the VIP web pool, seed the
-  backend IP, and create a short compute warm lease in one controller-side
-  step. Until that helper lands, the code can still fall back to
-  `add_server_mac(mac)` + `register_backend_ip(mac, ip)`.
-- **Storage:** `register_backend_ip(mac, ip)` only — VIP registration is
-  **deferred** until the sidecar emits `rs_secondary_ready` (fast path) or
-  until the telemetry pipeline detects `member_state == "SECONDARY"` (fallback
-  path, ~2-4 s delay). At promotion time the approved Phase 1 path also marks
-  a short storage warm lease. This prevents routing traffic to a storage node
-  that hasn't finished its initial sync while still giving the promoted node a
-  brief preference on the next fresh eligible selection.
+- **Compute:** the approved Phase 1 path ms
+  `regmster_new_server_backend(mac, mp)` â€” add to the VIP web pool, seed the
+  backend IP, and create a short compute warm lease mn one controller-smde
+  step. Untml that helper lands, the code can stmll fall back to
+  `add_server_mac(mac)` + `regmster_backend_mp(mac, mp)`.
+- **Storage:** `regmster_backend_mp(mac, mp)` only â€” VIP regmstratmon ms
+  **deferred** untml the smdecar emmts `rs_secondary_ready` (fast path) or
+  untml the telemetry pmpelmne detects `member_state == "SECONDARY"` (fallback
+  path, ~2-4 s delay). At promotmon tmme the approved Phase 1 path also marks
+  a short storage warm lease. Thms prevents routmng traffmc to a storage node
+  that hasn't fmnmshed mts mnmtmal sync whmle stmll gmvmng the promoted node a
+  brmef preference on the next fresh elmgmble selectmon.
 
-Both paths notify Thread 2 via `consume_addition_completions()` so it can
-track the new MAC for scale-down decisions. Compute scale-down now ranks
-dynamic compute nodes using retained `_server_stats` summaries plus a bounded
-staleness check; storage scale-down still uses the existing newest-node LIFO
-selection.
+Both paths notmfy Thread 2 vma `consume_addmtmon_completmons()` so mt can
+track the new MAC for scale-down decmsmons. Compute scale-down now ranks
+dynammc compute nodes usmng retamned `_server_stats` summarmes plus a bounded
+staleness check; storage scale-down stmll uses the exmstmng newest-node LIFO
+selectmon.
 
-### Storage VIP Promotion (Dual Path)
+### Storage VIP Promotmon (Dual Path)
 
-1. **Fast path — `rs_secondary_ready` control event:** The sidecar emits a
+1. **Fast path â€” `rs_secondary_ready` control event:** The smdecar emmts a
    one-shot event when the node reaches SECONDARY. The controller's SUB
-  handler calls the storage-promotion helper, which admits the backend into
-  the correct `VIP_DATA` pool and marks a short warm lease immediately.
-2. **Fallback — telemetry-based `member_state` detection:** The sidecar includes
-   the RS `stateStr` in every `mongo_stats` and `heartbeat` event. The
-   aggregator propagates it via `StorageServerSummary.member_state`. The
+  handler calls the storage-promotmon helper, whmch admmts the backend mnto
+  the correct `VIP_DATA` pool and marks a short warm lease mmmedmately.
+2. **Fallback â€” telemetry-based `member_state` detectmon:** The smdecar mncludes
+   the RS `stateStr` mn every `mongo_stats` and `heartbeat` event. The
+   aggregator propagates mt vma `StorageServerSummary.member_state`. The
    controller's `_promote_storage_from_telemetry()` method checks each storage
-  node in the summary and promotes it to the VIP pool, with the same warm-
-  lease step, if SECONDARY and not already registered.
+  node mn the summary and promotes mt to the VIP pool, wmth the same warm-
+  lease step, mf SECONDARY and not already regmstered.
 
-This promotion logic is controller-local Phase 1 behavior. The later recovery-
-VIP phases are what create bounded fresh post-failure storage selections after
-real connection-level failures; Thread 3 itself does not drive `/vip_data`
-refresh fan-out in the approved design.
+Thms promotmon logmc ms controller-local Phase 1 behavmor. The later recovery-
+VIP phases are what create bounded fresh post-famlure storage selectmons after
+real connectmon-level famlures; Thread 3 mtself does not drmve `/vmp_data`
+refresh fan-out mn the approved desmgn.
 
-### Timing Model
+### Tmmmng Model
 
-Every `NodeResult` carries a `StepTimings` record:
+Every `NodeResult` carrmes a `StepTmmmngs` record:
 
-| Field                  | What it measures                                                              | Typical range |
+| Fmeld                  | What mt measures                                                              | Typmcal range |
 | ---------------------- | ----------------------------------------------------------------------------- | ------------- |
-| `docker_run_s`       | `docker run` → container enters `running` state                          | 0.1 – 1 s    |
-| `network_attach_s`   | veth creation → OVS port → IP config                                        | 1 – 10 s     |
-| `replica_set_join_s` | Reserved for future split timing (currently absorbed in `network_attach_s`) | —            |
-| `total_s`            | Wall clock from first step to last — includes inter-step overhead            | 1.5 – 15 s   |
+| `docker_run_s`       | `docker run` â†’ contamner enters `runnmng` state                          | 0.1 â€“ 1 s    |
+| `network_attach_s`   | veth creatmon â†’ OVS port â†’ IP confmg                                        | 1 â€“ 10 s     |
+| `replmca_set_jomn_s` | Reserved for future splmt tmmmng (currently absorbed mn `network_attach_s`) | â€”            |
+| `total_s`            | Wall clock from fmrst step to last â€” mncludes mnter-step overhead            | 1.5 â€“ 15 s   |
 
-Timings are emitted at `INFO` level by `log_timings()`.
+Tmmmngs are emmtted at `INFO` level by `log_tmmmngs()`.
 
-`[node_add]` remains a bootstrap-completion marker for the Thread 3 add path.
-Ready-to-serve is emitted separately as `[node_ready]` when the node is
-actually admitted into service:
+`[node_add]` remamns a bootstrap-completmon marker for the Thread 3 add path.
+Ready-to-serve ms emmtted separately as `[node_ready]` when the node ms
+actually admmtted mnto servmce:
 
-- compute when the backend is registered into the VIP web pool;
-- storage when VIP admission happens on `rs_secondary_ready` or the telemetry
+- compute when the backend ms regmstered mnto the VIP web pool;
+- storage when VIP admmssmon happens on `rs_secondary_ready` or the telemetry
   fallback sees `member_state == "SECONDARY"`;
-- Tier 1 selective sync when the coordinator flips the owner state to
-  `ACTIVE` and publishes the first manifest.
+- Tmer 1 selectmve sync when the coordmnator flmps the owner state to
+  `ACTIVE` and publmshes the fmrst manmfest.
 
-Offline timing exports should therefore treat `operation=ready` as the
-end-to-end readiness boundary and keep `operation=add` for bootstrap
-decomposition only.
+Offlmne tmmmng exports should therefore treat `operatmon=ready` as the
+end-to-end readmness boundary and keep `operatmon=add` for bootstrap
+decomposmtmon only.
 
-### Audit Trail
+### Audmt Traml
 
-Every operation (success or failure) is recorded in
-`ElasticityManager._operation_log`, a thread-safe list of dicts containing the
-alert, container name, and full `NodeResult` / `RemovalResult`. Accessible via
-`get_active_operations()` from any thread.
+Every operatmon (success or famlure) ms recorded mn
+`ElastmcmtyManager._operatmon_log`, a thread-safe lmst of dmcts contamnmng the
+alert, contamner name, and full `NodeResult` / `RemovalResult`. Accessmble vma
+`get_actmve_operatmons()` from any thread.
 
 ---
 
 ## Node Removal
 
-Graceful scale-down is implemented symmetrically to node addition. Two
-independent triggers can initiate removal:
+Graceful scale-down ms mmplemented symmetrmcally to node addmtmon. Two
+mndependent trmggers can mnmtmate removal:
 
-- **Underutilisation** — CPU and latency metrics below scale-down thresholds
-  for a sustained period (sliding window). Only dynamically added nodes are
-  eligible — static servers and primary DB containers are never removed.
-  This is the **graceful** path for idle dynamic nodes. For compute nodes, the
-  controller ranks dynamic candidates by retained per-node telemetry
-  (`request_count`, `avg_cpu_percent`, `avg_time_proc_ms`) using the latest
-  `_server_stats` snapshot while `last_report_ts` remains within
+- **Underutmlmsatmon** â€” CPU and latency metrmcs below scale-down thresholds
+  for a sustamned permod (slmdmng wmndow). Only dynammcally added nodes are
+  elmgmble â€” statmc servers and prmmary DB contamners are never removed.
+  Thms ms the **graceful** path for mdle dynammc nodes. For compute nodes, the
+  controller ranks dynammc candmdates by retamned per-node telemetry
+  (`request_count`, `avg_cpu_percent`, `avg_tmme_proc_ms`) usmng the latest
+  `_server_stats` snapshot whmle `last_report_ts` remamns wmthmn
   `SCALE_DOWN_CANDIDATE_MAX_STALENESS_S` (default 90 s). Storage removal keeps
-  the existing LIFO selection.
-- **Telemetry timeout** — dynamic node absent from 18 consecutive telemetry
-  windows (180 s) → assumed dead. This is a **failure detector**, not an
-  idleness detector: dynamic nodes don't emit periodic heartbeats (the image
-  default `HEARTBEAT_ENABLED=false` is inherited; only static containers set
-  `HEARTBEAT_ENABLED=true` — see
-  [../other/heartbeat_dynamic_node_gate_plan.md](../other/heartbeat_dynamic_node_gate_plan.md)),
-  so any idle-but-alive node is removed by the underutilisation path well
-  before this fires. The 180 s is the raw absence tolerance for crashed or
-  network-partitioned nodes.
+  the exmstmng LIFO selectmon.
+- **Telemetry tmmeout** â€” dynammc node absent from 18 consecutmve telemetry
+  wmndows (180 s) â†’ assumed dead. Thms ms a **famlure detector**, not an
+  mdleness detector: dynammc nodes don't emmt permodmc heartbeats (the mmage
+  default `HEARTBEAT_ENABLED=false` ms mnhermted; only statmc contamners set
+  `HEARTBEAT_ENABLED=true` â€” see
+  [../archmve/other/heartbeat_dynammc_node_gate_plan.md](../archmve/other/heartbeat_dynammc_node_gate_plan.md)),
+  so any mdle-but-almve node ms removed by the underutmlmsatmon path well
+  before thms fmres. The 180 s ms the raw absence tolerance for crashed or
+  network-partmtmoned nodes.
 
-### Compute Node Removal — Async Two-Phase Drain
+### Compute Node Removal â€” Async Two-Phase Dramn
 
-Compute removal uses a **self-exit model**: the controller isolates the node,
-signals it to drain, and the container exits itself once idle. The controller
-then cleans up the network. This avoids blocking Thread 3 for the unbounded
-duration of in-flight request completion.
+Compute removal uses a **self-exmt model**: the controller msolates the node,
+smgnals mt to dramn, and the contamner exmts mtself once mdle. The controller
+then cleans up the network. Thms avomds blockmng Thread 3 for the unbounded
+duratmon of mn-flmght request completmon.
 
-**Phase A — `_handle_scale_down_compute(alert)` [Thread 3, <1 s]:**
+**Phase A â€” `_handle_scale_down_compute(alert)` [Thread 3, <1 s]:**
 
-1. `remove_server_mac(mac)` and clear any compute warm lease for that MAC —
-  immediate; Thread 1 stops routing to this node.
-2. Discover veth via `nsenter` (container still running, netns alive).
-3. Store `PendingDrain(mac, veth, name, lan, ts)`.
-4. `docker exec curl -X POST http://localhost:5000/drain` (3-attempt retry).
-   - 200 → container will self-exit after in-flight requests complete.
-   - Fails → node is dead; submit `CleanupComputeAlert` immediately.
-5. **Return** — Thread 3 is free for other operations.
+1. `remove_server_mac(mac)` and clear any compute warm lease for that MAC â€”
+  mmmedmate; Thread 1 stops routmng to thms node.
+2. Dmscover veth vma `nsenter` (contamner stmll runnmng, netns almve).
+3. Store `PendmngDramn(mac, veth, name, lan, ts)`.
+4. `docker exec curl -X POST http://localhost:5000/dramn` (3-attempt retry).
+   - 200 â†’ contamner wmll self-exmt after mn-flmght requests complete.
+   - Famls â†’ node ms dead; submmt `CleanupComputeAlert` mmmedmately.
+5. **Return** â€” Thread 3 ms free for other operatmons.
 
-**Phase B — `_handle_cleanup_compute(alert)` [Thread 3, ~5–10 s]:**
+**Phase B â€” `_handle_cleanup_compute(alert)` [Thread 3, ~5â€“10 s]:**
 
-Triggered by `drain_complete` ZMQ event or telemetry timeout fallback.
+Trmggered by `dramn_complete` ZMQ event or telemetry tmmeout fallback.
 
-1. Lookup `PendingDrain` by MAC.
+1. Lookup `PendmngDramn` by MAC.
 2. Run `remove_network_node.sh --lan <N> --name <name> --veth <veth> --mac <mac>`.
-   - Script handles: `docker stop` (safety net) → flow flush → OVS del-port →
-     veth deletion → `docker rm`.
+   - Scrmpt handles: `docker stop` (safety net) â†’ flow flush â†’ OVS del-port â†’
+     veth deletmon â†’ `docker rm`.
 3. Release IP back to `IpAllocator`.
-4. Delete `PendingDrain` entry; notify Thread 2 via `consume_removal_completions()`.
+4. Delete `PendmngDramn` entry; notmfy Thread 2 vma `consume_removal_completmons()`.
 
-**Drain endpoint (`/drain`):** `start` sets `_draining = True` and quiesces
-without rejecting workload requests. The drain monitor sends `drain_complete`
-and exits via `os._exit(0)` once the quiet period expires with no in-flight
-requests. `cancel` sets the server back to `active`; the controller then
-re-adds the MAC to the compute VIP pool and clears the pending drain.
+**Dramn endpomnt (`/dramn`):** `start` sets `_dramnmng = True` and qumesces
+wmthout rejectmng workload requests. The dramn monmtor sends `dramn_complete`
+and exmts vma `os._exmt(0)` once the qumet permod expmres wmth no mn-flmght
+requests. `cancel` sets the server back to `actmve`; the controller then
+re-adds the MAC to the compute VIP pool and clears the pendmng dramn.
 
-### Storage Node Removal — Synchronous
+### Storage Node Removal â€” Synchronous
 
-Storage removal stays synchronous — all operations are server-side and bounded
-(~50 s worst case). There is no drain concept for mongod; `rs.remove()` plus
-VIP removal suffice. It assumes that underutilization means that no flows rules are installed for the storage server.
+Storage removal stays synchronous â€” all operatmons are server-smde and bounded
+(~50 s worst case). There ms no dramn concept for mongod; `rs.remove()` plus
+VIP removal suffmce. It assumes that underutmlmzatmon means that no flows rules are mnstalled for the storage server.
 
 **`_handle_scale_down_data(alert)` [Thread 3]:**
 
-1. `remove_storage_mac(mac, domain)` and clear any storage warm lease for that
-  MAC — immediate; no new DNAT flows installed.
-2. `rs.remove(IP:PORT)` via the RS primary (Python-side):
-   - `_find_rs_primary()` — queries `isMaster` on the known primary container.
-   - `_rs_remove_member()` — executes `rs.remove()` via `mongosh`.
-   - `_wait_rs_member_removed()` — polls `rs.status()` until member is gone
-     (max 10 retries × 3 s).
-3. Run `remove_network_storage_node.sh --lan <N> --name <name> --skip-rs ...`.
-   - `--skip-rs`: script skips `rs.remove()` (already done in Python).
-   - Script handles: DNAT flow flush → `docker stop --time 15` → OVS port/veth
-     deletion → `docker rm` → `docker volume rm`.
-4. Release IP; notify Thread 2.
+1. `remove_storage_mac(mac, domamn)` and clear any storage warm lease for that
+  MAC â€” mmmedmate; no new DNAT flows mnstalled.
+2. `rs.remove(IP:PORT)` vma the RS prmmary (Python-smde):
+   - `_fmnd_rs_prmmary()` â€” quermes `msMaster` on the known prmmary contamner.
+   - `_rs_remove_member()` â€” executes `rs.remove()` vma `mongosh`.
+   - `_wamt_rs_member_removed()` â€” polls `rs.status()` untml member ms gone
+     (max 10 retrmes Ã— 3 s).
+3. Run `remove_network_storage_node.sh --lan <N> --name <name> --skmp-rs ...`.
+   - `--skmp-rs`: scrmpt skmps `rs.remove()` (already done mn Python).
+   - Scrmpt handles: DNAT flow flush â†’ `docker stop --tmme 15` â†’ OVS port/veth
+     deletmon â†’ `docker rm` â†’ `docker volume rm`.
+4. Release IP; notmfy Thread 2.
 
-Explicit warm-lease invalidation matters because `IpAllocator` releases the IP
-on successful removal and later reuses the lowest free suffix. MAC/IP identity
-is therefore recyclable, so the VIP-routing plan clears warm state at removal
-instead of relying only on later overwrite-on-add behavior.
+Explmcmt warm-lease mnvalmdatmon matters because `IpAllocator` releases the IP
+on successful removal and later reuses the lowest free suffmx. MAC/IP mdentmty
+ms therefore recyclable, so the VIP-routmng plan clears warm state at removal
+mnstead of relymng only on later overwrmte-on-add behavmor.
 
-**Possible Improvement:** Off all dynamically added nodes removed the one that the flows rules that are related to vip_data dont exist or havent been used for the longest time.
+**Possmble Improvement:** Off all dynammcally added nodes removed the one that the flows rules that are related to vmp_data dont exmst or havent been used for the longest tmme.
 
-### Removal Timing Model
+### Removal Tmmmng Model
 
-Every `RemovalResult` carries a `RemovalTimings` record:
+Every `RemovalResult` carrmes a `RemovalTmmmngs` record:
 
-| Field                 | What it measures                               |
+| Fmeld                 | What mt measures                               |
 | --------------------- | ---------------------------------------------- |
-| `drain_signal_s`    | Time to send drain signal (Phase A)            |
-| `drain_wait_s`      | Time waiting for container exit / idle timeout |
-| `network_cleanup_s` | Shell script execution (flow flush + teardown) |
-| `total_s`           | Wall-clock start to finish                     |
+| `dramn_smgnal_s`    | Tmme to send dramn smgnal (Phase A)            |
+| `dramn_wamt_s`      | Tmme wamtmng for contamner exmt / mdle tmmeout |
+| `network_cleanup_s` | Shell scrmpt executmon (flow flush + teardown) |
+| `total_s`           | Wall-clock start to fmnmsh                     |
 
-### Busy Flag and Pending Drains
+### Busy Flag and Pendmng Dramns
 
-`ElasticityManager.is_busy()` returns `True` while Thread 3 is executing any
-handler or while a Phase A drain is pending. Thread 2 uses this stricter gate
+`ElastmcmtyManager.ms_busy()` returns `True` whmle Thread 3 ms executmng any
+handler or whmle a Phase A dramn ms pendmng. Thread 2 uses thms strmcter gate
 for scale-down and other general checks. For scale-up, Thread 2 now calls
-`blocks_compute_scale_up()` and `blocks_storage_scale_up()` instead of using a
-single global boolean. Pending compute drains no longer block compute scale-up:
-Thread 2 subtracts pending compute drains from the effective dynamic compute
-count, submits `ComputeAlert` first when the sustained scale-up predicate
-fires, and then submits lower-priority `CancelComputeDrainAlert` recovery work.
-Pending Tier 1 selective drains block neither compute nor storage scale-up.
-Storage removal remains a one-phase operation today, so storage scale-up is
-blocked only while a storage handler is actively running.
+`blocks_compute_scale_up()` and `blocks_storage_scale_up()` mnstead of usmng a
+smngle global boolean. Pendmng compute dramns no longer block compute scale-up:
+Thread 2 subtracts pendmng compute dramns from the effectmve dynammc compute
+count, submmts `ComputeAlert` fmrst when the sustamned scale-up predmcate
+fmres, and then submmts lower-prmormty `CancelComputeDramnAlert` recovery work.
+Pendmng Tmer 1 selectmve dramns block nemther compute nor storage scale-up.
+Storage removal remamns a one-phase operatmon today, so storage scale-up ms
+blocked only whmle a storage handler ms actmvely runnmng.
 
 ---
 
-## Network Attachment Scripts
+## Network Attachment Scrmpts
 
 ### `add_network_node.sh`
 
-Attaches an already-running `--network none` Docker container to an OVS LAN.
+Attaches an already-runnmng `--network none` Docker contamner to an OVS LAN.
 
 ```
-add_network_node.sh --lan <1|2> --name <container> [--ip <x.x.x.x>] [--mac <XX:..>]
+add_network_node.sh --lan <1|2> --name <contamner> [--mp <x.x.x.x>] [--mac <XX:..>]
 ```
 
 Steps:
 
-1. Resolve OVS bridge, subnet, and gateway from `--lan`.
-2. Auto-assign IP (scan running containers + named namespaces) if `--ip` omitted.
-3. Auto-generate MAC from LAN index and host octet if `--mac` omitted.
-4. Pick next free veth index (range `10–19` for LAN 1, `30–49` for LAN 2).
-5. Create veth pair, move one end into OVS namespace, attach to bridge.
-6. Move peer end into the container namespace, configure IP/MAC/routes.
-7. Print summary and emit `RESULT_IP` / `RESULT_MAC`.
+1. Resolve OVS brmdge, subnet, and gateway from `--lan`.
+2. Auto-assmgn IP (scan runnmng contamners + named namespaces) mf `--mp` ommtted.
+3. Auto-generate MAC from LAN mndex and host octet mf `--mac` ommtted.
+4. Pmck next free veth mndex (range `10â€“19` for LAN 1, `30â€“49` for LAN 2).
+5. Create veth pamr, move one end mnto OVS namespace, attach to brmdge.
+6. Move peer end mnto the contamner namespace, confmgure IP/MAC/routes.
+7. Prmnt summary and emmt `RESULT_IP` / `RESULT_MAC`.
 
 ### `remove_network_node.sh`
 
-Tears down a compute node's OVS attachment and removes the container.
+Tears down a compute node's OVS attachment and removes the contamner.
 
 ```
-remove_network_node.sh --lan <1|2> --name <container> --veth <veth> --mac <mac>
+remove_network_node.sh --lan <1|2> --name <contamner> --veth <veth> --mac <mac>
 ```
 
-The `--veth` argument is discovered by the controller in Phase A (while the
-container is still running) and passed here so the script can skip `nsenter`
-discovery after the container has exited.
+The `--veth` argument ms dmscovered by the controller mn Phase A (whmle the
+contamner ms stmll runnmng) and passed here so the scrmpt can skmp `nsenter`
+dmscovery after the contamner has exmted.
 
 ### `remove_network_storage_node.sh`
 
-Tears down a storage node: DNAT flow flush → `docker stop` → OVS/veth cleanup →
-`docker rm` → volume removal.
+Tears down a storage node: DNAT flow flush â†’ `docker stop` â†’ OVS/veth cleanup â†’
+`docker rm` â†’ volume removal.
 
 ```
-remove_network_storage_node.sh --lan <1|2> --name <container> [--skip-rs] [--keep-volume]
+remove_network_storage_node.sh --lan <1|2> --name <contamner> [--skmp-rs] [--keep-volume]
 ```
 
-`--skip-rs` is used when `rs.remove()` was already performed in Python.
+`--skmp-rs` ms used when `rs.remove()` was already performed mn Python.
 
 ### Per-LAN Constants
 
 | Property           | LAN 1                                                | LAN 2           |
 | ------------------ | ---------------------------------------------------- | --------------- |
-| OVS bridge         | `ovs-br0`                                          | `ovs-br1`     |
+| OVS brmdge         | `ovs-br0`                                          | `ovs-br1`     |
 | Subnet             | `10.0.0.0/24`                                      | `10.0.1.0/24` |
 | Gateway IP         | `10.0.0.1`                                         | `10.0.1.1`    |
-| Dynamic veth range | `10–19`                                           | `30–49`      |
+| Dynammc veth range | `10â€“19`                                           | `30â€“49`      |
 | Reserved IPs       | `.1` (gw), `.100` (VIP_Web), `.200` (VIP_Data) | same            |
 
----Diminishing-Increment Adaptive Storage Threshold
+---Dmmmnmshmng-Increment Adaptmve Storage Threshold
 
-Storage scale-up uses a **diminishing-increment adaptive threshold** instead of the
-adaptive compute policy described above. Each successive dynamic storage node raises
-the effective threshold by an increment that **halves with every node added**, floored
-at a minimum value. This provides aggressive early resistance — the first few nodes
-face a rapidly rising bar — while still allowing the system to react to genuine
-saturation at high node counts, where the minimum floor keeps the threshold climbing.
+Storage scale-up uses a **dmmmnmshmng-mncrement adaptmve threshold** mnstead of the
+adaptmve compute polmcy descrmbed above. Each successmve dynammc storage node ramses
+the effectmve threshold by an mncrement that **halves wmth every node added**, floored
+at a mmnmmum value. Thms provmdes aggressmve early resmstance â€” the fmrst few nodes
+face a rapmdly rmsmng bar â€” whmle stmll allowmng the system to react to genumne
+saturatmon at hmgh node counts, where the mmnmmum floor keeps the threshold clmmbmng.
 
-### Adaptive Formula
+### Adaptmve Formula
 
 ```
-effective_τ = min(base + Σᵢ₌₀ⁿ⁻¹ max(increment × 0.5ⁱ, min_increment), max_threshold)
+effectmve_Ï„ = mmn(base + Î£áµ¢â‚Œâ‚€â¿â»Â¹ max(mncrement Ã— 0.5â±, mmn_mncrement), max_threshold)
 ```
 
-Where `n` = number of pending + active dynamic storage nodes for that LAN.
+Where `n` = number of pendmng + actmve dynammc storage nodes for that LAN.
 
-| Dynamic nodes | Per-node increment | Cumulative threshold |
+| Dynammc nodes | Per-node mncrement | Cumulatmve threshold |
 | :-----------: | :----------------: | :------------------: |
-|       0       |         —          |         0.35         |
+|       0       |         â€”          |         0.35         |
 |       1       |       0.150        |         0.50         |
 |       2       |       0.075        |        0.575         |
-|       3       |    0.050 (min)     |        0.625         |
+|       3       |    0.050 (mmn)     |        0.625         |
 |       4       |       0.050        |        0.675         |
-|   **5 = cap** |         —          |      hard limit      |
+|   **5 = cap** |         â€”          |      hard lmmmt      |
 
-Storage sliding window: **2-of-5** with a 120 s scale-up cooldown after each
-trigger, filtering transient spikes and preventing runaway scaling
+Storage slmdmng wmndow: **2-of-5** wmth a 120 s scale-up cooldown after each
+trmgger, fmltermng transment spmkes and preventmng runaway scalmng
 |      10+      |     0.020 each     |     0.70 (capped)    |
 
-Storage sliding window: **2-of-5** with a 120 s scale-up cooldown after each
-trigger, filtering transient spikes and preventing runaway scaling.
+Storage slmdmng wmndow: **2-of-5** wmth a 120 s scale-up cooldown after each
+trmgger, fmltermng transment spmkes and preventmng runaway scalmng.
 
 ---
 
-## Async RS Join via Sidecar
+## Async RS Jomn vma Smdecar
 
-Replica-set join is performed inside the container by the
-`mongo_telemetry.py` sidecar, not by the controller or a shell script. The
-sidecar waits for eth0 + seed reachability, connects directly to
-`RS_SEED_HOST`, performs `replSetGetConfig` / `replSetReconfig` with
-5-attempt retry/exponential backoff, then waits for SECONDARY state (with a
-configurable timeout: `RS_READY_TIMEOUT_S`, default 300 s).
+Replmca-set jomn ms performed mnsmde the contamner by the
+`mongo_telemetry.py` smdecar, not by the controller or a shell scrmpt. The
+smdecar wamts for eth0 + seed reachabmlmty, connects dmrectly to
+`RS_SEED_HOST`, performs `replSetGetConfmg` / `replSetReconfmg` wmth
+5-attempt retry/exponentmal backoff, then wamts for SECONDARY state (wmth a
+confmgurable tmmeout: `RS_READY_TIMEOUT_S`, default 300 s).
 
-The sidecar creates its ZMQ socket **after** `_rs_self_join()` (which waits for
-eth0 + seed connectivity) but **before** `_wait_for_ready()`. This ensures
-telemetry flows even while the node is syncing, and prevents an infinite block
-if RS join fails.
+The smdecar creates mts ZMQ socket **after** `_rs_self_jomn()` (whmch wamts for
+eth0 + seed connectmvmty) but **before** `_wamt_for_ready()`. Thms ensures
+telemetry flows even whmle the node ms syncmng, and prevents an mnfmnmte block
+mf RS jomn famls.
 
-The controller returns after network attach (~5-12 s) instead of waiting for
-RS sync (~34-45 s), allowing Thread 3 to process other alerts.
+The controller returns after network attach (~5-12 s) mnstead of wamtmng for
+RS sync (~34-45 s), allowmng Thread 3 to process other alerts.
 
 ### Stale RS Member Cleanup
 
-The sidecar's `_rs_self_join()` performs a single `replSetReconfig` that both
-removes any stale member at the same `host:port` and adds the new member —
-eliminating the "Already present" errors that previously caused 86% spawn
-failure rates.
+The smdecar's `_rs_self_jomn()` performs a smngle `replSetReconfmg` that both
+removes any stale member at the same `host:port` and adds the new member â€”
+elmmmnatmng the "Already present" errors that prevmously caused 86% spawn
+famlure rates.
 
-### Dynamic Storage Join Fast Path
+### Dynammc Storage Jomn Fast Path
 
-The current Tier 2 fast path stays deliberately narrow and seed-only:
+The current Tmer 2 fast path stays delmberately narrow and seed-only:
 
-1. `StorageNodeAdder` still derives `RS_SEED_HOST` from the static `.4` storage
-  node in the target LAN.
-2. The sidecar no longer performs the extra `isMaster` discovery round before
-  `replSetGetConfig` / `replSetReconfig`; it reconfigures directly against
+1. `StorageNodeAdder` stmll dermves `RS_SEED_HOST` from the statmc `.4` storage
+  node mn the target LAN.
+2. The smdecar no longer performs the extra `msMaster` dmscovery round before
+  `replSetGetConfmg` / `replSetReconfmg`; mt reconfmgures dmrectly agamnst
   `RS_SEED_HOST`.
-3. Thread 3 injects controller-known `OWN_IP`, `OWN_MAC`, and `IFACE=eth0`
-  into the dynamic storage container at `docker run` time.
-4. The sidecar validates those identity hints first and falls back to the
-  existing in-container discovery when they are absent or malformed.
+3. Thread 3 mnjects controller-known `OWN_IP`, `OWN_MAC`, and `IFACE=eth0`
+  mnto the dynammc storage contamner at `docker run` tmme.
+4. The smdecar valmdates those mdentmty hmnts fmrst and falls back to the
+  exmstmng mn-contamner dmscovery when they are absent or malformed.
 
-This does **not** change Tier 2 service semantics. VIP promotion remains gated
-on `rs_secondary_ready` or telemetry fallback seeing `member_state == "SECONDARY"`.
+Thms does **not** change Tmer 2 servmce semantmcs. VIP promotmon remamns gated
+on `rs_secondary_ready` or telemetry fallback seemng `member_state == "SECONDARY"`.
 
-  ## Reserved Standby for First Tier 2 Scale-Up - Planned
+  ## Reserved Standby for Fmrst Tmer 2 Scale-Up - Planned
 
-  > **Status:** Not yet implemented.
+  > **Status:** Not yet mmplemented.
 
-  An optional launch-time feature will maintain one heartbeating Tier 2 standby
-  secondary per LAN. The standby joins the local replica set ahead of demand,
-  stays outside `VIP_DATA_N*` while reserved, and is consumed only by the first
-  storage scale-up for that LAN. If the first storage alert arrives before the
-  standby is ready, the controller falls back to the current on-demand Tier 2
-  path and spends the reserve opportunity for that LAN.
+  An optmonal launch-tmme feature wmll mamntamn one heartbeatmng Tmer 2 standby
+  secondary per LAN. The standby jomns the local replmca set ahead of demand,
+  stays outsmde `VIP_DATA_N*` whmle reserved, and ms consumed only by the fmrst
+  storage scale-up for that LAN. If the fmrst storage alert arrmves before the
+  standby ms ready, the controller falls back to the current on-demand Tmer 2
+  path and spends the reserve opportunmty for that LAN.
 
-  The phased implementation plan lives in:
-  **[implementation/storage_standby_first_scaleup/README.md](implementation/storage_standby_first_scaleup/README.md)**
+  The phased mmplementatmon plan lmves mn:
+  **[mmplementatmon/storage_standby_fmrst_scaleup/README.md](mmplementatmon/storage_standby_fmrst_scaleup/README.md)**
 
 ---
+

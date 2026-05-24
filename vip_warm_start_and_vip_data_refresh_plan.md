@@ -13,41 +13,41 @@ that preserves the current VIP-based control pattern:
 
 Implement the storage fix in phases:
 
-1. **Phase 1 — fix warm node selection in the controller**
+1. **Phase 1 ÔÇö fix warm node selection in the controller**
    Land bounded warm storage leases in
-   [vip_routing.py](../../../../source/sdn_controller/vip_routing.py) and wire
-   storage promotion in [main_n1.py](../../../../source/sdn_controller/main_n1.py)
-   and [main_n2.py](../../../../source/sdn_controller/main_n2.py) to mark a
+   [vip_routing.py](../../../../../../../source/sdn_controller/vip_routing.py) and wire
+   storage promotion in [main_n1.py](../../../../../../../source/sdn_controller/main_n1.py)
+   and [main_n2.py](../../../../../../../source/sdn_controller/main_n2.py) to mark a
    promoted storage backend warm.
 
-2. **Phase 2 — add one-shot recovery VIPs**
+2. **Phase 2 ÔÇö add one-shot recovery VIPs**
    Add `VIP_DATA_RECOVERY_N1` and `VIP_DATA_RECOVERY_N2`, and make the edge
-   server in [app.py](../../../../source/docker/edge_server/source/app.py) use
+   server in [app.py](../../../../../../../source/docker/edge_server/source/app.py) use
    them only on the next client creation after a main-path connection failure.
 
-3. **Phase 3 — keep recovery narrow and temporary**
+3. **Phase 3 ÔÇö keep recovery narrow and temporary**
    Recovery VIP flows are narrow and port-specific, recovered Mongo clients are
    reused for a bounded recovery session, and then the edge server switches
    back to the normal `VIP_DATA` path once the stale steady-state flow has had
    time to expire naturally.
 
-4. **Phase 4 — optional follow-up**
+4. **Phase 4 ÔÇö optional follow-up**
    Add short-lived "avoid last failed backend" memory only if runs still show
-   repeated reselection of the same unhealthy storage backend after Phases 1–3.
+   repeated reselection of the same unhealthy storage backend after Phases 1ÔÇô3.
 
 ## Current Starting Point
 
 This sequence starts from a mixed state in the current controller code:
 
-- [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
-  [main_n2.py](../../../../source/sdn_controller/main_n2.py) already mark
+- [main_n1.py](../../../../../../../source/sdn_controller/main_n1.py) and
+  [main_n2.py](../../../../../../../source/sdn_controller/main_n2.py) already mark
   promoted storage backends warm, but they still retain the older
   promotion-triggered `/vip_data` refresh queue that this redesign is meant to
   retire.
-- [vip_routing.py](../../../../source/sdn_controller/vip_routing.py) already
+- [vip_routing.py](../../../../../../../source/sdn_controller/vip_routing.py) already
   contains the bounded warm-lease implementation and the controller-side
   lifecycle helpers that Phase 1 required.
-- [app.py](../../../../source/docker/edge_server/source/app.py) still uses the
+- [app.py](../../../../../../../source/docker/edge_server/source/app.py) still uses the
   current `vip_data_per_domain` map and `/vip_data` endpoint. That endpoint
   still retires the cached client for every provided LAN, even when the VIP
   mapping did not change, and the later `VIP_DATA_RECOVERY_*` path described
@@ -61,15 +61,15 @@ point to the approved recovery-VIP design.
 The remaining storage failure gap has two separate causes:
 
 1. The edge server already retires a bad Mongo client in
-   [app.py](../../../../source/docker/edge_server/source/app.py), but the
+   [app.py](../../../../../../../source/docker/edge_server/source/app.py), but the
    current broad `VIP_DATA` flow can still match the next Mongo reconnect, so
    the controller may never get a fresh storage-selection opportunity.
 2. The old promotion-triggered `/vip_data` refresh path and the current
   `/vip_data` endpoint semantics still try to create reconnect churn on the
   normal VIP, but that does not reliably force a fresh controller-visible
   selection. The promotion path in
-   [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
-   [main_n2.py](../../../../source/sdn_controller/main_n2.py) expects
+   [main_n1.py](../../../../../../../source/sdn_controller/main_n1.py) and
+   [main_n2.py](../../../../../../../source/sdn_controller/main_n2.py) expects
   storage promotion to make the backend eligible and warm, while the approved
   design reserves failure-triggered reselection for the recovery VIP path.
 
@@ -90,8 +90,8 @@ So the fix needs both:
   client.
 - **No promotion-triggered refresh:** once Phase 2 lands, promotion-triggered
   `/vip_data` refresh should be removed from
-  [main_n1.py](../../../../source/sdn_controller/main_n1.py) and
-  [main_n2.py](../../../../source/sdn_controller/main_n2.py).
+  [main_n1.py](../../../../../../../source/sdn_controller/main_n1.py) and
+  [main_n2.py](../../../../../../../source/sdn_controller/main_n2.py).
 - **Recovery trigger:** arm recovery only on connection-level failures that
   retire the current Mongo client; generic query errors do not force recovery.
 - **Recovery transport:** use per-domain recovery VIPs instead of a new direct
@@ -133,9 +133,9 @@ So the fix needs both:
 
 The current code already gives the system the right ownership boundaries:
 
-1. [vip_routing.py](../../../../source/sdn_controller/vip_routing.py) owns
+1. [vip_routing.py](../../../../../../../source/sdn_controller/vip_routing.py) owns
    backend choice for `VIP_SERVER` and `VIP_DATA`.
-2. [app.py](../../../../source/docker/edge_server/source/app.py) already keeps
+2. [app.py](../../../../../../../source/docker/edge_server/source/app.py) already keeps
    one cached `MongoClient` per owner LAN and already retires it on
    connection-level failure.
 
@@ -185,7 +185,7 @@ that bounded warm-lease window.
 
 ## Multi-Phase Breakdown
 
-### Phase 1 — Fix Warm Storage Selection in the Controller
+### Phase 1 ÔÇö Fix Warm Storage Selection in the Controller
 
 Reference: [vip_warm_leases_plan.md](./vip_warm_leases_plan.md)
 
@@ -204,7 +204,7 @@ the promoted backend can win it. Phases 2 and 3 are the intended storage-side
 mechanism for creating those bounded fresh selections; compute remains
 natural-move only.
 
-### Phase 2 — Add Recovery VIPs and Edge Recovery Arming
+### Phase 2 ÔÇö Add Recovery VIPs and Edge Recovery Arming
 
 Reference: [vip_data_recovery_vip_arming_plan.md](./vip_data_recovery_vip_arming_plan.md)
 
@@ -215,19 +215,19 @@ connection-level failure reaches a fresh controller decision. As part of that
 convergence, the earlier promotion-triggered `/vip_data` refresh queue is
 removed and `/vip_data` remains config-only.
 
-### Phase 3 — Keep Recovery Narrow and Temporary
+### Phase 3 ÔÇö Keep Recovery Narrow and Temporary
 
-Reference: [vip_data_recovery_flow_session_plan.md](./vip_data_recovery_flow_session_plan.md)
+Reference: [vip_data_recovery_flow_session_plan.md](../../../vip_routing/implementation/vip_data_recovery_epoch_model.md)
 
 Phase 3 narrows recovery flows by matching the recovery VIP and Mongo TCP
 source port, then bounds how long the recovered `MongoClient` stays on that
 temporary path before later fresh connections return to normal `VIP_DATA`.
 
-### Phase 4 — Optional Follow-Up: Failed-Backend Avoidance
+### Phase 4 ÔÇö Optional Follow-Up: Failed-Backend Avoidance
 
-Reference: [vip_data_failed_backend_avoidance_plan.md](./vip_data_failed_backend_avoidance_plan.md)
+Reference: [vip_data_failed_backend_avoidance_plan.md](../../../vip_routing/implementation/plans/vip_data_failed_backend_avoidance_plan.md)
 
-Only if experiments after Phases 1–3 still show repeated selection of the same
+Only if experiments after Phases 1ÔÇô3 still show repeated selection of the same
 unhealthy backend, Phase 4 adds a short-lived controller-side avoid-last-failed
 memory keyed by `(edge_server, domain)`.
 
@@ -238,56 +238,56 @@ memory keyed by `(edge_server, domain)`.
 - [vip_data_recovery_vip_arming_plan.md](./vip_data_recovery_vip_arming_plan.md)
   Defines the controller recovery VIPs and edge-server one-shot arming used in
   Phase 2.
-- [vip_data_recovery_flow_session_plan.md](./vip_data_recovery_flow_session_plan.md)
+- [vip_data_recovery_flow_session_plan.md](../../../vip_routing/implementation/vip_data_recovery_epoch_model.md)
   Defines the narrow recovery-flow rules and bounded recovered-client lifetime
   used in Phase 3.
-- [vip_data_failed_backend_avoidance_plan.md](./vip_data_failed_backend_avoidance_plan.md)
+- [vip_data_failed_backend_avoidance_plan.md](../../../vip_routing/implementation/plans/vip_data_failed_backend_avoidance_plan.md)
   Defines the optional avoid-last-failed controller memory for Phase 4.
 
 ## Consolidated File Ownership
 
-- [vip_routing.py](../../../../source/sdn_controller/vip_routing.py)
+- [vip_routing.py](../../../../../../../source/sdn_controller/vip_routing.py)
   Warm leases, warm-first storage selection, recovery-VIP ARP/IP punt rules,
   and narrow recovery-flow installation.
-- [main_n1.py](../../../../source/sdn_controller/main_n1.py)
+- [main_n1.py](../../../../../../../source/sdn_controller/main_n1.py)
   LAN1 storage promotion marks the backend warm; Phase 2 also removes the old
   promotion-triggered `/vip_data` refresh queue here.
-- [main_n2.py](../../../../source/sdn_controller/main_n2.py)
+- [main_n2.py](../../../../../../../source/sdn_controller/main_n2.py)
   LAN2 storage promotion marks the backend warm; Phase 2 also removes the old
   promotion-triggered `/vip_data` refresh queue here.
-- [topology.py](../../../../source/sdn_controller/topology/topology.py)
+- [topology.py](../../../../../../../source/sdn_controller/topology/topology.py)
   Adds controller-side recovery VIP configuration.
-- [scaling_config.py](../../../../source/sdn_controller/scaling_config.py)
+- [scaling_config.py](../../../../../../../source/sdn_controller/scaling_config.py)
   Holds the Phase 1 warm-lease knobs and is the source of truth for warm-start
   timing once Phase 1 lands; `vip_routing.py` should import those constants
   rather than re-parsing duplicate warm-start env vars.
-- [app.py](../../../../source/docker/edge_server/source/app.py)
+- [app.py](../../../../../../../source/docker/edge_server/source/app.py)
   Keeps `/vip_data` config-only and idempotent, arms one-shot recovery after
   main-path connection failure, chooses the next normal or recovery VIP for
   fresh client creation, and bounds the recovery session lifetime in later
   phases.
-- [osken-controller.env](../../../../source/scripts/osken-controller.env)
+- [osken-controller.env](../../../../../../../source/scripts/osken-controller.env)
   Defines controller-side recovery VIP addresses, MACs, and later recovery-flow
   timeout knobs.
-- [compute_node_manager.py](../../../../source/sdn_controller/elasticity/compute_node_manager.py)
+- [compute_node_manager.py](../../../../../../../source/sdn_controller/elasticity/compute_node_manager.py)
   Propagates recovery VIP env overrides into dynamically launched edge-server
   containers so static and dynamic launches stay aligned.
-- [node_common.py](../../../../source/sdn_controller/elasticity/node_common.py)
-  Documents `.252`–`.254` as reserved VIP space once recovery VIPs are added.
-- [build_network_1.sh](../../../../source/scripts/network/build_network_1.sh)
+- [node_common.py](../../../../../../../source/sdn_controller/elasticity/node_common.py)
+  Documents `.252`ÔÇô`.254` as reserved VIP space once recovery VIPs are added.
+- [build_network_1.sh](../../../../../../../source/scripts/network/build_network_1.sh)
   Wires recovery-related env vars into the LAN1 edge-server container when
   experiment control needs explicit container env.
-- [build_network_2.sh](../../../../source/scripts/network/build_network_2.sh)
+- [build_network_2.sh](../../../../../../../source/scripts/network/build_network_2.sh)
   Wires recovery-related env vars into the LAN2 edge-server container when
   experiment control needs explicit container env.
-- [add_network_node.sh](../../../../source/scripts/network/add_network_node.sh)
+- [add_network_node.sh](../../../../../../../source/scripts/network/add_network_node.sh)
   Documents `.252` as reserved in the shell-side attachment path alongside the
   other VIP suffixes.
 
 Potential follow-up file updates once implementation lands:
 
-- [create_test_clients.sh](../../../../source/scripts/network/clients/create_test_clients.sh)
-- [test_conectivity.sh](../../../../source/scripts/test_conectivity.sh)
+- [create_test_clients.sh](../../../../../../../source/scripts/network/clients/create_test_clients.sh)
+- [test_conectivity.sh](../../../../../../../source/scripts/test_conectivity.sh)
 
 ## Consolidated Verification
 
@@ -306,29 +306,29 @@ promotion to `SECONDARY` no longer triggers controller-driven refresh fan-out.
 
 - no new external packages
 - reuse the current VIP ownership model in
-  [vip_routing.py](../../../../source/sdn_controller/vip_routing.py)
+  [vip_routing.py](../../../../../../../source/sdn_controller/vip_routing.py)
 - reuse the current edge-server Mongo-client lifecycle in
-  [app.py](../../../../source/docker/edge_server/source/app.py)
+  [app.py](../../../../../../../source/docker/edge_server/source/app.py)
 - reuse the current controller env/config pattern in
-  [osken-controller.env](../../../../source/scripts/osken-controller.env)
+  [osken-controller.env](../../../../../../../source/scripts/osken-controller.env)
   and the current edge-server container wiring in
-  [build_network_1.sh](../../../../source/scripts/network/build_network_1.sh)
-  and [build_network_2.sh](../../../../source/scripts/network/build_network_2.sh)
+  [build_network_1.sh](../../../../../../../source/scripts/network/build_network_1.sh)
+  and [build_network_2.sh](../../../../../../../source/scripts/network/build_network_2.sh)
 
 ## Documentation Updates
 
 Update these documents once implementation lands:
 
-- [vip_routing_overview.md](../vip_routing_overview.md)
+- [vip_routing_overview.md](../../../vip_routing/vip_routing_overview.md)
   Document the distinction between the broad steady-state `VIP_DATA` path and
   the one-shot `VIP_DATA_RECOVERY` path.
-- [system_mechanisms.md](../../system_mechanisms.md)
+- [system_mechanisms.md](../../../../../system_mechanisms.md)
   Explain the failure-to-recovery sequence, bounded recovery session, and the
   controller-side warm preference.
-- [elasticity_overview.md](../../elasticy_manager/elasticity_overview.md)
+- [elasticity_overview.md](../../../../../elasticy_manager/elasticity_overview.md)
   Note that storage promotion to `SECONDARY` now creates a warm lease that is
   consumed by the next eligible storage selection opportunity.
-- [telemetry_overview.md](../../telemetry/telemetry_overview.md)
+- [telemetry_overview.md](../../../../../telemetry/telemetry_overview.md)
   Update any references that still imply active client refresh is the storage
   failover path.
 

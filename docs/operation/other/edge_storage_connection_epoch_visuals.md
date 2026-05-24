@@ -8,7 +8,7 @@ Related references:
 
 - [vip_routing_overview.md](../vip_routing/vip_routing_overview.md)
 - [system_mechanisms.md](../system_mechanisms.md)
-- [vip_data_recovery_flow_session_plan.md](../vip_routing/implementation/vip_data_recovery_flow_session_plan.md)
+- [vip_data_recovery_epoch_model.md](../vip_routing/implementation/vip_data_recovery_epoch_model.md)
 
 ## 1. LAN-Scoped Runtime Ownership
 

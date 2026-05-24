@@ -126,7 +126,7 @@ Cross-phase documentation updates are expected in:
 - [../../elasticity_overview.md](../../elasticity_overview.md)
 - [../../../system_mechanisms.md](../../../system_mechanisms.md)
 - [../../../testing/testing_overview.md](../../../testing/testing_overview.md)
-- [../../../other/heartbeat_dynamic_node_gate_plan.md](../../../other/heartbeat_dynamic_node_gate_plan.md)
+- [../../../archive/other/heartbeat_dynamic_node_gate_plan.md](../../../archive/other/heartbeat_dynamic_node_gate_plan.md)
 
 ---
 

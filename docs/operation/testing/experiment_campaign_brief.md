@@ -1,5 +1,127 @@
 # Experiment Campaign Brief
 
+## Completed One-Off Run - Two-Regime Full Recreate Rerun
+
+- Status: completed.
+- Objective: rerun the long-cycle two-regime workload under the same current
+  controller policy, but recreate clients and test data from scratch so the
+  updated `device_registry.py` seeding logic is actually exercised.
+- Intended delta versus `20260516_235859_two_regime_1680_seed_profiles`:
+  - keep the synced testing inputs unchanged:
+    - `source/scripts/testing/phases.json`
+    - `source/scripts/testing/device_registry.py`
+  - keep runtime container code and controller code unchanged.
+  - keep the current controller env unchanged:
+    `SS_ENABLED=1`, `MAX_DYNAMIC_STORAGE=5`, `MAX_DYNAMIC_COMPUTE=2`, and
+    `SCALEUP_COMPUTE_BASE_THRESHOLD=0.25`.
+  - override all skip defaults so the run recreates clients, reseeds test
+    data, and regenerates the snapshot: `SKIP_CLIENTS=0`, `SKIP_SEED=0`, and
+    `SKIP_SNAPSHOT=0`.
+- Rebuild policy: do not rebuild images before this run. No runtime image
+  sources changed since `20260516_235859_two_regime_1680_seed_profiles`, and
+  the required images are already present on `cloud-vm`.
+- Between-run harness fix: `source/scripts/testing/run_experiment.sh` was
+  updated and synced to `cloud-vm` so `run_create_clients()` checks whether
+  `network/clients/create_test_clients.sh` exists instead of incorrectly
+  requiring the executable bit, which previously caused the first full-recreate
+  attempt to fail even though the helper is invoked through `bash`.
+- Pre-run sync validation:
+  - local and remote SHA256 match for both `source/scripts/testing/phases.json`
+    and `source/scripts/testing/device_registry.py`.
+- `sudo -n` preflight:
+  - generic `sudo -n true` is not permitted on `cloud-vm`.
+  - the required command path is permitted: a dry-run of
+    `sudo -n make -C source/scripts -n setup_network create_clients
+    setup_test_data run_experiment RUN_LABEL=two_regime_1680_full_recreate
+    SKIP_CLIENTS=0 SKIP_SEED=0 SKIP_SNAPSHOT=0` completed without prompting
+    for a password.
+- Workload/profile: reuse the same 1680-second 9-phase two-regime profile from
+  `source/scripts/testing/phases.json`:
+  `60/90/240/300/300/120/150/120/300` seconds for `baseline`,
+  `local_moderate`, `storage_stress`, `cross_region_hotspot`,
+  `reverse_hotspot`, `compute_ramp`, `compute_spike`,
+  `sustained_plateau`, and `demand_drop`.
+- Seeding/profile delta: reseed `device_registry` from scratch with the new
+  `focused_local`, `regional_operator`, and `global_operator` node-profile
+  families so the updated dashboard fan-out distribution is actually present in
+  the run.
+- Run label: `two_regime_1680_full_recreate`.
+- Primary comparisons:
+  - compare against `20260516_235859_two_regime_1680_seed_profiles` to isolate
+    the effect of recreating clients and actually exercising the new seeded
+    node-profile mix.
+  - compare against `20260516_215213_regular_900_epoch_rotation_current_code_rerun`
+    as the nearest current-code regular reference.
+- Launch command: `ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios &&
+  sudo -n make -C source/scripts setup_network create_clients
+  setup_test_data run_experiment RUN_LABEL=two_regime_1680_full_recreate
+  SKIP_CLIENTS=0 SKIP_SEED=0 SKIP_SNAPSHOT=0"`.
+- Live checkpoint plan: passive monitoring only. Use read-only checks against
+  `current_phase.txt`, `resource_stats.csv`, `per_node_stats.csv`,
+  `container_events.csv`, controller logs, and `service_logs/` after the run
+  folder appears. Continue unless the allowed `sudo -n make` path fails, setup
+  fails before useful traffic, or the run clearly stops progressing.
+- Checkpoint question: does the same two-regime profile, once clients and seed
+  data are recreated from scratch, still produce storage elasticity and a
+  dashboard-led compute pressure region, and does the new seeded profile mix
+  alter the compute-elasticity outcome?
+- Agent authority: full autonomous authority within the experiment-runner
+  contract for this run. The runner may launch with the verified
+  `sudo -n make -C source/scripts` path, monitor passively, summarize and trim
+  the completed run folder when controller logs are no longer needed, copy
+  artifacts back locally, and update this brief after completion.
+- Result: completed as `20260517_090203_two_regime_1680_full_recreate`.
+- Completion evidence:
+  - the no-skip launch recreated both LAN client namespaces.
+  - `sensor_reports.py`, `device_registry.py`, `create_indexes.py`, and
+    `export_workload_snapshot.py` all ran during setup.
+  - the run folder reached `current_phase.txt=idle` and no experiment process
+    remained active after completion.
+- Artifact status: the full run folder was copied back locally to
+  `source/scripts/testing/metrics/20260517_090203_two_regime_1680_full_recreate`.
+  The local copy includes `client_requests.csv`, `resource_stats.csv`, both
+  controller logs, `phases_snapshot.json`, and `service_logs/`.
+- Remote retention status: the cloud copy remains in place for now. Raw
+  controller logs were retained because post-run analysis and trimming have not
+  been executed yet.
+- Interpretation: the requested full recreate rerun finished successfully and
+  did exercise fresh client recreation, fresh seeding, and snapshot
+  regeneration. Comparison against the prior skip-based two-regime run still
+  remains to be analyzed.
+- Checkpoint question: does the storage regime still produce the expected
+  cross-region pressure and Tier 2 behavior, while the compute regime produces
+  clearer dashboard-led edge-server CPU pressure and, potentially, natural
+  compute lifecycle evidence under the unchanged controller env?
+- Agent authority: full autonomous authority within the experiment-runner
+  contract for this run. The runner may sync the listed testing surfaces,
+  launch with the verified `sudo -n make -C source/scripts` path, monitor
+  passively, summarize and trim the completed run folder when controller logs
+  are no longer needed, copy artifacts back locally, and update this brief
+  after completion.
+- Result: completed as
+  `20260516_235859_two_regime_1680_seed_profiles`.
+- Artifact status: the run folder was copied back locally to
+  `source/scripts/testing/metrics/20260516_235859_two_regime_1680_seed_profiles`.
+  Local post-run analysis produced `run_summary.md`, `latency_summary.csv`,
+  `resource_summary.csv`, `elasticity_events.csv`,
+  `node_lifecycle_timings.csv`, and the `analysis/` plots. After the summary
+  was written, the local folder was trimmed by deleting only the per-phase
+  `client_requests_*.csv` files and raw controller logs.
+- Remote retention status: the extra user-owned cloud copy used for local
+  copy-back was deleted after verification. The original root-owned run folder
+  under `~/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/`
+  remains on `cloud-vm` because autonomous deletion is still blocked outside
+  the permitted `sudo -n make -C source/scripts ...` path.
+- Interpretation: this run is a valid two-regime phase-profile result. It
+  makes the storage-regime versus compute-regime distinction clearer than the
+  earlier blended workload, and it exposes a large dashboard-led `503` region
+  without any compute-node add event under the unchanged controller policy.
+  However, because the launch still used `SKIP_SEED=1`, it is not yet the full
+  validation run for the new seeded node-profile families.
+- Next action: rerun the same long-cycle profile without `SKIP_SEED=1`, then
+  compare the result against this run and against
+  `20260516_215213_regular_900_epoch_rotation_current_code_rerun`.
+
 ## Timing Artifact Contract
 
 - `node_lifecycle_timings.csv` should be interpreted as `add` (bootstrap),
@@ -376,13 +498,13 @@
     - Remote `phases.json` profile:
       - `warm_lease_claim`: 45 s, 6.0 req/s/client, `cross_region_ratio=0.45`,
         `hotspot_direction=lan2_to_lan1`, mix `device_status=0.80`,
-        `dashboard=0.10`, `anomalies=0.10`.
+        `dashboard=0.10`, `service_pressure=0.10`.
       - `recovery_arm`: 90 s, 8.0 req/s/client, `cross_region_ratio=0.85`,
         `hotspot_direction=lan2_to_lan1`, mix `device_status=0.85`,
-        `dashboard=0.10`, `anomalies=0.05`.
+        `dashboard=0.10`, `service_pressure=0.05`.
       - `recovery_session_tail`: 60 s, 3.0 req/s/client,
         `cross_region_ratio=0.25`, `hotspot_direction=lan2_to_lan1`, mix
-        `device_status=0.70`, `dashboard=0.20`, `anomalies=0.10`.
+        `device_status=0.70`, `dashboard=0.20`, `service_pressure=0.10`.
   - `vip_small_hotspot_n1_to_n2`
     - Goal: mirrored directional validation of the same Phase 1/2/3 behavior
       on the `lan1 -> lan2` hotspot path.
@@ -395,13 +517,13 @@
     - Remote `phases.json` profile:
       - `phase1_warm_preference`: 45 s, 6.0 req/s/client,
         `cross_region_ratio=0.45`, `hotspot_direction=lan2_to_lan1`, mix
-        `device_status=0.80`, `dashboard=0.10`, `anomalies=0.10`.
+        `device_status=0.80`, `dashboard=0.10`, `service_pressure=0.10`.
       - `phase2_recovery_arm`: 75 s, 8.0 req/s/client,
         `cross_region_ratio=0.85`, `hotspot_direction=lan2_to_lan1`, mix
-        `device_status=0.85`, `dashboard=0.10`, `anomalies=0.05`.
+        `device_status=0.85`, `dashboard=0.10`, `service_pressure=0.05`.
       - `phase3_recovery_mirror`: 75 s, 8.0 req/s/client,
         `cross_region_ratio=0.85`, `hotspot_direction=lan1_to_lan2`, mix
-        `device_status=0.85`, `dashboard=0.10`, `anomalies=0.05`.
+        `device_status=0.85`, `dashboard=0.10`, `service_pressure=0.05`.
 - Preparation outcome: the first VM rebuild exposed that `cloud-vm` was behind
   the local VIP-routing rollout. The required source/config subset was synced
   to `cloud-vm`, then the full image set was rebuilt again before Run 1. The
@@ -709,7 +831,7 @@ this repository.
 - Name: Elasticity ablation batch 5 normal-workload cloud run
 - Status: completed
 - Objective: Run the Batch 5 matrix from
-  `docs/operation/testing/elasticity_ablation_batch5_plan.md` on `cloud-vm`
+  `docs/operation/archive/testing/elasticity_ablation_batch5_plan.md` on `cloud-vm`
   using the unchanged standard workload in `source/scripts/testing/phases.json`
   to validate the post-Batch-4 storage scale-up path, Tier 1 interaction, and
   natural compute elasticity opportunity under `MAX_DYNAMIC_COMPUTE=2`.

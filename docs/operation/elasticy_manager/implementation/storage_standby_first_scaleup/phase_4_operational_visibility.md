@@ -104,7 +104,7 @@ reserve bootstrap time as the first storage scale-up time.
    standby storage.
 5. Update [docs/operation/testing/testing_overview.md](../../../testing/testing_overview.md)
    with the experiment-interpretation rules above.
-6. Update [docs/operation/other/heartbeat_dynamic_node_gate_plan.md](../../../other/heartbeat_dynamic_node_gate_plan.md)
+6. Update [docs/operation/archive/other/heartbeat_dynamic_node_gate_plan.md](../../../archive/other/heartbeat_dynamic_node_gate_plan.md)
    to document reserved standby storage as the explicit exception to the
    no-heartbeat dynamic-storage rule.
 

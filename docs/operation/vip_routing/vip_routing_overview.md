@@ -1,4 +1,4 @@
-# VIP Routing — Overview
+# VIP Routing ÔÇö Overview
 
 ## Purpose
 
@@ -8,7 +8,7 @@ Sum Model) cost functions. It handles ARP virtualization, DNAT/SNAT flow rule
 installation, and cross-network forwarding via the inter-LAN router.
 
 This is **not a new thread**. All methods run inline in Thread 1's
-`packet_in_handler` — same greenthread, same event loop. State written by
+`packet_in_handler` ÔÇö same greenthread, same event loop. State written by
 Thread 2 (`_server_stats`, `_storage_stats`) is read here without locks because
 eventlet uses cooperative switching and these dicts are only mutated between
 yield points.
@@ -19,28 +19,28 @@ yield points.
 
 ```
 KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
-       │
-       ├── Thread 1 (OS-Ken event loop) ─── packet_in_handler()
-       │       │
-       │       ├─ snoop_arp()  ─────────────► learn IP ↔ MAC
-       │       │
-       │       ├─ Is VIP packet? ──Yes──► handle_vip_packet_in()
-       │       │                              ├─ ARP for VIP? → _reply_vip_arp()
-       │       │                              ├─ VIP_SERVER?   → select_server() + DNAT/SNAT
-       │       │                              ├─ VIP_DATA_N1?  → select_storage("n1") + DNAT/SNAT
-       │       │                              └─ VIP_DATA_N2?  → select_storage("n2") + DNAT/SNAT
-       │       │
-       │       └─ Not VIP ────────────► existing L2 learning logic
-       │
-      ├── Thread 2 (ZMQ subscriber) ── _on_telemetry_update()
-      │       ├─ process_secondary_events() / telemetry fallback
-      │       │    → _promote_storage_backend()
-      │       │    → add_storage_mac() + mark_storage_backend_warm()
-      │       ├─ update_server_stats() / update_storage_stats()
-      │       └─ maintain controller-side warm-lease inputs for later
-      │            fresh storage selections
-      │
-      └── Thread 3 (elasticity) ── register_new_server_backend() after spawning new containers
+       Ôöé
+       Ôö£ÔöÇÔöÇ Thread 1 (OS-Ken event loop) ÔöÇÔöÇÔöÇ packet_in_handler()
+       Ôöé       Ôöé
+       Ôöé       Ôö£ÔöÇ snoop_arp()  ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔû║ learn IP Ôåö MAC
+       Ôöé       Ôöé
+       Ôöé       Ôö£ÔöÇ Is VIP packet? ÔöÇÔöÇYesÔöÇÔöÇÔû║ handle_vip_packet_in()
+       Ôöé       Ôöé                              Ôö£ÔöÇ ARP for VIP? ÔåÆ _reply_vip_arp()
+       Ôöé       Ôöé                              Ôö£ÔöÇ VIP_SERVER?   ÔåÆ select_server() + DNAT/SNAT
+       Ôöé       Ôöé                              Ôö£ÔöÇ VIP_DATA_N1?  ÔåÆ select_storage("n1") + DNAT/SNAT
+       Ôöé       Ôöé                              ÔööÔöÇ VIP_DATA_N2?  ÔåÆ select_storage("n2") + DNAT/SNAT
+       Ôöé       Ôöé
+       Ôöé       ÔööÔöÇ Not VIP ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔû║ existing L2 learning logic
+       Ôöé
+      Ôö£ÔöÇÔöÇ Thread 2 (ZMQ subscriber) ÔöÇÔöÇ _on_telemetry_update()
+      Ôöé       Ôö£ÔöÇ process_secondary_events() / telemetry fallback
+      Ôöé       Ôöé    ÔåÆ _promote_storage_backend()
+      Ôöé       Ôöé    ÔåÆ add_storage_mac() + mark_storage_backend_warm()
+      Ôöé       Ôö£ÔöÇ update_server_stats() / update_storage_stats()
+      Ôöé       ÔööÔöÇ maintain controller-side warm-lease inputs for later
+      Ôöé            fresh storage selections
+      Ôöé
+      ÔööÔöÇÔöÇ Thread 3 (elasticity) ÔöÇÔöÇ register_new_server_backend() after spawning new containers
 ```
 
 `VipRoutingMixin` must sit **before** `TopologyMixin` in the class MRO so that
@@ -53,11 +53,11 @@ a switch reconnect.
 
 ```
 source/sdn_controller/
-├── main_n1.py / main_n2.py       # Controller entry points — class MRO:
-│                                 #   KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
-│                                 #   _on_telemetry_update() → update stats + threshold alerts
-├── vip_routing.py                # VipRoutingMixin — ARP snooping, VIP intercept,
-│                                 #   WSM cost functions, DNAT/SNAT rule pairs
+Ôö£ÔöÇÔöÇ main_n1.py / main_n2.py       # Controller entry points ÔÇö class MRO:
+Ôöé                                 #   KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)
+Ôöé                                 #   _on_telemetry_update() ÔåÆ update stats + threshold alerts
+Ôö£ÔöÇÔöÇ vip_routing.py                # VipRoutingMixin ÔÇö ARP snooping, VIP intercept,
+Ôöé                                 #   WSM cost functions, DNAT/SNAT rule pairs
 ```
 
 ---
@@ -85,20 +85,23 @@ The storage-recovery path still uses separate `VIP_DATA_RECOVERY_N1` and
 `VIP_DATA_RECOVERY_N2` addresses after a real storage-path connection failure,
 but the edge server no longer relies on a one-shot recovery client model.
 `app.py` now seeds a fixed startup-defined LAN registry and tracks one current
-epoch plus draining retired epochs per LAN. Each epoch binds one request-owned
-storage path boundary: mode (`normal` or `recovery`), bound VIP, lazy
-`MongoClient`, lease counts, and bounded recovery expiry. `AutoReconnect`
-rotates the current epoch to a recovery epoch with compare-and-swap semantics,
-old requests keep their leased epoch, new admitted requests lease the new
-current epoch, and background housekeeping rolls expired recovery epochs back to
+epoch plus draining retired epochs per LAN. Each request now holds at most one
+request-local lease per owner LAN, and that lease points to the bound epoch.
+The epoch still owns mode (`normal` or `recovery`), bound VIP, lazy
+`MongoClient`, lease counts, and bounded recovery expiry. Repeated DB blocks in
+the same request reuse the same request-owned lease, request teardown releases
+held leases once per LAN, and `AutoReconnect` rotates the current epoch to a
+recovery epoch with compare-and-swap semantics for future admissions. Old
+requests keep their leased epoch, new admitted requests lease the new current
+epoch, and background housekeeping rolls expired recovery epochs back to
 normal. `T_dados` is now observation-only and never forces reconnection. See
 [../other/edge_storage_connection_hard_failure_epoch_plan.md](../other/edge_storage_connection_hard_failure_epoch_plan.md).
 The design background remains documented in
 [implementation/vip_data_recovery_vip_arming_plan.md](./implementation/vip_data_recovery_vip_arming_plan.md)
 and
-[implementation/vip_data_recovery_flow_session_plan.md](./implementation/vip_data_recovery_flow_session_plan.md).
+[implementation/vip_data_recovery_epoch_model.md](./implementation/vip_data_recovery_epoch_model.md).
 
-### Scope — Tier 0 and Tier 2 only
+### Scope ÔÇö Tier 0 and Tier 2 only
 
 VIP routing covers the Tier 0 (direct cross-region read over `VIP_DATA_N*`) and
 Tier 2 (full replica-set member behind the owner LAN's `VIP_DATA`) paths. It
@@ -114,19 +117,19 @@ is rejected on principle. See
 
 ---
 
-## MAC → IP Resolution
+## MAC ÔåÆ IP Resolution
 
 For DNAT/SNAT rules the controller needs both the MAC and IP of the selected
 backend. The `_mac_to_ip` / `_ip_to_mac` dictionaries (defined in
 `VipRoutingMixin.__init__`) are populated from three sources:
 
-1. **ARP snooping** (`snoop_arp()`) — any ARP packet that reaches the controller
+1. **ARP snooping** (`snoop_arp()`) ÔÇö any ARP packet that reaches the controller
    has its sender IP/MAC recorded. This is the authoritative source and
    overwrites static seeds.
-2. **Flush + ping bootstrap** — instead of `arping` (which may not be installed
+2. **Flush + ping bootstrap** ÔÇö instead of `arping` (which may not be installed
    in containers), the network setup scripts use flush + ping to force ARP
    resolution at startup.
-3. **Peer topology seeding** — `TopologyMixin.on_topology_update()` calls
+3. **Peer topology seeding** ÔÇö `TopologyMixin.on_topology_update()` calls
    `register_backend_ip(mac, ip)` for every peer host that carries an `ip`
    field in its `TopologyHostEntry`. This ensures the controller can route to
    peer backends immediately without waiting for cross-network ARP traffic.
@@ -149,9 +152,9 @@ To ensure VIP ARP requests always reach the controller instead of being flooded
 by the topology layer's ARP flood rule (priority 1), persistent punt rules are
 installed at priority 100:
 
-- `install_vip_arp_punt_rules()` — matches `eth_type=0x0806, arp_tpa=<VIP_IP>`,
+- `install_vip_arp_punt_rules()` ÔÇö matches `eth_type=0x0806, arp_tpa=<VIP_IP>`,
   outputs to controller.
-- `install_vip_punt_rules()` — matches `eth_type=0x0800, ipv4_dst=<VIP_IP>`,
+- `install_vip_punt_rules()` ÔÇö matches `eth_type=0x0800, ipv4_dst=<VIP_IP>`,
   outputs to controller.
 
 Both are reinstalled automatically via the `_on_datapath_connected` hook
@@ -163,7 +166,7 @@ processing.
 
 ---
 
-## Backend Selection — WSM Cost Functions
+## Backend Selection ÔÇö WSM Cost Functions
 
 ### Server Selection (VIP_SERVER)
 
@@ -177,7 +180,7 @@ Default weights: `W_CPU=0.2`, `W_RAM=0.2`, `W_REQUESTS=0.2`, `W_HOPS=0.4`.
 
 ### Storage Selection (VIP_DATA)
 
-`select_storage(domain, client_mac)` picks the storage node with the lowest cost
+`select_storage(domain, client_mac, *, recovery=False)` picks the storage node with the lowest cost
 from the domain's pool (`vip_storage_pool_n1` or `vip_storage_pool_n2`):
 
 $$
@@ -195,6 +198,15 @@ Default weights: `W_STORAGE_CPU=0.2`, `W_STORAGE_RAM=0.2`,
 - **Round-robin:** when multiple backends share the lowest cost (common during
   cold start when all values are 0.0), a round-robin counter distributes
   traffic evenly. Each domain's storage pool has its own counter.
+- **Last-normal attribution:** normal `VIP_DATA` selections remember the chosen
+   backend per `(edge_server_mac, domain)` inside `VipRoutingMixin`. Recovery
+   selections pass `recovery=True`, exclude that remembered normal backend when
+   another candidate exists, then run the same warm-first/WSM selector stack
+   without overwriting the remembered normal backend. Local storage removal via
+   `unregister_storage_backend(...)` clears remembered entries that still point
+   at the removed backend, while peer disappearance remains safe because the
+   recovery filter falls back whenever the remembered backend is no longer in
+   the current pool.
 
 ### Warm Leases
 
@@ -272,23 +284,23 @@ connected). For cross-network backends, falls back to `ROUTER_OVS_PORT`.
 When the selected backend resides on the peer LAN (MAC found in `peer_hosts`),
 the packet must traverse the inter-LAN router:
 
-### Forward Path (Client → VIP → Cross-Network Backend)
+### Forward Path (Client ÔåÆ VIP ÔåÆ Cross-Network Backend)
 
 1. DNAT rule outputs to `ROUTER_OVS_PORT` (OVS port connected to the router).
-2. `eth_dst` is set to `ROUTER_MAC` (the router's LAN-side interface MAC) — not
-   the final backend MAC — so the router's kernel accepts the frame for L3
+2. `eth_dst` is set to `ROUTER_MAC` (the router's LAN-side interface MAC) ÔÇö not
+   the final backend MAC ÔÇö so the router's kernel accepts the frame for L3
    forwarding.
 3. Router forwards based on `ipv4_dst`, rewrites MACs (standard L3 hop-by-hop).
 4. Packet arrives at the peer LAN's OVS as a normal L2 frame addressed to the
-   backend — no second VIP interception occurs.
+   backend ÔÇö no second VIP interception occurs.
 
-### Return Path (Backend → Client)
+### Return Path (Backend ÔåÆ Client)
 
 1. Backend responds normally; peer LAN forwards to router.
 2. Router rewrites `eth_src` to its own LAN MAC.
 3. SNAT rule on the originating controller matches `eth_src=ROUTER_MAC`
-   (not the real backend MAC) and rewrites `eth_src→VIP_MAC`,
-   `ipv4_src→VIP_IP`.
+   (not the real backend MAC) and rewrites `eth_srcÔåÆVIP_MAC`,
+   `ipv4_srcÔåÆVIP_IP`.
 4. Client sees the response from the VIP address.
 
 ### Configuration
@@ -306,10 +318,10 @@ Each controller receives its own `ROUTER_MAC` via `-e ROUTER_MAC=...` in the
 ## Edge Server Connection Model
 
 Edge servers (`app.py`) connect to VIP_DATA addresses to reach MongoDB storage.
-Since device documents are partitioned by LAN — each seeded only into its origin
-LAN's replica set — the edge server routes each query to the correct VIP_DATA
+Since device documents are partitioned by LAN ÔÇö each seeded only into its origin
+LAN's replica set ÔÇö the edge server routes each query to the correct VIP_DATA
 address based on the `lan1`/`lan2` prefix in the document `_id` (e.g.
-`lan1::device::042` → `VIP_DATA_N1`, `lan2::device::007` → `VIP_DATA_N2`).
+`lan1::device::042` ÔåÆ `VIP_DATA_N1`, `lan2::device::007` ÔåÆ `VIP_DATA_N2`).
 
 ### Per-LAN Epoch Clients
 
@@ -338,17 +350,17 @@ epoch and bound VIP while new admitted requests move onto the new current epoch.
 
 ### LAN Resolution from Document IDs
 
-Device and node IDs follow `{lan}::{type}::{number}` — the LAN is
+Device and node IDs follow `{lan}::{type}::{number}` ÔÇö the LAN is
 `id.split("::")[0]`. Each workload route resolves the target LAN:
 
-| Route             | `sensor_reports` / `device_registry` LAN                         | `query_events` LAN |
+| Route | `sensor_reports` / `device_registry` LAN | Local support state |
 | ----------------- | -------------------------------------------------------------------- | -------------------- |
-| `device_latest` | Parsed from `device_id` / `node_id` prefix                       | `LAN_ID` (local)   |
-| `anomalies`     | Grouped by `device_id` prefix per enrichment query                 | `LAN_ID` (local)   |
-| `dashboard`     | `node_id` prefix for registry; **both LANs** for sensor data | —                   |
+| `device_latest` | Parsed from `device_id` / `node_id` prefix | Local edge buffer only |
+| `service_pressure` | ÔÇö | Local edge buffer only |
+| `dashboard` | `node_id` prefix for registry; **both LANs** for sensor data | Local edge buffer only |
 
-`query_events` always goes to the local `LAN_ID` because it tracks this edge
-server's activity, not the data's origin.
+`service_pressure` never traverses `VIP_DATA`: it summarizes only the recent
+request activity already buffered inside the serving edge process.
 
 ### Current VIP Update Surface and Recovery Path
 
@@ -376,7 +388,7 @@ Instead:
 See
 [implementation/vip_data_recovery_vip_arming_plan.md](./implementation/vip_data_recovery_vip_arming_plan.md)
 and
-[implementation/vip_data_recovery_flow_session_plan.md](./implementation/vip_data_recovery_flow_session_plan.md).
+[implementation/vip_data_recovery_epoch_model.md](./implementation/vip_data_recovery_epoch_model.md).
 
 ### Storage Promotion and Recovery Path
 
@@ -397,10 +409,23 @@ edge-local blast-radius reduction rather than backend exclusion:
 - the controller's recovery VIP handling narrows the recovery flow, but it does
    not promise a different backend unless the chosen VIP path differs
 
-See [implementation/vip_warm_leases_plan.md](./implementation/vip_warm_leases_plan.md),
-[implementation/vip_data_recovery_vip_arming_plan.md](./implementation/vip_data_recovery_vip_arming_plan.md),
+See [../archive/vip_routing/implementation/vip_warm_leases_plan.md](../archive/vip_routing/implementation/vip_warm_leases_plan.md),
+[../archive/vip_routing/implementation/vip_data_recovery_vip_arming_plan.md](../archive/vip_routing/implementation/vip_data_recovery_vip_arming_plan.md),
 and
-[implementation/vip_data_recovery_flow_session_plan.md](./implementation/vip_data_recovery_flow_session_plan.md).
+[implementation/vip_data_recovery_epoch_model.md](./implementation/vip_data_recovery_epoch_model.md).
+The request-scoped lease baseline from the `02_` plan is now implemented: one
+request-owned lease per owner LAN reuses the same epoch inside a request,
+bounded replay-safe rebind governs failure cutover, and outcome visibility is
+part of the serving-path model. The controller-side recovery-only avoidance
+baseline from the `03_` plan is also implemented: recovery selection excludes
+the remembered last normal backend when another candidate exists, local
+unregister clears remembered entries, and peer disappearance remains safe via
+pool-membership fallback. The `02_` and `03_` plan folders remain as phased
+implementation history; use this overview,
+[implementation/vip_data_recovery_epoch_model.md](./implementation/vip_data_recovery_epoch_model.md),
+and [../system_mechanisms.md](../system_mechanisms.md) as the current baseline
+reference. Only the optional replay-safety refinement in `02_` Phase 4 remains
+open.
 
 ### Connection Failure Handling
 
@@ -412,14 +437,14 @@ circuit breaker with three states:
 
 | State     | Behaviour                                                            |
 | --------- | -------------------------------------------------------------------- |
-| CLOSED    | Normal operation — queries proceed to `timed_db()` epoch checkout |
-| OPEN      | Fail-fast —`CircuitOpenError` raised immediately (no 3 s timeout) |
-| HALF_OPEN | One probe request allowed; success → CLOSED, failure → re-OPEN     |
+| CLOSED    | Normal operation ÔÇö queries proceed to `timed_db()` epoch checkout |
+| OPEN      | Fail-fast ÔÇö`CircuitOpenError` raised immediately (no 3 s timeout) |
+| HALF_OPEN | One probe request allowed; success ÔåÆ CLOSED, failure ÔåÆ re-OPEN     |
 
 The circuit trips on `AutoReconnect` and stays OPEN for `CIRCUIT_COOLDOWN_S`
 seconds (default 5).  Because `CircuitOpenError` inherits from `PyMongoError`,
 existing endpoint `except PyMongoError` handlers return 503 without code
-changes — but the response is near-instant instead of blocking 3 seconds.
+changes ÔÇö but the response is near-instant instead of blocking 3 seconds.
 
 **Per-LAN T_dados Observation.** The `_check_tdados_threshold` after-request
 hook still tracks cumulative MongoDB time **per LAN** in each request, but it
@@ -458,9 +483,9 @@ request-visible storage state over time.
 
 Thread 2's `_on_telemetry_update()` callback (in `main_n*.py`) calls:
 
-- `update_server_stats(servers)` — stores per-server `ServerSummary` (CPU, RAM,
+- `update_server_stats(servers)` ÔÇö stores per-server `ServerSummary` (CPU, RAM,
   request count) keyed by MAC. Read by `select_server()`.
-- `update_storage_stats(storage_servers)` — stores per-storage
+- `update_storage_stats(storage_servers)` ÔÇö stores per-storage
   `StorageServerSummary` (CPU, RAM, connections, replication lag) keyed by MAC.
   Read by `select_storage()`.
 
@@ -470,11 +495,11 @@ between telemetry and VIP pool entries.
 
 ---
 
-## Request Lifecycle — Sequence Diagram
+## Request Lifecycle ÔÇö Sequence Diagram
 
 The following diagram shows the full end-to-end lifecycle of an HTTP request
 through the double-VIP routing pipeline. It covers the first request (cold path)
-where no DNAT/SNAT flow rules exist yet — subsequent requests within the idle
+where no DNAT/SNAT flow rules exist yet ÔÇö subsequent requests within the idle
 timeout window bypass the controller entirely and hit the cached flow rules at
 the switch.
 
@@ -486,37 +511,37 @@ sequenceDiagram
     participant ES as Edge Server
     participant DB as Storage Node<br/>(MongoDB)
 
-    Note over C,DB: Phase 1 — VIP_SERVER routing (client → edge server)
+    Note over C,DB: Phase 1 ÔÇö VIP_SERVER routing (client ÔåÆ edge server)
 
     C->>S: HTTP request to VIP_SERVER<br/>(10.0.0.253:5000)
-    Note right of S: No matching flow rule →<br/>priority-100 punt triggers Packet-In
+    Note right of S: No matching flow rule ÔåÆ<br/>priority-100 punt triggers Packet-In
     S->>Ctrl: Packet-In (SYN to VIP_SERVER)
-    Ctrl->>Ctrl: select_server(client_mac)<br/>WSM cost → pick best edge server
+    Ctrl->>Ctrl: select_server(client_mac)<br/>WSM cost ÔåÆ pick best edge server
     Ctrl->>S: Install DNAT/SNAT flow rules (priority 200)<br/>+ Packet-Out first packet
-    Note right of S: DNAT: client→VIP rewrites to client→edge_server<br/>SNAT: edge_server→client rewrites to VIP→client
+    Note right of S: DNAT: clientÔåÆVIP rewrites to clientÔåÆedge_server<br/>SNAT: edge_serverÔåÆclient rewrites to VIPÔåÆclient
     S->>ES: Forwarded request<br/>(dst rewritten to edge server IP)
 
-    Note over C,DB: Phase 2 — Edge server processing
+    Note over C,DB: Phase 2 ÔÇö Edge server processing
 
-    ES->>ES: Parse request, extract LAN<br/>from document ID prefix<br/>(e.g. "lan1::device::001" → lan1)
+    ES->>ES: Parse request, extract LAN<br/>from document ID prefix<br/>(e.g. "lan1::device::001" ÔåÆ lan1)
     ES->>ES: Resolve VIP_DATA address<br/>for target LAN domain
 
-    Note over C,DB: Phase 3 — VIP_DATA routing (edge server → storage)
+    Note over C,DB: Phase 3 ÔÇö VIP_DATA routing (edge server ÔåÆ storage)
 
     ES->>S: MongoDB query to VIP_DATA<br/>(e.g. 10.0.0.254:27018)
-    Note right of S: No matching flow rule →<br/>priority-100 punt triggers Packet-In
+    Note right of S: No matching flow rule ÔåÆ<br/>priority-100 punt triggers Packet-In
     S->>Ctrl: Packet-In (SYN to VIP_DATA)
-    Ctrl->>Ctrl: select_storage(domain, server_mac)<br/>WSM cost → pick best storage node
+    Ctrl->>Ctrl: select_storage(domain, server_mac)<br/>WSM cost ÔåÆ pick best storage node
     Ctrl->>S: Install DNAT/SNAT flow rules (priority 200)<br/>+ Packet-Out first packet
     S->>DB: Forwarded query<br/>(dst rewritten to storage node IP)
 
-    Note over C,DB: Phase 4 — Response path
+    Note over C,DB: Phase 4 ÔÇö Response path
 
     DB-->>S: Query result
-    Note right of S: SNAT rule rewrites<br/>storage_IP→VIP_DATA_IP
+    Note right of S: SNAT rule rewrites<br/>storage_IPÔåÆVIP_DATA_IP
     S-->>ES: Response (src = VIP_DATA)
     ES-->>S: HTTP response to client
-    Note right of S: SNAT rule rewrites<br/>edge_server_IP→VIP_SERVER_IP
+    Note right of S: SNAT rule rewrites<br/>edge_server_IPÔåÆVIP_SERVER_IP
     S-->>C: Response (src = VIP_SERVER)
 ```
 
@@ -526,11 +551,11 @@ sequenceDiagram
 
 | Priority | Rule                          | Trigger             |
 | -------- | ----------------------------- | ------------------- |
-| 100      | VIP ARP punt → controller    | Switch connect      |
-| 100      | VIP IP punt → controller     | Switch connect      |
+| 100      | VIP ARP punt ÔåÆ controller    | Switch connect      |
+| 100      | VIP IP punt ÔåÆ controller     | Switch connect      |
 | 200      | DNAT/SNAT (per-client, timed) | First VIP packet-in |
 
-Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
+Lower-priority rules (0ÔÇô10) are installed by `TopologyMixin` ÔÇö see the
 [Topology Overview](../topology/topology_overview.md).
 
 ---
@@ -551,10 +576,10 @@ Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 | `VIP_IDLE_TIMEOUT`      | `30`                       | DNAT/SNAT idle timeout (seconds)                        |
 | `VIP_HARD_TIMEOUT`      | `120`                      | DNAT/SNAT hard timeout (seconds)                        |
 | `ROUTER_OVS_PORT`       | `0`                        | OVS port to inter-LAN router (0 = disabled)             |
-| `ROUTER_MAC`            | —                           | Router LAN-side MAC for cross-network SNAT match        |
+| `ROUTER_MAC`            | ÔÇö                           | Router LAN-side MAC for cross-network SNAT match        |
 | `LAN_ID`                | `lan1`                     | Edge server's home LAN (replaces `REGION`)            |
 | `DB_PORT`               | `27018`                    | MongoDB port for VIP_DATA addresses                     |
-| `MAX_IDLE_MS`           | `VIP_IDLE_TIMEOUT × 1000` | PyMongo `maxIdleTimeMS` — socket recycling window    |
+| `MAX_IDLE_MS`           | `VIP_IDLE_TIMEOUT ├ù 1000` | PyMongo `maxIdleTimeMS` ÔÇö socket recycling window    |
 | `CIRCUIT_COOLDOWN_S`    | `5`                        | Per-LAN circuit breaker cooldown before probe (seconds) |
 | `TAU_DADOS_MS`          | `5000`                     | Per-request DB time threshold for client eviction (ms)  |
 
@@ -562,6 +587,6 @@ Lower-priority rules (0–10) are installed by `TopologyMixin` — see the
 
 ## Planned / Not Yet Implemented
 
-- **Staleness cost function** — an additional WSM dimension penalizing backends
+- **Staleness cost function** ÔÇö an additional WSM dimension penalizing backends
   whose telemetry has gone stale, so idle or unresponsive nodes are
   deprioritized instead of frozen at their last known cost.

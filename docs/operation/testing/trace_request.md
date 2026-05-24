@@ -1,6 +1,10 @@
-# Request Trace — Implementation Plan
+# Request Trace
 
-This document specifies the implementation of an end-to-end request trace script that demonstrates the full VIP routing pipeline working correctly. Given a client namespace and a curl command, the script fires the request, collects logs from every component the request touched (SDN controller + edge server), and formats them into a readable trace showing each hop in the lifecycle.
+This document describes the end-to-end request trace script that demonstrates
+the full VIP routing pipeline working correctly. Given a client namespace and
+a curl command, the script fires the request, collects logs from every
+component the request touched (SDN controller + edge server), and formats them
+into a readable trace showing each hop in the lifecycle.
 
 **Location:** `source/scripts/testing/trace_request.sh`
 
@@ -50,9 +54,9 @@ sudo bash source/scripts/testing/trace_request.sh \
 sudo bash source/scripts/testing/trace_request.sh --ns lan1_client_1 \
   -- curl -s http://10.0.0.100:5000/health
 
-# Anomaly detection query
+# Local service-pressure query
 sudo bash source/scripts/testing/trace_request.sh --ns lan1_client_1 \
-  -- curl -s "http://10.0.0.100:5000/anomalies?region=lan1&window=1"
+  -- curl -s "http://10.0.0.100:5000/service_pressure?window_min=10&limit=10"
 
 # Dashboard query
 sudo bash source/scripts/testing/trace_request.sh --ns lan1_client_1 \
