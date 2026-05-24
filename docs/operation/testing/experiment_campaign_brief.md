@@ -1,5 +1,390 @@
 # Experiment Campaign Brief
 
+## Completed One-Off Run - Hybrid Long-Cycle Observation Repeat Storage Check
+
+- Status: completed.
+- Objective: rerun the same long-cycle current-code observation workload used
+  for `20260524_013746_hybrid_observation_current_code` so the previous
+  “worked fine while storage stayed at 1” result can be tested for
+  repeatability.
+- Intended delta versus `20260524_013746_hybrid_observation_current_code`:
+  - keep the same current runtime and controller code state.
+  - keep the same standard long-cycle schedule from
+    `source/scripts/testing/phases.json`.
+  - keep the run observation-only: no `--fault-plan`.
+  - change only the run label so the result is recorded as a separate repeat
+    observation.
+- Sync and rebuild policy:
+  - no new sync is required before launch; local and remote SHA256 match for
+    `source/scripts/Makefile`, `source/scripts/testing/phases.json`,
+    `source/scripts/testing/run_experiment.sh`,
+    `source/sdn_controller/vip_routing.py`, and
+    `source/docker/edge_server/source/app.py`.
+  - no image rebuild is required before launch; the checked baked
+    `edge_server` runtime source also matches between local and `cloud-vm`.
+- `sudo -n` preflight:
+  - the required path is permitted: a dry-run of
+    `sudo -n make -C source/scripts -n setup_network create_clients
+    setup_test_data run_experiment
+    RUN_LABEL=hybrid_observation_current_code_repeat_storage_check
+    SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1` completed without prompting.
+- Run label: `hybrid_observation_current_code_repeat_storage_check`.
+- Primary comparisons:
+  - compare directly against
+    `20260524_013746_hybrid_observation_current_code` to test whether the same
+    no-storage-scale shape repeats.
+  - compare secondarily against `20260517_090203_two_regime_1680_full_recreate`
+    only as the nearest kept long-cycle current-code baseline.
+- Launch command:
+  `ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=hybrid_observation_current_code_repeat_storage_check SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"`.
+- Live checkpoint plan: passive monitoring only. Use read-only checks against
+  `current_phase.txt`, `resource_stats.csv`, `per_node_stats.csv`,
+  `container_events.csv`, controller logs, and `service_logs/`. Continue unless
+  setup fails before useful traffic, the allowed `sudo -n make` path fails, or
+  the run clearly stops progressing.
+- Checkpoint question: when the same long-cycle workload is repeated on the
+  same current-code state, does `storage_count` again stay fixed at 1, and if
+  so does the previous stable latency and low-failure result reproduce?
+- Agent authority: full autonomous authority within the experiment-runner
+  contract for this run. The runner may launch, monitor passively, copy
+  artifacts back locally, analyze the run, update this brief, and trim the
+  cloud copy after verification.
+- Result: completed as
+  `20260524_091543_hybrid_observation_current_code_repeat_storage_check`.
+- Completion evidence:
+  - the remote run folder reached `current_phase.txt=idle`.
+  - the main `sudo -n make -C source/scripts ... run_experiment` terminal
+    exited with code 0.
+  - the traffic generator completed all nine phases: `baseline`,
+    `local_moderate`, `storage_stress`, `cross_region_hotspot`,
+    `reverse_hotspot`, `compute_ramp`, `compute_spike`,
+    `sustained_plateau`, and `demand_drop`.
+  - the run emitted the expected artifact set including `client_requests.csv`,
+    all per-phase `client_requests_*.csv` files, `resource_stats.csv`,
+    `per_node_stats.csv`, `container_events.csv`, both controller logs,
+    `service_logs/`, and `phases_snapshot.json`.
+- Artifact status: the full run folder was copied back locally to
+  `source/scripts/testing/metrics/20260524_091543_hybrid_observation_current_code_repeat_storage_check`.
+  Local post-run analysis produced:
+  - `analysis/recovery_validation_summary.md`
+  - `analysis/recovery_validation_fault_windows.csv`
+  - `analysis/recovery_validation_request_lease_outcomes.csv`
+  - `run_summary.md`
+  - `latency_summary.csv`
+  - `resource_summary.csv`
+  - `elasticity_events.csv`
+  - `node_lifecycle_timings.csv`
+- Remote retention status: the cloud copy was deleted after the verified local
+  copy-back succeeded. The temporary remote tarball used to speed up transfer
+  was also deleted, and `sudo -n make -C source/scripts cleanup_metrics`
+  returned the remote metrics directory to `0` run folders.
+- Interpretation:
+  - the repeat run reproduced the earlier no-storage-scale shape. It finished
+    with 19 non-200 responses out of 63,531 total requests, or 0.03% overall.
+  - dynamic compute elasticity was slightly more active than in
+    `20260524_013746_hybrid_observation_current_code`: container events
+    recorded 12 dynamic compute additions and 12 removals, `server_count`
+    again peaked at 3, and parsed controller timings placed compute ready times
+    between 1.22 s and 2.51 s with cleanup timings between 0.45 s and 1.31 s.
+  - `storage_count` again stayed fixed at 1, with no dynamic storage and no
+    Tier 1 selective-sync activity.
+  - recovery validation again remained entirely on `success_normal`
+    (`lan1=43813`, `lan2=40243`) with `success_after_rebind=0`,
+    `failure_terminal=0`, and controller avoidance/fallback markers still at 0.
+  - compared directly against
+    `20260524_013746_hybrid_observation_current_code`, the earlier “worked
+    fine” result is therefore repeatable under the same no-storage-scale
+    condition rather than being a one-off run. The remaining uncertainty is
+    unchanged: this campaign still does not show whether that stable behavior
+    depends on storage never scaling, because the workload again failed to move
+    `storage_count` above 1.
+- Next action: if the next campaign must determine whether no-storage-scale is
+  the reason for the stable outcome, use a follow-up workload that reliably
+  forces storage scale-out or a separately authorized storage-churn campaign.
+
+## Campaign Outcome - Hybrid Observation Family
+
+- Status: completed across all three planned runs.
+- Completed runs:
+  - `20260524_004416_hybrid_validation_n1`
+  - `20260524_011256_hybrid_validation_n2`
+  - `20260524_013746_hybrid_observation_current_code`
+- Overall result:
+  - all three observation-only runs completed and were copied back locally.
+  - the current request-lease implementation did not show an obvious stability
+    regression under either the targeted or long-cycle schedules.
+  - none of the three runs naturally exercised the failed-backend-avoidance
+    branch: all recovery-validation outputs remained entirely on
+    `success_normal`, and controller avoidance/fallback markers stayed at 0.
+  - the long-cycle run still exercised compute elasticity normally, with 11
+    dynamic compute add/remove cycles, `server_count` peaking at 3, and
+    `storage_count` fixed at 1.
+- Remote retention status: the local copies remain under
+  `source/scripts/testing/metrics/`, and the cloud copies were deleted after a
+  dedicated `cleanup_metrics` target was added to the approved
+  `sudo -n make -C source/scripts ...` path.
+- Next recommended action: if the next campaign must prove the avoidance branch
+  rather than confirm current-code stability, plan a stronger natural backend-
+  churn workload or a separate explicitly authorized controlled-failure run.
+
+## Completed One-Off Run - Hybrid Recovery Validation n2
+
+- Status: completed.
+- Objective: launch the mirrored short targeted hybrid observation run using
+  the `n2` phase recipe so the current request-lease implementation and any
+  naturally occurring controller recovery markers are observed under
+  `lan1 -> lan2` pressure.
+- Intended delta versus `20260524_004416_hybrid_validation_n1`:
+  - keep the same synced runtime and harness code already used for `n1`.
+  - switch only the phase profile to
+    `source/scripts/testing/phases_experiment_hybrid_validation_n2.json`.
+  - keep the run observation-only: no `--fault-plan`.
+- Sync and rebuild policy:
+  - no new runtime code sync is required before `n2`; the cloud VM already
+    matches the local run-critical files from the completed `n1` launch.
+  - no image rebuild is required before `n2`; `edge_server` was rebuilt from
+    the synced request-lease runtime sources immediately before `n1`.
+- `sudo -n` path: reuse the already verified non-interactive make path with
+  `PHASES_CONFIG=testing/phases_experiment_hybrid_validation_n2.json` and the
+  same combined prerequisite chain.
+- Run label: `hybrid_validation_n2`.
+- Primary comparisons:
+  - compare directly against `20260524_004416_hybrid_validation_n1` to detect
+    directional asymmetry between `lan2 -> lan1` and `lan1 -> lan2` targeted
+    pressure.
+  - compare both targeted runs against
+    `20260517_090203_two_regime_1680_full_recreate` only as a broader
+    architecture reference, not as the same workload family.
+- Launch command:
+  `ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=hybrid_validation_n2 PHASES_CONFIG=testing/phases_experiment_hybrid_validation_n2.json SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"`.
+- Live checkpoint plan: passive monitoring only. Use read-only checks against
+  `current_phase.txt`, `resource_stats.csv`, `container_events.csv`,
+  controller logs, and `service_logs/`. Continue unless setup fails before
+  useful traffic, the allowed `sudo -n make` path fails, or the run clearly
+  stops progressing.
+- Checkpoint question: does the mirrored `n2` workload show the same clean
+  request-lease behavior as `n1`, or does the opposite hotspot direction expose
+  different latency, failure, or controller-marker behavior?
+- Agent authority: full autonomous authority within the experiment-runner
+  contract for this run. The runner may launch, monitor passively, copy
+  artifacts back locally, and update this brief after completion.
+- Result: completed as `20260524_011256_hybrid_validation_n2`.
+- Completion evidence:
+  - the remote run folder reached `current_phase.txt=idle`.
+  - the traffic generator completed all four phases: `warmup`,
+    `storage_stress_n2`, `hotspot_n2`, and `cooldown`.
+  - the run emitted the expected artifact set including `client_requests.csv`,
+    `resource_stats.csv`, `per_node_stats.csv`, both controller logs,
+    `container_events.csv`, `service_logs/`, and `phases_snapshot.json`.
+- Artifact status: the full run folder was copied back locally to
+  `source/scripts/testing/metrics/20260524_011256_hybrid_validation_n2`.
+  Local post-run analysis produced:
+  - `analysis/recovery_validation_summary.md`
+  - `analysis/recovery_validation_fault_windows.csv`
+  - `analysis/recovery_validation_request_lease_outcomes.csv`
+- Remote retention status: the cloud copy was deleted after the dedicated
+  `cleanup_metrics` target was added to the approved non-interactive make path.
+- Interpretation:
+  - no explicit fault events were recorded, as intended for this observation-
+    only run.
+  - request-lease outcomes were entirely `success_normal` in the generated
+    recovery summary: `lan1=8903`, `lan2=12989`, with
+    `success_after_rebind=0` and `failure_terminal=0` on both LANs.
+  - controller recovery markers were absent again: `avoidance=0`,
+    `fallback=0`.
+  - the mirrored `n2` workload therefore matches the main `n1` conclusion:
+    the targeted run completed, but it did not naturally force the
+    failed-backend recovery branch strongly enough to exercise the avoidance
+    logic.
+- Next action: launch the standard long-cycle observation run on the same
+  current-code state, then interpret it using the fact that neither targeted
+  observation run naturally exercised the recovery branch.
+
+## Completed One-Off Run - Hybrid Long-Cycle Observation Current Code
+
+- Status: completed.
+- Objective: after both targeted runs, execute the unchanged standard
+  long-cycle workload on the same synced current-code state to observe broader
+  architecture behavior with the new request-lease implementation in place.
+- Intended delta versus `20260517_090203_two_regime_1680_full_recreate`:
+  - keep the same current runtime and controller code state used for the
+    targeted hybrid runs.
+  - run the standard long-cycle schedule from
+    `source/scripts/testing/phases.json`.
+  - keep the run observation-only: no `--fault-plan`.
+- Sync and rebuild policy:
+  - `source/scripts/testing/phases.json` was synced to `cloud-vm` before
+    launch, because it was not part of the targeted-run-only sync performed for
+    `n1`.
+  - no additional image rebuild was required before launch; the long-cycle run
+    reused the same rebuilt `edge_server` image already validated by `n1` and
+    `n2`.
+- `sudo -n` path: reuse the verified non-interactive make path without a phase
+  override.
+- Run label: `hybrid_observation_current_code`.
+- Primary comparisons:
+  - compare against `20260517_090203_two_regime_1680_full_recreate` as the
+    nearest kept long-cycle current-code reference.
+  - compare interpretation against the completed targeted `n1` and `n2` runs
+    to distinguish “feature not exercised” from broader architecture symptoms.
+- Launch command:
+  `ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=hybrid_observation_current_code SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"`.
+- Live checkpoint plan: passive monitoring only. Use read-only checks against
+  `current_phase.txt`, `resource_stats.csv`, `per_node_stats.csv`,
+  `container_events.csv`, controller logs, and `service_logs/`. Continue unless
+  setup fails before useful traffic, the allowed `sudo -n make` path fails, or
+  the run clearly stops progressing.
+- Checkpoint question: with the current request-lease code now deployed, does
+  the long-cycle workload still produce the same storage and compute behavior
+  seen in the latest kept long-cycle rerun, and do the targeted-run results
+  change how that long-cycle behavior should be interpreted?
+- Agent authority: full autonomous authority within the experiment-runner
+  contract for this run. The runner may sync `phases.json`, launch, monitor
+  passively, copy artifacts back locally, and update this brief after
+  completion.
+- Result: completed as `20260524_013746_hybrid_observation_current_code`.
+- Completion evidence:
+  - the remote run folder reached `current_phase.txt=idle`.
+  - the traffic generator completed all nine phases: `baseline`,
+    `local_moderate`, `storage_stress`, `cross_region_hotspot`,
+    `reverse_hotspot`, `compute_ramp`, `compute_spike`,
+    `sustained_plateau`, and `demand_drop`.
+  - the run emitted the expected artifact set including `client_requests.csv`,
+    all per-phase `client_requests_*.csv` files, `resource_stats.csv`,
+    `per_node_stats.csv`, `container_events.csv`, both controller logs,
+    `service_logs/`, and `phases_snapshot.json`.
+- Artifact status: the full run folder was copied back locally to
+  `source/scripts/testing/metrics/20260524_013746_hybrid_observation_current_code`.
+  Local post-run analysis produced:
+  - `analysis/recovery_validation_summary.md`
+  - `analysis/recovery_validation_fault_windows.csv`
+  - `analysis/recovery_validation_request_lease_outcomes.csv`
+  - `run_summary.md`
+  - `latency_summary.csv`
+  - `resource_summary.csv`
+  - `elasticity_events.csv`
+  - `node_lifecycle_timings.csv`
+- Remote retention status: the cloud copy was deleted after the dedicated
+  `cleanup_metrics` target was added to the approved non-interactive make path.
+- Interpretation:
+  - the long-cycle request stream remained broadly stable: 21 non-200
+    responses out of 63,431 total requests, or 0.03% overall. Non-200s first
+    appeared in `cross_region_hotspot` and stayed low through the remaining
+    phases.
+  - dynamic compute scaling was active and cleaned up cleanly. Container events
+    recorded 11 dynamic `edge_server` additions and 11 removals, parsed
+    controller timings show compute nodes reaching ready in 1.15 s to 2.29 s
+    and cleaning up in 0.45 s to 1.45 s, `server_count` peaked at 3, and
+    `storage_count` stayed fixed at 1.
+  - no dynamic storage or Tier 1 selective-sync activity was observed.
+  - the heaviest request latency appeared in `compute_spike`
+    (mean 69.18 ms, p95 158.81 ms) and `sustained_plateau`
+    (mean 59.14 ms, p95 127.48 ms). `lan2` carried the heavier overall request
+    latency profile, with mean 69.04 ms and p95 144.00 ms, versus `lan1` at
+    27.96 ms mean and 72.50 ms p95, but failure rates remained negligible on
+    both LANs.
+  - recovery validation again showed only `success_normal` request-lease
+    outcomes (`lan1=44082`, `lan2=40242`) with `success_after_rebind=0`,
+    `failure_terminal=0`, and controller avoidance/fallback markers still at 0.
+  - together with `n1` and `n2`, this indicates that the current-code
+    architecture remains stable under both targeted and long-cycle
+    observation-only traffic, but this campaign still does not validate the
+    failed-backend-avoidance branch under natural workload conditions.
+- Next action: if the next campaign must validate the avoidance branch rather
+  than confirm no-regression behavior, run a follow-up workload with stronger
+  natural backend churn or a separately authorized controlled-failure campaign.
+
+## Completed One-Off Run - Hybrid Recovery Validation n1
+
+- Status: completed.
+- Objective: launch the first short targeted hybrid observation run for the
+  current request-lease implementation, using the `n1` phase recipe to inspect
+  request-lease outcomes, failure-rate behavior, and any naturally occurring
+  controller recovery markers without synthetic fault injection.
+- Intended delta versus the latest long-cycle current-code references:
+  - use the short targeted profile in
+    `source/scripts/testing/phases_experiment_hybrid_validation_n1.json`
+    instead of the standard long-cycle `phases.json` schedule.
+  - do not pass `--fault-plan`; this run is observation-only.
+  - sync the current local runtime-bearing surfaces required by this run:
+    `source/docker/edge_server/source/`,
+    `source/scripts/Makefile`,
+    `source/scripts/testing/run_experiment.sh`,
+    `source/scripts/testing/traffic_generator.py`,
+    `source/scripts/testing/device_registry.py`,
+    `source/scripts/testing/create_indexes.py`,
+    `source/scripts/testing/phases_experiment_hybrid_validation_n1.json`, and
+    `source/sdn_controller/vip_routing.py`.
+- Rebuild policy:
+  - rebuild `edge_server` on `cloud-vm` before launch because the remote VM is
+    missing the new request-lease runtime files under
+    `source/docker/edge_server/source/`.
+  - do not rebuild `osken-controller`; controller code remains bind-mounted.
+  - do not rebuild `edge_storage_server`; this run does not require a baked
+    storage-runtime change.
+- `sudo -n` preflight:
+  - generic `sudo -n true` is still blocked on `cloud-vm`.
+  - the required path is permitted: a dry-run of
+    `sudo -n make -C source/scripts -n setup_network create_clients
+    setup_test_data run_experiment RUN_LABEL=hybrid_validation_n1
+    PHASES_CONFIG=testing/phases_experiment_hybrid_validation_n1.json
+    SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1` completed without prompting.
+- Run label: `hybrid_validation_n1`.
+- Primary comparisons:
+  - compare against the forthcoming `hybrid_validation_n2` run to detect any
+    directional asymmetry between `lan2 -> lan1` and `lan1 -> lan2` targeted
+    pressure.
+  - compare against
+    `20260517_090203_two_regime_1680_full_recreate` as the nearest current-code
+    long-cycle architecture reference, while treating the phase schedule as a
+    different workload family.
+- Launch command:
+  `ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=hybrid_validation_n1 PHASES_CONFIG=testing/phases_experiment_hybrid_validation_n1.json SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"`.
+- Live checkpoint plan: passive monitoring only. Use read-only checks against
+  the active run folder, `current_phase.txt`, `resource_stats.csv`,
+  `container_events.csv`, controller logs, and `service_logs/`. Continue unless
+  setup fails before useful traffic, the allowed `sudo -n make` path fails, or
+  the run clearly stops progressing.
+- Checkpoint question: does the short `n1` targeted observation produce the
+  expected request-lease outcome logging and any recovery-side controller
+  markers under natural workload conditions, while keeping latency and failure
+  behavior interpretable enough for comparison with the later `n2` run?
+- Agent authority: full autonomous authority within the experiment-runner
+  contract for this run. The runner may sync the listed surfaces, rebuild
+  `edge_server`, launch with the verified `sudo -n make -C source/scripts`
+  path, monitor passively, copy artifacts back locally, and update this brief
+  after completion.
+- Result: completed as `20260524_004416_hybrid_validation_n1`.
+- Completion evidence:
+  - the remote run folder reached `current_phase.txt=idle`.
+  - the traffic generator completed all four phases: `warmup`,
+    `storage_stress_n1`, `hotspot_n1`, and `cooldown`.
+  - the run emitted the expected artifact set including `client_requests.csv`,
+    `resource_stats.csv`, `per_node_stats.csv`, both controller logs,
+    `container_events.csv`, `service_logs/`, and `phases_snapshot.json`.
+- Artifact status: the full run folder was copied back locally to
+  `source/scripts/testing/metrics/20260524_004416_hybrid_validation_n1`.
+  Local post-run analysis produced:
+  - `analysis/recovery_validation_summary.md`
+  - `analysis/recovery_validation_fault_windows.csv`
+  - `analysis/recovery_validation_request_lease_outcomes.csv`
+- Remote retention status: the cloud copy was deleted after the dedicated
+  `cleanup_metrics` target was added to the approved non-interactive make path.
+- Interpretation:
+  - no explicit fault events were recorded, as intended for this observation-
+    only run.
+  - request-lease outcomes were entirely `success_normal` in the generated
+    recovery summary: `lan1=14041`, `lan2=8776`, with
+    `success_after_rebind=0` and `failure_terminal=0` on both LANs.
+  - controller recovery markers were absent: `avoidance=0`, `fallback=0`.
+  - this means the targeted `n1` workload completed cleanly, but it did not
+    naturally force a recovery path strongly enough to exercise the
+    failed-backend-avoidance branch.
+- Next action: run the mirrored `hybrid_validation_n2` observation with the
+  same synced code and image state, then compare the two targeted runs before
+  deciding whether the long-cycle observation rerun is still the right next
+  step or whether a stronger non-synthetic recovery trigger is needed.
+
 ## Completed One-Off Run - Two-Regime Full Recreate Rerun
 
 - Status: completed.

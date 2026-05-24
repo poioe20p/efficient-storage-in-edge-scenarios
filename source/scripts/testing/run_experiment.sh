@@ -16,6 +16,7 @@
 #
 # Usage:
 #   sudo ./run_experiment.sh [--batch-dir batch4] [--run-label c0] [--skip-clients] [--skip-seed] [--skip-snapshot]
+#   sudo ./run_experiment.sh --phases-config phases_custom.json --fault-plan fault_plan.json
 #
 # Flags (all optional):
 #   --batch-dir DIR     Place the run folder under metrics/DIR/ (example: metrics/batch4/20260501_153012_c0)
@@ -24,6 +25,8 @@
 #   --skip-seed          Skip step 2 (data already seeded)
 #   --skip-snapshot      Skip step 3 (snapshot already exported)
 #   --snapshot-dir DIR   Override snapshot directory (default: REPO_ROOT/data/workload_snapshot)
+#   --phases-config FILE Override the traffic-generator phases file
+#   --fault-plan FILE    Optional fault-injection plan consumed by fault_injector.py
 #   --dry-run            Pass --dry-run to traffic_generator (no real requests)
 # ============================================================================
 
@@ -86,6 +89,9 @@ CONTAINER_EVENTS_PID=""
 # PID of the service log capture helper (set by run_capture_service_logs)
 SERVICE_LOG_PID=""
 
+# PID of the fault injector helper (set by run_fault_injector)
+FAULT_INJECTOR_PID=""
+
 # ---------------------------------------------------------------------------
 # Flags
 # ---------------------------------------------------------------------------
@@ -96,6 +102,8 @@ SKIP_SNAPSHOT=false
 DRY_RUN=false
 BATCH_DIR=""
 RUN_LABEL=""
+PHASES_CONFIG_OVERRIDE=""
+FAULT_PLAN=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -109,6 +117,10 @@ while [[ $# -gt 0 ]]; do
         --dry-run)        DRY_RUN=true       ;;
         --snapshot-dir)   shift; SNAPSHOT_DIR="$1" ;;
         --snapshot-dir=*) SNAPSHOT_DIR="${1#*=}" ;;
+        --phases-config)   shift; PHASES_CONFIG_OVERRIDE="$1" ;;
+        --phases-config=*) PHASES_CONFIG_OVERRIDE="${1#*=}" ;;
+        --fault-plan)      shift; FAULT_PLAN="$1" ;;
+        --fault-plan=*)    FAULT_PLAN="${1#*=}" ;;
         -h|--help)
             sed -n '/^# Usage/,/^# -----/p' "$0" | grep '^#' | sed 's/^# *//'
             exit 0
@@ -142,6 +154,10 @@ PHASES_CONFIG="${SCRIPT_DIR}/phases.json"
 PHASES_SNAPSHOT_OUTPUT="${RUN_DIR}/phases_snapshot.json"
 METRICS_OUTPUT="${RUN_DIR}/client_requests.csv"
 
+if [[ -n "$PHASES_CONFIG_OVERRIDE" ]]; then
+    PHASES_CONFIG="$PHASES_CONFIG_OVERRIDE"
+fi
+
 # Resource stats collector outputs
 RESOURCE_STATS_OUTPUT="${RUN_DIR}/resource_stats.csv"
 PHASE_FILE="${RUN_DIR}/current_phase.txt"
@@ -156,6 +172,10 @@ CONTROLLER_LOG_LAN2="${RUN_DIR}/controller_lan2.log"
 # Service logs — one file per edge/storage container observed during the run
 SERVICE_LOG_DIR="${RUN_DIR}/service_logs"
 
+# Optional fault-injection artifacts
+FAULT_PLAN_SNAPSHOT_OUTPUT="${RUN_DIR}/fault_plan_snapshot.json"
+FAULT_EVENTS_OUTPUT="${RUN_DIR}/experiment_fault_events.csv"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -168,13 +188,23 @@ prepare_run_outputs() {
     mkdir -p "$RUN_DIR"
     [[ -f "$PHASES_CONFIG" ]] || die "Phase config not found: $PHASES_CONFIG"
     [[ -f "$CONTROLLER_ENV_SOURCE" ]] || die "Controller env not found: $CONTROLLER_ENV_SOURCE"
+    if [[ -n "$FAULT_PLAN" ]]; then
+        [[ -f "$FAULT_PLAN" ]] || die "Fault plan not found: $FAULT_PLAN"
+    fi
     cp "$PHASES_CONFIG" "$PHASES_SNAPSHOT_OUTPUT"
     cp "$CONTROLLER_ENV_SOURCE" "$CONTROLLER_ENV_SNAPSHOT_OUTPUT"
+    if [[ -n "$FAULT_PLAN" ]]; then
+        cp "$FAULT_PLAN" "$FAULT_PLAN_SNAPSHOT_OUTPUT"
+    fi
     echo "  Run dir    : ${RUN_DIR}"
     echo "  Batch dir  : ${BATCH_DIR:-<none>}"
     echo "  Run label  : ${RUN_LABEL:-<none>}"
     echo "  Phase copy : ${PHASES_SNAPSHOT_OUTPUT}"
     echo "  Env copy   : ${CONTROLLER_ENV_SNAPSHOT_OUTPUT}"
+    if [[ -n "$FAULT_PLAN" ]]; then
+        echo "  Fault copy : ${FAULT_PLAN_SNAPSHOT_OUTPUT}"
+        echo "  Fault log  : ${FAULT_EVENTS_OUTPUT}"
+    fi
 }
 
 # Build comma-separated namespace name lists for each LAN
@@ -197,7 +227,7 @@ build_client_lists() {
 run_create_clients() {
     step "Creating test client namespaces"
     local create_script="${REPO_ROOT}/source/scripts/network/clients/create_test_clients.sh"
-    [[ -x "$create_script" ]] || die "Not found or not executable: $create_script"
+    [[ -f "$create_script" ]] || die "Not found: $create_script"
 
     echo "  LAN 1: ${CLIENTS_PER_LAN} clients (prefix: ${PREFIX_LAN1})"
     bash "$create_script" --lan 1 --count "$CLIENTS_PER_LAN" --prefix "$PREFIX_LAN1"
@@ -317,7 +347,36 @@ stop_capture_service_logs() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4d — Container life-cycle poller (diff-based docker ps)
+# Step 4d — Optional fault injector
+# ---------------------------------------------------------------------------
+
+run_fault_injector() {
+    [[ -z "$FAULT_PLAN" ]] && return 0
+
+    step "Starting fault injector"
+    echo "  Plan     : ${FAULT_PLAN}"
+    echo "  Phase    : ${PHASE_FILE}"
+    echo "  Output   : ${FAULT_EVENTS_OUTPUT}"
+    python3 "${SCRIPT_DIR}/fault_injector.py" \
+        --plan "$FAULT_PLAN" \
+        --phase-file "$PHASE_FILE" \
+        --controller-log-lan1 "$CONTROLLER_LOG_LAN1" \
+        --controller-log-lan2 "$CONTROLLER_LOG_LAN2" \
+        --output "$FAULT_EVENTS_OUTPUT" &
+    FAULT_INJECTOR_PID=$!
+    echo "  Helper PID: ${FAULT_INJECTOR_PID}"
+}
+
+stop_fault_injector() {
+    [[ -z "${FAULT_INJECTOR_PID:-}" ]] && return 0
+    echo; echo "==> Stopping fault injector (PID ${FAULT_INJECTOR_PID})"
+    kill -TERM "$FAULT_INJECTOR_PID" 2>/dev/null || true
+    wait "$FAULT_INJECTOR_PID" 2>/dev/null || true
+    FAULT_INJECTOR_PID=""
+}
+
+# ---------------------------------------------------------------------------
+# Step 4e — Container life-cycle poller (diff-based docker ps)
 # ---------------------------------------------------------------------------
 
 run_poll_container_events() {
@@ -384,11 +443,13 @@ echo " Output      : ${METRICS_OUTPUT}"
 echo " Resource    : ${RESOURCE_STATS_OUTPUT}"
 echo " Phase file  : ${PHASE_FILE}"
 echo " VIP         : ${VIP}"
+echo " Phases cfg  : ${PHASES_CONFIG}"
+echo " Fault plan  : ${FAULT_PLAN:-<none>}"
 echo " Dry-run     : ${DRY_RUN}"
 echo "======================================================"
 
 # Stop the run-scoped helpers on any exit (normal, error, or signal)
-trap 'stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats' EXIT
+trap 'stop_fault_injector; stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats' EXIT
 
 prepare_run_outputs
 "$SKIP_CLIENTS"  || run_create_clients
@@ -397,8 +458,10 @@ prepare_run_outputs
 run_collect_stats
 run_capture_controller_logs
 run_capture_service_logs
+run_fault_injector
 run_poll_container_events
 run_traffic
+stop_fault_injector
 stop_poll_container_events
 stop_capture_service_logs
 stop_collect_stats
@@ -408,6 +471,10 @@ echo "Results        : ${METRICS_OUTPUT}"
 echo "Resource stats : ${RESOURCE_STATS_OUTPUT}"
 echo "Container events: ${CONTAINER_EVENTS_OUTPUT}"
 echo "Phase config   : ${PHASES_SNAPSHOT_OUTPUT}"
+if [[ -n "$FAULT_PLAN" ]]; then
+    echo "Fault plan     : ${FAULT_PLAN_SNAPSHOT_OUTPUT}"
+    echo "Fault events   : ${FAULT_EVENTS_OUTPUT}"
+fi
 echo "Controller logs: ${CONTROLLER_LOG_LAN1}"
 echo "               : ${CONTROLLER_LOG_LAN2}"
 echo "Service logs   : ${SERVICE_LOG_DIR}"

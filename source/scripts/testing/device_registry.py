@@ -5,11 +5,15 @@ seed_device_registry.py
 Populates device_registry with edge node subscription profiles.
 Each region's nodes are seeded into that region's own replica-set primary.
 
-watched_devices distribution per region:
-  ~70%  local-only   — watch 3-8 devices from own region
-  ~25%  mixed        — watch devices from both own and foreign region
-  ~5%   foreign-only — watch 3-8 devices from the other region
-This creates the cross-region access pattern needed for Phase 2.
+Seeded node profiles now serve two purposes:
+
+1. preserve locality-sensitive watched-device patterns for `device_status`
+2. create broader `subscribed_tags` fan-out for dashboard-heavy compute phases
+
+Profile family distribution per region:
+    ~55% focused_local      — 1-2 tags, mostly local watched devices
+    ~30% regional_operator  — 3-4 tags, mixed watched devices
+    ~15% global_operator    — 4-6 tags, broad cross-region subscriptions
 
 Usage:
     python3 seed_device_registry.py --mongo-lan1 <uri> --mongo-lan2 <uri> --nodes <N per region>
@@ -20,36 +24,95 @@ import random
 from pymongo import MongoClient, UpdateOne
 
 
+TAG_POOL = [
+    "industrial",
+    "high-priority",
+    "thermal",
+    "mechanical",
+    "logistics",
+    "environmental",
+]
+
+PROFILE_SPECS = {
+    "focused_local": {
+        "weight": 0.55,
+        "tag_range": (1, 2),
+        "watch_count_range": (3, 6),
+        "watch_mix": {"local": 0.80, "mixed": 0.20, "foreign": 0.00},
+    },
+    "regional_operator": {
+        "weight": 0.30,
+        "tag_range": (3, 4),
+        "watch_count_range": (4, 8),
+        "watch_mix": {"local": 0.45, "mixed": 0.45, "foreign": 0.10},
+    },
+    "global_operator": {
+        "weight": 0.15,
+        "tag_range": (4, 6),
+        "watch_count_range": (6, 12),
+        "watch_mix": {"local": 0.20, "mixed": 0.55, "foreign": 0.25},
+    },
+}
+
+
+def pick_weighted_key(weights: dict[str, float]) -> str:
+    roll = random.random()
+    cumulative = 0.0
+    last_key = next(iter(weights))
+    for key, weight in weights.items():
+        cumulative += weight
+        last_key = key
+        if roll <= cumulative:
+            return key
+    return last_key
+
+
+def build_watched_devices(
+    profile_kind: str,
+    local_device_ids: list[str],
+    foreign_device_ids: list[str],
+) -> list[str]:
+    spec = PROFILE_SPECS[profile_kind]
+    watch_mode = pick_weighted_key(spec["watch_mix"])
+    low, high = spec["watch_count_range"]
+    target_count = random.randint(low, high)
+
+    if watch_mode == "local":
+        return random.sample(local_device_ids, k=min(target_count, len(local_device_ids)))
+    if watch_mode == "foreign":
+        return random.sample(foreign_device_ids, k=min(target_count, len(foreign_device_ids)))
+
+    foreign_share = {
+        "focused_local": 0.25,
+        "regional_operator": 0.50,
+        "global_operator": 0.70,
+    }[profile_kind]
+    foreign_count = max(1, min(target_count - 1, round(target_count * foreign_share)))
+    local_count = max(1, target_count - foreign_count)
+    return (
+        random.sample(local_device_ids, k=min(local_count, len(local_device_ids)))
+        + random.sample(foreign_device_ids, k=min(foreign_count, len(foreign_device_ids)))
+    )
+
+
 def make_node(region: str, index: int, local_device_ids: list[str], foreign_device_ids: list[str]) -> dict:
     node_id = f"{region}::node::{index:03d}"
     home = region
-
-    # Distribution: ~70% local-only, ~25% mixed (local+foreign), ~5% foreign-only
-    roll = random.random()
-    k = random.randint(3, 8)
-    if roll < 0.70:
-        # Local-only: watch devices from own region
-        watched = random.sample(local_device_ids, k=min(k, len(local_device_ids)))
-    elif roll < 0.95:
-        # Mixed: some local + some foreign
-        n_foreign = random.randint(1, max(1, k // 2))
-        n_local = k - n_foreign
-        watched = (
-            random.sample(local_device_ids, k=min(n_local, len(local_device_ids)))
-            + random.sample(foreign_device_ids, k=min(n_foreign, len(foreign_device_ids)))
-        )
-    else:
-        # Foreign-only: watch devices from the other region
-        watched = random.sample(foreign_device_ids, k=min(k, len(foreign_device_ids)))
+    profile_kind = pick_weighted_key({
+        key: spec["weight"] for key, spec in PROFILE_SPECS.items()
+    })
+    watched = build_watched_devices(profile_kind, local_device_ids, foreign_device_ids)
+    tag_low, tag_high = PROFILE_SPECS[profile_kind]["tag_range"]
+    subscribed_tags = random.sample(
+        TAG_POOL,
+        k=random.randint(tag_low, tag_high),
+    )
 
     return {
         "_id": node_id,
         "home_region": home,
-        "subscribed_tags": random.sample(
-            ["industrial", "high-priority", "thermal", "mechanical",
-             "logistics", "environmental"],
-            k=random.randint(1, 3)
-        ),
+        "profile_kind": profile_kind,
+        "subscribed_tags": subscribed_tags,
         "watched_devices": watched,
         "alert_config": {
             "email": f"ops-{region}@example.com",

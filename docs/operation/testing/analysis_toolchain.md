@@ -18,9 +18,10 @@ way to interpret a run is to eyeball the CSVs; this document provides:
     p95 latency, failure rate, and active-node plots.
 5. A simple **comparison CLI** (`cli_simple_compare`) for cross-run overall and
     per-phase latency, failure rate, and node-count summaries.
-6. A **recovery-validation CLI** (`cli_recovery_validation`) that correlates
-   explicit fault events, request-lease outcomes, controller recovery markers,
-   and request failures around each injected fault window.
+6. A **recovery-validation CLI** (`cli_recovery_validation`) that summarizes
+    request-lease outcomes, controller recovery markers, and request failures,
+    with optional correlation against explicit fault events when a run has
+    them.
 
 Scope boundary: the toolchain is **read-only**. It does not change telemetry,
 thresholds, scaling logic, or the traffic generator. Columns that depend on
@@ -286,15 +287,16 @@ Primary inputs:
 
 Questions answered:
 
-1. Did the planned injected fault actually execute?
-2. How many `success_normal`, `success_after_rebind`, and
+1. How many `success_normal`, `success_after_rebind`, and
     `failure_terminal` request-lease outcomes were observed?
-3. Did the controller emit `recovery avoiding last normal backend` markers?
-4. Did recovery fall back to the full pool because avoidance would empty the
+2. Did the controller emit `recovery avoiding last normal backend` markers?
+3. Did recovery fall back to the full pool because avoidance would empty the
     candidate set?
-5. What was the short-window request failure rate around each injected fault?
+4. What was the request failure rate around the observed recovery activity?
+5. If `experiment_fault_events.csv` exists, did the planned injected fault
+    actually execute and what happened around that window?
 
-- request rate (from `client_requests_<phase>.csv` per phase, concatenated)
+- request rate (from `client_requests.csv`, grouped by `phase`)
 - compute CPU (domain median + per-node thin grey lines)
 - storage CPU (domain median + per-node thin grey lines)
 - `T_proc`
@@ -525,7 +527,7 @@ new outputs:
   traffic_generator.py              ...
          â”‚
          â–¼
-  metrics/client_requests_<phase>.csv
+    metrics/client_requests.csv
   metrics/resource_stats.csv          â†â”€â”€ domain windowed stats (existing + new columns)
   metrics/per_node_stats.csv          â†â”€â”€ per-container windowed stats (NEW)
   metrics/controller_lan{1,2}.log     â†â”€â”€ includes scale-down DEBUG lines
@@ -561,8 +563,9 @@ traffic generator.
 | `cli_tdb_drivers` | OLS regression `T_db_write ~ a + bÂ·storage_count + cÂ·cross_region_ratio` to falsify the "more storage = slower writes" hypothesis |
 
 Consumes `resource_stats.csv` (domain), `per_node_stats.csv` (per-container),
-`client_requests_<phase>.csv`, `phases_snapshot.json`, and the controller
-log files. Missing fields on older runs degrade gracefully with warnings.
+`client_requests.csv`, `phases_snapshot.json`, and the controller log files.
+Phase-scoped request analysis is derived from the aggregate CSV via its
+`phase` column. Missing fields on older runs degrade gracefully with warnings.
 ```
 
 ### 3. Execution Order â€” add a post-run step

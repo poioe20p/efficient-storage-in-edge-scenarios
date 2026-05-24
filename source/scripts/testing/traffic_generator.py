@@ -131,7 +131,7 @@ def pick_target(client_lan: str, phase: PhaseConfig, snap: Snapshot, request_typ
         node_id = random.choice(snap.nodes_by_region[home])
         return {"device_id": "", "node_id": node_id, "target_region": home}
 
-    elif request_type == "anomalies":
+    elif request_type == "service_pressure":
         return {"device_id": "", "node_id": "", "target_region": home}
 
     return {}
@@ -145,8 +145,8 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
         return f"{base}/device/{target['device_id']}/latest?node_id={target['node_id']}"
     elif request_type == "dashboard":
         return f"{base}/dashboard/{target['node_id']}?limit=10"
-    elif request_type == "anomalies":
-        return f"{base}/anomalies?region={target['target_region']}&window=1"
+    elif request_type == "service_pressure":
+        return f"{base}/service_pressure?window_min=10&limit=10"
 
     return base
 
@@ -302,7 +302,6 @@ async def run(args):
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    base, ext = os.path.splitext(args.output)
     csv_lock = asyncio.Lock()
 
     total_s = sum(p.duration_s for p in phases)
@@ -321,41 +320,27 @@ async def run(args):
     aggregate_file = open(args.output, "w", newline="")
     aggregate_writer = csv.writer(aggregate_file)
     aggregate_writer.writerow(header)
+    csv_targets = [(aggregate_writer, aggregate_file)]
 
-    written_files = [args.output]
     try:
         for i, phase in enumerate(phases):
-            phase_output = f"{base}_{phase.name}{ext}"
-            written_files.append(phase_output)
-
             # Write current phase name so other processes can read it
             with open(phase_state_file, "w") as pf:
                 pf.write(phase.name)
 
             print(f"\n{'='*60}")
             print(f"Phase {i + 1}/{len(phases)}: {phase.name} ({phase.duration_s}s)")
-            print(f"  Output: {phase_output}")
+            print(f"  Output: {args.output}")
             print(f"{'='*60}")
 
-            phase_output_file = open(phase_output, "w", newline="")
-            phase_writer = csv.writer(phase_output_file)
-            phase_writer.writerow(header)
-
-            try:
-                csv_targets = [
-                    (aggregate_writer, aggregate_file),
-                    (phase_writer, phase_output_file),
-                ]
-                tasks = [
-                    asyncio.create_task(
-                        client_loop(ns, lan, phase, snap, args.vip, csv_targets,
-                                    csv_lock, args.dry_run)
-                    )
-                    for ns, lan in all_clients
-                ]
-                await asyncio.gather(*tasks)
-            finally:
-                phase_output_file.close()
+            tasks = [
+                asyncio.create_task(
+                    client_loop(ns, lan, phase, snap, args.vip, csv_targets,
+                                csv_lock, args.dry_run)
+                )
+                for ns, lan in all_clients
+            ]
+            await asyncio.gather(*tasks)
     finally:
         aggregate_file.close()
 
@@ -363,9 +348,8 @@ async def run(args):
     with open(phase_state_file, "w") as pf:
         pf.write("idle")
 
-    print(f"\nDone. Results written to:")
-    for f in written_files:
-        print(f"  {f}")
+    print("\nDone. Results written to:")
+    print(f"  {args.output}")
 
 
 if __name__ == "__main__":

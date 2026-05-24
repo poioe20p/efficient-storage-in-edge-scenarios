@@ -10,7 +10,7 @@ Usage:
     python source/scripts/tools/metrics_stats.py -r path/to/resource_stats.csv
     python source/scripts/tools/metrics_stats.py -r path/to/resource_stats.csv --by-network
 
-Default mode processes all client_requests_*.csv files in the given run folder.
+Default mode processes client_requests.csv in the given run folder.
 With -r, processes a single resource_stats CSV file.
 """
 
@@ -153,15 +153,6 @@ def group_by_key(rows: list[dict], key: str) -> dict[str, list[dict]]:
     return groups
 
 
-def extract_scenario(filename: str) -> str:
-    """Extract scenario name from client_requests_<scenario>.csv filename."""
-    stem = Path(filename).stem
-    prefix = "client_requests_"
-    if stem.startswith(prefix):
-        return stem[len(prefix):]
-    return stem
-
-
 # ---------------------------------------------------------------------------
 # Summary CSV helpers
 # ---------------------------------------------------------------------------
@@ -206,7 +197,7 @@ def _append_latency_summary(stats: dict, run_name: str, scenario: str, phase: st
 
 
 def run_latency(rows: list[dict], args, file_path: Path) -> None:
-    scenario = extract_scenario(file_path.name)
+    scenario = "aggregate"
     overall_stats = compute_stats(extract_col(rows, LATENCY_COL))
     print_stats("OVERALL", overall_stats, fmt_latency)
 
@@ -304,7 +295,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Compute statistics from experiment metric files.\n"
-            "Default: processes all client_requests_*.csv in a run folder.\n"
+            "Default: processes client_requests.csv in a run folder.\n"
             "With -r: processes a single resource_stats CSV file."
         )
     )
@@ -339,13 +330,12 @@ def main() -> None:
     else:
         if not path.is_dir():
             sys.exit(f"Expected a run folder, got: {path}")
-        csv_files = sorted(path.glob("client_requests_*.csv"))
-        if not csv_files:
-            sys.exit(f"No client_requests_*.csv files found in {path}")
-        for csv_file in csv_files:
-            rows = load_rows(csv_file)
-            print(f"=== {csv_file.name} ({len(rows)} rows) ===\n")
-            run_latency(rows, args, csv_file)
+        csv_file = path / "client_requests.csv"
+        if not csv_file.exists():
+            sys.exit(f"No client_requests.csv file found in {path}")
+        rows = load_rows(csv_file)
+        print(f"=== {csv_file.name} ({len(rows)} rows) ===\n")
+        run_latency(rows, args, csv_file)
 
 
 if __name__ == "__main__":

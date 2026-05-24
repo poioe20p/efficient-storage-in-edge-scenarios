@@ -7,6 +7,7 @@
 #   make teardown_clients               # Remove test clients and stop containers
 #   make setup_test_data                # Run all test data seeding steps
 #   make setup_test_data DEVICES=200    # Override defaults
+#   make cleanup_metrics                # Remove metrics run folders
 # ============================================================================
 
 PYTHON       ?= python3
@@ -21,12 +22,15 @@ SKIP_SEED     ?= 1
 SKIP_SNAPSHOT ?= 1
 DRY_RUN       ?=
 RUN_LABEL     ?=
+PHASES_CONFIG ?=
+FAULT_PLAN    ?=
 
 
 .PHONY: setup_network \
         create_clients teardown_clients \
         setup_test_data seed_sensor_reports seed_device_registry create_indexes export_snapshot \
-        run_experiment
+	run_experiment cleanup_metrics \
+	install_commit_msg_hook uninstall_commit_msg_hook preview_commit_msg
 
 # ── Network ──────────────────────────────────────────────────────────────────
 
@@ -86,6 +90,23 @@ export_snapshot:
 
 # ── Experiment ────────────────────────────────────────────────────────────────
 
+## Remove all metrics run folders under testing/metrics.
+cleanup_metrics:
+	@set -eu; \
+	metrics_dir="$(abspath testing/metrics)"; \
+	find "$$metrics_dir" -mindepth 1 -maxdepth 1 -type d | while IFS= read -r run_dir; do \
+		case "$$run_dir" in \
+			"$$metrics_dir"/*) \
+				printf 'Removing %s\n' "$$run_dir"; \
+				rm -rf -- "$$run_dir"; \
+				;; \
+			*) \
+				echo "Refusing unexpected path: $$run_dir" >&2; \
+				exit 1; \
+				;; \
+		esac; \
+	done
+
 ## Run the full 4-phase experiment (traffic generator + resource stats collector).
 ## Optional flags (set to any non-empty value to enable):
 ##   make run_experiment SKIP_CLIENTS=1   # namespaces already created
@@ -93,11 +114,27 @@ export_snapshot:
 ##   make run_experiment SKIP_SNAPSHOT=1  # snapshot already exported
 ##   make run_experiment DRY_RUN=1        # no real HTTP requests
 ##   make run_experiment RUN_LABEL=c0     # metrics folder becomes <timestamp>_c0
+##   make run_experiment PHASES_CONFIG=testing/phases_custom.json
+##   make run_experiment FAULT_PLAN=testing/fault_plan.json
 run_experiment:
 	sudo bash testing/run_experiment.sh \
 	  $(if $(strip $(RUN_LABEL)),--run-label "$(strip $(RUN_LABEL))") \
 	  --snapshot-dir $(abspath $(SNAPSHOT_DIR)) \
+	  $(if $(strip $(PHASES_CONFIG)),--phases-config "$(strip $(PHASES_CONFIG))") \
+	  $(if $(strip $(FAULT_PLAN)),--fault-plan "$(strip $(FAULT_PLAN))") \
 	  $(if $(filter-out 0 false,$(SKIP_CLIENTS)),--skip-clients) \
 	  $(if $(filter-out 0 false,$(SKIP_SEED)),--skip-seed) \
 	  $(if $(filter-out 0 false,$(SKIP_SNAPSHOT)),--skip-snapshot) \
 	  $(if $(filter-out 0 false,$(DRY_RUN)),--dry-run)
+
+## Install the local prepare-commit-msg hook that auto-generates commit messages.
+install_commit_msg_hook:
+	bash tools/install_commit_msg_hook.sh install
+
+## Remove the local prepare-commit-msg hook and restore previous backup when available.
+uninstall_commit_msg_hook:
+	bash tools/install_commit_msg_hook.sh uninstall
+
+## Preview the generated commit message for currently staged changes.
+preview_commit_msg:
+	$(PYTHON) tools/generate_commit_message.py --from-staged

@@ -25,19 +25,6 @@ def setup(uri: str, label: str):
     db.device_registry.create_index([("home_region", ASCENDING)])
     db.device_registry.create_index([("subscribed_tags", ASCENDING)])
 
-    # query_events — compound index for the anomaly detection aggregation
-    db.query_events.create_index(
-        [("timestamp", ASCENDING), ("region_served", ASCENDING)]
-    )
-    db.query_events.create_index([("device_id", ASCENDING)])
-
-    # TTL index on query_events (expire after 24h)
-    db.query_events.create_index(
-        [("timestamp", ASCENDING)],
-        expireAfterSeconds=86400,
-        name="ttl_query_events"
-    )
-
     print(f"[{label}] Indexes created.")
     client.close()
 

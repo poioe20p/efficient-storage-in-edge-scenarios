@@ -30,6 +30,7 @@ class Run:
     clients: dict[str, list[dict]]    # phase name -> rows
     all_client_rows: list[dict]        # aggregate client_requests.csv rows
     container_event_rows: list[dict]   # container_events.csv rows
+    fault_event_rows: list[dict]       # experiment_fault_events.csv rows
     events: list[ElasticityEvent]
     t0: float                          # earliest window_end, for time normalisation
 
@@ -105,13 +106,14 @@ def load_run(run_dir: Path) -> Run:
             "(Run was produced before the per-node CSV was added.)"
         )
 
-    clients: dict[str, list[dict]] = {}
-    for p in phases:
-        rows = _read_csv(run_dir / f"client_requests_{p.name}.csv", optional=True)
-        clients[p.name] = rows
-
     all_client_rows = _read_csv(run_dir / "client_requests.csv", optional=True)
+    clients: dict[str, list[dict]] = {p.name: [] for p in phases}
+    for row in all_client_rows:
+        phase_name = str(row.get("phase", "unknown") or "unknown")
+        clients.setdefault(phase_name, []).append(row)
+
     container_event_rows = _read_csv(run_dir / "container_events.csv", optional=True)
+    fault_event_rows = _read_csv(run_dir / "experiment_fault_events.csv", optional=True)
 
     # Controller logs: controller_lan1.log, controller_lan2.log
     log_paths = [
@@ -130,6 +132,7 @@ def load_run(run_dir: Path) -> Run:
         clients=clients,
         all_client_rows=all_client_rows,
         container_event_rows=container_event_rows,
+        fault_event_rows=fault_event_rows,
         events=events,
         t0=t0,
     )

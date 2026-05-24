@@ -13,9 +13,9 @@ them without creating a circular import with the Flask app:
 2. ``_TIER1_REGISTRY`` — ``{owner_lan: (MongoClient, {collection: frozenset[hot_doc_id]})}``,
    populated by ``set_tier1_manifest()`` which the Flask ``PUT /tier1_manifest``
    route calls.
-3. ``_owner_lan: ContextVar[str]`` — set by the edge server's ``timed_db(lan)``
-   context manager; read by ``cached_collection()`` to tag accesses with their
-   owning LAN.
+3. ``_owner_lan: ContextVar[str]`` — set by the edge server's request-lease
+    execution helpers; read by ``cached_collection()`` to tag accesses with
+    their owning LAN.
 
 Per-request accumulation is via Flask's ``g``: the wrapper appends records
 into ``g.access_records`` and ``g.op_counts`` on each call; ``telemetry.py``
@@ -51,7 +51,7 @@ _WRITE_OPS: frozenset[str] = frozenset({
 
 
 # ---------------------------------------------------------------------------
-# Owner-LAN propagation (set by timed_db(lan) in app.py)
+# Owner-LAN propagation (set by the VIP_DATA Mongo runtime request-lease helpers)
 # ---------------------------------------------------------------------------
 # ContextVar (not threading.local / global):
 #   - safe under threads AND asyncio tasks;
@@ -59,6 +59,13 @@ _WRITE_OPS: frozenset[str] = frozenset({
 #     restores "lanA" on exit via the token returned by set();
 #   - no cross-request leakage — each Flask request runs in its own context.
 _owner_lan: ContextVar[str] = ContextVar("_owner_lan")
+
+
+def _mark_epoch_client_used() -> None:
+    try:
+        g.db_used_epoch_client = True
+    except RuntimeError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +154,16 @@ class _CachedCollection:
         except RuntimeError:
             pass
 
+    def _record_tier1_attempt(self, eligible: bool, hit: bool) -> None:
+        if not eligible:
+            return
+        try:
+            g.tier1_point_read_count = getattr(g, "tier1_point_read_count", 0) + 1
+            if hit:
+                g.tier1_point_hit_count = getattr(g, "tier1_point_hit_count", 0) + 1
+        except RuntimeError:
+            pass
+
     # ---- Tier 1 point-lookup gate (fail-open) -----------------------------
     def _try_tier1(self, filter_: Any):        
         if not isinstance(filter_, Mapping) or list(filter_.keys()) != ["_id"]:
@@ -178,62 +195,81 @@ class _CachedCollection:
     # and then proceed with the normal call. This keeps the op_counters accurate for write_ratio()
     def find_one(self, filter=None, *args, **kwargs):
         self._record_op("find_one")
-        self._record_access(_extract_doc_id(filter))
+        doc_id = _extract_doc_id(filter)
+        self._record_access(doc_id)
         hit = self._try_tier1(filter)
+        self._record_tier1_attempt(
+            eligible=doc_id is not None and self._consumer_lan != self._owner_lan,
+            hit=hit is not None,
+        )
         if hit is not None:
             return hit
+        _mark_epoch_client_used()
         return self._coll.find_one(filter, *args, **kwargs)
 
     def find(self, filter=None, *args, **kwargs):
         self._record_op("find")
+        _mark_epoch_client_used()
         return self._coll.find(filter, *args, **kwargs)
 
     def aggregate(self, pipeline, *args, **kwargs):
         self._record_op("aggregate")
+        _mark_epoch_client_used()
         return self._coll.aggregate(pipeline, *args, **kwargs)
 
     def insert_one(self, doc, *args, **kwargs):
         self._record_op("insert_one")
+        _mark_epoch_client_used()
         return self._coll.insert_one(doc, *args, **kwargs)
 
     def insert_many(self, docs, *args, **kwargs):
         self._record_op("insert_many")
+        _mark_epoch_client_used()
         return self._coll.insert_many(docs, *args, **kwargs)
 
     def update_one(self, filter, update, *args, **kwargs):
         self._record_op("update_one")
+        _mark_epoch_client_used()
         return self._coll.update_one(filter, update, *args, **kwargs)
 
     def update_many(self, filter, update, *args, **kwargs):
         self._record_op("update_many")
+        _mark_epoch_client_used()
         return self._coll.update_many(filter, update, *args, **kwargs)
 
     def replace_one(self, filter, replacement, *args, **kwargs):
         self._record_op("replace_one")
+        _mark_epoch_client_used()
         return self._coll.replace_one(filter, replacement, *args, **kwargs)
 
     def delete_one(self, filter, *args, **kwargs):
         self._record_op("delete_one")
+        _mark_epoch_client_used()
         return self._coll.delete_one(filter, *args, **kwargs)
 
     def delete_many(self, filter, *args, **kwargs):
         self._record_op("delete_many")
+        _mark_epoch_client_used()
         return self._coll.delete_many(filter, *args, **kwargs)
 
     def bulk_write(self, requests, *args, **kwargs):
         self._record_op("bulk_write")
+        _mark_epoch_client_used()
         return self._coll.bulk_write(requests, *args, **kwargs)
 
     def find_one_and_update(self, filter, update, *args, **kwargs):
         self._record_op("find_one_and_update")
+        _mark_epoch_client_used()
         return self._coll.find_one_and_update(filter, update, *args, **kwargs)
 
     def find_one_and_replace(self, filter, replacement, *args, **kwargs):
         self._record_op("find_one_and_replace")
+        _mark_epoch_client_used()
         return self._coll.find_one_and_replace(filter, replacement, *args, **kwargs)
 
     def find_one_and_delete(self, filter, *args, **kwargs):
         self._record_op("find_one_and_delete")
+        _mark_epoch_client_used()
         return self._coll.find_one_and_delete(filter, *args, **kwargs)
 
     # Unwrapped pass-through — count_documents, create_index, etc. reach the
@@ -263,8 +299,9 @@ def _extract_doc_id(filter_: Any) -> Any:
 def cached_collection(db, name: str) -> _CachedCollection:
     """Entry point for edge-server app code.
 
-    Must be called from inside an active ``timed_db(...)`` block so
-    ``_owner_lan.get()`` resolves; raises ``LookupError`` otherwise.
+    Must be called from inside an active ``run_with_request_lease(...)`` or
+    compatibility ``timed_db(...)`` boundary so ``_owner_lan.get()`` resolves;
+    raises ``LookupError`` otherwise.
     """
     return _CachedCollection(
         db[name],

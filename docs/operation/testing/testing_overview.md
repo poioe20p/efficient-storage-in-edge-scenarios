@@ -68,9 +68,8 @@ together with the durable campaign brief
     └─ writes CSV metrics                → sustained_plateau → demand_drop
          │
          ▼
-  metrics/client_requests.csv    ←── aggregate rows across the full run
-  metrics/client_requests_<phase>.csv
-                                ←── phase-scoped request rows for analysis
+  metrics/client_requests.csv    ←── aggregate rows across the full run, with a
+                                   `phase` column for phase-scoped analysis
 ```
 
 Separately, `trace_request.sh` can be used at any time to fire a single request
@@ -143,16 +142,18 @@ Current reference for the client-side experiment driver.
 | `phases.json` | Declarative 9-phase config (duration, rate, cross-region ratio, request mix) |
 
 The shared runner [`run_experiment.sh`](../../../source/scripts/testing/run_experiment.sh)
-now also accepts `--phases-config <file>` and `--fault-plan <file>`. The
-phase override keeps the usual run-directory layout while allowing short
-targeted-validation recipes, and the fault-plan path starts
-[`fault_injector.py`](../../../source/scripts/testing/fault_injector.py) in the
-background. Fault-aware runs snapshot the plan into `fault_plan_snapshot.json`
-and write explicit injection rows to `experiment_fault_events.csv`.
+accepts `--phases-config <file>` for short targeted-validation recipes and can
+also accept an optional `--fault-plan <file>` for separate synthetic-failure
+campaigns. The hybrid recovery-validation runs described here use only the
+phase override and do not pass `--fault-plan`.
+
+When old run folders on `cloud-vm` need to be reclaimed, use the approved
+cleanup path `sudo -n make -C source/scripts cleanup_metrics`. That target
+removes only run directories directly under `source/scripts/testing/metrics/`.
 
 Output: aggregate `metrics/client_requests.csv` with per-request timestamp,
-phase, endpoint, target region, HTTP status, and latency, plus matching
-`metrics/client_requests_<phase>.csv` files for phase-scoped analysis.
+phase, endpoint, target region, HTTP status, and latency. Phase-scoped
+analysis is derived from the `phase` column in that aggregate file.
 
 Current default schedule: `baseline` 60 s, `local_moderate` 90 s,
 `storage_stress` 240 s, `cross_region_hotspot` 300 s,
@@ -207,32 +208,32 @@ traffic generator.
 | `cli_tdb_drivers` | OLS regression `T_db_write ~ a + b·storage_count + c·cross_region_ratio` to falsify the "more storage = slower writes" hypothesis |
 
 Consumes `resource_stats.csv` (domain), `per_node_stats.csv` (per-container),
-`client_requests.csv`, `client_requests_<phase>.csv`, `container_events.csv`,
-`phases_snapshot.json`, and the controller log files. Missing fields on older
+`client_requests.csv`, `container_events.csv`, `phases_snapshot.json`, and the
+controller log files. Phase-scoped latency and failure analysis is derived
+from the aggregate request CSV via its `phase` column. Missing fields on older
 runs degrade gracefully with warnings.
 
 The analysis package now also includes
 [`cli_recovery_validation.py`](../../../source/scripts/testing/analysis/cli_recovery_validation.py),
-which correlates `experiment_fault_events.csv`, request-lease outcome logs,
-controller recovery-avoidance markers, and short-window request failures into
-a targeted recovery-validation summary.
+which summarizes request-lease outcome logs and controller
+recovery-avoidance markers, and can optionally correlate those with explicit
+fault events when a separate synthetic-failure workflow uses them.
 
 ### 5a. Hybrid Recovery Validation — [`experiment_hybrid_recovery_validation.md`](experiment_hybrid_recovery_validation.md)
 
 Current reference for the hybrid run family that validates the MongoDB
-request-lease state machine and controller failed-backend avoidance with two
-short deterministic runs before reusing the standard long-cycle workload for
-broader architecture observation.
+request-lease state machine and observes controller failed-backend avoidance
+signals with two short targeted runs before reusing the standard long-cycle
+workload for broader architecture observation.
 
 This run family adds:
 
 - one targeted `n1` validation recipe and one targeted `n2` recipe via
   `--phases-config`;
-- a phase-aware hard-stop helper in
-  [`fault_injector.py`](../../../source/scripts/testing/fault_injector.py);
-- an explicit fault artifact, `experiment_fault_events.csv`;
 - a focused offline summary through
   [`cli_recovery_validation.py`](../../../source/scripts/testing/analysis/cli_recovery_validation.py);
+- no synthetic backend stop or injected-fault artifact; the runs are pure
+  workload observations;
 - an image-rebuild gate: host-side harness and controller-script changes do
   not require image rebuilds, but a stale `edge_server` image still must be
   rebuilt before execution if the request-lease implementation in the remote

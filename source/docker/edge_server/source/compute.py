@@ -1,11 +1,12 @@
 """compute.py — CPU-intensive edge analytics applied to pre-fetched data.
 
 These functions implement generic edge analytics patterns — per-request data
-enrichment, temporal trend detection, and multi-factor composite ranking —
-instantiated with IoT monitoring semantics for the experimental workload.
+enrichment, temporal trend detection, local service-pressure summarization,
+and multi-factor composite ranking — instantiated with IoT monitoring
+semantics for the experimental workload.
 
 All functions are pure compute — no I/O, no DB calls. They operate on
-data already retrieved by the endpoint handlers in app.py.
+data already retrieved by the monitoring workload route module.
 """
 
 import hashlib
@@ -35,7 +36,7 @@ TAG_PRIORITY = {
     "thermal":       1.2,
 }
 
-# How many recent query_events to use for trend analysis
+# How many recent local request events to use for trend analysis
 TREND_WINDOW_SIZE = 20
 
 # Staleness decay half-life in seconds (for dashboard ranking)
@@ -105,8 +106,8 @@ def score_device_severity(
 # Function 2: Temporal trend analysis
 # ---------------------------------------------------------------------------
 
-def compute_trend(query_events: list[dict]) -> dict:
-    """Compute a linear-regression trend over recent query_events for a device.
+def compute_trend(request_events: list[dict]) -> dict:
+    """Compute a linear-regression trend over recent request events for a device.
 
     Each event is expected to have 'latency_ms' and 'timestamp' fields.
 
@@ -119,18 +120,18 @@ def compute_trend(query_events: list[dict]) -> dict:
             "latency_std": float,
         }
     """
-    if len(query_events) < 3:
+    if len(request_events) < 3:
         return {
             "trend_slope": 0.0,
             "trend_label": "insufficient_data",
-            "sample_count": len(query_events),
+            "sample_count": len(request_events),
             "latency_mean": 0.0,
             "latency_std": 0.0,
         }
 
     # Extract (timestamp_epoch, latency_ms) pairs
     points = []
-    for ev in query_events:
+    for ev in request_events:
         lat = ev.get("latency_ms")
         ts = ev.get("timestamp")
         if lat is None or ts is None:
@@ -184,55 +185,215 @@ def compute_trend(query_events: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Function 3: Composite anomaly risk scoring
+# Function 3: Local service-pressure summary
 # ---------------------------------------------------------------------------
 
-def score_anomaly_results(hot_devices: list[dict]) -> list[dict]:
-    """Compute composite risk scores for anomaly detection results.
+def compute_service_pressure(
+    events: list[dict],
+    limit: int,
+    region: str,
+    window_seconds: float,
+) -> dict:
+    """Summarize recent local request activity for the serving edge server.
 
-    For each device, the risk score combines:
-      - Z-score of query_count (popularity pressure)
-      - Z-score of avg_latency_ms (access cost)
-      - Threshold proximity (value / alert_threshold from sensor data)
-
-    The list is re-sorted by composite_risk descending.
+    Returns a summary plus the top devices and tags contributing to recent
+    service pressure on this edge.
     """
-    if len(hot_devices) < 2:
-        for d in hot_devices:
-            d["composite_risk"] = 1.0
-            d["z_query_count"] = 0.0
-            d["z_latency"] = 0.0
-        return hot_devices
+    request_count = len(events)
+    if request_count == 0:
+        return {
+            "region_served": region,
+            "summary": {
+                "request_count": 0,
+                "unique_device_count": 0,
+                "request_rate_rps": 0.0,
+                "latency_mean_ms": 0.0,
+                "latency_p95_ms": 0.0,
+                "tier1_hit_ratio": 0.0,
+                "tier1_eligible_read_count": 0,
+                "tier1_observed_request_count": 0,
+                "top_device_share": 0.0,
+                "pressure_score": 0.0,
+                "pressure_label": "low",
+            },
+            "request_kind_counts": {},
+            "top_devices": [],
+            "top_tags": [],
+        }
 
-    # Extract vectors
-    counts = [d.get("query_count", 0) for d in hot_devices]
-    latencies = [d.get("avg_latency_ms", 0) for d in hot_devices]
+    window_seconds = max(window_seconds, 1.0)
+    latencies = [float(ev.get("latency_ms", 0.0)) for ev in events]
+    tier1_hit_total = 0.0
+    tier1_eligible_read_count = 0
+    tier1_observed_request_count = 0
 
-    # Z-score normalization
-    count_mean = statistics.mean(counts)
-    count_std = statistics.pstdev(counts)
-    lat_mean = statistics.mean(latencies)
-    lat_std = statistics.pstdev(latencies)
+    devices: dict[str, dict] = {}
+    tags: dict[str, dict] = {}
+    request_kind_counts: dict[str, int] = {}
 
-    for d in hot_devices:
-        z_count = (d.get("query_count", 0) - count_mean) / count_std if count_std > 0 else 0.0
-        z_lat = (d.get("avg_latency_ms", 0) - lat_mean) / lat_std if lat_std > 0 else 0.0
+    for ev in events:
+        request_kind = str(ev.get("request_kind", "unknown"))
+        request_kind_counts[request_kind] = request_kind_counts.get(request_kind, 0) + 1
 
-        # Threshold proximity from sensor data (0.0 if not available)
-        value = d.get("value")
-        threshold = d.get("threshold")
-        proximity = (value / threshold) if (value and threshold) else 0.0
+        eligible_reads = int(ev.get("tier1_eligible_reads", 0) or 0)
+        if eligible_reads > 0:
+            tier1_observed_request_count += 1
+            tier1_eligible_read_count += eligible_reads
+            tier1_hit_total += eligible_reads * float(
+                ev.get(
+                    "tier1_hit_ratio",
+                    1.0 if str(ev.get("served_from_tier", "0")) == "1" else 0.0,
+                )
+            )
 
-        # Composite risk: weighted sum of z-scores + proximity
-        composite = 0.35 * z_count + 0.30 * z_lat + 0.35 * proximity
+        device_id = ev.get("device_id")
+        latency = float(ev.get("latency_ms", 0.0))
+        timestamp = float(ev.get("timestamp", 0.0))
+        severity = ev.get("severity", "normal")
+        status = ev.get("status", "unknown")
+        event_tags = tuple(ev.get("tags") or ())
 
-        d["z_query_count"] = round(z_count, 4)
-        d["z_latency"] = round(z_lat, 4)
-        d["composite_risk"] = round(composite, 4)
+        for tag in event_tags:
+            tag_stats = tags.setdefault(
+                tag,
+                {
+                    "tag": tag,
+                    "request_count": 0,
+                    "device_ids": set(),
+                    "latencies": [],
+                },
+            )
+            tag_stats["request_count"] += 1
+            if device_id:
+                tag_stats["device_ids"].add(device_id)
+            tag_stats["latencies"].append(latency)
 
-    # Re-sort by composite risk descending
-    hot_devices.sort(key=lambda d: d["composite_risk"], reverse=True)
-    return hot_devices
+        if not device_id:
+            continue
+
+        device_stats = devices.setdefault(
+            device_id,
+            {
+                "device_id": device_id,
+                "request_count": 0,
+                "latencies": [],
+                "last_seen_epoch": 0.0,
+                "last_severity": "normal",
+                "last_status": "unknown",
+                "tags": (),
+            },
+        )
+        device_stats["request_count"] += 1
+        device_stats["latencies"].append(latency)
+        if timestamp >= device_stats["last_seen_epoch"]:
+            device_stats["last_seen_epoch"] = timestamp
+            device_stats["last_severity"] = severity
+            device_stats["last_status"] = status
+            device_stats["tags"] = event_tags
+
+    top_devices = []
+    for device_stats in devices.values():
+        device_latencies = device_stats.pop("latencies")
+        top_devices.append(
+            {
+                "device_id": device_stats["device_id"],
+                "request_count": device_stats["request_count"],
+                "avg_latency_ms": round(statistics.mean(device_latencies), 2),
+                "last_seen_epoch": round(device_stats["last_seen_epoch"], 3),
+                "last_severity": device_stats["last_severity"],
+                "last_status": device_stats["last_status"],
+                "tags": list(device_stats["tags"]),
+            }
+        )
+    top_devices.sort(key=lambda d: (d["request_count"], d["avg_latency_ms"]), reverse=True)
+    top_devices = top_devices[:limit]
+
+    top_tags = []
+    for tag_stats in tags.values():
+        tag_latencies = tag_stats["latencies"]
+        top_tags.append(
+            {
+                "tag": tag_stats["tag"],
+                "request_count": tag_stats["request_count"],
+                "unique_device_count": len(tag_stats["device_ids"]),
+                "avg_latency_ms": round(statistics.mean(tag_latencies), 2),
+            }
+        )
+    top_tags.sort(key=lambda d: (d["request_count"], d["avg_latency_ms"]), reverse=True)
+    top_tags = top_tags[:limit]
+
+    request_rate_rps = request_count / window_seconds
+    latency_mean_ms = statistics.mean(latencies)
+    latency_p95_ms = _percentile(latencies, 0.95)
+    tier1_hit_ratio = (
+        tier1_hit_total / tier1_eligible_read_count
+        if tier1_eligible_read_count > 0
+        else 0.0
+    )
+    top_device_share = (top_devices[0]["request_count"] / request_count) if top_devices else 0.0
+
+    rate_component = _normalize(request_rate_rps, 10.0)
+    latency_component = _normalize(latency_p95_ms, 150.0)
+    concentration_component = _normalize(top_device_share, 0.5)
+    tier1_miss_component = 1.0 - tier1_hit_ratio if tier1_eligible_read_count > 0 else 0.0
+
+    pressure_score = (
+        0.35 * rate_component
+        + 0.30 * latency_component
+        + 0.20 * concentration_component
+        + 0.15 * tier1_miss_component
+    )
+    if pressure_score < 0.35:
+        pressure_label = "low"
+    elif pressure_score < 0.65:
+        pressure_label = "moderate"
+    else:
+        pressure_label = "high"
+
+    return {
+        "region_served": region,
+        "summary": {
+            "request_count": request_count,
+            "unique_device_count": len(devices),
+            "request_rate_rps": round(request_rate_rps, 2),
+            "latency_mean_ms": round(latency_mean_ms, 2),
+            "latency_p95_ms": round(latency_p95_ms, 2),
+            "tier1_hit_ratio": round(tier1_hit_ratio, 4),
+            "tier1_eligible_read_count": tier1_eligible_read_count,
+            "tier1_observed_request_count": tier1_observed_request_count,
+            "top_device_share": round(top_device_share, 4),
+            "pressure_score": round(pressure_score, 4),
+            "pressure_label": pressure_label,
+        },
+        "request_kind_counts": dict(
+            sorted(request_kind_counts.items(), key=lambda item: item[1], reverse=True)
+        ),
+        "top_devices": top_devices,
+        "top_tags": top_tags,
+    }
+
+
+def _normalize(value: float, ceiling: float) -> float:
+    if ceiling <= 0:
+        return 0.0
+    return max(0.0, min(value / ceiling, 1.0))
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+
+    rank = (len(ordered) - 1) * percentile
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return ordered[lower]
+
+    weight = rank - lower
+    return ordered[lower] * (1 - weight) + ordered[upper] * weight
 
 
 # ---------------------------------------------------------------------------

@@ -276,6 +276,9 @@ def init_telemetry(
         g.time_db_read_s = 0.0
         g.time_db_write_s = 0.0
         g.time_db_cmd_count = 0
+        g.tier1_point_read_count = 0
+        g.tier1_point_hit_count = 0
+        g.request_lease_outcomes: list[dict] = []
         # Populated by platform_cache._CachedCollection on each wrapped call.
         # Pre-initialised so downstream handlers can append without nil-checks.
         g.access_records: list[dict] = [] # [{"owner_lan": str, "collection": str, "doc_id": str}]
@@ -301,6 +304,7 @@ def init_telemetry(
             lan: elapsed_s * 1000.0
             for lan, elapsed_s in getattr(g, "time_db_per_lan", {}).items()
         }
+        event["request_lease_outcomes"] = getattr(g, "request_lease_outcomes", [])
         event["access_records"] = getattr(g, "access_records", [])
         event["op_counts"] = getattr(g, "op_counts", {})
         print(f"Sending telemetry event: {event}")

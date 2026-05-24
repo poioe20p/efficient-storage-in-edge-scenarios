@@ -126,6 +126,9 @@ class VipRoutingMixin:
             "n1": {},
             "n2": {},
         } # domain -> (mac -> lease)
+        # (edge_server_mac, domain) -> backend_mac for the last normal
+        # VIP_DATA choice. Recovery selections must not overwrite this state.
+        self._last_normal_storage_choice: dict[tuple[str, str], str] = {}
 
         logger.debug(
             "vip routing mixin: w_cpu=%.2f w_ram=%.2f w_req=%.2f w_hops=%.2f "
@@ -227,6 +230,68 @@ class VipRoutingMixin:
         )
         return chosen
 
+    def _remember_normal_storage_choice(
+        self,
+        client_mac: str,
+        domain: str,
+        backend_mac: str,
+    ) -> None:
+        with self._warm_lock:
+            self._last_normal_storage_choice[(client_mac, domain)] = backend_mac
+
+    def _forget_normal_storage_choice(self, backend_mac: str, domain: str) -> None:
+        with self._warm_lock:
+            stale_keys = [
+                key
+                for key, remembered_mac in self._last_normal_storage_choice.items()
+                if key[1] == domain and remembered_mac == backend_mac
+            ]
+            for key in stale_keys:
+                self._last_normal_storage_choice.pop(key, None)
+
+        if stale_keys:
+            logger.info(
+                "vip_data(%s): forgot %d remembered normal choices for removed backend mac=%s",
+                domain,
+                len(stale_keys),
+                backend_mac,
+            )
+
+    def _filter_previous_normal_backend(
+        self,
+        domain: str,
+        client_mac: str,
+        pool: dict[str, dict],
+    ) -> dict[str, dict]:
+        key = (client_mac, domain)
+        with self._warm_lock:
+            previous_normal_mac = self._last_normal_storage_choice.get(key)
+
+        if previous_normal_mac is None or previous_normal_mac not in pool:
+            return pool
+
+        filtered = {
+            mac: entry
+            for mac, entry in pool.items()
+            if mac != previous_normal_mac
+        }
+        if filtered:
+            logger.info(
+                "select_storage(%s): recovery avoiding last normal backend mac=%s client=%s",
+                domain,
+                previous_normal_mac,
+                client_mac,
+            )
+            return filtered
+
+        logger.info(
+            "select_storage(%s): recovery fallback to full pool after avoidance would empty candidates client=%s mac=%s",
+            domain,
+            client_mac,
+            previous_normal_mac,
+        )
+        return pool
+
     # Controller-side lifecycle hooks used by Thread 2 and Thread 3 to keep
     # VIP membership, backend IP seeding, and warm-lease state synchronized
     # when dynamic backends are promoted, admitted, removed, or retracted.
@@ -284,6 +349,7 @@ class VipRoutingMixin:
     def unregister_storage_backend(self, mac: str, domain: str) -> None:
         self.remove_storage_mac(mac, domain)
         self.clear_storage_backend_warm(mac, domain)
+        self._forget_normal_storage_choice(mac, domain)
 
     # ------------------------------------------------------------------
     # VIP packet-in entry point — called from Thread 1's packet_in_handler
@@ -437,7 +503,22 @@ class VipRoutingMixin:
     # ------------------------------------------------------------------
 
     def _handle_vip_data(self, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain, recovery=False) -> bool: # * allows passing domain as a keyword-only argument for clarity
-        storage = self.select_storage(domain, src_mac)
+        tcp_src_port = None
+        tcp_dst_port = None
+        if recovery:
+            tcp_pkt = pkt.get_protocol(tcp_lib.tcp)
+            if ip_proto != 6 or tcp_pkt is None or tcp_pkt.dst_port != 27018:
+                logger.warning(
+                    "vip_data(%s) recovery: non-Mongo recovery packet dropped proto=%s dst_port=%s",
+                    domain,
+                    ip_proto,
+                    getattr(tcp_pkt, "dst_port", None),
+                )
+                return True
+            tcp_src_port = tcp_pkt.src_port
+            tcp_dst_port = tcp_pkt.dst_port
+
+        storage = self.select_storage(domain, src_mac, recovery=recovery)
         if storage is None:
             logger.warning("vip_data(%s): pool empty, packet dropped", domain)
             return True
@@ -460,21 +541,6 @@ class VipRoutingMixin:
             vip_ip, vip_mac = self.vip_data_n1_ip, self.vip_data_n1_mac
         else:
             vip_ip, vip_mac = self.vip_data_n2_ip, self.vip_data_n2_mac
-
-        tcp_src_port = None
-        tcp_dst_port = None
-        if recovery:
-            tcp_pkt = pkt.get_protocol(tcp_lib.tcp)
-            if ip_proto != 6 or tcp_pkt is None or tcp_pkt.dst_port != 27018:
-                logger.warning(
-                    "vip_data(%s) recovery: non-Mongo recovery packet dropped proto=%s dst_port=%s",
-                    domain,
-                    ip_proto,
-                    getattr(tcp_pkt, "dst_port", None),
-                )
-                return True
-            tcp_src_port = tcp_pkt.src_port
-            tcp_dst_port = tcp_pkt.dst_port
 
         self._install_vip_dnat_snat(
             datapath, in_port, pkt,
@@ -584,7 +650,13 @@ class VipRoutingMixin:
     # Storage selection — multi-dimensional WSM cost function
     # ------------------------------------------------------------------
 
-    def select_storage(self, domain: str, client_mac: str) -> dict | None:
+    def select_storage(
+        self,
+        domain: str,
+        client_mac: str,
+        *,
+        recovery: bool = False,
+    ) -> dict | None:
         """Pick the storage node with the lowest WSM cost from the domain's pool.
 
         Cost_j = w_cpu·(CPU_j/CPU_max) + w_ram·(RAM_j/RAM_max)
@@ -600,12 +672,17 @@ class VipRoutingMixin:
             logger.warning("select_storage(%s): pool empty", domain)
             return None
 
+        if recovery:
+            pool = self._filter_previous_normal_backend(domain, client_mac, pool)
+
         warm = self._claim_warm_backend(
             f"vip_data({domain})",
             self._warm_storage_leases.setdefault(domain, {}),
             pool,
         )
         if warm is not None:
+            if not recovery:
+                self._remember_normal_storage_choice(client_mac, domain, warm["mac"])
             return warm
 
         pool_stats = [self._storage_stats[m] for m in pool if m in self._storage_stats]
@@ -669,6 +746,8 @@ class VipRoutingMixin:
             "select_storage(%s): selected=%s cost=%.4f (tied=%d rr_idx=%d)",
             domain, chosen["mac"], best_cost, len(tied), rr_idx,
         )
+        if not recovery:
+            self._remember_normal_storage_choice(client_mac, domain, chosen["mac"])
         return chosen
 
     # ------------------------------------------------------------------

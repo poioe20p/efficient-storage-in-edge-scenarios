@@ -19,10 +19,9 @@ under `source/scripts/testing/metrics/`, unless the user explicitly says to
 defer the summary or keep the folder untouched.
 
 After the summary is written and checked, clean the target run folder by deleting
-only transient per-phase client request CSV files and controller log files:
-`client_requests_*.csv` and `controller_lan[0-9].log`. Before deleting controller
-logs, parse and retain `elasticity_events.csv` and `node_lifecycle_timings.csv`.
-Leave every other file in the run folder intact.
+only transient controller log files: `controller_lan[0-9].log`. Before deleting
+controller logs, parse and retain `elasticity_events.csv` and
+`node_lifecycle_timings.csv`. Leave every other file in the run folder intact.
 
 When the run folder lives on `cloud-vm`, this skill is also the default remote
 size-reduction step. Unless the user says controller logs still need to be kept
@@ -52,8 +51,8 @@ Read the run artifacts before writing conclusions:
   selective-sync lifecycle anchors.
 - `phases_snapshot.json` for phase order, duration, request mix, and
   cross-region ratios.
-- `client_requests_*.csv` for per-phase latency, failures, endpoint, and LAN
-  split. These are deleted only after the summary is complete.
+- `client_requests.csv` for per-phase latency, failures, endpoint, and LAN
+  split via its `phase` column.
 - `controller_lan1.log` and `controller_lan2.log` for alerts, spawn events,
   scale-down evaluations, cleanup failures, telemetry gaps, or exceptions.
   These are deleted only after the summary is complete.
@@ -73,9 +72,9 @@ python source/scripts/tools/metrics_stats.py "<run_dir>" --by-phase --by-lan --b
 python source/scripts/tools/metrics_stats.py -r "<run_dir>/resource_stats.csv" --by-phase --by-network
 ```
 
-The first command processes `client_requests_*.csv`, prints latency statistics,
-and appends `latency_summary.csv`. The second processes `resource_stats.csv` and
-appends `resource_summary.csv`.
+The first command processes `client_requests.csv`, prints latency statistics,
+and appends `latency_summary.csv`. The second processes `resource_stats.csv`
+and appends `resource_summary.csv`.
 
 Use the analysis package when the needed input files exist:
 
@@ -221,17 +220,15 @@ Cleanup is part of this skill, but only after `run_summary.md` has been written
 and the summary is based on the data that will be removed.
 
 1. List cleanup candidates inside the target run folder:
-   - `client_requests_*.csv`
-   - `controller_lan[0-9].log`
+  - `controller_lan[0-9].log`
 2. Verify every candidate path is directly under the resolved run folder.
 3. Delete only those candidates.
-4. Do not delete `resource_stats.csv`, `per_node_stats.csv`,
-   `container_events.csv`, `phases_snapshot.json`, `latency_summary.csv`,
-  `resource_summary.csv`, `elasticity_events.csv`,
+4. Do not delete `client_requests.csv`, `resource_stats.csv`,
+  `per_node_stats.csv`, `container_events.csv`, `phases_snapshot.json`,
+  `latency_summary.csv`, `resource_summary.csv`, `elasticity_events.csv`,
   `node_lifecycle_timings.csv`, `run_summary.md`, or anything under
   `analysis/`.
-5. Verify that no `client_requests_*.csv` or `controller_lan[0-9].log` files
-   remain in that run folder.
+5. Verify that no `controller_lan[0-9].log` files remain in that run folder.
 
 ## Cloud Copy-Back Procedure
 
