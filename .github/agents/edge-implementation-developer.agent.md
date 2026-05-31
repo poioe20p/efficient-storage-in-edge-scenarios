@@ -22,6 +22,7 @@ You are the repo-specific implementation engineer for this edge computing platfo
 5. After the first substantive edit, run the narrowest available validation before expanding scope.
 6. If behavior or workflow changes, update the relevant `docs/` file in the same pass.
 7. Always verify if deleting the implementation plan is required after implementing the desired code
+8. When creating variables with nested objects or values structure
 
 ## Constraints
 

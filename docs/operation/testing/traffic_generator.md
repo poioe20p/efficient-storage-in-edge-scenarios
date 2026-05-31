@@ -38,11 +38,12 @@ Core scripts:
 | `export_workload_snapshot.py` | Pre-export device/node data from MongoDB to JSON — decouples the traffic generator from a live database |
 | `traffic_generator.py` | Async Python script that sends phased HTTP traffic from test client namespaces through `VIP_SERVER` |
 
-One new config file:
+Phase config files:
 
 | File | Purpose |
 | --- | --- |
 | `phases.json` | Defines the current 9-phase long-cycle experiment parameters (duration, rate, mix, cross-region ratio) |
+| `phases_experiment_storage_trigger.json` | Defines the storage-trigger companion profile used when the campaign must force natural Tier 2 storage scale-up |
 
 **Location:** all new files go in `source/scripts/testing/`.
 
@@ -348,6 +349,30 @@ during buildup instead of only after the strongest cross-region window begins.
 | `compute_spike` | Peak compute demand with the same low cross-region ratio. |
 | `sustained_plateau` | Holds compute pressure after the spike to observe post-scale stabilization. |
 | `demand_drop` | Stays low long enough to expose cooldown-gated storage and compute scale-down. |
+
+### Storage-Trigger Companion Profile
+
+When the campaign objective is to force storage elasticity rather than preserve
+the balanced hybrid reference profile, use
+`source/scripts/testing/phases_experiment_storage_trigger.json` together with a
+larger seeded working set. The wrapper now accepts explicit workload-size flags
+for this purpose, and `make run_experiment` forwards the existing `CLIENTS`,
+`DEVICES`, and `NODES` variables to those flags.
+
+Recommended launch shape for the next storage-focused runs:
+
+```bash
+sudo make -C source/scripts run_experiment \
+    CLIENTS=6 DEVICES=600 NODES=100 \
+    PHASES_CONFIG=testing/phases_experiment_storage_trigger.json \
+    RUN_LABEL=storage_trigger_ws600 \
+    SKIP_CLIENTS=0 SKIP_SEED=0 SKIP_SNAPSHOT=0
+```
+
+This companion profile keeps the same request generator and data model, but it
+removes the compute-dominant phases and lengthens `storage_stress`,
+`cross_region_hotspot`, and `reverse_hotspot` so the storage controller sees a
+sustained hotspot under a larger working set.
 
 ---
 

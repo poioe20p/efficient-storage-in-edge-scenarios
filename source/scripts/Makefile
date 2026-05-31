@@ -24,12 +24,14 @@ DRY_RUN       ?=
 RUN_LABEL     ?=
 PHASES_CONFIG ?=
 FAULT_PLAN    ?=
+PROBE_CAPTURE_RUN_DIR ?=
+PROBE_CAPTURE_ROOT    ?=
 
 
 .PHONY: setup_network \
         create_clients teardown_clients \
         setup_test_data seed_sensor_reports seed_device_registry create_indexes export_snapshot \
-	run_experiment cleanup_metrics \
+	run_experiment cleanup_metrics probe_capture_preflight probe_capture_launch \
 	install_commit_msg_hook uninstall_commit_msg_hook preview_commit_msg
 
 # ── Network ──────────────────────────────────────────────────────────────────
@@ -107,18 +109,22 @@ cleanup_metrics:
 		esac; \
 	done
 
-## Run the full 4-phase experiment (traffic generator + resource stats collector).
+## Run the configured experiment profile (traffic generator + resource stats collector).
 ## Optional flags (set to any non-empty value to enable):
 ##   make run_experiment SKIP_CLIENTS=1   # namespaces already created
 ##   make run_experiment SKIP_SEED=1      # data already seeded
 ##   make run_experiment SKIP_SNAPSHOT=1  # snapshot already exported
 ##   make run_experiment DRY_RUN=1        # no real HTTP requests
 ##   make run_experiment RUN_LABEL=c0     # metrics folder becomes <timestamp>_c0
+##   make run_experiment CLIENTS=6 DEVICES=600 NODES=100
 ##   make run_experiment PHASES_CONFIG=testing/phases_custom.json
 ##   make run_experiment FAULT_PLAN=testing/fault_plan.json
 run_experiment:
 	sudo bash testing/run_experiment.sh \
 	  $(if $(strip $(RUN_LABEL)),--run-label "$(strip $(RUN_LABEL))") \
+	  --clients-per-lan "$(strip $(CLIENTS))" \
+	  --seed-devices "$(strip $(DEVICES))" \
+	  --seed-nodes "$(strip $(NODES))" \
 	  --snapshot-dir $(abspath $(SNAPSHOT_DIR)) \
 	  $(if $(strip $(PHASES_CONFIG)),--phases-config "$(strip $(PHASES_CONFIG))") \
 	  $(if $(strip $(FAULT_PLAN)),--fault-plan "$(strip $(FAULT_PLAN))") \
@@ -126,6 +132,40 @@ run_experiment:
 	  $(if $(filter-out 0 false,$(SKIP_SEED)),--skip-seed) \
 	  $(if $(filter-out 0 false,$(SKIP_SNAPSHOT)),--skip-snapshot) \
 	  $(if $(filter-out 0 false,$(DRY_RUN)),--dry-run)
+
+## Validate reverse_hotspot probe capture prerequisites under the current environment.
+probe_capture_preflight:
+	@set -eu; \
+	run_dir="$(strip $(PROBE_CAPTURE_RUN_DIR))"; \
+	capture_root="$(strip $(PROBE_CAPTURE_ROOT))"; \
+	if [ -z "$$capture_root" ]; then \
+		echo "ERROR: PROBE_CAPTURE_ROOT is required" >&2; \
+		exit 1; \
+	fi; \
+	if [ -n "$$run_dir" ]; then \
+		bash testing/capture_reverse_hotspot_probe.sh --preflight --run-dir "$$run_dir" --capture-root "$$capture_root"; \
+	else \
+		bash testing/capture_reverse_hotspot_probe.sh --preflight --capture-root "$$capture_root"; \
+	fi
+
+## Launch the reverse_hotspot probe capture helper as a detached process.
+probe_capture_launch:
+	@set -eu; \
+	run_dir="$(strip $(PROBE_CAPTURE_RUN_DIR))"; \
+	capture_root="$(strip $(PROBE_CAPTURE_ROOT))"; \
+	if [ -z "$$run_dir" ]; then \
+		echo "ERROR: PROBE_CAPTURE_RUN_DIR is required" >&2; \
+		exit 1; \
+	fi; \
+	if [ -z "$$capture_root" ]; then \
+		echo "ERROR: PROBE_CAPTURE_ROOT is required" >&2; \
+		exit 1; \
+	fi; \
+	mkdir -p "$$capture_root"; \
+	nohup bash testing/capture_reverse_hotspot_probe.sh --run-dir "$$run_dir" --capture-root "$$capture_root" > "$$capture_root/helper.log" 2>&1 < /dev/null & \
+	helper_pid=$$!; \
+	echo "HELPER_PID=$$helper_pid"; \
+	echo "HELPER_LOG=$$capture_root/helper.log"
 
 ## Install the local prepare-commit-msg hook that auto-generates commit messages.
 install_commit_msg_hook:

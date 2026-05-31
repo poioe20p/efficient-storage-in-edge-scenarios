@@ -357,6 +357,44 @@ Measure:
 - Whether `demand_drop` is long enough to trigger storage and compute scale-in
 - Latency stability during infrastructure removal
 
+### Storage-Trigger Companion Profile
+
+Keep the 9-phase schedule above as the balanced hybrid reference profile. When
+the next run must *force* natural Tier 2 storage scale-up under the unchanged
+controller thresholds, use the storage-trigger companion profile in
+`source/scripts/testing/phases_experiment_storage_trigger.json` together with a
+larger working set.
+
+Recommended starting point for that campaign:
+
+- `CLIENTS=6`
+- `DEVICES=600`
+- `NODES=100`
+
+This companion profile deliberately removes the compute-dominant phases and
+extends the storage-locality window so the controller sees several sustained
+10-second telemetry windows above the storage CPU or DB-latency floor without
+retuning the controller policy.
+
+| Phase | Duration | Rate/client | `cross_region_ratio` | Mix (`device_status / dashboard / service_pressure`) | Role |
+| --- | ---: | ---: | ---: | --- | --- |
+| `baseline` | 60 s | 2.0 | 0.00 | `0.60 / 0.25 / 0.15` | Short Tier 0 control before the storage-focused ramp |
+| `local_moderate` | 120 s | 6.0 | 0.00 | `0.75 / 0.15 / 0.10` | Local warm-up with a larger working set but no cross-region reads |
+| `storage_stress` | 420 s | 10.0 | 0.75 | `0.90 / 0.05 / 0.05` | Long pre-trigger storage build-up intended to arm the first Tier 2 alert |
+| `cross_region_hotspot` | 420 s | 12.0 | 0.95 | `0.90 / 0.05 / 0.05` | Main Tier 2 observation window on `lan2_to_lan1` |
+| `reverse_hotspot` | 420 s | 12.0 | 0.95 | `0.90 / 0.05 / 0.05` | Same Tier 2 observation window in the opposite direction |
+| `demand_drop` | 360 s | 1.0 | 0.00 | `0.70 / 0.20 / 0.10` | Cooldown and storage scale-down observation |
+
+Expected signatures for this companion profile:
+
+- `median_storage_cpu_percent` should clear the storage CPU floor more often
+  than in the current hybrid-observation runs.
+- `t_db_p95_ms_owner_lan` should stay high for long enough to satisfy the
+  storage 2-of-5 debounce while the hotspot is still active.
+- `storage_count` should move above 1 during one or both hotspot phases if the
+  current code still supports natural Tier 2 activation under storage-heavy
+  demand.
+
 ---
 
 # MongoDB Justification Beyond Replica Sets

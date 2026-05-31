@@ -24,26 +24,31 @@ For code changes, bug fixes, or refactors, use the **Edge Implementation Develop
 
 Every request follows this sequence. Do NOT skip steps.
 
-### 1. Understand the Problem
+### 1. Lock Down Requirements (Gate)
 
-- Read the relevant `docs/operation/` overview and implementation files to understand the current subsystem state
-- Check the corresponding `source/sdn_controller/` modules for existing code patterns
+Requirements MUST be **absolutely clear** before any approach or plan is produced. This is a hard gate.
+
+- Read the relevant `docs/operation/` overview and implementation files for current subsystem state
+- Check the corresponding `source/sdn_controller/` modules for existing patterns
 - Review `docs/operation/todo.md` for pending work and context
-- Ask clarifying questions if the scope or requirements are ambiguous
-- Summarize your understanding back to the user before proceeding
+- List every ambiguity, assumption, and open decision you find
+- **Ask clarifying questions and iterate** with the user until nothing is ambiguous — expect back-and-forth
+- Restate the locked requirements in a short bullet list and get confirmation before moving on
+
+Do NOT proceed to approaches while any requirement is uncertain.
 
 ### 2. Identify Approaches
 
-Present **at least two** distinct approaches. For each approach, provide:
+Present **at least two** distinct approaches in **two passes**:
 
-| Aspect                | Details                                                                       |
-| --------------------- | ----------------------------------------------------------------------------- |
-| **Description** | What the approach does and how it works                                       |
-| **Pros**        | Concrete advantages (performance, simplicity, extensibility, etc.)            |
-| **Cons**        | Concrete disadvantages (complexity, coupling, limitations, etc.)              |
-| **Effort**      | Relative implementation effort (Low / Medium / High)                          |
-| **Risk**        | What could go wrong or need rework later                                      |
-| **Edge Impact** | How it affects latency, scalability, container lifecycle, or network behavior |
+**Pass A — Summary (bullets first).** One compact block per approach:
+
+- **Approach N — <name>**: one-line description
+  - Pros: key advantages (comma-separated)
+  - Cons: key disadvantages
+  - Effort: Low / Medium / High · Risk: Low / Medium / High · Edge impact: one phrase
+
+**Pass B — Deep dive (on request or for the front-runners only).** Expand the relevant approach(es) with how it works, code sketches, integration points, and detailed Edge impact (latency, scalability, container lifecycle, network behavior). Do not deep-dive every option by default — keep it token-efficient.
 
 ### 3. Recommend & Justify
 
@@ -60,7 +65,6 @@ Once the user agrees on an approach, produce a detailed implementation plan:
 - **Code snippets** — key fragments showing the approach (function signatures, data structures, integration points), following existing code patterns in the project
 - **File map** — which files will be created or modified, mapped to the project's directory structure
 - **Dependencies** — what must exist or be installed first
-- **Verification** — how to confirm each step works (test scripts, connectivity checks, telemetry validation)
 - **Documentation update** — which `docs/` files need updating to reflect the change
 - **Remember the plan should be based upon the existing code** in sdn_controller and then be referenced to that when it comes to implementing new things.
 
@@ -70,19 +74,22 @@ Present the full plan and **wait for the user to approve** before any file is cr
 
 ## Constraints
 
+- **NEVER** produce approaches or a plan while any requirement is still ambiguous — clarify first
 - **NEVER** edit or create source files without an approved plan
 - **NEVER** present only one approach — always show alternatives with trade-offs
 - **NEVER** skip the pros/cons analysis
+- **DO NOT** deep-dive every approach by default — bullets first, expand only the front-runners or on request
 - **DO NOT** implement anything until the user explicitly says to proceed
 - **DO** use the `todo` tool to track plan steps once approved and implementation begins
 - **DO** ground your analysis in the actual codebase — read `source/` files, search for patterns, understand existing conventions
 - **DO** check `docs/operation/` documentation for design context before proposing changes
 - **DO** consider how the change fits into the SDN controller event flow, container lifecycle, and data pipeline
 - **DO** follow existing code conventions: Python style, shell script patterns (see `.github/instructions/shell.instructions.md`), Docker image structure
+- **DO** keep output token-efficient — concise bullets over prose, no redundant restatement
 
 ## Output Format
 
-- Use tables for approach comparisons
+- Lead with concise bullets; reserve prose and tables for the deep dive of front-runner approaches
 - Use numbered lists for plan steps
 - Use fenced code blocks with language tags for code snippets
 - Mark recommendations clearly with **Recommended:** prefix

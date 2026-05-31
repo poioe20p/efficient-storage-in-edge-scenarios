@@ -17,6 +17,8 @@
 # Usage:
 #   sudo ./run_experiment.sh [--batch-dir batch4] [--run-label c0] [--skip-clients] [--skip-seed] [--skip-snapshot]
 #   sudo ./run_experiment.sh --phases-config phases_custom.json --fault-plan fault_plan.json
+#   sudo ./run_experiment.sh --clients-per-lan 6 --seed-devices 600 --seed-nodes 100 \
+#       --phases-config phases_experiment_storage_trigger.json --run-label storage_trigger
 #
 # Flags (all optional):
 #   --batch-dir DIR     Place the run folder under metrics/DIR/ (example: metrics/batch4/20260501_153012_c0)
@@ -24,6 +26,9 @@
 #   --skip-clients       Skip step 1 (test namespaces already created)
 #   --skip-seed          Skip step 2 (data already seeded)
 #   --skip-snapshot      Skip step 3 (snapshot already exported)
+#   --clients-per-lan N  Override the number of client namespaces created per LAN
+#   --seed-devices N     Override the number of devices seeded per LAN
+#   --seed-nodes N       Override the number of nodes seeded per LAN
 #   --snapshot-dir DIR   Override snapshot directory (default: REPO_ROOT/data/workload_snapshot)
 #   --phases-config FILE Override the traffic-generator phases file
 #   --fault-plan FILE    Optional fault-injection plan consumed by fault_injector.py
@@ -43,15 +48,15 @@ readonly RUN_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 # ---------------------------------------------------------------------------
 
 # Number of test client namespaces per LAN
-CLIENTS_PER_LAN=3
+CLIENTS_PER_LAN="${CLIENTS_PER_LAN:-3}"
 
 # Namespace prefixes — produces lan1_client_1, lan1_client_2 … lan2_client_1, lan2_client_2 …
 PREFIX_LAN1="lan1_client_"
 PREFIX_LAN2="lan2_client_"
 
 # Number of devices and nodes to seed per region
-SEED_DEVICES=100
-SEED_NODES=40
+SEED_DEVICES="${SEED_DEVICES:-100}"
+SEED_NODES="${SEED_NODES:-40}"
 
 # MongoDB URIs for each region's primary
 MONGO_LAN1="mongodb://10.0.0.4:27018/"
@@ -114,6 +119,12 @@ while [[ $# -gt 0 ]]; do
         --skip-clients)   SKIP_CLIENTS=true  ;;
         --skip-seed)      SKIP_SEED=true     ;;
         --skip-snapshot)  SKIP_SNAPSHOT=true ;;
+        --clients-per-lan) shift; CLIENTS_PER_LAN="$1" ;;
+        --clients-per-lan=*) CLIENTS_PER_LAN="${1#*=}" ;;
+        --seed-devices)   shift; SEED_DEVICES="$1" ;;
+        --seed-devices=*) SEED_DEVICES="${1#*=}" ;;
+        --seed-nodes)     shift; SEED_NODES="$1" ;;
+        --seed-nodes=*)   SEED_NODES="${1#*=}" ;;
         --dry-run)        DRY_RUN=true       ;;
         --snapshot-dir)   shift; SNAPSHOT_DIR="$1" ;;
         --snapshot-dir=*) SNAPSHOT_DIR="${1#*=}" ;;
@@ -142,6 +153,20 @@ if [[ -n "$BATCH_DIR" ]] && [[ ! "$BATCH_DIR" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(/[A
     echo "ERROR: invalid --batch-dir '$BATCH_DIR' (allowed: relative path segments with letters, numbers, '.', '_' and '-')" >&2
     exit 1
 fi
+
+step() { echo; echo "==> $*"; }
+die()  { echo "ERROR: $*" >&2; exit 1; }
+
+require_positive_int() {
+    local name="$1"
+    local value="$2"
+
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die "invalid ${name} '${value}' (expected positive integer)"
+}
+
+require_positive_int "--clients-per-lan" "$CLIENTS_PER_LAN"
+require_positive_int "--seed-devices" "$SEED_DEVICES"
+require_positive_int "--seed-nodes" "$SEED_NODES"
 
 readonly RUN_ID="${RUN_TIMESTAMP}${RUN_LABEL:+_${RUN_LABEL}}"
 readonly METRICS_ROOT="${SCRIPT_DIR}/metrics"
@@ -179,9 +204,6 @@ FAULT_EVENTS_OUTPUT="${RUN_DIR}/experiment_fault_events.csv"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-step() { echo; echo "==> $*"; }
-die()  { echo "ERROR: $*" >&2; exit 1; }
 
 prepare_run_outputs() {
     step "Preparing run output folder"

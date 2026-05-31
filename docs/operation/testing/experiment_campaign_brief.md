@@ -1,5 +1,527 @@
 # Experiment Campaign Brief
 
+## Planned Batch - Storage Trigger Recurrence Matrix
+
+- Status: Runs 1-3 are complete. The unchanged recurrence matrix should pause
+  before any frontier step; `storage_trigger_ws600_rep3` only ran because of
+  an explicit user override after the Run 2 pause recommendation.
+- Objective: determine whether the `reverse_hotspot` degradation seen in
+  `20260524_130204_storage_trigger_ws600` is a short-lived localized recovery
+  effect or a repeatable and worsening instability once the same storage-scale
+  trigger path is rerun under the same code.
+- Shared run shape:
+  - keep the current code, controller policy, and runtime images unchanged for
+    the whole batch.
+  - keep the storage-trigger profile fixed at
+    `source/scripts/testing/phases_experiment_storage_trigger.json`.
+  - keep the seeded working set fixed at `DEVICES=600` and `NODES=100` for
+    every run.
+  - keep the campaign observation-only: no `FAULT_PLAN`, no threshold edits,
+    and no between-run code changes until the first three repeats are compared.
+- Batch structure:
+
+  | Run | Label | Clients/LAN | Devices/LAN | Nodes/LAN | Purpose |
+  | --- | --- | ---: | ---: | ---: | --- |
+  | 1 | `storage_trigger_ws600_rep1` | 3 | 600 | 100 | First direct repeat of the successful storage-trigger workload |
+  | 2 | `storage_trigger_ws600_rep2` | 3 | 600 | 100 | Second direct repeat to test recurrence |
+  | 3 | `storage_trigger_ws600_rep3` | 3 | 600 | 100 | Third direct repeat before any frontier step |
+  | 4 | `storage_trigger_ws600_frontier_c4` | 4 | 600 | 100 | Mild concurrency frontier with the same phase profile |
+  | 5 | `storage_trigger_ws600_frontier_c5` | 5 | 600 | 100 | Upper concurrency frontier, only if Run 4 stays bounded |
+
+- Primary comparisons:
+  - compare Runs 1-3 directly against
+    `20260524_130204_storage_trigger_ws600` to see whether the same
+    `reverse_hotspot` behavior reappears under the same workload family.
+  - compare Runs 1-3 against each other before launching Run 4, so the first
+    decision is based on recurrence rather than on a stronger frontier.
+  - compare Runs 4-5 against the repeat trio only after the recurrence shape is
+    understood.
+- Launch order and gate:
+  - Runs 1-3 are complete.
+  - do not launch `storage_trigger_ws600_frontier_c4` or
+    `storage_trigger_ws600_frontier_c5` unchanged while `rep3` is the current
+    anomaly reference.
+  - reopen the gate only after the `rep2` and `rep3` investigation either
+    explains the broadened recurrence as acceptable variance or identifies a
+    concrete hardening change worth testing.
+  - keep `storage_trigger_ws600_frontier_c4` and
+    `storage_trigger_ws600_frontier_c5` deferred until that gate is reopened.
+- Launch commands:
+
+```bash
+ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=storage_trigger_ws600_rep1 PHASES_CONFIG=testing/phases_experiment_storage_trigger.json CLIENTS=3 DEVICES=600 NODES=100 SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"
+ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=storage_trigger_ws600_rep2 PHASES_CONFIG=testing/phases_experiment_storage_trigger.json CLIENTS=3 DEVICES=600 NODES=100 SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"
+ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=storage_trigger_ws600_rep3 PHASES_CONFIG=testing/phases_experiment_storage_trigger.json CLIENTS=3 DEVICES=600 NODES=100 SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"
+ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=storage_trigger_ws600_frontier_c4 PHASES_CONFIG=testing/phases_experiment_storage_trigger.json CLIENTS=4 DEVICES=600 NODES=100 SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"
+ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=storage_trigger_ws600_frontier_c5 PHASES_CONFIG=testing/phases_experiment_storage_trigger.json CLIENTS=5 DEVICES=600 NODES=100 SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"
+```
+
+- Live checkpoint plan: passive monitoring only. During active runs, use only
+  read-only checks against `current_phase.txt`, `resource_stats.csv`,
+  `per_node_stats.csv`, `container_events.csv`, controller logs, and
+  `service_logs/`.
+- Checkpoint question: when the same storage-trigger profile is repeated with
+  the same seeded working set, does the `reverse_hotspot` anomaly remain short,
+  localized, and bounded, or does it recur often enough to justify hardening
+  before any stronger frontier run?
+- Stop criteria for the batch:
+  - any repeat run shows non-zero `failure_terminal` request-lease outcomes.
+  - failures spread beyond draining or recovery-bound servers into steady
+    non-draining servers.
+  - the degraded window spills materially beyond `reverse_hotspot` into later
+    phases.
+  - Run 4 causes a materially broader instability than the repeat trio.
+- Artifact handling plan:
+  - after each completed run, copy the run folder back locally.
+  - if controller logs are no longer needed for the current question, trim the
+    run folder on the cloud host before transfer and delete the verified remote
+    copy afterward.
+  - if a run becomes the new anomaly reference, preserve the controller logs
+    long enough to extract a narrow investigation bundle before cleanup.
+- Success criteria for treating the behavior as a bounded architecture trade-off:
+  - failures remain concentrated in the same recovery/drain interval.
+  - other servers continue serving useful traffic during the same interval.
+  - the bad window does not materially grow across Runs 1-3.
+  - Run 4 degrades modestly rather than collapsing the broader run.
+
+### Run 1 Result - `storage_trigger_ws600_rep1`
+
+- Completed as `20260524_173346_storage_trigger_ws600_rep1`.
+- Local artifact status:
+  - the full run folder was copied back locally before any cleanup because the
+    cloud copy was root-owned and the controller logs still mattered for the
+    recurrence question.
+  - local post-run analysis produced `run_summary.md`, `latency_summary.csv`,
+    `resource_summary.csv`, `elasticity_events.csv`, and
+    `node_lifecycle_timings.csv` inside the copied run folder.
+  - after the summary was written and the retained CSVs were verified, the
+    copied folder was trimmed locally by deleting only `controller_lan1.log`
+    and `controller_lan2.log`. `service_logs/` was kept.
+- Remote retention status:
+  - a non-interactive `sudo -n rm -rf` cleanup attempt on `cloud-vm` failed
+    with `sudo: a password is required`.
+  - the verified remote `20260524_173346_storage_trigger_ws600_rep1` folder
+    therefore still remains on `cloud-vm`.
+- Run 1 verdict:
+  - the repeat still exercised the same mixed elasticity path:
+    `storage_count_max=3`, `server_count_max=3`, 13 dynamic compute adds, 6
+    dynamic storage adds, and 2 Tier 1 promotions.
+  - the instability clearly recurred, but at much lower intensity than the
+    original `20260524_130204_storage_trigger_ws600` reference.
+  - non-200 responses dropped to 771 out of 72,197 requests (1.07%), versus
+    15,489 out of 99,232 (15.61%) in the reference run.
+  - the late failure shape remained recognizable: `reverse_hotspot` produced
+    323 failures and `demand_drop` produced 285, while `storage_stress`
+    remained nearly clean with only 9 failures.
+  - cleanup remained incomplete at idle: five dynamic storage containers were
+    still running in the final snapshot.
+- Batch decision after Run 1:
+  - keep the code and workload unchanged for `storage_trigger_ws600_rep2`.
+  - Run 1 does not meet the batch stop criteria: no new evidence suggests a
+    broader collapse, and the observed recurrence stayed materially milder than
+    the original reference.
+
+### Run 2 Result - `storage_trigger_ws600_rep2`
+
+- Completed as `20260524_203324_storage_trigger_ws600_rep2`.
+- Local artifact status:
+  - the full run folder was copied back locally with controller logs and
+    `service_logs/` intact because Run 2 became the new anomaly reference.
+  - local post-run analysis produced `run_summary.md`, `latency_summary.csv`,
+    `resource_summary.csv`, `elasticity_events.csv`, and
+    `node_lifecycle_timings.csv` inside the copied run folder.
+  - raw controller logs were intentionally not trimmed locally yet because the
+    next step is a narrow investigation bundle, not routine cleanup.
+- Remote retention status:
+  - the cloud copy was left in place because the run folder is root-owned and
+    the retained controller logs still matter for follow-up.
+- Run 2 verdict:
+  - the run still exercised the mixed elasticity path:
+    `storage_count_max=3`, `server_count_max=3`, 10 dynamic compute adds, 9
+    dynamic storage adds, and 1 Tier 1 promotion.
+  - the recurrence was materially worse than `rep1` and close to the original
+    `20260524_130204_storage_trigger_ws600` severity envelope.
+  - overall failures rose to 9,398 out of 66,613 requests (14.11%), versus
+    771 out of 72,197 (1.07%) in `rep1`.
+  - `reverse_hotspot` produced 8,796 failures (50.07%), which is worse than
+    both `rep1` (323, 1.49%) and the original reference on a percentage basis
+    (13,724, 46.55%).
+  - the degraded window still spilled into `demand_drop`, which produced 341
+    failures (20.73%).
+  - the failure surface broadened across both LANs: `lan1` reached 20.59%
+    non-200 and `lan2` reached 7.11% non-200.
+  - timeout-heavy failure became part of the signature: `http_status=0` rose to
+    1,992 rows, versus 43 in `rep1` and 182 in the original reference run.
+  - cleanup again remained incomplete at idle: four dynamic storage containers
+    were still running in the final snapshot.
+- Batch decision after Run 2:
+  - pause the recurrence matrix before `storage_trigger_ws600_rep3`.
+  - Run 2 meets the batch stop criteria because the degraded window spills
+    materially beyond `reverse_hotspot` into the later `demand_drop` phase.
+  - treat `20260524_203324_storage_trigger_ws600_rep2` as the new anomaly
+    reference for the next investigation pass.
+
+### Run 3 Launch Authorization - `storage_trigger_ws600_rep3`
+
+- User decision:
+  - launch `storage_trigger_ws600_rep3` unchanged even though Run 2 triggered
+    the current batch stop recommendation.
+- Effective launch scope:
+  - no code changes.
+  - keep the same storage-trigger profile,
+    `source/scripts/testing/phases_experiment_storage_trigger.json`.
+  - keep `CLIENTS=3`, `DEVICES=600`, `NODES=100`.
+  - keep the same passive monitoring and full artifact copy-back workflow.
+- Purpose of the override:
+  - collect one more unchanged recurrence point before switching from repeat
+    observation to targeted investigation or hardening.
+
+### Run 3 Result - `storage_trigger_ws600_rep3`
+
+- Completed as `20260524_212327_storage_trigger_ws600_rep3`.
+- Local artifact status:
+  - the full run folder was copied back locally with controller logs and
+    `service_logs/` intact because Run 3 became the strongest anomaly point in
+    the unchanged batch.
+  - local post-run analysis produced `run_summary.md`, `latency_summary.csv`,
+    `resource_summary.csv`, `elasticity_events.csv`, and
+    `node_lifecycle_timings.csv` inside the copied run folder.
+  - raw controller logs were intentionally not trimmed locally because `rep3`
+    is now the newest anomaly reference.
+- Remote retention status:
+  - the cloud copy was left in place because the run folder is root-owned and
+    the retained controller logs still matter for follow-up.
+- Run 3 verdict:
+  - the run still exercised natural storage elasticity:
+    `storage_count_max=3`, `server_count_max=2`, 9 dynamic compute adds, 7
+    dynamic storage adds, and 1 Tier 1 promotion.
+  - the recurrence became materially worse than both `rep2` and the original
+    `20260524_130204_storage_trigger_ws600` reference.
+  - overall failures rose to 16,056 out of 70,812 requests (22.67%).
+  - `reverse_hotspot` alone produced 15,342 failures (70.74%), which is worse
+    than both `rep2` (8,796, 50.07%) and the original reference (13,724,
+    46.55%).
+  - the degraded window still spilled into `demand_drop`, which produced 366
+    failures (20.62%).
+  - aggregate failure impact was nearly symmetric by LAN, but the stressed
+    phase split by failure mode: in `reverse_hotspot`, `lan1` failed almost
+    entirely with `503` while `lan2` failed entirely with `http_status=0`.
+  - cleanup converged by idle in this run: no dynamic compute, storage, or
+    Tier 1 container remained in the final snapshot.
+- Batch decision after Run 3:
+  - close the unchanged repeat portion of the matrix.
+  - do not launch `storage_trigger_ws600_frontier_c4` or
+    `storage_trigger_ws600_frontier_c5` unchanged.
+  - preserve the full `rep2` and `rep3` folders as anomaly references for the
+    next investigation or hardening pass.
+
+### Next Step - Reverse Hotspot Instrumented Probe
+
+- The next action is one unchanged probe run focused on dataplane evidence,
+  not a stronger frontier and not a larger workload.
+- Probe label: `storage_trigger_ws600_probe_dataplane1`.
+- Keep the same workload and seed shape used by `rep2` and `rep3`:
+  - `PHASES_CONFIG=testing/phases_experiment_storage_trigger.json`
+  - `CLIENTS=3`
+  - `DEVICES=600`
+  - `NODES=100`
+  - `SKIP_CLIENTS=1`
+  - `SKIP_SEED=1`
+  - `SKIP_SNAPSHOT=1`
+- Purpose:
+  - keep the same reverse-hotspot demand shape so the next run answers the
+    narrow open question from `rep3`: why `lan2` later shifts from mostly-200
+    traffic into `http_status=0` timeouts even while the earliest controller
+    slice still shows normal backend selection.
+  - capture dataplane evidence around the first timeout window before any
+    recovery-policy hardening changes the failure shape.
+- Operator procedure:
+  - follow
+    [reverse_hotspot_instrumented_rerun_plan.md](reverse_hotspot_instrumented_rerun_plan.md)
+    for the debug-bundle capture recipe, artifact retention rules, and the
+    post-probe hardening sequence.
+- Gate status:
+  - keep `storage_trigger_ws600_frontier_c4` and
+    `storage_trigger_ws600_frontier_c5` closed.
+  - do not reopen the frontier until the probe run is analyzed and either the
+    timeout path is explained or a concrete hardening change has been tested.
+- Artifact handling for the probe:
+  - preserve controller logs, `service_logs/`, flow snapshots, conntrack
+    snapshots, and packet captures together with the normal retained CSVs.
+  - do not trim or delete probe artifacts until the summary exists and log
+    deletion is explicitly confirmed.
+- Launch command:
+
+```bash
+ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment RUN_LABEL=storage_trigger_ws600_probe_dataplane1 PHASES_CONFIG=testing/phases_experiment_storage_trigger.json CLIENTS=3 DEVICES=600 NODES=100 SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1"
+```
+
+### Probe Result - `storage_trigger_ws600_probe_dataplane1`
+
+- Completed as `20260524_232854_storage_trigger_ws600_probe_dataplane1`.
+- Local artifact status:
+  - the full run folder was copied back locally with `controller_lan1.log`,
+    `controller_lan2.log`, and `service_logs/` intact.
+  - the external capture bundle was also copied back locally, but it contains
+    only `helper.sh`, `helper.log`, `run_dir.txt`, and empty `flows/`,
+    `pcap/`, and `conntrack/` directories.
+- Remote retention status:
+  - the external capture directory on `cloud-vm` was deleted after the local
+    copy was verified.
+  - the root-owned run folder still remains on `cloud-vm` because
+    `sudo -n rm -rf` for that path still fails with `sudo: a password is
+    required`.
+- Probe verdict:
+  - the unchanged run completed all phases and reproduced the same broad stage
+    order seen in `rep2` and `rep3`: mild degradation in
+    `cross_region_hotspot`, immediate `lan1`-first failures at the start of
+    `reverse_hotspot`, and spillover into `demand_drop`.
+  - severity was materially milder than the anomaly-reference runs: 2,069
+    non-200 responses out of 70,847 total requests (2.92%), with 179 failures
+    in `cross_region_hotspot` (0.88%), 1,618 in `reverse_hotspot` (7.42%), and
+    267 in `demand_drop` (14.75%).
+  - this probe did not reach the full storage-trigger envelope from the worst
+    repeats: `storage_count_max=2` and `server_count_max=2`, versus the
+    stronger `storage_count_max=3` path already seen in the earlier anomaly
+    runs.
+  - aggregate impact stayed relatively small across both LANs: `lan1` reached
+    961 failures out of 40,241 requests (2.39%) and `lan2` reached 1,108 out
+    of 30,606 (3.62%).
+  - the phase-order signature still partially recurred inside
+    `reverse_hotspot`: the first `lan1` non-200 was a `503` at
+    `2026-05-24T23:46:06.599699+00:00`, while the first `lan2` non-200 arrived
+    later as `http_status=0` at `2026-05-24T23:47:22.214923+00:00`.
+  - the dataplane instrumentation failed completely, so this run is useful as
+    another recurrence point but not as the intended packet or flow evidence
+    run.
+- Instrumentation failure root cause:
+  - the detached helper script was generated with shell substitutions already
+    expanded at emit time instead of being preserved for execution time.
+  - the copied `helper.sh` therefore contains a broken wait loop,
+    `while [ storage_stress != reverse_hotspot ]; do`, plus blank capture-loop
+    variables and empty `wait` targets.
+  - that left the helper stuck forever after the run moved to `idle`, so the
+    empty capture bundle is an operator-script defect, not a dataplane finding.
+- Next action:
+  - keep `storage_trigger_ws600_frontier_c4` and
+    `storage_trigger_ws600_frontier_c5` closed.
+  - if another unchanged probe is run before hardening, use the versioned
+    helper
+    [capture_reverse_hotspot_probe.sh](../../../source/scripts/testing/capture_reverse_hotspot_probe.sh)
+    instead of another inline heredoc helper.
+  - bring up the environment with `setup_network`, `create_clients`, and
+    `setup_test_data` before the helper preflight, because the helper expects a
+    live `ovs` container and the client namespaces to exist.
+  - run the helper preflight on `cloud-vm` after that environment bringup so
+    any remaining gap is surfaced explicitly. The current package inventory on
+    `cloud-vm` already confirms `tcpdump`, `conntrack`, `docker`, `ip`,
+    `sudo`, and `timeout` are installed.
+  - the current remaining remote blocker is privileged execution policy, not
+    package installation: `sudo -n` still requires a password for `tcpdump`,
+    `conntrack`, and `ip netns`, so the corrected helper should currently be
+    launched as root after a single interactive `sudo` instead of as an
+    unprivileged detached job.
+  - launch the corrected unchanged rerun with a fresh label,
+    `storage_trigger_ws600_probe_dataplane2`, so the new artifacts are kept
+    separate from the failed instrumentation attempt.
+  - treat this probe as a partial recurrence check, not as the decisive
+    dataplane capture needed to explain the later `lan2` timeout path.
+
+### Corrected Probe Result - `storage_trigger_ws600_probe_dataplane2`
+
+- Completed as `20260525_165101_storage_trigger_ws600_probe_dataplane2`.
+- Local artifact status:
+  - the full run folder was copied back locally with controller logs and
+    `service_logs/` intact.
+  - the corrected capture bundle was copied back locally to
+    `source/scripts/testing/metrics/20260525_165101_storage_trigger_ws600_probe_dataplane2_probe_capture`.
+- Remote retention status:
+  - both the root-owned run folder and the user-owned capture directory still
+    remain on `cloud-vm` for now because cleanup has not yet been confirmed.
+- Corrected rerun verdict:
+  - the unchanged rerun again stayed materially milder than the anomaly
+    references even though it exercised a stronger elasticity path than the
+    failed `probe_dataplane1` attempt.
+  - overall failures were 2,086 out of 69,574 requests (3.00%).
+  - `cross_region_hotspot` produced 381 failures (1.97%),
+    `reverse_hotspot` produced 1,419 (6.55%), and `demand_drop` produced 284
+    (16.81%).
+  - the rerun reached `storage_count_max=4` and `server_count_max=3`, so the
+    run did exercise natural storage expansion beyond the earlier failed probe
+    attempt.
+  - the `reverse_hotspot` failure split did not reproduce the extreme `rep3`
+    LAN-mode collapse: `lan1` still bore most of the client-visible errors
+    with 1,362 `503` rows and 6 timeouts, while `lan2` stayed mostly successful
+    with only 34 `503` rows and 17 timeouts.
+- Instrumentation verdict:
+  - the corrected dataplane capture succeeded.
+  - the helper logged `preflight ok`, `helper started`, `phase=reverse_hotspot`,
+    `reverse_hotspot reached`, and `debug capture complete`.
+  - the retained capture bundle contains 82 OVS flow snapshots, 41 conntrack
+    snapshots, and 2 packet captures.
+  - the client-side `lan2_client_1_reverse_hotspot.pcap` is non-empty at
+    1,805,270 bytes, while `host_backend_reverse_hotspot.pcap` is effectively
+    empty at 24 bytes.
+  - that means the corrected rerun finally produced usable dataplane evidence,
+    but the host-side backend-adjacent filter likely still needs inspection or
+    adjustment during the next analysis pass.
+- Next action after the corrected rerun:
+  - keep `storage_trigger_ws600_frontier_c4` and
+    `storage_trigger_ws600_frontier_c5` closed.
+  - analyze the corrected capture bundle together with controller logs and
+    service logs before deciding whether the next step is explanation-only,
+    additional instrumentation, or a targeted hardening change.
+
+### Planned Next Run - `storage_trigger_ws600_probe_dataplane3`
+
+- Status: completed.
+- Objective: execute the approved Approach A recurrence check through the
+  runner workflow: keep the workload and runtime unchanged, broaden only the
+  default probe capture scope, and measure whether the same
+  `CircuitOpenError`-centered reverse-hotspot pattern recurs under a corrected
+  host-side capture.
+- Intended delta for this run:
+  - edit only
+    [capture_reverse_hotspot_probe.sh](reverse_hotspot_instrumented_rerun_plan.md)
+    so its default capture filters no longer pin the host-side pcap to
+    `10.0.1.7`.
+  - keep `PHASES_CONFIG=testing/phases_experiment_storage_trigger.json`,
+    `CLIENTS=3`, `DEVICES=600`, `NODES=100`, `SKIP_CLIENTS=1`,
+    `SKIP_SEED=1`, and `SKIP_SNAPSHOT=1` unchanged.
+  - keep the controller policy, runtime code, and images unchanged.
+- Primary comparisons:
+  - compare first against the corrected probe rerun
+    `20260525_165101_storage_trigger_ws600_probe_dataplane2`.
+  - compare secondarily against the anomaly references
+    `20260524_203324_storage_trigger_ws600_rep2` and
+    `20260524_212327_storage_trigger_ws600_rep3`.
+- Allowed between-run edit scope:
+  - `source/scripts/testing/capture_reverse_hotspot_probe.sh`
+  - `docs/operation/testing/reverse_hotspot_instrumented_rerun_plan.md`
+  - `docs/operation/testing/experiment_campaign_brief.md`
+- Validation plan before launch:
+  - validate the edited helper locally with `bash -n`.
+  - sync the helper and updated docs explicitly to `cloud-vm`.
+  - rerun `probe_capture_preflight` on `cloud-vm` through the Makefile path
+    before launching the unchanged experiment run.
+- Live checkpoint plan:
+  - trigger: immediately after helper launch.
+  - question: did the helper arm correctly under the runner-managed path.
+  - data sources: `helper.log` plus file counts under `flows/`, `conntrack/`,
+    and `pcap/`.
+  - continue criteria: `helper.log` shows `preflight ok`, `helper started`,
+    and `watching phase marker`.
+  - trigger: when the run reaches `reverse_hotspot`.
+  - question: did the broadened capture stay active and collect non-empty
+    dataplane artifacts.
+  - data sources: `current_phase.txt`, `helper.log`, and capture file counts.
+  - continue criteria: `helper.log` shows `reverse_hotspot reached` and later
+    `debug capture complete`.
+  - authority: observation only. Do not stop or restart the run unless the run
+    has already clearly failed.
+- Launch order:
+  - bring up the reusable environment on `cloud-vm` with `setup_network`,
+    `create_clients`, and `setup_test_data`.
+  - run `probe_capture_preflight` on `cloud-vm`.
+  - launch the unchanged experiment run with label
+    `storage_trigger_ws600_probe_dataplane3`.
+  - detect the new run folder and then launch `probe_capture_launch` with an
+    absolute `PROBE_CAPTURE_RUN_DIR`.
+- Gate status:
+  - keep `storage_trigger_ws600_frontier_c4` and
+    `storage_trigger_ws600_frontier_c5` closed.
+  - do not reopen the frontier until `probe_dataplane3` is analyzed.
+  - if the new run again shows `CircuitOpenError`-driven failures while the
+    broadened host-side capture and controller logs still show healthy `n2`
+    routing, move next to targeted runtime hardening.
+
+  ### Run Result - `storage_trigger_ws600_probe_dataplane3`
+
+  - Completed as `20260526_002205_storage_trigger_ws600_probe_dataplane3`.
+  - Local artifact status:
+    - the full run folder was recopied locally after the run reached `idle`
+      because an earlier provisional copy started during `demand_drop`.
+    - the verified local run folder now matches the completed remote state at 33
+      files and about 518.83 MiB.
+    - the verified local capture bundle at
+      `source/scripts/testing/metrics/20260526_002205_storage_trigger_ws600_probe_dataplane3_probe_capture`
+      contains 127 files and about 252.03 MiB.
+  - Remote retention status:
+    - the completed remote run folder and the probe capture directory still
+      remain on `cloud-vm`.
+    - remote cleanup is deferred because the retained controller logs and probe
+      artifacts are still part of the active investigation set.
+  - Runner verdict:
+    - the unchanged run completed all six phases and reached `idle` at
+      `2026-05-26T00:52:15+00:00`.
+    - the helper armed successfully, reached `reverse_hotspot` at
+      `2026-05-26T00:39:14+00:00`, and finished with `debug capture complete` at
+      `2026-05-26T00:43:14+00:00`.
+    - the retained probe artifact counts are `flows=82`, `conntrack=41`, and
+      `pcap=2`.
+  - Next action:
+    - analyze the copied run folder and probe bundle first against
+      `20260525_165101_storage_trigger_ws600_probe_dataplane2`, then against
+      `storage_trigger_ws600_rep2` and `storage_trigger_ws600_rep3`.
+    - keep `storage_trigger_ws600_frontier_c4` and
+      `storage_trigger_ws600_frontier_c5` closed until that analysis decides
+      whether the broadened capture confirms the same recurrence path.
+
+## Completed One-Off Run - Storage Trigger Working-Set Expansion
+
+- Status: completed.
+- Objective: force natural Tier 2 storage scale-up under the current code by
+  increasing the working set and extending the storage-locality windows,
+  without lowering the controller thresholds.
+- Between-run fix before relaunch: the first launch attempt failed before
+  traffic started because `source/scripts/testing/run_experiment.sh` called
+  `require_positive_int` and its `die` path before those helpers were defined.
+  The wrapper ordering bug was fixed locally, resynced to `cloud-vm`, and the
+  `sudo -n make -C source/scripts -n ... run_experiment` preflight passed
+  before the successful relaunch.
+- Run label: `storage_trigger_ws600`.
+- Primary comparisons:
+  - compare directly against
+    `20260524_013746_hybrid_observation_current_code` and
+    `20260524_091543_hybrid_observation_current_code_repeat_storage_check` to
+    test whether the previous stable shape depended on storage staying at 1.
+  - compare secondarily against `20260516_235859_two_regime_1680_seed_profiles`
+    as the nearest kept example of natural storage activity under a stronger
+    storage signal.
+- Result: completed as `20260524_130204_storage_trigger_ws600`.
+- Artifact status:
+  - the original root-owned cloud run folder was copied back locally to
+    `source/scripts/testing/metrics/20260524_130204_storage_trigger_ws600`
+    because non-interactive post-run writes were not permitted in place on
+    `cloud-vm`.
+  - local post-run analysis produced `run_summary.md`, `latency_summary.csv`,
+    `resource_summary.csv`, `elasticity_events.csv`, and
+    `node_lifecycle_timings.csv`.
+  - after summary generation, the copied folder was trimmed by deleting the raw
+    controller logs and `service_logs/`, because those logs were large and the
+    user explicitly authorized aggressive cleanup once the retained summary
+    artifacts existed.
+- Remote retention status:
+  - no stale remote helper processes tied to this run remained after the local
+    analysis fallback.
+  - the original cloud run folder remains on `cloud-vm` because it is
+    root-owned and post-run cleanup outside the permitted
+    `sudo -n make -C source/scripts ...` path still requires a password.
+- Interpretation:
+  - the workload change achieved the original scale-up objective:
+    `storage_count_max` reached `3` instead of `1`.
+  - the stronger profile also triggered mixed elasticity and a large failure
+    regime: `server_count_max=3`, two Tier 1 promotions occurred, and request
+    failures rose to 15.61%, dominated by `reverse_hotspot`.
+  - this is therefore a valid stress-and-diagnosis result, not yet a clean
+    stable post-scale storage reference run.
+- Next action:
+  - keep the larger working set, but soften the hotspot intensity after the
+    first storage add so post-scale behavior can be observed without pushing as
+    deeply into the `reverse_hotspot` failure regime.
+  - investigate the `reverse_hotspot` asymmetry and the incomplete dynamic
+    storage cleanup that remained visible at idle.
+
 ## Completed One-Off Run - Hybrid Long-Cycle Observation Repeat Storage Check
 
 - Status: completed.
