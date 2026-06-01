@@ -221,7 +221,7 @@ reachable.
 
 ### Docs
 
-- [../../elasticity_overview.md](../../elasticity_overview.md)
+- [../../scale_up/storage_scale_up.md](../../scale_up/storage_scale_up.md)
 - [../../../archive/other/heartbeat_dynamic_node_gate_plan.md](../../../archive/other/heartbeat_dynamic_node_gate_plan.md)
 
 ---

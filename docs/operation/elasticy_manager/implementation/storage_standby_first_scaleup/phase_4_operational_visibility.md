@@ -97,8 +97,8 @@ reserve bootstrap time as the first storage scale-up time.
    storage container and volume name.
 2. Add the standby lifecycle log markers listed above in the controller paths
    created by Phases 2 and 3.
-3. Update [docs/operation/elasticy_manager/elasticity_overview.md](../../elasticity_overview.md)
-   to explain the reserve lifecycle at a high level.
+3. Update [docs/operation/elasticy_manager/scale_up/storage_scale_up.md](../../scale_up/storage_scale_up.md)
+   to explain the reserve lifecycle at a high level (see §9 Standby First Scale-Up Reference).
 4. Update [docs/operation/system_mechanisms.md](../../../system_mechanisms.md)
    so the liveness and VIP-admission model explicitly mentions reserved
    standby storage.

@@ -216,7 +216,7 @@ The exact helper name can vary, but the semantics should remain fixed.
 
 ### Docs
 
-- [../../elasticity_overview.md](../../elasticity_overview.md)
+- [../../scale_up/storage_scale_up.md](../../scale_up/storage_scale_up.md)
 - [../../../system_mechanisms.md](../../../system_mechanisms.md)
 
 ---

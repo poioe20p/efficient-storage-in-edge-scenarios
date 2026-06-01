@@ -25,6 +25,7 @@ TIER1_TELEMETRY_COLUMNS = [
     "t_db_p95_ms_owner_lan",
     "t_db_p95_ms_peer_lan",
     "top_hot_doc_hits",
+    "tier1_reporting_count",
     "tier1_active_count",
     "avg_tier1_lag_s",
     "max_tier1_resume_token_age_s",
@@ -139,7 +140,9 @@ def tier1_storage_aggregate(storage_servers: dict) -> tuple[int, float, float, i
     Returns ``(reporting_count, avg_lag_s, max_resume_token_age_s, hot_doc_total)``.
     A storage server counts toward the reporting-side Tier 1 supply metric iff its
     ``selective_sync_per_collection`` is a non-empty dict. Compute / full-replica
-    storage carries ``null`` here and is ignored.
+    storage carries ``null`` here and is ignored. ``tier1_active_count`` is kept
+    as a deprecated CSV alias for backward compatibility and receives the same
+    value as ``tier1_reporting_count``.
     """
     reporting = 0
     lags: list[float] = []
@@ -228,7 +231,7 @@ def build_tier1_row(summary: dict, coord_state_by_lan: dict) -> dict:
     p95_owner = max_p95_for_lan(servers, my_lan) if my_lan else 0.0
     p95_peer  = max_p95_for_lan(servers, other)  if other  else 0.0
 
-    reporting_active, avg_lag, max_token_age, hot_total = tier1_storage_aggregate(storage)
+    reporting_count, avg_lag, max_token_age, hot_total = tier1_storage_aggregate(storage)
 
     coord_state, fill_pct, cooldown_s, coord_hot = coord_row_fields(
         coord_state_by_lan, my_lan,
@@ -244,7 +247,8 @@ def build_tier1_row(summary: dict, coord_state_by_lan: dict) -> dict:
         "t_db_p95_ms_owner_lan":        round(p95_owner, 2),
         "t_db_p95_ms_peer_lan":         round(p95_peer, 2),
         "top_hot_doc_hits":             top_hot_doc_hits(servers),
-        "tier1_active_count":           reporting_active,
+        "tier1_reporting_count":        reporting_count,
+        "tier1_active_count":           reporting_count,
         "avg_tier1_lag_s":              round(avg_lag, 4),
         "max_tier1_resume_token_age_s": round(max_token_age, 4),
         "tier1_hot_doc_total":          hot_total,

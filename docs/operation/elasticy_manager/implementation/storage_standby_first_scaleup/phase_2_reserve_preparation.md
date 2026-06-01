@@ -226,7 +226,7 @@ VIP pool.
 
 ### Docs
 
-- [../../elasticity_overview.md](../../elasticity_overview.md)
+- [../../scale_up/storage_scale_up.md](../../scale_up/storage_scale_up.md)
 - [../../../system_mechanisms.md](../../../system_mechanisms.md)
 
 ---

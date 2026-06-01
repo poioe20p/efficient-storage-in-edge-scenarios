@@ -43,7 +43,7 @@ Present **at least two** distinct approaches in **two passes**:
 
 **Pass A — Summary (bullets first).** One compact block per approach:
 
-- **Approach N — <name>**: one-line description
+- **Approach N — `<name>`**: one-line description
   - Pros: key advantages (comma-separated)
   - Cons: key disadvantages
   - Effort: Low / Medium / High · Risk: Low / Medium / High · Edge impact: one phrase
@@ -96,3 +96,4 @@ Present the full plan and **wait for the user to approve** before any file is cr
 - When referencing project files, link to them so the user can navigate directly
 - Include a **Documentation Updates** section listing which `docs/` files need changes
 - When creating implementation plan that leads to multiple files and is phased then the files need to have the implementaion scope prefix and if they have order they also need the number prefix and if their phased they also need the phase prefix in the name to make it easier to navigate
+- Be consice and clear in the plan, leave no margin for assumption, confusion or thinking as the plan is to be implemented by less capable models.

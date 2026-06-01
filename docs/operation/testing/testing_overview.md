@@ -274,7 +274,8 @@ The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/col
 | `t_db_p95_ms_owner_lan` | max of `t_db_p95_ms_per_lan[my_lan]` | Local p95 |
 | `t_db_p95_ms_peer_lan` | max of `t_db_p95_ms_per_lan[peer_lan]` | Drives breach gate (`TAU_DADOS_MS`) |
 | `top_hot_doc_hits` | max over `access[*].top_docs` | Hottest single doc |
-| `tier1_active_count` | storage_servers with non-null `selective_sync_per_collection` | Tier 1 supply count |
+| `tier1_reporting_count` | storage_servers with non-null `selective_sync_per_collection` | Preferred Tier 1 supply-side reporting count |
+| `tier1_reporting_count` | deprecated alias of `tier1_reporting_count` | Backward-compatible CSV name |
 | `avg_tier1_lag_s` | mean of forwarder `lag_s` | Replication freshness |
 | `max_tier1_resume_token_age_s` | max of `resume_token_age_s` | Change Stream health |
 | `tier1_hot_doc_total` | sum of `hot_doc_count` | Footprint size |
@@ -284,7 +285,7 @@ The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/col
 | `coord_hot_doc_total` | `Tier1OwnerState.hot_doc_total` | Hot set size held by coordinator |
 | `tier1_lifecycle_active_count` | derived from `coord_state_owner_lan == ACTIVE` | Tier 1 lifecycle truth for ACTIVE windows |
 
-`tier1_active_count` is intentionally a supply-side reporting metric, not a lifecycle truth signal: quiet Tier 1 windows can keep it at `0` even when the coordinator state is `ACTIVE`. Use `tier1_lifecycle_active_count` or `coord_state_owner_lan` when the question is whether Tier 1 actually reached service.
+`tier1_reporting_count` is intentionally a supply-side reporting metric, not a lifecycle truth signal: quiet Tier 1 windows can keep it at `0` even when the coordinator state is `ACTIVE`. Use `tier1_lifecycle_active_count` or `coord_state_owner_lan` when the question is whether Tier 1 actually reached service. `tier1_reporting_count` is retained as a deprecated alias so older analysis and historical CSV schemas still load.
 
 Empty/baseline rows (no telemetry, `SS_ENABLED=0`) yield zeros and `coord_state_owner_lan="NONE"`.
 
@@ -442,7 +443,9 @@ Clean wind-down. 1 078 requests, 0 errors. Both LANs at 1 server + 1 storage.
 
 Three interacting issues caused the thrashing — detailed analysis with code
 snippets and proposed fixes documented in
-[`elasticity_overview.md` § Known Issues](../elasticy_manager/elasticity_overview.md#known-issues--scale-up--scale-down-thrashing-2026-04-11-run):
+[`elasticity_overview.md`](../elasticy_manager/elasticity_overview.md) (see also
+[compute scale-up](../elasticy_manager/scale_up/compute_scale_up.md) and
+[compute scale-down](../elasticy_manager/scale_down/compute_scale_down.md)):
 
 1. **No scale-down grace period after scale-up** — newly spawned nodes were
    evaluated for underutilization before they could start serving traffic.
@@ -458,8 +461,8 @@ snippets and proposed fixes documented in
 periods when the nodes were still reachable via VIP routing. This is expected:
 the CSV counts nodes that *emitted telemetry* in the aggregation window, while
 the VIP pool tracks nodes registered via `add_server_mac()`.
-See [`elasticity_overview.md` § Telemetry vs VIP Pool Discrepancy](../elasticy_manager/elasticity_overview.md#telemetry-vs-vip-pool-discrepancy)
-for details.
+See the [Elasticity Overview](../elasticy_manager/elasticity_overview.md)
+for the current VIP pool and telemetry tracking model.
 
 ---
 

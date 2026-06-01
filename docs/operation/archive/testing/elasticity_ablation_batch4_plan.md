@@ -100,7 +100,7 @@ Before the full batch starts, run a narrow Tier 1-only validation equivalent to
 2. `node_add` completes with `state=DONE` for the `sel_sync_*` node.
 3. The coordinator transitions to `ACTIVE`.
 4. The manifest is broadcast to the consumer LAN.
-5. For collectors that include the observability fix, `tier1_lifecycle_active_count` becomes `1` in `resource_stats.csv`; for legacy Batch 4 artifacts collected before that fix, use `coord_state_owner_lan=ACTIVE` instead because `tier1_active_count` is only supply-side telemetry and may stay `0` in quiet windows.
+5. For collectors that include the observability fix, `tier1_lifecycle_active_count` becomes `1` in `resource_stats.csv`; for legacy Batch 4 artifacts collected before that fix, use `coord_state_owner_lan=ACTIVE` instead because `tier1_reporting_count` is only supply-side telemetry and may stay `0` in quiet windows.
 6. Drain and cleanup complete without residual selective containers.
 
 Do not start the rest of Batch 4 until this validation passes.
