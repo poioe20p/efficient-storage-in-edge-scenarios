@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional, Protocol
 
-from .node_common import IpAllocator, NodeInfo, log_ready_timing
+from .node_common import IpAllocator, NodeInfo, RemovalResult, log_ready_timing
 from .compute_node_manager import ComputeNodeAdder, PendingDrain
 from .storage_node_manager import StorageNodeAdder
 from .selective_storage_manager import SelectiveStorageNodeAdder
@@ -121,6 +121,51 @@ class CancelComputeDrainAlert:
     mac: str | None = None
 
 
+@dataclass(frozen=True)
+class PrepareStandbyStorageAlert:
+    """Prepare one same-LAN storage reserve through the existing storage add path.
+
+    The resulting node is created with ``standby_reserved=True`` and held
+    outside VIP until activated by a load or recovery trigger.
+    """
+    lan: int
+    network_id: str
+    rs_name: str
+    primary_container: str
+    port: int = 27018
+
+
+@dataclass(frozen=True)
+class CleanupReserveAlert:
+    """Immediate-terminate cleanup for a lost or failed reserved storage node.
+
+    No drain — the reserve was never serving edge traffic.  Thread 3 stops
+    and removes the container.  When *rs_name*, *primary_container*, and *ip*
+    are all non-empty the handler performs a full ``rs.remove()``-then-teardown
+    through the existing storage removal path; otherwise it does container-only
+    cleanup (the reserve never joined the replica set).
+    """
+    lan: int
+    mac: str
+    container_name: str
+    ip: str = ""
+    rs_name: str = ""
+    primary_container: str = ""
+    port: int = 27018
+
+
+@dataclass
+class ReservePrepareFailed:
+    """Published by Thread 3 when a reserve spawn fails.
+
+    Carries best-effort identity for logging correlation.
+    """
+    lan: int
+    name: str = ""
+    ip: str = ""
+    mac: str = ""
+
+
 # ── Tier 1 selective-sync alerts ──────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -188,7 +233,9 @@ class CleanupSelectiveAlert:
 _PRIORITY_DATA_ALERT                 = 1   # Tier 2 — supersedes Tier 1
 _PRIORITY_SELECTIVE_SYNC             = 2   # Tier 1 promotion
 _PRIORITY_SELECTIVE_SYNC_RECONFIGURE = 3   # Tier 1 live reconfigure
+_PRIORITY_PREPARE_STANDBY_STORAGE    = 4   # Reserve preparation (same-tier as compute)
 _PRIORITY_COMPUTE_ALERT              = 4
+_PRIORITY_CLEANUP_RESERVE            = 5   # Reserve immediate-terminate cleanup
 _PRIORITY_CLEANUP_COMPUTE            = 5
 _PRIORITY_CLEANUP_SELECTIVE          = 6   # Tier 1 Phase B
 _PRIORITY_CANCEL_COMPUTE_DRAIN       = 7
@@ -205,6 +252,8 @@ _ALERT_PRIORITY: dict[type, int] = {
     DataAlert:                      _PRIORITY_DATA_ALERT,
     SelectiveSyncAlert:             _PRIORITY_SELECTIVE_SYNC,
     SelectiveSyncReconfigureAlert:  _PRIORITY_SELECTIVE_SYNC_RECONFIGURE,
+    PrepareStandbyStorageAlert:     _PRIORITY_PREPARE_STANDBY_STORAGE,
+    CleanupReserveAlert:            _PRIORITY_CLEANUP_RESERVE,
     ComputeAlert:                   _PRIORITY_COMPUTE_ALERT,
     CleanupComputeAlert:            _PRIORITY_CLEANUP_COMPUTE,
     CleanupSelectiveAlert:          _PRIORITY_CLEANUP_SELECTIVE,
@@ -273,6 +322,11 @@ class ElasticityManager:
         self._removal_complete_lock   = threading.Lock()
         self._removal_complete_macs:  set[str] = set()
 
+        # Reserve-specific outcome queues (Thread 3 → Thread 2).
+        # Per-LAN ownership — one controller must never drain the other LAN's failures.
+        self._reserve_prepare_failed_lock = threading.Lock()
+        self._reserve_prepare_failures: dict[int, list[ReservePrepareFailed]] = {}
+
         self._thread  = threading.Thread(
             target=self._loop, name="elasticity-mgr", daemon=True,
         )
@@ -323,6 +377,19 @@ class ElasticityManager:
             self.submit(CleanupSelectiveAlert(mac=mac))
         else:
             self.submit(CleanupComputeAlert(mac=mac))
+
+    def submit_cleanup_reserve(self, alert: CleanupReserveAlert) -> None:
+        """Enqueue a reserve-specific immediate-terminate cleanup."""
+        self.submit(alert)
+
+    def drain_reserve_prepare_failures(self, lan: int) -> list[ReservePrepareFailed]:
+        """Atomically drain and return queued reserve-prepare failures for *lan*.
+
+        Per-LAN ownership — each controller drains only its own LAN's failures.
+        """
+        with self._reserve_prepare_failed_lock:
+            result = self._reserve_prepare_failures.pop(lan, [])
+        return result
 
     def submit_cancel_compute_drain(self, mac: str | None = None) -> None:
         """Submit a lower-priority cancel request for a pending compute drain."""
@@ -410,6 +477,10 @@ class ElasticityManager:
                         self._handle_compute(alert)
                     elif isinstance(alert, DataAlert):
                         self._handle_data(alert)
+                    elif isinstance(alert, PrepareStandbyStorageAlert):
+                        self._handle_prepare_standby_storage(alert)
+                    elif isinstance(alert, CleanupReserveAlert):
+                        self._handle_cleanup_reserve(alert)
                     elif isinstance(alert, ScaleDownComputeAlert):
                         self._handle_scale_down_compute(alert)
                     elif isinstance(alert, ScaleDownDataAlert):
@@ -535,6 +606,196 @@ class ElasticityManager:
         else:
             self._get_allocator(alert.lan).release(ip)
             logger.error("[elasticity] data: failed to spawn %s", name)
+
+    # ── Reserve cleanup helper ───────────────────────────────────────────
+
+    def _cleanup_reserve_storage_best_effort(
+        self,
+        *,
+        lan: int,
+        name: str,
+        mac: str,
+        ip: str,
+        rs_name: str,
+        primary_container: str,
+        port: int,
+        record_type: str,
+        record_payload: dict,
+    ) -> RemovalResult:
+        """Best-effort reserve storage teardown — call, time, record, return.
+
+        Calls ``remove_storage_node(..., best_effort_rs_remove=True)`` so
+        RS eviction is attempted but never blocks teardown.  The caller
+        decides whether to release the allocator IP based on
+        ``result.success``.
+        """
+        result = self._storage_adder.remove_storage_node(
+            lan=lan,
+            name=name,
+            mac=mac,
+            ip=ip,
+            rs_name=rs_name,
+            primary_container=primary_container,
+            port=port,
+            best_effort_rs_remove=True,
+        )
+        self._storage_adder.log_removal_timings(result)
+        self._record({
+            "type": record_type,
+            **record_payload,
+            "result": result,
+        })
+        return result
+
+    def _handle_prepare_standby_storage(self, alert: PrepareStandbyStorageAlert) -> None:
+        """Prepare one same-LAN storage reserve through the existing storage add path.
+
+        Creates a real heartbeating SECONDARY with ``standby_reserved=True``.
+        The node is held outside VIP until activated.
+        """
+        name = self._next_name("edge_storage", alert.network_id)
+        ip, mac = self._get_allocator(alert.lan).allocate()
+        spawn_started_monotonic_s = time.monotonic()
+        logger.info("[elasticity] standby_storage: spawning reserve %s on LAN %d (ip=%s mac=%s)",
+                    name, alert.lan, ip, mac)
+
+        result = self._storage_adder.add_storage_node(
+            lan=alert.lan,
+            name=name,
+            rs_name=alert.rs_name,
+            port=alert.port,
+            ip=ip, mac=mac,
+            heartbeat_enabled=True,
+        )
+        self._storage_adder.log_timings(result)
+        self._record({"type": "prepare_standby_storage", "alert": alert, "name": name, "result": result})
+
+        if result.success and result.ip and result.mac:
+            self._topo.register_backend_ip(result.mac, result.ip)
+            logger.info(
+                "[elasticity] standby_storage: %s online  ip=%s  mac=%s  (VIP deferred, standby_reserved)",
+                name, result.ip, result.mac,
+            )
+            # Notify Thread 2 with standby_reserved=True — the node stays
+            # out of VIP and out of ordinary dynamic storage accounting.
+            info = NodeInfo(
+                mac=result.mac, lan=alert.lan, network_id=alert.network_id,
+                name=name, ip=result.ip, node_type="storage",
+                rs_name=alert.rs_name,
+                primary_container=alert.primary_container,
+                port=alert.port,
+                spawn_started_monotonic_s=spawn_started_monotonic_s,
+                standby_reserved=True,
+            )
+            with self._addition_complete_lock:
+                self._addition_complete_infos.append(info)
+        elif result.success and result.ip:
+            # Container is up and network-attached but the script did not
+            # return a usable MAC.  The sidecar may already have started
+            # RS self-join — use best-effort RS removal so the replica set
+            # is cleaned up if the join reached the primary.
+            logger.warning(
+                "[elasticity] standby_storage: %s online at %s but MAC not available — "
+                "best-effort RS removal",
+                name, result.ip,
+            )
+            cleanup_result = self._cleanup_reserve_storage_best_effort(
+                lan=alert.lan,
+                name=name,
+                mac=mac or "",
+                ip=result.ip,
+                rs_name=alert.rs_name,
+                primary_container=alert.primary_container,
+                port=alert.port,
+                record_type="prepare_standby_storage_cleanup",
+                record_payload={"alert": alert, "name": name},
+            )
+            if cleanup_result.success:
+                if ip:
+                    self._get_allocator(alert.lan).release(ip)
+            else:
+                logger.error("[elasticity] standby_storage cleanup FAILED for %s", name)
+            with self._reserve_prepare_failed_lock:
+                self._reserve_prepare_failures.setdefault(alert.lan, []).append(
+                    ReservePrepareFailed(
+                        lan=alert.lan,
+                        name=name,
+                        ip=ip or "",
+                        mac=mac or "",
+                    )
+                )
+            logger.error("[elasticity] standby_storage: failed to prepare %s (missing MAC)", name)
+        else:
+            # Hard failure — container never reached the RS-add stage.
+            # Plain container teardown is sufficient.
+            self._storage_adder._cleanup_container(name)
+            if ip:
+                self._get_allocator(alert.lan).release(ip)
+            with self._reserve_prepare_failed_lock:
+                self._reserve_prepare_failures.setdefault(alert.lan, []).append(
+                    ReservePrepareFailed(
+                        lan=alert.lan,
+                        name=name,
+                        ip=ip or "",
+                        mac=mac or "",
+                    )
+                )
+            logger.error("[elasticity] standby_storage: failed to spawn %s (success=%s ip=%s mac=%s)",
+                        name, result.success, result.ip, result.mac)
+
+    def _handle_cleanup_reserve(self, alert: CleanupReserveAlert) -> None:
+        """Immediate-terminate cleanup for a lost reserved storage node.
+
+        Uses best-effort RS eviction when enough member identity exists
+        (``ip``, ``rs_name``, ``primary_container`` are all present):
+        ``rs.remove()`` is attempted but teardown always proceeds regardless
+        of RS outcome.  The allocator IP is released **only** when teardown
+        succeeds.
+
+        Falls back to container-only teardown when metadata is incomplete
+        (the reserve never reached the RS-add stage).
+
+        No drain or VIP unwiring — the reserve was never serving edge traffic.
+        """
+        logger.info("[elasticity] cleanup_reserve: terminating %s (mac=%s lan=%d rs=%s primary=%s)",
+                    alert.container_name, alert.mac, alert.lan,
+                    alert.rs_name, alert.primary_container)
+
+        if alert.ip and alert.rs_name and alert.primary_container:
+            # Best-effort RS eviction — attempt rs.remove() but always
+            # continue to teardown even if primary lookup fails or the
+            # member was never present in the replica set.
+            cleanup_result = self._cleanup_reserve_storage_best_effort(
+                lan=alert.lan,
+                name=alert.container_name,
+                mac=alert.mac,
+                ip=alert.ip,
+                rs_name=alert.rs_name,
+                primary_container=alert.primary_container,
+                port=alert.port,
+                record_type="cleanup_reserve",
+                record_payload={"alert": alert},
+            )
+            if cleanup_result.success:
+                if alert.ip:
+                    try:
+                        self._get_allocator(alert.lan).release(alert.ip)
+                    except Exception:
+                        pass
+                logger.info("[elasticity] cleanup_reserve: done %s", alert.container_name)
+            else:
+                logger.error("[elasticity] cleanup_reserve FAILED: %s", alert.container_name)
+        else:
+            # Reserve never joined — container-only teardown.
+            self._storage_adder._cleanup_container(alert.container_name)
+            # Release IP back to the allocator.
+            if alert.ip:
+                try:
+                    self._get_allocator(alert.lan).release(alert.ip)
+                except Exception:
+                    pass
+            self._record({"type": "cleanup_reserve", "alert": alert})
+            logger.info("[elasticity] cleanup_reserve: done %s", alert.container_name)
 
     def _handle_scale_down_compute(self, alert: ScaleDownComputeAlert) -> None:
         """Phase A: isolate from VIP, discover veth, send drain signal, return.

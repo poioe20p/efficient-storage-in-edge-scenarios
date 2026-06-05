@@ -98,6 +98,18 @@ _SCALEUP_STORAGE_COOLDOWN_S   = float(os.environ.get("SCALEUP_STORAGE_COOLDOWN_S
 # Birth grace — skip absent-node detection for newly spawned nodes
 _NODE_BIRTH_GRACE_S = float(os.environ.get("NODE_BIRTH_GRACE_S", "60"))
 
+# ── Storage persistent reserve ─────────────────────────────────────────
+# 1 = maintain one ready same-LAN storage reserve per LAN; 0 = off.
+_STORAGE_PERSISTENT_RESERVE_ENABLED = int(
+    os.environ.get("STORAGE_PERSISTENT_RESERVE_ENABLED", "0")
+)
+# Telemetry-window budget for pending reserve activation.
+# A trigger that latches while the reserve is PREPARING carries forward
+# across reserve replacement but expires after this many telemetry windows.
+_STORAGE_RESERVE_PENDING_WINDOWS = int(
+    os.environ.get("STORAGE_RESERVE_PENDING_WINDOWS", "6")
+)
+
 # ── VIP warm-start knobs ───────────────────────────────────────────────
 _VIP_WARM_STORAGE_SECONDS = float(
 	os.environ.get("VIP_WARM_STORAGE_SECONDS", "30")

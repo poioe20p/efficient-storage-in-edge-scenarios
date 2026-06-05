@@ -11,9 +11,11 @@ edge-side epoch behaviour are documented separately.
 ## 2. Current Files
 
 | File | Role |
-|------|------|
-| `source/sdn_controller/vip_routing.py` | `VipRoutingMixin` -- ARP snooping, VIP intercept, ARP reply generation, DNAT/SNAT rule installation, punt rule management |
-| `source/sdn_controller/main_n1.py` | Controller entry point -- defines `KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)` and `packet_in_handler()` |
+| ---- | ---- |
+| `source/sdn_controller/vip_routing.py` | Public `VipRoutingMixin` facade -- cooperative hooks and controller-facing API |
+| `source/sdn_controller/_vip_routing/ingress.py` | ARP snooping, VIP intercept, ARP reply generation, VIP server and data handlers, punt rule management |
+| `source/sdn_controller/_vip_routing/flows.py` | DNAT/SNAT rule installation and first-packet `PacketOut` |
+| `source/sdn_controller/main_n1.py`, `source/sdn_controller/main_n2.py` | Controller entry points -- define `KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp)` and `packet_in_handler()` |
 
 ## 3. Thread 1 Entry Path
 
@@ -38,8 +40,10 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, OSKenApp):
 ```
 
 This ensures `VipRoutingMixin._on_datapath_connected()` runs first after a
-switch reconnect and installs VIP punt rules before the topology mixin's own
-reconnect logic executes.
+switch reconnect through the extension hook that `TopologyMixin` invokes after
+it flushes stale flows and reinstalls the table-miss rule. The facade then
+chains through `super()._on_datapath_connected(datapath)` to
+`TopologyMixin`'s no-op hook before reinstalling VIP punt rules.
 
 ## 4. VIP Address Binding Set
 
@@ -48,7 +52,7 @@ tuples that drive all punt rule installation, ARP matching, and packet
 dispatch:
 
 | Binding | Domain | Recovery |
-|---------|--------|----------|
+| ------- | ------ | -------- |
 | `VIP_SERVER` | `"server"` | No |
 | `VIP_DATA_N1` | `"n1"` | No |
 | `VIP_DATA_N2` | `"n2"` | No |
@@ -97,7 +101,7 @@ priority 100 on every switch reconnect.
 
 For each VIP binding, installs:
 
-```
+```text
 priority=100, eth_type=0x0806, arp_tpa=<VIP_IP> → output=CONTROLLER
 ```
 
@@ -108,7 +112,7 @@ controller replies with the crafted ARP reply described in Section 5.
 
 For each VIP binding, installs:
 
-```
+```text
 priority=100, eth_type=0x0800, ipv4_dst=<VIP_IP> → output=CONTROLLER
 ```
 
@@ -122,7 +126,7 @@ backend selection on the next packet.
 `handle_vip_packet_in()` dispatches based on the destination IP:
 
 | Destination IP | Handler | Notes |
-|----------------|---------|-------|
+| -------------- | ------- | ----- |
 | `VIP_SERVER` | `_handle_vip_server()` | Selects edge server, installs DNAT/SNAT |
 | `VIP_DATA_N1` | `_handle_vip_data(domain="n1")` | Selects LAN 1 storage |
 | `VIP_DATA_N2` | `_handle_vip_data(domain="n2")` | Selects LAN 2 storage |
@@ -150,7 +154,7 @@ propagate through the OVS pipeline.
 
 ### DNAT Rule (Forward Path)
 
-```
+```text
 priority=200
 match: eth_type=0x0800, eth_src=<client_mac>, eth_dst=<VIP_MAC>,
        ipv4_src=<client_ip>, ipv4_dst=<VIP_IP>, ip_proto=<proto>
@@ -160,7 +164,7 @@ actions: set_field(eth_dst=<backend_mac>), set_field(ipv4_dst=<backend_ip>),
 
 ### SNAT Rule (Return Path)
 
-```
+```text
 priority=200
 match: eth_type=0x0800, eth_src=<backend_mac>, eth_dst=<client_mac>,
        ipv4_src=<backend_ip>, ipv4_dst=<client_ip>, ip_proto=<proto>
@@ -233,7 +237,7 @@ server.
 Recovery flows use:
 
 | Timeout | Default | Purpose |
-|---------|---------|---------|
+| ------- | ------- | ------- |
 | `VIP_DATA_RECOVERY_IDLE_TIMEOUT` | 40 s | Bounds idle recovery connections |
 | `VIP_DATA_RECOVERY_HARD_TIMEOUT` | 45 s | Hard limit on recovery flow lifetime |
 
@@ -265,13 +269,15 @@ DNAT/SNAT rules (priority 200) are not reinstalled -- they were ephemeral
 `PacketIn` that hits the priority-100 punt rules.
 
 The MRO ordering (`VipRoutingMixin` before `TopologyMixin`) is critical here:
-it ensures VIP punt rules are installed before the topology mixin's reconnect
-logic runs.
+it ensures the facade's `_on_datapath_connected()` implementation is the hook
+invoked by `TopologyMixin._state_change_handler()` after the stale-flow flush.
+The facade then chains through `TopologyMixin`'s no-op extension hook via
+`super()` before reinstalling VIP punt rules.
 
 ### Flow Priority Summary
 
 | Priority | Rule | Installed By | Trigger |
-|----------|------|-------------|---------|
+| -------- | ---- | ------------ | ------- |
 | 100 | VIP ARP punt → controller | `install_vip_arp_punt_rules()` | Switch connect |
 | 100 | VIP IP punt → controller | `install_vip_punt_rules()` | Switch connect |
 | 200 | DNAT/SNAT (per-flow, timed) | `_install_vip_dnat_snat()` | First VIP `PacketIn` |
@@ -282,6 +288,6 @@ priority 1, L2 forwarding at lower priorities).
 ## 11. Related Diagrams
 
 | Diagram | File |
-|---------|------|
+| ------- | ---- |
 | VIP_SERVER routing (client to edge server) | [`diagram/vip_server_routing.drawio`](diagram/vip_server_routing.drawio) |
 | VIP_DATA routing (edge server to storage) | [`diagram/vip_data_routing.drawio`](diagram/vip_data_routing.drawio) |

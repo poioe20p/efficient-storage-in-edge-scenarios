@@ -43,9 +43,19 @@ Phase config files:
 | File | Purpose |
 | --- | --- |
 | `phases.json` | Defines the current 9-phase long-cycle experiment parameters (duration, rate, mix, cross-region ratio) |
+| `phases_experiment_integrated_baseline.json` | Defines the integrated readiness profile used when one run must exercise Tier 2 storage, Tier 1 selective-sync, and compute elasticity together |
 | `phases_experiment_storage_trigger.json` | Defines the storage-trigger companion profile used when the campaign must force natural Tier 2 storage scale-up |
+| `phases_experiment_tier1_hotspot_bidirectional.json` | Defines the bidirectional Tier 1 selective-sync hotspot profile used by the Tier 1 activation stability experiment |
 
 **Location:** all new files go in `source/scripts/testing/`.
+
+The current phase schema remains intentionally small. The integrated baseline,
+storage-trigger, and Tier 1 hotspot profiles all use the same existing fields.
+The integrated baseline exercises multiple mechanisms by varying phase-local
+rate, mix, cross-region ratio, and hotspot direction inside one run, rather
+than by adding new schema keys. The Tier 1 hotspot profile remains the focused
+companion workload when the operator wants an isolated selective-sync
+diagnostic instead of the integrated readiness gate.
 
 ---
 

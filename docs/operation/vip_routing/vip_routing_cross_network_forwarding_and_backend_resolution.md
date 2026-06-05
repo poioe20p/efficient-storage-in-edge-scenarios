@@ -12,8 +12,11 @@ backend selection logic and ARP interception are documented separately.
 
 | File | Role |
 |------|------|
-| `source/sdn_controller/vip_routing.py` | `VipRoutingMixin` -- `_install_vip_dnat_snat()`, `snoop_arp()`, `register_backend_ip()` |
-| `source/sdn_controller/main_n1.py` | Entry point -- MRO and `packet_in_handler()` |
+| `source/sdn_controller/vip_routing.py` | Public `VipRoutingMixin` facade -- exposes routing API and delegates to private helpers |
+| `source/sdn_controller/_vip_routing/flows.py` | `_install_vip_dnat_snat()` and cross-network forwarding details |
+| `source/sdn_controller/_vip_routing/ingress.py` | `snoop_arp()` and VIP handlers that resolve backend IPs before flow installation |
+| `source/sdn_controller/_vip_routing/state.py` | `register_backend_ip()` and controller-owned IP/MAC maps |
+| `source/sdn_controller/main_n1.py`, `source/sdn_controller/main_n2.py` | Entry points -- MRO and `packet_in_handler()` |
 | `source/sdn_controller/topology/topology.py` | `TopologyMixin` -- `get_next_hop_port()`, `host_attachment`, `peer_hosts`, `on_topology_update()` |
 
 ## 3. Backend IP and MAC Resolution

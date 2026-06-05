@@ -119,12 +119,12 @@ def detect_mode(rows: list[dict]) -> str:
     headers = set(rows[0].keys())
     if "latency_s" in headers:
         return "latency"
-    if "median_cpu_percent" in headers:
+    if "median_cpu_percent" in headers or "average_cpu_percent" in headers:
         return "resource"
     sys.exit(
         "Unrecognized file format.\n"
         "Expected a 'latency_s' column (client_requests) "
-        "or a 'median_cpu_percent' column (resource_stats)."
+        "or a 'median_cpu_percent'/'average_cpu_percent' column (resource_stats)."
     )
 
 

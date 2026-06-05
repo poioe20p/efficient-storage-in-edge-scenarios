@@ -5,14 +5,129 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OSKEN1_PORT=${OSKEN1_PORT:-6653}
 OSKEN2_PORT=${OSKEN2_PORT:-6654}
-OSKEN_ENV_FILE=${OSKEN_ENV_FILE:-"${SCRIPT_DIR}/osken-controller.env"}
+DEFAULT_OSKEN_ENV_FILE="${SCRIPT_DIR}/osken-controller.env"
+OSKEN_ENV_FILE=${OSKEN_ENV_FILE:-"${DEFAULT_OSKEN_ENV_FILE}"}
+OSKEN_ENV_OVERRIDE_FILE=${OSKEN_ENV_OVERRIDE_FILE:-""}
 WAN_ENV_FILE=${WAN_ENV_FILE:-"${SCRIPT_DIR}/wan.env"}
+MERGED_OSKEN_ENV_FILE=""
+OSKEN_ENV_BASE_RESOLVED=""
+OSKEN_ENV_OVERRIDE_RESOLVED=""
 
-if [[ ! -f "${OSKEN_ENV_FILE}" ]]; then
-    echo "Missing controller env file: ${OSKEN_ENV_FILE}" >&2
-    echo "Expected at: ${SCRIPT_DIR}/osken-controller.env" >&2
-    exit 1
-fi
+resolve_path_from_script_dir() {
+    local path="$1"
+
+    if [[ -z "$path" ]]; then
+        printf '%s\n' ""
+        return 0
+    fi
+
+    if [[ "$path" == /* ]]; then
+        printf '%s\n' "$path"
+        return 0
+    fi
+
+    printf '%s\n' "${SCRIPT_DIR}/${path#./}"
+}
+
+apply_env_override_file() {
+    local target_path="$1"
+    local override_path="$2"
+    local line=""
+    local key=""
+    local temp_path=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        if [[ "$line" != *=* ]]; then
+            echo "Invalid controller env override line: ${line}" >&2
+            exit 1
+        fi
+
+        key="${line%%=*}"
+        temp_path="$(mktemp)"
+        awk -v key="$key" -v newline="$line" '
+            $0 ~ "^" key "=" { next }
+            { print }
+            END { print newline }
+        ' "$target_path" > "$temp_path"
+        mv "$temp_path" "$target_path"
+    done < "$override_path"
+}
+
+validate_env_override_file() {
+    local target_path="$1"
+    local override_path="$2"
+    local line=""
+
+    [[ -n "$override_path" ]] || return 0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        if ! grep -Fxq "$line" "$target_path"; then
+            echo "Controller env override was not applied: ${line}" >&2
+            exit 1
+        fi
+    done < "$override_path"
+}
+
+print_controller_env_provenance() {
+    local effective_env_path="$1"
+
+    echo "Controller env base    : ${OSKEN_ENV_BASE_RESOLVED}"
+    echo "Controller env override: ${OSKEN_ENV_OVERRIDE_RESOLVED:-<none>}"
+    echo "Controller env active  : ${effective_env_path}"
+}
+
+cleanup_temp_controller_env() {
+    if [[ -n "$MERGED_OSKEN_ENV_FILE" && -f "$MERGED_OSKEN_ENV_FILE" ]]; then
+        rm -f "$MERGED_OSKEN_ENV_FILE"
+    fi
+}
+
+prepare_osken_env_file() {
+    local base_env_path=""
+    local override_env_path=""
+
+    base_env_path="$(resolve_path_from_script_dir "$OSKEN_ENV_FILE")"
+    override_env_path="$(resolve_path_from_script_dir "$OSKEN_ENV_OVERRIDE_FILE")"
+    OSKEN_ENV_BASE_RESOLVED="$base_env_path"
+    OSKEN_ENV_OVERRIDE_RESOLVED="$override_env_path"
+
+    if [[ ! -f "$base_env_path" ]]; then
+        echo "Missing controller env file: ${base_env_path}" >&2
+        echo "Expected at: ${DEFAULT_OSKEN_ENV_FILE}" >&2
+        exit 1
+    fi
+
+    if [[ -z "$override_env_path" ]]; then
+        OSKEN_ENV_FILE="$base_env_path"
+        return 0
+    fi
+
+    if [[ ! -f "$override_env_path" ]]; then
+        echo "Missing controller env override file: ${override_env_path}" >&2
+        exit 1
+    fi
+
+    MERGED_OSKEN_ENV_FILE="$(mktemp)"
+    cp "$base_env_path" "$MERGED_OSKEN_ENV_FILE"
+    apply_env_override_file "$MERGED_OSKEN_ENV_FILE" "$override_env_path"
+    validate_env_override_file "$MERGED_OSKEN_ENV_FILE" "$override_env_path"
+    OSKEN_ENV_FILE="$MERGED_OSKEN_ENV_FILE"
+}
+
+trap cleanup_temp_controller_env EXIT
+
+prepare_osken_env_file
+print_controller_env_provenance "$OSKEN_ENV_FILE"
 
 # Source WAN-emulation knobs (consumed by network/inject_wan_latency.sh from
 # build_router.sh). All variables default to 0 if the file is absent.

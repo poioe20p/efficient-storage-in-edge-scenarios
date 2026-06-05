@@ -24,6 +24,8 @@ DRY_RUN       ?=
 RUN_LABEL     ?=
 PHASES_CONFIG ?=
 FAULT_PLAN    ?=
+OSKEN_ENV_FILE ?=
+OSKEN_ENV_OVERRIDE_FILE ?=
 PROBE_CAPTURE_RUN_DIR ?=
 PROBE_CAPTURE_ROOT    ?=
 
@@ -38,6 +40,8 @@ PROBE_CAPTURE_ROOT    ?=
 
 ## Build the virtual network (OVS, replica sets, SDN controllers)
 setup_network:
+	OSKEN_ENV_FILE="$(strip $(OSKEN_ENV_FILE))" \
+	OSKEN_ENV_OVERRIDE_FILE="$(strip $(OSKEN_ENV_OVERRIDE_FILE))" \
 	bash build_network_setup.sh
 
 # ── Test clients ──────────────────────────────────────────────────────────────
@@ -119,8 +123,11 @@ cleanup_metrics:
 ##   make run_experiment CLIENTS=6 DEVICES=600 NODES=100
 ##   make run_experiment PHASES_CONFIG=testing/phases_custom.json
 ##   make run_experiment FAULT_PLAN=testing/fault_plan.json
+##   make run_experiment OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/example.env
 run_experiment:
-	sudo bash testing/run_experiment.sh \
+	OSKEN_ENV_FILE="$(strip $(OSKEN_ENV_FILE))" \
+	OSKEN_ENV_OVERRIDE_FILE="$(strip $(OSKEN_ENV_OVERRIDE_FILE))" \
+	sudo -E bash testing/run_experiment.sh \
 	  $(if $(strip $(RUN_LABEL)),--run-label "$(strip $(RUN_LABEL))") \
 	  --clients-per-lan "$(strip $(CLIENTS))" \
 	  --seed-devices "$(strip $(DEVICES))" \

@@ -15,8 +15,11 @@ interception, and edge-side epoch behaviour are documented separately.
 
 | File | Role |
 |------|------|
-| `source/sdn_controller/vip_routing.py` | `VipRoutingMixin` -- `select_server()`, `select_storage()`, warm-lease claim logic, lifecycle hooks, hop estimation |
-| `source/sdn_controller/main_n1.py` | `_on_telemetry_update()` callback calls `update_server_stats()` / `update_storage_stats()` |
+| `source/sdn_controller/vip_routing.py` | Public `VipRoutingMixin` facade -- controller-facing selection and lifecycle API |
+| `source/sdn_controller/_vip_routing/selection.py` | `select_server()`, `select_storage()`, warm-lease claim logic, recovery filtering, hop estimation |
+| `source/sdn_controller/_vip_routing/state.py` | Mutable VIP-routing state, lifecycle hooks, and telemetry cache updates |
+| `source/sdn_controller/_vip_routing/config.py` | WSM weights, logger, and shared lightweight types |
+| `source/sdn_controller/main_n1.py`, `source/sdn_controller/main_n2.py` | `_on_telemetry_update()` callback calls `update_server_stats()` / `update_storage_stats()` |
 | `source/sdn_controller/scaling_config.py` | Warm-lease TTL defaults (`_VIP_WARM_SERVER_SECONDS`, `_VIP_WARM_STORAGE_SECONDS`) |
 | `source/sdn_controller/telemetry/models.py` | `ServerSummary` and `StorageServerSummary` data classes |
 

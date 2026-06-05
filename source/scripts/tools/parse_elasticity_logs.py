@@ -18,6 +18,7 @@ import csv
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -285,6 +286,140 @@ def infer_controller_name(path: Path) -> str:
     if "lan2" in name or "osken_2" in name:
         return "lan2"
     return name
+
+
+# ---------------------------------------------------------------------------
+# Policy-state annotation helpers (importable by reconstruct_policy_state.py)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PolicyAnnotation:
+    """One controller-only annotation for a policy-state window."""
+    ts: float
+    lan: str  # "lan1" or "lan2"
+    kind: str  # busy | cooldown_compute | cooldown_storage | blocked_compute
+               # | blocked_storage | triggered_compute | triggered_storage
+               # | candidate_compute | candidate_storage
+               # | scaleup_cooldown_compute | scaleup_cooldown_storage
+               # | no_candidate_compute | no_candidate_storage
+    detail: str = ""
+
+
+# Regex patterns for controller-only policy annotations
+_RE_POL_BUSY = re.compile(
+    _TS + r".*\[scale-down\] elasticity manager is busy"
+)
+_RE_POL_COOLDOWN = re.compile(
+    _TS + r".*\[scale-down\] (compute|storage) within (\d+)s cooldown"
+)
+_RE_POL_BLOCKED = re.compile(
+    _TS + r".*\[scale-up\] (compute|storage) blocked"
+)
+_RE_POL_TRIGGERED = re.compile(
+    _TS + r".*\[scale-up\] (compute|storage) triggered:"
+)
+_RE_POL_CANDIDATE = re.compile(
+    _TS + r".*\[scale-down\] (compute|storage) candidate selected: (\S+)"
+)
+_RE_POL_SCALEUP_COOLDOWN = re.compile(
+    _TS + r".*\[scale-up\] (compute|storage) within (\d+)s cooldown"
+)
+_RE_POL_NO_CANDIDATE = re.compile(
+    _TS + r".*\[scale-down\] (compute|storage) no candidate"
+)
+
+
+def parse_policy_annotations(log_path: Path, lan: str) -> list[PolicyAnnotation]:
+    """Extract policy-state annotations from a controller log file.
+
+    These annotations capture controller-only outcomes (busy, cooldown,
+    blocked, triggered, candidate selection, no-candidate clears) that
+    are not derivable from metrics alone.  Imported by
+    :mod:`reconstruct_policy_state`.
+    """
+    import time as _time
+
+    annotations: list[PolicyAnnotation] = []
+    if not log_path.exists():
+        return annotations
+
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return annotations
+
+    for line in lines:
+        m = _RE_POL_BUSY.search(line)
+        if m:
+            annotations.append(PolicyAnnotation(
+                ts=_parse_ts_to_epoch(m.group(1)), lan=lan, kind="busy"))
+            continue
+
+        m = _RE_POL_COOLDOWN.search(line)
+        if m:
+            tier = m.group(2)
+            annotations.append(PolicyAnnotation(
+                ts=_parse_ts_to_epoch(m.group(1)), lan=lan,
+                kind=f"cooldown_{tier}",
+                detail=f"{m.group(3)}s"))
+            continue
+
+        m = _RE_POL_BLOCKED.search(line)
+        if m:
+            tier = m.group(2)
+            annotations.append(PolicyAnnotation(
+                ts=_parse_ts_to_epoch(m.group(1)), lan=lan,
+                kind=f"blocked_{tier}"))
+            continue
+
+        m = _RE_POL_TRIGGERED.search(line)
+        if m:
+            tier = m.group(2)
+            annotations.append(PolicyAnnotation(
+                ts=_parse_ts_to_epoch(m.group(1)), lan=lan,
+                kind=f"triggered_{tier}"))
+            continue
+
+        m = _RE_POL_CANDIDATE.search(line)
+        if m:
+            tier = m.group(2)
+            annotations.append(PolicyAnnotation(
+                ts=_parse_ts_to_epoch(m.group(1)), lan=lan,
+                kind=f"candidate_{tier}",
+                detail=m.group(3)))
+            continue
+
+        m = _RE_POL_SCALEUP_COOLDOWN.search(line)
+        if m:
+            tier = m.group(2)
+            annotations.append(PolicyAnnotation(
+                ts=_parse_ts_to_epoch(m.group(1)), lan=lan,
+                kind=f"scaleup_cooldown_{tier}",
+                detail=f"{m.group(3)}s"))
+            continue
+
+        m = _RE_POL_NO_CANDIDATE.search(line)
+        if m:
+            tier = m.group(2)
+            annotations.append(PolicyAnnotation(
+                ts=_parse_ts_to_epoch(m.group(1)), lan=lan,
+                kind=f"no_candidate_{tier}"))
+            continue
+
+    return annotations
+
+
+def _parse_ts_to_epoch(ts_str: str) -> float:
+    """Parse a log timestamp string to Unix epoch float."""
+    import time as _time
+    for fmt in ("%Y-%m-%d %H:%M:%S,%f", "%Y-%m-%d %H:%M:%S.%f",
+                 "%Y-%m-%d %H:%M:%S"):
+        try:
+            return _time.mktime(_time.strptime(ts_str, fmt))
+        except ValueError:
+            continue
+    return 0.0
 
 
 # ---------------------------------------------------------------------------

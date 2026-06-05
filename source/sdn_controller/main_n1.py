@@ -14,7 +14,7 @@ from os_ken.lib.packet import ethernet, ether_types, packet
 from os_ken.ofproto import ofproto_v1_3
 from os_ken import cfg
 
-from .elasticity.elasticity import ComputeAlert, DataAlert, ElasticityManager
+from .elasticity.elasticity import ComputeAlert, DataAlert, ElasticityManager, PrepareStandbyStorageAlert, CleanupReserveAlert
 from .elasticity.node_common import NodeInfo
 from .selective_sync.promotion import PromotionCoordinator
 from .selective_sync.state_publisher import CoordinatorStatePublisher
@@ -26,6 +26,8 @@ from .scaling_policy import ScalingPolicy
 from .scaling_config import (
     _NODE_BIRTH_GRACE_S,
     _SCALE_DOWN_CANDIDATE_MAX_STALENESS_S,
+    _STORAGE_PERSISTENT_RESERVE_ENABLED,
+    _STORAGE_RESERVE_PENDING_WINDOWS,
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
@@ -40,6 +42,48 @@ import requests
 _REQUIRED_APP = ['os_ken.topology.switches']
 
 logger = logging.getLogger('os_ken.main_n1')
+
+_RECOVERY_DISTRESS_OUTCOMES = frozenset({
+    "success_after_rebind",
+    "failure_terminal",
+    "recovery_rebind",
+    "terminal_recovery_failure",
+    "circuit_open",
+})
+
+
+def _domain_summary_has_recovery_distress(domain_summary: object | None, lan: str) -> bool:
+    if domain_summary is None:
+        return False
+
+    helper = getattr(domain_summary, "has_recovery_distress", None)
+    if callable(helper):
+        try:
+            return bool(helper(lan))
+        except Exception:
+            logger.debug(
+                "[reserve] recovery-distress helper failed for %s",
+                lan,
+                exc_info=True,
+            )
+
+    outcomes_per_lan = getattr(domain_summary, "request_lease_outcomes_per_lan", None)
+    if not isinstance(outcomes_per_lan, dict):
+        return False
+
+    outcomes = outcomes_per_lan.get(lan, {})
+    if not isinstance(outcomes, dict):
+        return False
+
+    for outcome in _RECOVERY_DISTRESS_OUTCOMES:
+        value = outcomes.get(outcome, 0)
+        try:
+            if float(value or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+
+    return False
 
 
 @dataclass(frozen=True)
@@ -158,6 +202,67 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             domain,
         )
 
+    # ── Storage persistent reserve helpers ──────────────────────────────
+
+    def _on_reserve_ready(self, mac: str) -> None:
+        """Callback invoked by ControlEventDispatcher when a reserved node reaches SECONDARY."""
+        self._node_registry.mark_storage_reserve_ready(mac)
+
+    def _try_prepare_storage_reserve(self, summary: TelemetrySummary, lan: int) -> None:
+        """Submit reserve preparation when the slot is NONE and the primary is available."""
+        if not _STORAGE_PERSISTENT_RESERVE_ENABLED:
+            return
+        if not self._node_registry.should_prepare_storage_reserve(lan):
+            return
+        # Guard: need a visible PRIMARY to admit a new member
+        if not any(ss.member_state == "PRIMARY" for ss in summary.storage_servers.values()):
+            logger.debug("[reserve] no PRIMARY visible for lan=%d — skipping reserve prep", lan)
+            return
+
+        self._elasticity.submit(
+            PrepareStandbyStorageAlert(
+                lan=lan,
+                network_id=summary.network_id,
+                rs_name=f"rs_net{lan}",
+                primary_container=f"edge_storage_server_n{lan}",
+            )
+        )
+        self._node_registry.mark_storage_reserve_prepare_submitted(lan)
+
+    def _handle_storage_reserve_trigger(self, summary: TelemetrySummary, lan: int, reason: str) -> bool:
+        """Route a same-LAN storage trigger through the reserve model.
+
+        Returns True if the trigger was handled by the reserve (activating or
+        waiting), meaning the caller should NOT submit a separate DataAlert.
+        Returns False if the reserve model is disabled — caller should fall
+        through to normal Thread 3 submission.
+        """
+        if not _STORAGE_PERSISTENT_RESERVE_ENABLED:
+            return False
+
+        slot = self._node_registry.get_storage_reserve_slot(lan)
+
+        if slot.state == "READY_RESERVED":
+            info = self._node_registry.consume_ready_storage_reserve(lan)
+            if info is None:
+                logger.warning("[reserve] READY_RESERVED but consume returned None for lan=%d", lan)
+                return False
+            # Activate: add to VIP, clear standby flag, record activation.
+            self._promote_storage_backend(info.mac, f"n{lan}")
+            info.standby_reserved = False
+            self._scaling_policy.record_storage_activation()
+            logger.info("[reserve] activated lan=%d name=%s ip=%s mac=%s reason=%s",
+                        lan, info.name, info.ip, info.mac, reason)
+            # Immediately start preparing the next reserve.
+            self._try_prepare_storage_reserve(summary, lan)
+            return True
+
+        # Reserve is PREPARING or NONE — latch pending and wait.
+        self._node_registry.latch_storage_reserve_activation(lan, reason, _STORAGE_RESERVE_PENDING_WINDOWS)
+        # If NONE, also submit preparation now.
+        self._try_prepare_storage_reserve(summary, lan)
+        return True
+
     def _pick_compute_scale_down_candidate(self) -> NodeInfo | None:
         now_wall = time.time()
         now_mono = time.monotonic()
@@ -259,6 +364,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._control_events.process_drain_events(summary, self._elasticity)
         self._control_events.process_secondary_events(
             summary, self._node_registry, self._promote_storage_backend,
+            on_reserve_ready_fn=self._on_reserve_ready,
         )
 
         # Mini-summaries (control event pass-throughs) have empty server dicts.
@@ -290,6 +396,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             summary, self._node_registry,
             self._local_storage_macs_n1, self._local_storage_macs_n2,
             self._promote_storage_backend,
+            on_reserve_ready_fn=self._on_reserve_ready,
         )
 
         try:
@@ -298,18 +405,69 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             logger.warning("could not parse LAN from network_id=%s", summary.network_id)
             return
 
+        # 4b. Process reserve prepare failures (Thread 3 → Thread 2 outcome).
+        # Per-LAN drain — this controller only consumes its own LAN's failures.
+        for _ in self._elasticity.drain_reserve_prepare_failures(lan):
+            self._node_registry.mark_storage_reserve_prepare_failed(lan)
+            logger.info("[reserve] replenish_next_cycle lan=%d after prepare failure", lan)
+
+        # 4c. Maintain persistent storage reserve — prepare if missing,
+        #     tick pending activation, and auto-activate if ready.
+        self._try_prepare_storage_reserve(summary, lan)
+        slot = self._node_registry.get_storage_reserve_slot(lan)
+
+        # Tick the bounded carry-forward budget.
+        if slot.activation_pending and slot.state != "READY_RESERVED":
+            expired = self._node_registry.tick_storage_reserve_pending_activation(lan)
+            if expired:
+                self._node_registry.clear_storage_reserve_pending_activation(lan)
+                logger.info("[reserve] pending_expired lan=%d — clearing activation intent", lan)
+
+        if slot.state == "READY_RESERVED" and slot.activation_pending:
+            self._handle_storage_reserve_trigger(summary, lan, slot.pending_reason or "pending")
+
         # 5. Absent node detection → alert submission
         for mac in self._node_registry.detect_absent(summary):
             if self._elasticity.has_pending_drain(mac):
                 logger.info("[scale-down] pending drain for mac=%s — submitting Phase B cleanup", mac)
                 self._elasticity.submit_cleanup(mac)
             else:
+                # Check if the absent node is the reserve — handle as reserve loss.
+                info = self._node_registry.get_node_info(mac)
+                if info and info.standby_reserved:
+                    # 1. Clear the reserve slot first (while node is still in registry)
+                    #    so replenish can start on the next maintenance cycle.
+                    #    Pending activation is preserved for carry-forward.
+                    self._node_registry.mark_storage_reserve_lost(mac)
+                    # 2. Then unregister from tracking.
+                    self._node_registry.unregister_reserved_node(mac)
+                    # 3. Submit immediate-terminate cleanup to Thread 3.
+                    self._elasticity.submit_cleanup_reserve(
+                        CleanupReserveAlert(
+                            lan=info.lan,
+                            mac=info.mac,
+                            container_name=info.name,
+                            ip=info.ip or "",
+                            rs_name=info.rs_name or "",
+                            primary_container=info.primary_container or "",
+                            port=info.port or 27018,
+                        )
+                    )
+                    logger.info("[reserve] cleanup_submitted lan=%d mac=%s", info.lan, info.mac)
+                    # Do NOT retry preparation here — next-cycle maintenance will decide.
+                    continue
                 alert = self._node_registry.build_scale_down_alert(mac)
                 if alert:
                     logger.info("[scale-down] submitting alert: %s", alert)
                     self._elasticity.submit(alert)
 
         ds = summary.domain_summary
+
+        # 5b. Recovery-distress trigger — activate reserve if storage recovery is observed.
+        lan_str = f"lan{lan}"
+        if _domain_summary_has_recovery_distress(ds, lan_str):
+            logger.info("[reserve] recovery distress detected for %s", lan_str)
+            self._handle_storage_reserve_trigger(summary, lan, "recovery")
 
         # 6. Scale-up evaluation
         dynamic_storage_count = self._node_registry.count_dynamic("storage")
@@ -344,6 +502,11 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 allow_compute=not compute_blocked,
                 allow_storage=not storage_blocked,
             ):
+                # ── Storage persistent reserve: same-LAN DataAlert → activate reserve first ──
+                if isinstance(alert, DataAlert) and not getattr(alert, "cross_lan_rs", False):
+                    if self._handle_storage_reserve_trigger(summary, alert.lan, "load"):
+                        continue  # Reserve handled it — do not submit a raw DataAlert.
+
                 # Dormant Tier 2 supersede hook. Drains any active Tier 1 for the
                 # same (owner_lan → consumer_lan) direction *before* the Tier 2
                 # alert lands. Today ``DataAlert`` is always same-LAN (adds a
@@ -394,11 +557,19 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             if self._scaling_policy.evaluate_scale_down_storage(ds):
                 node = self._node_registry.find_last_dynamic("storage")
                 if node:
-                    logger.info(
-                        "[scale-down] storage underutilisation — removing %s", node.name)
-                    alert = self._node_registry.build_scale_down_alert(node.mac)
-                    if alert:
-                        self._elasticity.submit(alert)
+                    # Reserve-floor guard: do not scale down below active+reserve floor.
+                    if not self._node_registry.can_scale_down_storage(node.mac, lan):
+                        logger.info(
+                            "[scale-down] storage underutilisation but reserve floor blocks removal of %s",
+                            node.name,
+                        )
+                        self._scaling_policy.clear_scale_down_storage_window()
+                    else:
+                        logger.info(
+                            "[scale-down] storage underutilisation — removing %s", node.name)
+                        alert = self._node_registry.build_scale_down_alert(node.mac)
+                        if alert:
+                            self._elasticity.submit(alert)
                 self._scaling_policy.clear_scale_down_storage_window()
 
     def _log_and_update_stats(self, summary: TelemetrySummary) -> None:

@@ -7,8 +7,8 @@
 Implementation landed in:
 - [source/docker/edge_server/source/telemetry.py](../../../source/docker/edge_server/source/telemetry.py) — `HEARTBEAT_ENABLED` flag gating the heartbeat thread.
 - [source/docker/edge_storage_server/mongo_telemetry.py](../../../source/docker/edge_storage_server/mongo_telemetry.py) — `HEARTBEAT_ENABLED` flag gating the heartbeat branch of `_push_stats`.
-- [source/sdn_controller/elasticity/compute_node_manager.py](../../../source/sdn_controller/elasticity/compute_node_manager.py) — injects `HEARTBEAT_ENABLED=0` in `_docker_run_server`.
-- [source/sdn_controller/elasticity/storage_node_manager.py](../../../source/sdn_controller/elasticity/storage_node_manager.py) — injects `HEARTBEAT_ENABLED=0` in `_docker_run_storage`.
+- [source/sdn_controller/elasticity/compute_node_manager.py](../../../source/sdn_controller/elasticity/compute_node_manager.py) — leaves dynamic compute on the image default `HEARTBEAT_ENABLED=false`.
+- [source/sdn_controller/elasticity/storage_node_manager.py](../../../source/sdn_controller/elasticity/storage_node_manager.py) — passes literal `HEARTBEAT_ENABLED=true|false` in `_docker_run_storage`.
 - Docs updated: [telemetry_overview.md](../telemetry/telemetry_overview.md), [elasticity_overview.md](../elasticy_manager/elasticity_overview.md), [system_mechanisms.md](../system_mechanisms.md).
 
 ---
@@ -94,7 +94,7 @@ else:
 
 ### 3.3 [source/sdn_controller/elasticity/compute_node_manager.py](../../../source/sdn_controller/elasticity/compute_node_manager.py) — `_docker_run_server`
 
-Inject `HEARTBEAT_ENABLED=0` into the dynamic spawn command:
+Dynamic compute nodes keep the image default `HEARTBEAT_ENABLED=false`; no explicit injection is required:
 
 ```python
 cmd = [
@@ -103,14 +103,13 @@ cmd = [
     "--name", name,
     "-e", f"LAN_ID=lan{lan}",
     "-e", f"CONTAINER_NAME={name}",
-    "-e", "HEARTBEAT_ENABLED=0",
     "edge_server",
 ]
 ```
 
 ### 3.4 [source/sdn_controller/elasticity/storage_node_manager.py](../../../source/sdn_controller/elasticity/storage_node_manager.py) — `_docker_run_storage`
 
-Same injection for dynamic storage secondaries:
+Dynamic storage spawns pass the strict boolean contract expected by the sidecar. Ordinary dynamic secondaries use `false`; standby reserves use `true`:
 
 ```python
 cmd = [
@@ -122,7 +121,7 @@ cmd = [
     "-e", f"MONGO_REPLSET={rs_name}",
     "-e", f"MONGO_PORT={port}",
     "-e", f"CONTAINER_NAME={name}",
-    "-e", "HEARTBEAT_ENABLED=0",
+    "-e", f"HEARTBEAT_ENABLED={'true' if heartbeat_enabled else 'false'}",
 ]
 ```
 
@@ -131,8 +130,9 @@ cmd = [
 Inspect before finalising. The selective-storage image's telemetry module
 ([source/docker/edge_selective_storage/telemetry.py](../../../source/docker/edge_selective_storage/telemetry.py))
 currently has no heartbeat emitter, so **likely no change** is required. If a
-heartbeat emitter is added in the future, inject `HEARTBEAT_ENABLED=0` at
-spawn time for consistency.
+heartbeat emitter is added in the future, keep its dynamic default at
+`HEARTBEAT_ENABLED=false` and only opt in with `true` where static or
+standby liveness is required.
 
 ### 3.6 Static container specs — no change required
 
@@ -187,7 +187,7 @@ absence counter.
 4. **Static quiet period.** Stop traffic for >60 s. Confirm static nodes
    continue to appear in aggregator summaries with `request_count=0`.
 5. **Unit tests** (if any exist for `init_telemetry` / `_push_stats`):
-   add a test toggling `HEARTBEAT_ENABLED=0` and asserting no heartbeat
+    add a test toggling `HEARTBEAT_ENABLED=false` and asserting no heartbeat
    events are produced. Leave existing tests unchanged.
 
 ---

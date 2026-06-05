@@ -582,9 +582,11 @@ ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios; sudo -n make -C source/s
     `reverse_hotspot`, `compute_ramp`, `compute_spike`,
     `sustained_plateau`, and `demand_drop`.
   - the run emitted the expected artifact set including `client_requests.csv`,
-    all per-phase `client_requests_*.csv` files, `resource_stats.csv`,
-    `per_node_stats.csv`, `container_events.csv`, both controller logs,
-    `service_logs/`, and `phases_snapshot.json`.
+    `resource_stats.csv`, `resource_stats_debug.csv`, `policy_state.csv`,
+    `per_node_stats.csv`, `container_events.csv`, `elasticity_events.csv`,
+    both controller logs, `service_logs/`, `controller_env_snapshot.env`,
+    and `phases_snapshot.json`. Per-phase `client_requests_<phase>.csv`
+    files are no longer part of the default contract.
 - Artifact status: the full run folder was copied back locally to
   `source/scripts/testing/metrics/20260524_091543_hybrid_observation_current_code_repeat_storage_check`.
   Local post-run analysis produced:

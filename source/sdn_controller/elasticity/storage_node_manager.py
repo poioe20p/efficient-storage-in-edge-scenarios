@@ -40,6 +40,7 @@ class StorageNodeAdder(_BaseNodeAdder):
         port: int = 27018,
         ip: str | None = None,
         mac: str | None = None,
+        heartbeat_enabled: bool = False,
     ) -> NodeResult:
         """Spawn an edge_storage_server container, attach it to OVS LAN ``lan``,
                 and join the replica set via the sidecar's direct seed-host reconfig.
@@ -68,6 +69,7 @@ class StorageNodeAdder(_BaseNodeAdder):
             rs_seed_host=rs_seed_host,
             ip=ip,
             mac=mac,
+            heartbeat_enabled=heartbeat_enabled,
         )
         timings.docker_run_s = time.perf_counter() - t0
 
@@ -111,6 +113,8 @@ class StorageNodeAdder(_BaseNodeAdder):
         primary_container: str,
         port: int = 27018,
         keep_volume: bool = False,
+        *,
+        best_effort_rs_remove: bool = False,
     ) -> RemovalResult:
         """Remove a storage node: rs.remove() via primary then script teardown.
 
@@ -118,27 +122,57 @@ class StorageNodeAdder(_BaseNodeAdder):
         performed here in Python (with polling) before the script runs.
         The script handles: DNAT flow flush → docker stop → OVS port/veth
         deletion → docker rm → optional volume removal.
+
+        When *best_effort_rs_remove* is ``True`` (reserve cleanup only):
+
+        * Primary discovery failure is **not** fatal — the code assumes the
+          member never joined and continues to teardown.
+        * Non-``ok:1`` ``rs.remove()`` and RS-wait timeouts are logged at
+          warning level but teardown still proceeds.
+        * The final success/failure is driven by the teardown script outcome,
+          not by the RS-eviction step.
+
+        Ordinary storage scale-down must **never** use this mode.
         """
         timings = RemovalTimings()
         t_total = time.perf_counter()
         combined_stdout = ""
         combined_stderr = ""
 
-        logger.info("[node_remove] storage: removing %s (mac=%s ip=%s)", name, mac, ip)
+        logger.info("[node_remove] storage: removing %s (mac=%s ip=%s best_effort=%s)",
+                    name, mac, ip, best_effort_rs_remove)
 
         # ── 1. rs.remove() via primary ────────────────────────────────────────
         member_host = f"{ip}:{port}"
         primary_host = self._find_rs_primary(primary_container, port)
         if primary_host is None:
-            timings.total_s = time.perf_counter() - t_total
-            return RemovalResult(False, name, mac, timings, NodeOperationState.FAILED,
-                                 "", "Could not determine RS primary")
-
-        ok_remove = self._rs_remove_member(primary_container, primary_host, member_host)
-        if ok_remove:
-            self._wait_rs_member_removed(primary_container, primary_host, member_host)
+            if not best_effort_rs_remove:
+                timings.total_s = time.perf_counter() - t_total
+                return RemovalResult(False, name, mac, timings, NodeOperationState.FAILED,
+                                     "", "Could not determine RS primary")
+            # Best-effort: primary not reachable — assume the member never joined
+            # (or is already gone) and proceed directly to container teardown.
+            logger.warning(
+                "[node_remove] primary_not_found_assume_not_joined name=%s member=%s",
+                name, member_host,
+            )
         else:
-            logger.warning("[node_remove] rs.remove() failed for %s — proceeding with teardown anyway", name)
+            ok_remove = self._rs_remove_member(primary_container, primary_host, member_host)
+            if ok_remove:
+                logger.info("[node_remove] rs_remove_succeeded name=%s member=%s", name, member_host)
+                removed = self._wait_rs_member_removed(primary_container, primary_host, member_host)
+                if not removed:
+                    logger.warning(
+                        "[node_remove] rs_remove_wait_timeout name=%s member=%s — "
+                        "member may still appear in rs.status()",
+                        name, member_host,
+                    )
+            else:
+                logger.warning(
+                    "[node_remove] rs_remove_non_ok name=%s member=%s — "
+                    "proceeding with teardown anyway",
+                    name, member_host,
+                )
 
         # ── 2. Script: flush DNAT flows + docker stop + OVS teardown ─────────
         t0 = time.perf_counter()
@@ -183,6 +217,7 @@ class StorageNodeAdder(_BaseNodeAdder):
         rs_seed_host: str | None = None,
         ip: str | None = None,
         mac: str | None = None,
+        heartbeat_enabled: bool = False,
     ) -> tuple[bool, str, str]:
         state = self._container_state(name)
         if state == "running":
@@ -204,10 +239,10 @@ class StorageNodeAdder(_BaseNodeAdder):
             "-e", f"MONGO_PORT={port}",
             "-e", f"CONTAINER_NAME={name}",
             "-e", "IFACE=eth0",
-            # Dynamic secondaries inherit HEARTBEAT_ENABLED=0 (image default).
-            # Lifecycle is handled by scale-down (graceful) + telemetry-window
-            # absence timeout (failure). See
-            # docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
+            # The sidecar uses a strict true/false boolean parse.
+            # Standby reserves need heartbeat so the controller can distinguish
+            # a ready reserve from a missing one.
+            "-e", f"HEARTBEAT_ENABLED={'true' if heartbeat_enabled else 'false'}",
         ]
         if ip:
             cmd += ["-e", f"OWN_IP={ip}"]

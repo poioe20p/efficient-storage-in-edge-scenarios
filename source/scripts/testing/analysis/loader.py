@@ -25,14 +25,16 @@ class PhaseSpec:
 class Run:
     run_dir: Path
     phases: list[PhaseSpec]
-    domain_rows: list[dict]
-    node_rows: list[dict]              # empty if per_node_stats.csv missing
-    clients: dict[str, list[dict]]    # phase name -> rows
-    all_client_rows: list[dict]        # aggregate client_requests.csv rows
-    container_event_rows: list[dict]   # container_events.csv rows
-    fault_event_rows: list[dict]       # experiment_fault_events.csv rows
+    domain_rows: list[dict]              # resource_stats.csv (trimmed main view)
+    node_rows: list[dict]                # empty if per_node_stats.csv missing
+    debug_rows: list[dict]               # resource_stats_debug.csv (broad view)
+    policy_rows: list[dict]              # policy_state.csv (post-run reconstructed)
+    clients: dict[str, list[dict]]       # phase name -> rows
+    all_client_rows: list[dict]          # aggregate client_requests.csv rows
+    container_event_rows: list[dict]     # container_events.csv rows
+    fault_event_rows: list[dict]         # experiment_fault_events.csv rows
     events: list[ElasticityEvent]
-    t0: float                          # earliest window_end, for time normalisation
+    t0: float                            # earliest window_end, for time normalisation
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +101,14 @@ def load_run(run_dir: Path) -> Run:
 
     domain_rows = _read_csv(run_dir / "resource_stats.csv")
     node_rows = _read_csv(run_dir / "per_node_stats.csv", optional=True)
+    debug_rows = _read_csv(run_dir / "resource_stats_debug.csv", optional=True)
+    policy_rows = _read_csv(run_dir / "policy_state.csv", optional=True)
+
+    if not domain_rows:
+        warnings.warn(
+            "resource_stats.csv not found or empty — "
+            "domain-level charts will be skipped."
+        )
 
     if not node_rows:
         warnings.warn(
@@ -129,6 +139,8 @@ def load_run(run_dir: Path) -> Run:
         phases=phases,
         domain_rows=domain_rows,
         node_rows=node_rows,
+        debug_rows=debug_rows,
+        policy_rows=policy_rows,
         clients=clients,
         all_client_rows=all_client_rows,
         container_event_rows=container_event_rows,

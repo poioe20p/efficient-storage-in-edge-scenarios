@@ -1,0 +1,301 @@
+"""Ingress handling: ARP snooping, VIP packet dispatch, ARP reply,
+VIP server/data handling, and punt-rule installation.
+"""
+
+from os_ken.lib.packet import arp as arp_lib
+from os_ken.lib.packet import ethernet as eth_lib
+from os_ken.lib.packet import ether_types, ipv4, packet
+from os_ken.lib.packet import tcp as tcp_lib
+
+from .config import logger
+from . import flows, selection
+
+
+def _iter_vip_bindings(controller):
+    yield (controller.vip_server_ip, controller.vip_server_mac, "server", False)
+    yield (controller.vip_data_n1_ip, controller.vip_data_n1_mac, "n1", False)
+    yield (controller.vip_data_n2_ip, controller.vip_data_n2_mac, "n2", False)
+    yield (controller.vip_data_recovery_n1_ip, controller.vip_data_recovery_n1_mac, "n1", True)
+    yield (controller.vip_data_recovery_n2_ip, controller.vip_data_recovery_n2_mac, "n2", True)
+
+
+def snoop_arp(controller, pkt) -> None:
+    """Record sender IP ↔ MAC from any ARP packet that reaches the controller."""
+    arp_pkt = pkt.get_protocol(arp_lib.arp)
+    if arp_pkt is None:
+        return
+    src_ip, src_mac = arp_pkt.src_ip, arp_pkt.src_mac
+    if src_ip and src_mac and src_ip != "0.0.0.0":
+        if controller._ip_to_mac.get(src_ip) != src_mac:
+            logger.info("arp learned: %s -> %s", src_ip, src_mac)
+        controller._ip_to_mac[src_ip] = src_mac
+        controller._mac_to_ip[src_mac] = src_ip
+
+
+# ------------------------------------------------------------------
+# VIP packet-in entry point — called from Thread 1's packet_in_handler
+# ------------------------------------------------------------------
+
+def handle_vip_packet_in(controller, datapath, in_port, pkt, eth) -> bool:
+    """Intercept ARP and IP packets destined for VIP addresses.
+
+    Returns True if the packet was handled here — caller should return
+    immediately without running L2 learning.
+    Returns False to let normal packet processing continue.
+    """
+
+    # ARP for a VIP: generate a controller-crafted reply
+    if eth.ethertype == ether_types.ETH_TYPE_ARP:
+        arp_pkt = pkt.get_protocol(arp_lib.arp)
+        if (
+            arp_pkt is not None
+            and arp_pkt.opcode == arp_lib.ARP_REQUEST
+            and any(arp_pkt.dst_ip == vip_ip for vip_ip, _, _, _ in _iter_vip_bindings(controller))
+        ):
+            logger.debug("vip ARP request: dpid=%s in_port=%s arp=%s", datapath.id, in_port, arp_pkt)
+            return _reply_vip_arp(controller, datapath, in_port, arp_pkt)
+        return False
+
+    # IPv4 to a VIP: select backend, install DNAT/SNAT, Packet-Out
+    ip_pkt = pkt.get_protocol(ipv4.ipv4)
+    if ip_pkt is None:
+        return False
+
+    dst_ip   = ip_pkt.dst
+    src_ip   = ip_pkt.src
+    src_mac  = eth.src
+    ip_proto = ip_pkt.proto
+
+    # Only handle ICMP (1), TCP (6), UDP (17).  Other protocols (ESP, GRE,
+    # etc.) are not valid OFP ip_proto match values for our rule set and
+    # would produce a controller error if passed to OFPMatch.
+    if ip_proto not in (1, 6, 17):
+        return False
+
+    if dst_ip == controller.vip_server_ip:
+        logger.debug("vip server packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+        return _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto)
+    if dst_ip == controller.vip_data_n1_ip:
+        logger.debug("vip data n1 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+        return _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n1")
+    if dst_ip == controller.vip_data_n2_ip:
+        logger.debug("vip data n2 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+        return _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n2")
+    if dst_ip == controller.vip_data_recovery_n1_ip:
+        logger.debug("vip data recovery n1 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+        return _handle_vip_data(
+            controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n1", recovery=True,
+        )
+    if dst_ip == controller.vip_data_recovery_n2_ip:
+        logger.debug("vip data recovery n2 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+        return _handle_vip_data(
+            controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n2", recovery=True,
+        )
+
+    return False
+
+
+# ------------------------------------------------------------------
+# ARP reply generation
+# ------------------------------------------------------------------
+
+def _reply_vip_arp(controller, datapath, in_port, arp_req) -> bool:
+    """Craft and send an ARP reply for a VIP address request."""
+    vip_ip = None
+    vip_mac = None
+    for candidate_ip, candidate_mac, _, _ in _iter_vip_bindings(controller):
+        if arp_req.dst_ip == candidate_ip:
+            vip_ip = candidate_ip
+            vip_mac = candidate_mac
+            break
+    if vip_ip is None or vip_mac is None:
+        return False
+
+    reply_pkt = packet.Packet()
+    reply_pkt.add_protocol(eth_lib.ethernet(
+        dst=arp_req.src_mac,
+        src=vip_mac,
+        ethertype=0x0806,
+    ))
+    reply_pkt.add_protocol(arp_lib.arp(
+        opcode=arp_lib.ARP_REPLY,
+        src_mac=vip_mac,
+        src_ip=vip_ip,
+        dst_mac=arp_req.src_mac,
+        dst_ip=arp_req.src_ip,
+    ))
+    reply_pkt.serialize()
+
+    ofproto = datapath.ofproto
+    parser  = datapath.ofproto_parser
+    out = parser.OFPPacketOut(
+        datapath=datapath,
+        buffer_id=ofproto.OFP_NO_BUFFER,
+        in_port=ofproto.OFPP_CONTROLLER,
+        actions=[parser.OFPActionOutput(in_port)],
+        data=reply_pkt.data,
+    )
+    datapath.send_msg(out)
+    logger.info(
+        "vip arp reply: %s is-at %s  (requester ip=%s mac=%s)",
+        vip_ip, vip_mac, arp_req.src_ip, arp_req.src_mac,
+    )
+    return True
+
+
+# ------------------------------------------------------------------
+# VIP_SERVER (HTTP) — select web server via WSM cost formula
+# ------------------------------------------------------------------
+
+def _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto) -> bool:
+    server = selection.select_server(controller, src_mac)
+    if server is None:
+        logger.warning("vip_server: pool empty, packet dropped")
+        return True
+
+    server_mac = server["mac"]
+    logger.debug("vip_server: _mac_to_ip=%s", controller._mac_to_ip)
+    server_ip  = controller._mac_to_ip.get(server_mac)
+    if server_ip is None:
+        logger.warning(
+            "vip_server: IP unknown for mac=%s — awaiting ARP from backend",
+            server_mac,
+        )
+        return True
+
+    flows.install_vip_dnat_snat(
+        controller,
+        datapath, in_port, pkt,
+        client_mac=src_mac,
+        client_ip=src_ip,
+        ip_proto=ip_proto,
+        vip_ip=controller.vip_server_ip,
+        vip_mac=controller.vip_server_mac,
+        real_backend_ip=server_ip,
+        real_backend_mac=server_mac,
+    )
+
+    logger.info(
+        "vip_server: client=%s -> vip=%s -> real=%s",
+        src_ip, controller.vip_server_ip, server_ip,
+    )
+
+    return True
+
+
+# ------------------------------------------------------------------
+# VIP_DATA (MongoDB) — fixed storage node per domain
+# ------------------------------------------------------------------
+
+def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain, recovery=False) -> bool:
+    tcp_src_port = None
+    tcp_dst_port = None
+    if recovery:
+        tcp_pkt = pkt.get_protocol(tcp_lib.tcp)
+        if ip_proto != 6 or tcp_pkt is None or tcp_pkt.dst_port != 27018:
+            logger.warning(
+                "vip_data(%s) recovery: non-Mongo recovery packet dropped proto=%s dst_port=%s",
+                domain,
+                ip_proto,
+                getattr(tcp_pkt, "dst_port", None),
+            )
+            return True
+        tcp_src_port = tcp_pkt.src_port
+        tcp_dst_port = tcp_pkt.dst_port
+
+    storage = selection.select_storage(controller, domain, src_mac, recovery=recovery)
+    if storage is None:
+        logger.warning("vip_data(%s): pool empty, packet dropped", domain)
+        return True
+
+    storage_mac = storage["mac"]
+    logger.debug("vip_data(%s): _mac_to_ip=%s", domain, controller._mac_to_ip)
+    storage_ip  = controller._mac_to_ip.get(storage_mac)
+    if storage_ip is None:
+        logger.warning(
+            "vip_data(%s): IP unknown for mac=%s — awaiting ARP from backend",
+            domain, storage_mac,
+        )
+        return True
+
+    if recovery and domain == "n1":
+        vip_ip, vip_mac = controller.vip_data_recovery_n1_ip, controller.vip_data_recovery_n1_mac
+    elif recovery and domain == "n2":
+        vip_ip, vip_mac = controller.vip_data_recovery_n2_ip, controller.vip_data_recovery_n2_mac
+    elif domain == "n1":
+        vip_ip, vip_mac = controller.vip_data_n1_ip, controller.vip_data_n1_mac
+    else:
+        vip_ip, vip_mac = controller.vip_data_n2_ip, controller.vip_data_n2_mac
+
+    from .config import _VIP_DATA_RECOVERY_IDLE_TIMEOUT, _VIP_DATA_RECOVERY_HARD_TIMEOUT
+
+    flows.install_vip_dnat_snat(
+        controller,
+        datapath, in_port, pkt,
+        client_mac=src_mac,
+        client_ip=src_ip,
+        ip_proto=ip_proto,
+        vip_ip=vip_ip,
+        vip_mac=vip_mac,
+        real_backend_ip=storage_ip,
+        real_backend_mac=storage_mac,
+        tcp_src_port=tcp_src_port,
+        tcp_dst_port=tcp_dst_port,
+        idle_timeout=_VIP_DATA_RECOVERY_IDLE_TIMEOUT if recovery else None,
+        hard_timeout=_VIP_DATA_RECOVERY_HARD_TIMEOUT if recovery else None,
+    )
+
+    logger.info(
+        "vip_data(%s): client=%s -> vip=%s -> real=%s recovery=%s",
+        domain, src_ip, vip_ip, storage_ip, recovery,
+    )
+
+    return True
+
+
+# ------------------------------------------------------------------
+# VIP ARP punt rules — send ARP-for-VIP to the controller
+# ------------------------------------------------------------------
+
+def install_vip_arp_punt_rules(controller, datapath) -> None:
+    """Punt ARP requests for VIP IPs to the controller (priority 100).
+
+    Overrides the ARP flood rule (priority 1) installed by the topology
+    mixin.  The controller replies with a crafted ARP reply packet
+    (see _reply_vip_arp).  Pure OFP 1.3 is used throughout — no Nicira
+    extensions required.
+    """
+    parser  = datapath.ofproto_parser
+    ofproto = datapath.ofproto
+
+    for vip_ip, _, _, _ in _iter_vip_bindings(controller):
+        match   = parser.OFPMatch(eth_type=0x0806, arp_tpa=vip_ip)
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+                                          ofproto.OFPCML_NO_BUFFER)]
+        controller._install_flow(datapath, priority=100, match=match, actions=actions)
+
+    logger.info("vip arp punt rules installed: dpid=%s", datapath.id)
+
+
+# ------------------------------------------------------------------
+# VIP IP punt rules — send VIP-destined IP packets to the controller
+# ------------------------------------------------------------------
+
+def install_vip_punt_rules(controller, datapath) -> None:
+    """Punt IPv4 packets destined for VIP addresses to the controller (priority 100).
+
+    Once DNAT rules (priority 200) are installed they take precedence and
+    subsequent packets bypass the controller entirely.  When the DNAT rule
+    expires (idle_timeout or hard_timeout) the punt rule resumes and
+    triggers fresh backend selection.
+    """
+    parser  = datapath.ofproto_parser
+    ofproto = datapath.ofproto
+
+    for vip_ip, _, _, _ in _iter_vip_bindings(controller):
+        match   = parser.OFPMatch(eth_type=0x0800, ipv4_dst=vip_ip)
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+                                          ofproto.OFPCML_NO_BUFFER)]
+        controller._install_flow(datapath, priority=100, match=match, actions=actions)
+
+    logger.info("vip ip punt rules installed: dpid=%s", datapath.id)

@@ -40,8 +40,13 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-readonly CONTROLLER_ENV_SOURCE="${SCRIPTS_DIR}/osken-controller.env"
+readonly DEFAULT_CONTROLLER_ENV_SOURCE="${SCRIPTS_DIR}/osken-controller.env"
+readonly CONTROLLER_ENV_BASE_SOURCE="${OSKEN_ENV_FILE:-${DEFAULT_CONTROLLER_ENV_SOURCE}}"
+readonly CONTROLLER_ENV_OVERRIDE_SOURCE="${OSKEN_ENV_OVERRIDE_FILE:-}"
 readonly RUN_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+TEMP_CONTROLLER_ENV_SOURCE=""
+CONTROLLER_ENV_BASE_RESOLVED=""
+CONTROLLER_ENV_OVERRIDE_RESOLVED=""
 
 # ---------------------------------------------------------------------------
 # Configuration — edit these to match your experiment
@@ -168,6 +173,171 @@ require_positive_int "--clients-per-lan" "$CLIENTS_PER_LAN"
 require_positive_int "--seed-devices" "$SEED_DEVICES"
 require_positive_int "--seed-nodes" "$SEED_NODES"
 
+resolve_path_from_scripts_dir() {
+    local path="$1"
+
+    if [[ -z "$path" ]]; then
+        printf '%s\n' ""
+        return 0
+    fi
+
+    if [[ "$path" == /* ]]; then
+        printf '%s\n' "$path"
+        return 0
+    fi
+
+    printf '%s\n' "${SCRIPTS_DIR}/${path#./}"
+}
+
+apply_env_override_file() {
+    local target_path="$1"
+    local override_path="$2"
+    local line=""
+    local key=""
+    local temp_path=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        if [[ "$line" != *=* ]]; then
+            die "invalid controller env override line: ${line}"
+        fi
+
+        key="${line%%=*}"
+        temp_path="$(mktemp)"
+        awk -v key="$key" -v newline="$line" '
+            $0 ~ "^" key "=" { next }
+            { print }
+            END { print newline }
+        ' "$target_path" > "$temp_path"
+        mv "$temp_path" "$target_path"
+    done < "$override_path"
+}
+
+validate_env_override_file() {
+    local target_path="$1"
+    local override_path="$2"
+    local line=""
+
+    [[ -n "$override_path" ]] || return 0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        if ! grep -Fxq "$line" "$target_path"; then
+            die "controller env override was not applied: ${line}"
+        fi
+    done < "$override_path"
+}
+
+write_controller_env_snapshot() {
+    local output_path="$1"
+    local container_name="${2:-osken}"
+    local temp_env_path=""
+    local line=""
+    local key=""
+    local matched_line=""
+
+    temp_env_path="$(mktemp)"
+    docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_name" > "$temp_env_path" \
+        || die "failed to inspect controller container env: ${container_name}"
+
+    {
+        printf '# Snapshot base source: %s\n' "$CONTROLLER_ENV_BASE_RESOLVED"
+        printf '# Snapshot override source: %s\n' "${CONTROLLER_ENV_OVERRIDE_RESOLVED:-<none>}"
+        printf '# Snapshot runtime container: %s\n' "$container_name"
+        printf '# Snapshot requested source: %s\n' "$CONTROLLER_ENV_SOURCE"
+
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line%$'\r'}"
+            if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+                continue
+            fi
+
+            key="${line%%=*}"
+            matched_line="$(awk -F= -v key="$key" '$1 == key { print; exit }' "$temp_env_path")"
+            if [[ -n "$matched_line" ]]; then
+                printf '%s\n' "$matched_line"
+            else
+                printf '%s\n' "$line"
+            fi
+        done < "$CONTROLLER_ENV_SOURCE"
+    } > "$output_path"
+
+    rm -f "$temp_env_path"
+}
+
+validate_controller_container_env() {
+    local container_name="$1"
+    local temp_env_path=""
+    local line=""
+    local key=""
+    local expected_line=""
+    local actual_line=""
+
+    temp_env_path="$(mktemp)"
+    docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_name" > "$temp_env_path" \
+        || die "failed to inspect controller container env: ${container_name}"
+
+    # Validate every non-blank, non-comment line from the resolved controller
+    # env source (already merged with any override by prepare_controller_env_source).
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        key="${line%%=*}"
+        expected_line="$line"
+        actual_line="$(awk -F= -v key="$key" '$1 == key { print; exit }' "$temp_env_path")"
+        if [[ "$actual_line" != "$expected_line" ]]; then
+            rm -f "$temp_env_path"
+            die "controller env mismatch for ${container_name}: expected '${expected_line}', got '${actual_line:-<unset>}'"
+        fi
+    done < "$CONTROLLER_ENV_SOURCE"
+
+    rm -f "$temp_env_path"
+}
+
+prepare_controller_env_source() {
+    local base_env_path=""
+    local override_env_path=""
+
+    base_env_path="$(resolve_path_from_scripts_dir "$CONTROLLER_ENV_BASE_SOURCE")"
+    override_env_path="$(resolve_path_from_scripts_dir "$CONTROLLER_ENV_OVERRIDE_SOURCE")"
+    CONTROLLER_ENV_BASE_RESOLVED="$base_env_path"
+    CONTROLLER_ENV_OVERRIDE_RESOLVED="$override_env_path"
+
+    [[ -f "$base_env_path" ]] || die "Controller env not found: $base_env_path"
+
+    if [[ -z "$override_env_path" ]]; then
+        CONTROLLER_ENV_SOURCE="$base_env_path"
+        return 0
+    fi
+
+    [[ -f "$override_env_path" ]] || die "Controller env override not found: $override_env_path"
+    TEMP_CONTROLLER_ENV_SOURCE="$(mktemp)"
+    cp "$base_env_path" "$TEMP_CONTROLLER_ENV_SOURCE"
+    apply_env_override_file "$TEMP_CONTROLLER_ENV_SOURCE" "$override_env_path"
+    validate_env_override_file "$TEMP_CONTROLLER_ENV_SOURCE" "$override_env_path"
+    CONTROLLER_ENV_SOURCE="$TEMP_CONTROLLER_ENV_SOURCE"
+    echo "Controller env merged : ${override_env_path} -> ${CONTROLLER_ENV_BASE_RESOLVED}" >&2
+}
+
+cleanup_temp_controller_env() {
+    if [[ -n "$TEMP_CONTROLLER_ENV_SOURCE" && -f "$TEMP_CONTROLLER_ENV_SOURCE" ]]; then
+        rm -f "$TEMP_CONTROLLER_ENV_SOURCE"
+    fi
+}
+
+prepare_controller_env_source
+
 readonly RUN_ID="${RUN_TIMESTAMP}${RUN_LABEL:+_${RUN_LABEL}}"
 readonly METRICS_ROOT="${SCRIPT_DIR}/metrics"
 readonly RUN_PARENT_DIR="${METRICS_ROOT}${BATCH_DIR:+/${BATCH_DIR}}"
@@ -185,7 +355,12 @@ fi
 
 # Resource stats collector outputs
 RESOURCE_STATS_OUTPUT="${RUN_DIR}/resource_stats.csv"
+RESOURCE_STATS_DEBUG_OUTPUT="${RUN_DIR}/resource_stats_debug.csv"
 PHASE_FILE="${RUN_DIR}/current_phase.txt"
+
+# Post-run reconstructed artifacts
+POLICY_STATE_OUTPUT="${RUN_DIR}/policy_state.csv"
+ELASTICITY_EVENTS_OUTPUT="${RUN_DIR}/elasticity_events.csv"
 
 # Container life-cycle poller (diff-based docker ps)
 CONTAINER_EVENTS_OUTPUT="${RUN_DIR}/container_events.csv"
@@ -210,11 +385,13 @@ prepare_run_outputs() {
     mkdir -p "$RUN_DIR"
     [[ -f "$PHASES_CONFIG" ]] || die "Phase config not found: $PHASES_CONFIG"
     [[ -f "$CONTROLLER_ENV_SOURCE" ]] || die "Controller env not found: $CONTROLLER_ENV_SOURCE"
+    validate_controller_container_env "osken"
+    validate_controller_container_env "osken_2"
     if [[ -n "$FAULT_PLAN" ]]; then
         [[ -f "$FAULT_PLAN" ]] || die "Fault plan not found: $FAULT_PLAN"
     fi
     cp "$PHASES_CONFIG" "$PHASES_SNAPSHOT_OUTPUT"
-    cp "$CONTROLLER_ENV_SOURCE" "$CONTROLLER_ENV_SNAPSHOT_OUTPUT"
+    write_controller_env_snapshot "$CONTROLLER_ENV_SNAPSHOT_OUTPUT" "osken"
     if [[ -n "$FAULT_PLAN" ]]; then
         cp "$FAULT_PLAN" "$FAULT_PLAN_SNAPSHOT_OUTPUT"
     fi
@@ -223,6 +400,9 @@ prepare_run_outputs() {
     echo "  Run label  : ${RUN_LABEL:-<none>}"
     echo "  Phase copy : ${PHASES_SNAPSHOT_OUTPUT}"
     echo "  Env copy   : ${CONTROLLER_ENV_SNAPSHOT_OUTPUT}"
+    echo "  Env base   : ${CONTROLLER_ENV_BASE_RESOLVED}"
+    echo "  Env override: ${CONTROLLER_ENV_OVERRIDE_RESOLVED:-<none>}"
+    echo "  Env source : ${CONTROLLER_ENV_SOURCE}"
     if [[ -n "$FAULT_PLAN" ]]; then
         echo "  Fault copy : ${FAULT_PLAN_SNAPSHOT_OUTPUT}"
         echo "  Fault log  : ${FAULT_EVENTS_OUTPUT}"
@@ -302,12 +482,14 @@ run_collect_stats() {
     echo "  LAN1 coord: ${LAN1_COORD_PUB}"
     echo "  LAN2 coord: ${LAN2_COORD_PUB}"
     echo "  Output   : ${RESOURCE_STATS_OUTPUT}"
+    echo "  Debug    : ${RESOURCE_STATS_DEBUG_OUTPUT}"
     python3 "${SCRIPT_DIR}/collect_resource_stats.py" \
         --lan1-pub "$LAN1_PUB" \
         --lan2-pub "$LAN2_PUB" \
         --lan1-coord-pub "$LAN1_COORD_PUB" \
         --lan2-coord-pub "$LAN2_COORD_PUB" \
-        --output   "$RESOURCE_STATS_OUTPUT" \
+        --output       "$RESOURCE_STATS_OUTPUT" \
+        --output-debug "$RESOURCE_STATS_DEBUG_OUTPUT" \
         --phase-file "$PHASE_FILE" &
     STATS_PID=$!
     echo "  Collector PID: ${STATS_PID}"
@@ -448,6 +630,45 @@ run_traffic() {
 }
 
 # ---------------------------------------------------------------------------
+# Post-run artifact generation (Step 8 — policy_state.csv reconstruction)
+# ---------------------------------------------------------------------------
+
+generate_elasticity_events() {
+    step "Generating elasticity events from controller logs"
+    echo "  LAN1 log : ${CONTROLLER_LOG_LAN1}"
+    echo "  LAN2 log : ${CONTROLLER_LOG_LAN2}"
+    echo "  Output   : ${ELASTICITY_EVENTS_OUTPUT}"
+    python3 "${SCRIPTS_DIR}/tools/parse_elasticity_logs.py" \
+        "$CONTROLLER_LOG_LAN1" \
+        "$CONTROLLER_LOG_LAN2" \
+        -o "$ELASTICITY_EVENTS_OUTPUT" \
+        || echo "  WARNING: elasticity event generation failed (non-fatal)" >&2
+}
+
+generate_policy_state() {
+    step "Reconstructing policy state from run artifacts"
+    echo "  Resource stats  : ${RESOURCE_STATS_OUTPUT}"
+    echo "  Resource debug  : ${RESOURCE_STATS_DEBUG_OUTPUT}"
+    echo "  Per-node stats  : ${RUN_DIR}/per_node_stats.csv"
+    echo "  Container events: ${CONTAINER_EVENTS_OUTPUT}"
+    echo "  Controller env  : ${CONTROLLER_ENV_SNAPSHOT_OUTPUT}"
+    echo "  Elasticity evts : ${ELASTICITY_EVENTS_OUTPUT}"
+    echo "  Controller logs : ${CONTROLLER_LOG_LAN1}, ${CONTROLLER_LOG_LAN2}"
+    echo "  Output          : ${POLICY_STATE_OUTPUT}"
+    python3 "${SCRIPTS_DIR}/tools/reconstruct_policy_state.py" \
+        --resource-stats       "$RESOURCE_STATS_OUTPUT" \
+        --resource-stats-debug "$RESOURCE_STATS_DEBUG_OUTPUT" \
+        --per-node-stats       "${RUN_DIR}/per_node_stats.csv" \
+        --container-events     "$CONTAINER_EVENTS_OUTPUT" \
+        --controller-env       "$CONTROLLER_ENV_SNAPSHOT_OUTPUT" \
+        --elasticity-events    "$ELASTICITY_EVENTS_OUTPUT" \
+        --controller-log-lan1  "$CONTROLLER_LOG_LAN1" \
+        --controller-log-lan2  "$CONTROLLER_LOG_LAN2" \
+        --output               "$POLICY_STATE_OUTPUT" \
+        || echo "  WARNING: policy state reconstruction failed (non-fatal)" >&2
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -471,7 +692,7 @@ echo " Dry-run     : ${DRY_RUN}"
 echo "======================================================"
 
 # Stop the run-scoped helpers on any exit (normal, error, or signal)
-trap 'stop_fault_injector; stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats' EXIT
+trap 'stop_fault_injector; stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats; cleanup_temp_controller_env' EXIT
 
 prepare_run_outputs
 "$SKIP_CLIENTS"  || run_create_clients
@@ -488,11 +709,18 @@ stop_poll_container_events
 stop_capture_service_logs
 stop_collect_stats
 
+# Post-run artifact reconstruction
+generate_elasticity_events
+generate_policy_state
+
 step "Experiment complete"
-echo "Results        : ${METRICS_OUTPUT}"
-echo "Resource stats : ${RESOURCE_STATS_OUTPUT}"
-echo "Container events: ${CONTAINER_EVENTS_OUTPUT}"
-echo "Phase config   : ${PHASES_SNAPSHOT_OUTPUT}"
+echo "Results          : ${METRICS_OUTPUT}"
+echo "Resource stats   : ${RESOURCE_STATS_OUTPUT}"
+echo "Resource debug   : ${RESOURCE_STATS_DEBUG_OUTPUT}"
+echo "Policy state     : ${POLICY_STATE_OUTPUT}"
+echo "Elasticity events: ${ELASTICITY_EVENTS_OUTPUT}"
+echo "Container events : ${CONTAINER_EVENTS_OUTPUT}"
+echo "Phase config     : ${PHASES_SNAPSHOT_OUTPUT}"
 if [[ -n "$FAULT_PLAN" ]]; then
     echo "Fault plan     : ${FAULT_PLAN_SNAPSHOT_OUTPUT}"
     echo "Fault events   : ${FAULT_EVENTS_OUTPUT}"

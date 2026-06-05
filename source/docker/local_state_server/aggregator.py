@@ -441,6 +441,19 @@ def _publish_loop() -> None:
         median_storage_cpu_percent = statistics.median(storage_cpu_values) if storage_cpu_values else 0.0
         median_storage_ram_used_mb = statistics.median(storage_ram_values) if storage_ram_values else 0.0
 
+        # ── Request-lease outcome counters per LAN (recovery-distress signal) ──
+        # Aggregated across all HTTP events in this window.
+        # Outcome shape: {"lan": "lan1", "outcome": "success_after_rebind", ...}
+        request_lease_outcomes_per_lan: dict[str, dict[str, int]] = {}
+        for ev in http_events:
+            for rlo in ev.get("request_lease_outcomes") or []:
+                lan = rlo.get("lan", "")
+                if not lan:
+                    continue
+                dst = request_lease_outcomes_per_lan.setdefault(lan, {})
+                outcome = rlo.get("outcome", "unknown")
+                dst[outcome] = dst.get(outcome, 0) + 1
+
         summary = {
             "network_id":      NETWORK_ID,
             "window_end":      time.time(),
@@ -465,6 +478,7 @@ def _publish_loop() -> None:
                 "avg_time_db_read_ms":         avg_time_db_read_ms,
                 "avg_time_db_write_ms":        avg_time_db_write_ms,
                 "avg_time_db_cmd_count":       avg_time_db_cmd_count,
+                "request_lease_outcomes_per_lan": request_lease_outcomes_per_lan,
             },
         }
         logger.info(

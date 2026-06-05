@@ -36,13 +36,15 @@ Reference: [`./testing_overview.md`](testing_overview.md).
 
 | Stage | Current | After this plan |
 |---|---|---|
-| Collector `collect_resource_stats.py` | writes `resource_stats.csv` (domain rows) | additionally writes `per_node_stats.csv` (one row per container per window) |
+| Collector `collect_resource_stats.py` | writes `resource_stats.csv` (trimmed) + `resource_stats_debug.csv` (broad) + `per_node_stats.csv` (one row per container per window) | N/A — already implemented |
+| Post-run policy reconstruction | manual log inspection | `reconstruct_policy_state.py` generates `policy_state.csv` from existing artifacts; `parse_elasticity_logs.py` generates `elasticity_events.csv` |
 | Fault injector `fault_injector.py` | not present | optionally writes `experiment_fault_events.csv` when `run_experiment.sh --fault-plan <file>` is used |
-| Post-processing | ad-hoc â€” manual CSV inspection | `python -m source.scripts.testing.analysis.cli_<name> --run-dir <dir>` produces PNGs and a `summary.md` under `<dir>/analysis/`; `cli_simple_compare` writes a separate comparison output directory |
-| Run directory layout | CSVs + controller logs | adds `per_node_stats.csv`, optional `experiment_fault_events.csv`, a `service_logs/` directory for edge/storage container logs, and an `analysis/` subdirectory populated on demand |
+| Post-processing | ad-hoc — manual CSV inspection | `python -m source.scripts.testing.analysis.cli_<name> --run-dir <dir>` produces PNGs and a `summary.md` under `<dir>/analysis/`; `cli_simple_compare` writes a separate comparison output directory |
+| Run directory layout | CSVs + controller logs | standard contract includes `client_requests.csv`, `resource_stats.csv`, `resource_stats_debug.csv`, `policy_state.csv`, `per_node_stats.csv`, `container_events.csv`, `elasticity_events.csv`, controller logs, `controller_env_snapshot.env`, `phases_snapshot.json`, a `service_logs/` directory, and an `analysis/` subdirectory populated on demand |
 
 No change to experiment execution, workload definition, or the traffic
-generator.
+generator. `policy_state.csv` is reconstructed post-run and does not require
+a new controller-side publisher.
 
 ---
 

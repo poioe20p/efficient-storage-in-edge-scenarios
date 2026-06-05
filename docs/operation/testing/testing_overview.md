@@ -78,6 +78,47 @@ VIP\_DATA routing → storage node).
 
 ---
 
+## Standard Run Artifact Contract
+
+After a completed experiment run, the run directory contains these default
+artifacts:
+
+| # | Artifact | Source | Purpose |
+| --- | --- | --- | --- |
+| 1 | `client_requests.csv` | `traffic_generator.py` | Aggregate per-request latency CSV (only default request CSV) |
+| 2 | `resource_stats.csv` | `collect_resource_stats.py` | **Trimmed** per-window domain metrics — raw elasticity inputs and derived helpers only |
+| 3 | `resource_stats_debug.csv` | `collect_resource_stats.py` | **Broad** per-window domain metrics — median-heavy, Tier 1 helpers, decomposed DB timings for deep diagnosis |
+| 4 | `policy_state.csv` | `reconstruct_policy_state.py` (post-run) | Reconstructed per-window per-LAN policy state — scores, thresholds, cooldowns, hit counts, controller annotations |
+| 5 | `per_node_stats.csv` | `collect_resource_stats.py` | Per-container per-window metrics |
+| 6 | `container_events.csv` | `poll_container_events.py` | Docker container lifecycle events |
+| 7 | `elasticity_events.csv` | `parse_elasticity_logs.py` (post-run) | Parsed controller log events (scale-up triggers, spawns, scale-down, timing) |
+| 8 | `controller_lan1.log` | `docker logs -f osken` | Raw SDN controller log for LAN 1 |
+| 9 | `controller_lan2.log` | `docker logs -f osken_2` | Raw SDN controller log for LAN 2 |
+| 10 | `controller_env_snapshot.env` | captured from the running `osken` controller after validating it matches the resolved controller env (shared base env plus optional override); the file also carries base/override provenance comments | Exact thresholds, weights, cooldowns, and caps that were actually present in the controller runtime for the run |
+| 11 | `phases_snapshot.json` | copied from phases config | Phase configuration used for the run |
+| 12 | `service_logs/` | `capture_service_logs.py` | Edge/storage container logs during the run |
+
+Key design decisions:
+
+- **`client_requests_<phase>.csv` files are NOT part of the default contract.**
+  The single `client_requests.csv` carries a `phase` column for phase-scoped
+  analysis.
+- **`resource_stats.csv` is trimmed** to the inputs that actually drive
+  elasticity reasoning (`average_cpu_percent`, `avg_time_proc_ms`,
+  `avg_storage_cpu_percent`, `avg_time_db_ms`, `p95_time_db_ms`,
+  `storage_latency_signal_ms`, plus counts and `avg_repl_lag_ms`).
+- **`resource_stats_debug.csv` preserves the historical broad schema**
+  (median-heavy, Tier 1 columns, decomposed DB timings, RAM) for deep
+  diagnosis.
+- **`policy_state.csv` is reconstructed post-run** from existing artifacts
+  — no new controller-side publisher is required. It is aligned to the
+  10-second telemetry windows and may leave columns blank when a signal
+  is not recoverable without inventing state.
+- **`elasticity_events.csv` is generated post-run** from captured controller
+  logs via `parse_elasticity_logs.py`.
+
+---
+
 ## Client-Facing Workload Requests
 
 The active client workload is deliberately simple and effectively read-only.
@@ -369,26 +410,79 @@ sudo bash source/scripts/testing/trace_request.sh \
 | 4 | Latency recovers after scaling | $T_{total}$ returns toward baseline once new resources are active |
 | 5 | Resources are reclaimed on demand drop | `demand_drop` deliberately lasts long enough to observe the over-provisioned state through cooldown and, when enabled, should trigger scale-in |
 
-### Planned — `tier1_hotspot` scenario
+### Tier 1 Hotspot Companion Profile
 
-A new workload phase targeting the Tier 1 selective-sync path. Design:
+The Tier 1 selective-sync path is now exercised by the bidirectional companion
+profile [phases_experiment_tier1_hotspot_bidirectional.json](../../../source/scripts/testing/phases_experiment_tier1_hotspot_bidirectional.json).
 
-- Pin a small subset of documents (e.g. 30 hot device ids on LAN 1) and
-  generate sustained cross-region read traffic from LAN 2 clients with a
-  write ratio below `SS_WRITE_RATIO_MAX` and read count above
-  `SS_MIN_READS_PER_WINDOW`.
-- Run with `SS_ENABLED=1` and again with `SS_ENABLED=0` as the control.
-- Measure: per-LAN `T_db` p95 across the ramp, the timestamp of
-  `SelectiveSyncAlert` emission, manifest broadcast latency, and Change
-  Stream `lag_s` throughout the `ACTIVE` window. The expected signature is a
-  `T_db`-p95 drop on LAN 2 within ~1–2 telemetry windows after promotion.
-- Teardown path is exercised by tailing off the hotspot below
-  `SS_SCALEDOWN_THRESHOLD` for `SS_SCALEDOWN_WINDOW` consecutive windows and
-  asserting a single `ScaleDownSelectiveAlert` (Phase A) followed by
-  `CleanupSelectiveAlert` (Phase B) on `drain_complete`.
+Recommended launch shape:
+
+- use `CLIENTS=6`, `DEVICES=30`, and `NODES=40` so the current random device
+  picker still concentrates demand on a bounded device set.
+- hold `MAX_DYNAMIC_STORAGE=0` and `MAX_DYNAMIC_COMPUTE=0` constant so Tier 1
+  is isolated from Tier 2 and compute-elasticity churn.
+- run once with `SS_ENABLED=0` as the control and again with `SS_ENABLED=1`
+  for the enabled path.
+- the profile exercises both directions: `tier1_hotspot_n1` for `lan2_to_lan1`
+  and `tier1_hotspot_n2` for `lan1_to_lan2`, each followed by a cooldown long
+  enough to observe selective drain.
+
+Primary measurements:
+
+- per-LAN `T_db` p95 across the hotspot and cooldown windows
+- timestamp of `SelectiveSyncAlert` emission and transition to `ACTIVE`
+- manifest broadcast timing and selective-container lifecycle
+- teardown markers `ScaleDownSelectiveAlert` and `CleanupSelectiveAlert`
+
+Expected signature:
+
+- with `SS_ENABLED=1`, `t_db_p95_ms_peer_lan` should drop within about 1–2
+  telemetry windows after Tier 1 reaches `ACTIVE`
+- with `SS_ENABLED=0`, the same workload should not activate Tier 1 and should
+  preserve the higher cross-region DB-latency profile
 
 Overview docs: [`selective_sync/selective_sync_overview.md`](../selective_sync/selective_sync_overview.md).
 
+Experiment plan: [experiment/stability/tier1_activation/experiment_plan.md](experiment/stability/tier1_activation/experiment_plan.md).
+
+### Integrated Baseline Profile
+
+The integrated readiness gate now uses
+[phases_experiment_integrated_baseline.json](../../../source/scripts/testing/phases_experiment_integrated_baseline.json)
+when one run must exercise Tier 2 storage, Tier 1 selective-sync, and compute
+elasticity together on the same controller snapshot.
+
+Recommended launch shape:
+
+- use `CLIENTS=3`, `DEVICES=600`, and `NODES=100` so the run carries enough
+  storage-locality pressure to exercise Tier 2 while keeping one fixed seeded
+  snapshot for the whole integrated profile.
+- keep the current integrated controller env unchanged, including
+  `SS_ENABLED=1`, `MAX_DYNAMIC_STORAGE=5`, and `MAX_DYNAMIC_COMPUTE=2`.
+- run the same integrated profile at least twice so readiness is judged on
+  repeatability, not on a single lucky activation.
+- treat the storage-trigger and Tier 1 hotspot companion profiles as
+  diagnostic follow-up only when one mechanism fails to trigger under the
+  integrated gate.
+
+Primary measurements:
+
+- `storage_count`, `server_count`, `coord_state_owner_lan`, and
+  `tier1_lifecycle_active_count` from `resource_stats.csv`
+- `DataAlert`, `SelectiveSyncAlert`, `ACTIVE`, `ComputeAlert`, drain, and
+  cleanup markers from the controller logs
+- dynamic add/remove ground truth from `container_events.csv`
+- bounded request failures by phase from `client_requests.csv`
+
+Expected signature:
+
+- storage activates in the storage-locality window and drains by final idle
+- Tier 1 reaches `ACTIVE` in both hotspot directions and later drains cleanly
+- compute elasticity triggers in the dashboard-heavy tail and cleans up by
+  final idle
+
+Experiment plan:
+[experiment/stability/current_state_long_cycle/experiment_plan.md](experiment/stability/current_state_long_cycle/experiment_plan.md).
 ---
 
 ## Experiment Results — Run `20260411_235936`

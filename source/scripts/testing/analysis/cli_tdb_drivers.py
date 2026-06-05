@@ -86,9 +86,18 @@ def fit_tdb_write_model(run) -> dict | None:
 
     Returns None with a warning when the avg_time_db_write_ms column is absent.
     """
-    has_write = any(
+    # Prefer debug_rows for decomposed DB fields when domain_rows doesn't have them
+    db_rows = run.domain_rows
+    has_write_in_domain = any(
         row.get("avg_time_db_write_ms") not in ("", None)
         for row in run.domain_rows
+    )
+    if not has_write_in_domain and run.debug_rows:
+        db_rows = run.debug_rows
+
+    has_write = any(
+        row.get("avg_time_db_write_ms") not in ("", None)
+        for row in db_rows
     )
     if not has_write:
         warnings.warn(
@@ -110,7 +119,7 @@ def fit_tdb_write_model(run) -> dict | None:
 
     X: list[list[float]] = []
     y: list[float] = []
-    for r in run.domain_rows:
+    for r in db_rows:
         tw = r.get("avg_time_db_write_ms")
         if tw in ("", None):
             continue
@@ -178,8 +187,16 @@ def run(run_dir: Path) -> None:
     elif b_sc <= 0:
         print("  \u2713  b_storage_count <= 0: storage scale-up does not worsen write latency.")
 
+    # Prefer debug_rows for DB decomposition fields
+    db_rows = r.debug_rows if r.debug_rows and not any(
+        row.get("avg_time_db_write_ms") not in ("", None) for row in r.domain_rows
+    ) else r.domain_rows
+    # db_rows and domain_rows correspond to the same windows — use both as needed
+    _db = db_rows  # alias for decomposed fields
+    _dom = r.domain_rows  # alias for domain-level fields
+
     # ── Scatter: T_db_write vs storage_count ────────────────────────────────
-    t_domain = [_safe_float(row.get("window_end", 0)) - r.t0 for row in r.domain_rows]
+    t_domain = [_safe_float(row.get("window_end", 0)) - r.t0 for row in _dom]
     bounds = phase_boundaries(r.t0, r.phases)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
@@ -187,20 +204,19 @@ def run(run_dir: Path) -> None:
 
     # Scatter: T_db_write vs storage_count
     ax = axes[0]
-    xs = [_safe_float(row.get("storage_count", 0)) for row in r.domain_rows]
-    ys = [_safe_float(row.get("avg_time_db_write_ms", 0)) for row in r.domain_rows]
-    phases_col = {row.get("phase", "") for row in r.domain_rows}
+    phases_col = {row.get("phase", "") for row in _dom}
     colours = ["#1a7abf", "#bf5a1a", "#1abf4a", "#bf1a8c", "#8c1abf", "#4abf1a", "#1a4abf", "#bf1a1a"]
     colour_map = {ph: colours[i % len(colours)] for i, ph in enumerate(sorted(phases_col))}
-    for row in r.domain_rows:
+    for i, row in enumerate(_dom):
         ph = row.get("phase", "")
+        db_row = _db[i] if i < len(_db) else {}
         ax.scatter(
             _safe_float(row.get("storage_count", 0)),
-            _safe_float(row.get("avg_time_db_write_ms", 0)),
+            _safe_float(db_row.get("avg_time_db_write_ms", 0)),
             color=colour_map.get(ph, "#888888"), s=8, alpha=0.6,
         )
     # Regression line
-    sc_range = sorted({_safe_float(row.get("storage_count", 0)) for row in r.domain_rows})
+    sc_range = sorted({_safe_float(row.get("storage_count", 0)) for row in _dom})
     if sc_range:
         reg_x = [sc_range[0], sc_range[-1]]
         reg_y = [intercept + b_sc * x for x in reg_x]
@@ -213,8 +229,8 @@ def run(run_dir: Path) -> None:
 
     # Time series: T_db_write over time
     ax = axes[1]
-    tw_series = [_safe_float(row.get("avg_time_db_write_ms", 0)) for row in r.domain_rows]
-    tr_series = [_safe_float(row.get("avg_time_db_read_ms", 0)) for row in r.domain_rows]
+    tw_series = [_safe_float(row.get("avg_time_db_write_ms", 0)) for row in _db]
+    tr_series = [_safe_float(row.get("avg_time_db_read_ms", 0)) for row in _db]
     ax.plot(t_domain, tw_series, color="#bf5a1a", label="T_db_write")
     ax.plot(t_domain, tr_series, color="#1a7abf", label="T_db_read")
     ax.set_xlabel("time (s)")

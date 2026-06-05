@@ -18,8 +18,25 @@ yield points.
 ## Architecture Summary
 
 `VipRoutingMixin` must sit **before** `TopologyMixin` in the class MRO so that
-its `_on_datapath_connected` hook runs first and installs VIP punt rules after
-a switch reconnect.
+its `_on_datapath_connected` override is the cooperative hook reached by the
+topology reconnect path after stale flows are flushed and the table-miss rule
+is reinstalled.
+
+### Internal Implementation Split
+
+The public `VipRoutingMixin` in `source/sdn_controller/vip_routing.py` is now a
+thin facade. It preserves the controller-facing API and cooperative lifecycle
+hooks while delegating implementation to the private
+`source/sdn_controller/_vip_routing/` package:
+
+- `config.py` -- shared constants, logger, and `WarmLease`
+- `state.py` -- controller-owned mutable state, backend lifecycle hooks, and
+  telemetry cache updates
+- `selection.py` -- server and storage selection, warm-lease claiming,
+  recovery filtering, and round-robin tie-breaking
+- `flows.py` -- DNAT/SNAT flow construction and first-packet `PacketOut`
+- `ingress.py` -- ARP snooping, VIP packet dispatch, ARP replies, and punt
+  rule installation
 
 ### Thread 1 -- VIP Interception and Routing
 
@@ -63,7 +80,7 @@ differs.
 ## Document Map
 
 | Topic | Document |
-|-------|----------|
+| ----- | -------- |
 | VIP interception, ARP handling, punt rules, DNAT/SNAT installation, and flow priorities | [VIP Interception and Flow Rules](vip_routing_interception_and_flow_rules.md) |
 | Backend selection (WSM scoring), warm leases, and controller lifecycle hooks | [Backend Selection and Warm Leases](vip_routing_backend_selection_and_warm_leases.md) |
 | Cross-network forwarding, backend IP/MAC resolution, and router-MAC return path | [Cross-Network Forwarding and Backend Resolution](vip_routing_cross_network_forwarding_and_backend_resolution.md) |
@@ -74,7 +91,7 @@ differs.
 ## Diagram Map
 
 | Diagram | File |
-|---------|------|
+| ------- | ---- |
 | VIP_SERVER routing (client to edge server) | [`diagram/vip_server_routing.drawio`](diagram/vip_server_routing.drawio) |
 | VIP_DATA routing (edge server to storage) | [`diagram/vip_data_routing.drawio`](diagram/vip_data_routing.drawio) |
 
@@ -96,9 +113,10 @@ reads and every write fall through to `VIP_DATA_N*` as normal. See the
 ## Current Implementation Reference
 
 | Reference | File |
-|-----------|------|
-| Controller-side VIP routing mixin | `source/sdn_controller/vip_routing.py` |
+| --------- | ---- |
+| Controller-side VIP routing facade | `source/sdn_controller/vip_routing.py` |
+| Controller-side VIP routing internals | `source/sdn_controller/_vip_routing/config.py`, `source/sdn_controller/_vip_routing/state.py`, `source/sdn_controller/_vip_routing/selection.py`, `source/sdn_controller/_vip_routing/flows.py`, `source/sdn_controller/_vip_routing/ingress.py` |
 | Controller entry points (MRO, telemetry callback) | `source/sdn_controller/main_n1.py`, `source/sdn_controller/main_n2.py` |
-| Edge-side epoch model baseline (current implementation detail) | [`implementation/vip_data_recovery_epoch_model.md`](implementation/vip_data_recovery_epoch_model.md) |
 | Edge server VIP_DATA runtime | `source/docker/edge_server/source/vip_data_mongo_runtime.py` |
+| Edge server control-plane VIP update route | `source/docker/edge_server/source/control_plane_routes.py` |
 | Edge server app and routes | `source/docker/edge_server/source/app.py` |

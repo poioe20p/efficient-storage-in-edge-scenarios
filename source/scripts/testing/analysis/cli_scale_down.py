@@ -37,14 +37,23 @@ def _safe_float(v, default: float = 0.0) -> float:
         return default
 
 
+def _col(row: dict, *names: str, default=0.0):
+    """Return the first available column value from *names* (backward compat)."""
+    for name in names:
+        val = row.get(name)
+        if val is not None and str(val).strip() != "":
+            return _safe_float(val, default)
+    return default
+
+
 def predicate_timeline(run) -> list[dict]:
     """Reconstruct the per-window predicate state from domain_rows."""
     rows = []
     for r in run.domain_rows:
-        cpu   = _safe_float(r.get("median_cpu_percent", 0))
-        proc  = _safe_float(r.get("median_time_proc_ms", 0))
-        stcpu = _safe_float(r.get("median_storage_cpu_percent", 0))
-        tdb   = _safe_float(r.get("median_time_db_ms", 0))
+        cpu   = _col(r, "average_cpu_percent", "median_cpu_percent")
+        proc  = _col(r, "avg_time_proc_ms", "median_time_proc_ms")
+        stcpu = _col(r, "avg_storage_cpu_percent", "median_storage_cpu_percent")
+        tdb   = _col(r, "avg_time_db_ms", "median_time_db_ms")
 
         ceiling_skip_compute = proc > SCALE_DOWN_PROC_TIMEOUT_CEILING_MS
         ceiling_skip_storage = tdb  > SCALE_DOWN_DB_TIMEOUT_CEILING_MS
@@ -194,9 +203,9 @@ def run(run_dir: Path) -> None:
 
     # Panel 2: raw metric values vs thresholds
     ax = axes[2]
-    cpu_vals = [_safe_float(row.get("median_cpu_percent")) for row in r.domain_rows]
-    proc_vals = [_safe_float(row.get("median_time_proc_ms")) for row in r.domain_rows]
-    tdb_vals = [_safe_float(row.get("median_time_db_ms")) for row in r.domain_rows]
+    cpu_vals = [_col(row, "average_cpu_percent", "median_cpu_percent") for row in r.domain_rows]
+    proc_vals = [_col(row, "avg_time_proc_ms", "median_time_proc_ms") for row in r.domain_rows]
+    tdb_vals = [_col(row, "avg_time_db_ms", "median_time_db_ms") for row in r.domain_rows]
     ax.plot(t_domain, cpu_vals, color="#1a7abf", linewidth=0.8, label="CPU %")
     ax.axhline(TAU_CPU_DOWN, color="#1a7abf", linestyle="--", linewidth=0.6)
     ax.plot(t_domain, tdb_vals, color="#bf5a1a", linewidth=0.8, label="T_db ms")

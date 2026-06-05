@@ -116,6 +116,17 @@ class ScalingPolicy:
     def storage_scaleup_cooldown_remaining(self) -> float:
         return max(0.0, _SCALEUP_STORAGE_COOLDOWN_S - (time.monotonic() - self._last_storage_scale_up_ts))
 
+    def record_storage_activation(self) -> None:
+        """Bookkeeping after a reserve activation: reset cooldown and scale-down window.
+
+        Called by the mediator after a reserved storage node is consumed
+        into active service. This is the same cross-direction reset that a
+        normal ``DataAlert`` submission would trigger inside
+        ``_evaluate_storage_scale_up``.
+        """
+        self._last_storage_scale_up_ts = time.monotonic()
+        self.clear_scale_down_storage_window()
+
     # ── Scale-up evaluation ──────────────────────────────────────────────
 
     def evaluate_scale_up(self, ds: DomainSummary, lan: int, network_id: str,

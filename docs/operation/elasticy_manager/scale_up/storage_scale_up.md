@@ -50,6 +50,57 @@ direction before the Tier 2 spawn. Today all `DataAlert`s are same-LAN, so
 this branch is inert. See
 [`selective_sync_overview.md`](../../selective_sync/selective_sync_overview.md).
 
+### 2.1 Persistent Reserve Model
+
+When `STORAGE_PERSISTENT_RESERVE_ENABLED=1`, the first same-LAN storage
+scale-up action changes from "spawn a new active storage node" to
+"activate the ready reserve, then replenish". This removes the first-step
+readiness gap from the critical path.
+
+**Reserve lifecycle per LAN:**
+
+1. Thread 2 maintains one `StorageReserveSlot` per LAN.
+2. When the slot is `NONE` and a PRIMARY is visible, Thread 2 submits
+   `PrepareStandbyStorageAlert` to Thread 3.
+3. Thread 3 creates a real `SECONDARY` via the existing storage add path,
+   with `standby_reserved=True` and heartbeat enabled. The node stays
+   **outside** `VIP_DATA`.
+4. When the sidecar reports `rs_secondary_ready`, the control-event
+   dispatcher marks the slot `READY_RESERVED` instead of adding the node
+   to VIP.
+5. The first same-LAN `DataAlert` or recovery-distress signal activates
+   the ready reserve immediately (adds to VIP, clears `standby_reserved`,
+   resets cooldowns).
+6. Replenishment starts immediately after activation or reserve loss.
+7. Only one reserve preparation may be in flight per LAN at a time.
+8. Ordinary storage scale-down is blocked unless a `READY_RESERVED` slot
+   exists after the removal (reserve floor).
+
+**Reserve slot states:**
+
+| State | Meaning | Counts as active | Eligible for VIP |
+|-------|---------|:---:|:---:|
+| `NONE` | No reserve exists | No | No |
+| `PREPARING` | Creation in flight | No | No |
+| `READY_RESERVED` | Ready, heartbeating, outside VIP | No | No |
+
+**Log markers (stable):**
+
+```text
+[reserve] prepare_submitted lan=%d
+[reserve] ready_reserved lan=%d name=%s ip=%s mac=%s
+[reserve] activated lan=%d name=%s ip=%s mac=%s reason=%s
+[reserve] waiting_ready lan=%d reason=%s
+[reserve] lost lan=%d mac=%s
+[reserve] replenish_submitted lan=%d
+```
+
+Source: [`source/sdn_controller/node_registry.py`](../../../source/sdn_controller/node_registry.py),
+[`source/sdn_controller/elasticity/elasticity.py`](../../../source/sdn_controller/elasticity/elasticity.py),
+[`source/sdn_controller/control_events.py`](../../../source/sdn_controller/control_events.py),
+[`source/sdn_controller/main_n1.py`](../../../source/sdn_controller/main_n1.py),
+[`source/sdn_controller/main_n2.py`](../../../source/sdn_controller/main_n2.py)
+
 ---
 
 ## 3. Storage Degradation Score

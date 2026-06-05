@@ -12,7 +12,7 @@ running network.
 
 ## Architecture: Three-Thread Interaction
 
-```
+```text
 Thread 2 (Observer/ZMQ)     Thread 3 (Elasticity Mgr)      Infrastructure
        │                              │
        │── Alert(type, lan) ─────────►│
@@ -82,6 +82,7 @@ lives in
 
 - [Scale-down instrumentation](implementation/scale_down_instrumentation.md) — DEBUG/INFO observability for the scale-down decision path.
 - [Metric drivers investigation](implementation/plans/metric_drivers_investigation_plan.md) — umbrella investigation into what drives CPU / T_db / T_proc.
+- [Storage persistent reserve](implementation/storage_persistent_reserve/README.md) — phased implementation plan for a persistent same-LAN storage reserve that activates on first load or recovery and replenishes immediately after activation.
 - [Compute graceful scale-down](implementation/compute_graceful_scale_down/README.md) — phased implementation for async two-phase drain.
 - [Storage standby-first scale-up](implementation/storage_standby_first_scaleup/README.md) — phased implementation for pre-warmed Tier 2 standbys.
 - [Documentation split](implementation/plans/elasticity_documentation_split_plan.md) — this split plan.

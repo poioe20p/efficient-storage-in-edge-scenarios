@@ -102,6 +102,7 @@ class NodeInfo:
     owner_lan:         str = ""   # selective_storage only: e.g. "lan1"
     spawn_started_monotonic_s: float = 0.0
     ready_logged: bool = False
+    standby_reserved: bool = False  # storage persistent reserve — excluded from VIP & ordinary accounting
 
 
 def log_ready_timing(

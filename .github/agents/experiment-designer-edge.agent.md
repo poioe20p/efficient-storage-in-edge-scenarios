@@ -19,7 +19,7 @@ You only design and author plans. You do **not** execute experiments (use **Edge
   - `experiment_plan.md` — intent, hypothesis, variable, focus, success criteria, and links (the entry point)
   - `run_matrix.md` — detailed per-run configuration when there are many runs
   - `analysis_focus.md` — detailed evidence/metric breakdown when it would crowd the main file
-  Do not split a small experiment; one file is the default.
+    Do not split a small experiment; one file is the default.
 
 ## Before Writing — Ground the Plan
 
@@ -50,7 +50,7 @@ Author `experiment_plan.md` with these sections:
    - Provide the concrete `sudo -n make ... run_experiment RUN_LABEL=<label> ...` or `run_experiment.sh` invocation per run.
 7. **Focus & Evidence** — the part the analyst must center on. Be explicit about which artifacts carry the answer and what each shows:
    - **Latency files** — `client_requests.csv` (per-phase/LAN/endpoint p95/p99, failures) via `metrics_stats.py`
-   - **Resource files** — `resource_stats.csv`, `per_node_stats.csv` (CPU/RAM, balance, `server_count`/`storage_count`, phase)
+   - **Resource files** — `resource_stats.csv`, `per_node_stats.csv` (CPU/RAM, balance, `server_count`/`storage_count`, phase), and other files inside the run folder.
    - **Container lifecycle** — `container_events.csv` (spawn/stop, Tier 2 storage, Tier 1 selective-sync anchors)
    - **Controller logs** — `controller_lan1.log`/`controller_lan2.log` (alerts, scale decisions, recovery markers, exceptions) and retained `elasticity_events.csv` / `node_lifecycle_timings.csv`
    - **Phase/workload** — `phases_snapshot.json` for phase order, durations, request mix, cross-region ratios

@@ -59,8 +59,14 @@ class ControlEventDispatcher:
         summary: TelemetrySummary,
         registry: DynamicNodeRegistry,
         add_storage_mac_fn: Callable[[str, str], None],
+        on_reserve_ready_fn: Callable[[str], None] | None = None,
     ) -> None:
-        """Handle rs_secondary_ready control events — add storage node to VIP pool."""
+        """Handle rs_secondary_ready control events.
+
+        Reserved nodes (``standby_reserved=True``) become READY_RESERVED
+        instead of entering VIP. The optional *on_reserve_ready_fn* callback
+        is invoked so the mediator can mark the reserve slot ready.
+        """
         for event in summary.control_events:
             if event.get("event_type") == "rs_secondary_ready":
                 mac = event.get("server_id")
@@ -75,6 +81,17 @@ class ControlEventDispatcher:
                     continue
                 if info.ready_logged:
                     logger.debug("[control] rs_secondary_ready for mac=%s already processed — ignoring", mac)
+                    continue
+                if info.standby_reserved:
+                    # Reserved node — do NOT add to VIP; mark ready instead.
+                    if on_reserve_ready_fn:
+                        on_reserve_ready_fn(mac)
+                    self._log_storage_ready(info, "rs_secondary_ready")
+                    logger.info(
+                        "[control] rs_secondary_ready for reserved mac=%s — "
+                        "marked READY_RESERVED (ip=%s, name=%s)",
+                        mac, info.ip, info.name,
+                    )
                     continue
                 add_storage_mac_fn(mac, f"n{info.lan}")
                 self._log_storage_ready(info, "rs_secondary_ready")
@@ -91,11 +108,12 @@ class ControlEventDispatcher:
         local_storage_macs_n1: set[str],
         local_storage_macs_n2: set[str],
         add_storage_mac_fn: Callable[[str, str], None],
+        on_reserve_ready_fn: Callable[[str], None] | None = None,
     ) -> None:
         """Fallback VIP promotion: detect SECONDARY from regular telemetry.
 
-        If a storage node reports member_state=="SECONDARY" in its aggregated
-        telemetry but has not been added to the VIP pool yet, promote it now.
+        Reserved nodes are gated — they become READY_RESERVED instead of
+        entering VIP.
         """
         for mac, ss in summary.storage_servers.items():
             if ss.member_state != "SECONDARY":
@@ -111,6 +129,17 @@ class ControlEventDispatcher:
                 else mac in local_storage_macs_n2
             )
             if already_in:
+                continue
+            if info.standby_reserved:
+                # Reserved node — do NOT add to VIP; mark ready instead.
+                if on_reserve_ready_fn:
+                    on_reserve_ready_fn(mac)
+                self._log_storage_ready(info, "telemetry_secondary")
+                logger.info(
+                    "[control] promoting reserved storage mac=%s via telemetry fallback "
+                    "— marked READY_RESERVED (ip=%s, name=%s)",
+                    mac, info.ip, info.name,
+                )
                 continue
             add_storage_mac_fn(mac, domain)
             self._log_storage_ready(info, "telemetry_secondary")

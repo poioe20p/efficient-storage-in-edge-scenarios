@@ -284,7 +284,10 @@ rebind per request).
 
 | Reference | File |
 |-----------|------|
-| Edge-side epoch model baseline (this document's primary source) | [`implementation/vip_data_recovery_epoch_model.md`](implementation/vip_data_recovery_epoch_model.md) |
+| Edge-side epoch runtime | `source/docker/edge_server/source/vip_data_mongo_runtime.py` |
+| Edge-side request lifecycle and `T_dados` hook | `source/docker/edge_server/source/edge_request_lifecycle.py` |
+| Edge-side control-plane VIP updates | `source/docker/edge_server/source/control_plane_routes.py` |
+| Controller-side VIP routing overview | [`vip_routing_overview.md`](vip_routing_overview.md) |
 | Controller-side VIP routing (DNAT/SNAT, recovery narrow flow) | [`vip_routing_interception_and_flow_rules.md`](vip_routing_interception_and_flow_rules.md) |
 | Controller-side backend selection and warm leases | [`vip_routing_backend_selection_and_warm_leases.md`](vip_routing_backend_selection_and_warm_leases.md) |
 | System-level mechanisms and request lifecycle | [`../system_mechanisms.md`](../system_mechanisms.md) |
