@@ -79,6 +79,7 @@ class PhaseConfig:
     cross_region_ratio: float
     hotspot_direction: str
     mix: dict
+    client_fraction: float = 1.0
 
     @classmethod
     def from_dict(cls, d: dict) -> "PhaseConfig":
@@ -89,6 +90,7 @@ class PhaseConfig:
             cross_region_ratio=d.get("cross_region_ratio", 0.0),
             hotspot_direction=d.get("hotspot_direction", "lan2_to_lan1"),
             mix=d["mix"],
+            client_fraction=d.get("client_fraction", 1.0),
         )
 
 
@@ -328,9 +330,20 @@ async def run(args):
             with open(phase_state_file, "w") as pf:
                 pf.write(phase.name)
 
+            # Select active client subset for this phase (client_fraction < 1.0
+            # simulates some clients being idle, as in real deployments)
+            fraction = getattr(phase, 'client_fraction', 1.0)
+            if fraction < 1.0:
+                n_active = max(1, int(len(all_clients) * fraction))
+                phase_clients = random.sample(all_clients, n_active)
+            else:
+                phase_clients = all_clients
+
             print(f"\n{'='*60}")
             print(f"Phase {i + 1}/{len(phases)}: {phase.name} ({phase.duration_s}s)")
             print(f"  Output: {args.output}")
+            if fraction < 1.0:
+                print(f"  Clients: {len(phase_clients)}/{len(all_clients)} active (fraction={fraction})")
             print(f"{'='*60}")
 
             tasks = [
@@ -338,7 +351,7 @@ async def run(args):
                     client_loop(ns, lan, phase, snap, args.vip, csv_targets,
                                 csv_lock, args.dry_run)
                 )
-                for ns, lan in all_clients
+                for ns, lan in phase_clients
             ]
             await asyncio.gather(*tasks)
     finally:

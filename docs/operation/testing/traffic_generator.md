@@ -49,13 +49,19 @@ Phase config files:
 
 **Location:** all new files go in `source/scripts/testing/`.
 
-The current phase schema remains intentionally small. The integrated baseline,
-storage-trigger, and Tier 1 hotspot profiles all use the same existing fields.
-The integrated baseline exercises multiple mechanisms by varying phase-local
-rate, mix, cross-region ratio, and hotspot direction inside one run, rather
-than by adding new schema keys. The Tier 1 hotspot profile remains the focused
-companion workload when the operator wants an isolated selective-sync
-diagnostic instead of the integrated readiness gate.
+The current phase schema supports the following fields per phase:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | yes | — | Phase identifier |
+| `duration_s` | int | yes | — | Phase duration in seconds |
+| `rate_per_client` | float | yes | — | Requests per second per active client |
+| `cross_region_ratio` | float | no | `0.0` | Fraction of `device_status` requests targeting the foreign LAN |
+| `hotspot_direction` | string | no | `"lan2_to_lan1"` | Which LAN sends cross-region requests (`"lan2_to_lan1"` or `"lan1_to_lan2"`) |
+| `mix` | dict | yes | — | Weighted distribution of `device_status`, `dashboard`, `service_pressure` |
+| `client_fraction` | float | no | `1.0` | Fraction of total clients active during this phase. A random subset is chosen at phase start. Use `<1.0` to simulate idle clients in non-hotspot phases. |
+
+When `client_fraction` is omitted or `1.0`, all clients are active — identical to previous behavior. The integrated baseline exercises multiple mechanisms by varying phase-local rate, mix, cross-region ratio, hotspot direction, and client fraction inside one run. The Tier 1 hotspot profile remains the focused companion workload when the operator wants an isolated selective-sync diagnostic instead of the integrated readiness gate.
 
 ---
 

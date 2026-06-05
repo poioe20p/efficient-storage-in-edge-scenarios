@@ -15,7 +15,6 @@ class EdgeServerConfig:
     db_port: int
     max_idle_ms: int
     tau_dados_ms: float
-    circuit_cooldown_s: float
     drain_poll_interval_s: float
     drain_quiet_period_s: float
     service_pressure_default_window_min: float
@@ -47,7 +46,6 @@ class EdgeServerConfig:
                 )
             ),
             tau_dados_ms=float(os.environ.get("TAU_DADOS_MS", "65")),
-            circuit_cooldown_s=float(os.environ.get("CIRCUIT_COOLDOWN_S", "5")),
             drain_poll_interval_s=float(os.environ.get("DRAIN_POLL_INTERVAL_S", "0.5")),
             drain_quiet_period_s=float(os.environ.get("DRAIN_QUIET_PERIOD_S", "1.0")),
             service_pressure_default_window_min=service_pressure_default_window_min,

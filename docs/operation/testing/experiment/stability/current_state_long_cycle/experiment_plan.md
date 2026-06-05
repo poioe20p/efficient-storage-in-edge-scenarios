@@ -13,7 +13,7 @@ If the current system state is baseline-ready, two identical runs of the integra
 - Independent variable: run replicate only (`current_state_integrated_a` versus `current_state_integrated_b`).
 - Held constant: current repository HEAD, current container images, the shared base env [osken-controller.env](../../../../../../source/scripts/osken-controller.env) plus the fixed override [current_state_integrated.env](../../../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env), the integrated phase file [phases_experiment_integrated_baseline.json](../../../../../../source/scripts/testing/phases_experiment_integrated_baseline.json), no `--fault-plan`, same operator host/VM, same WAN profile, same launch path, and no code, env, or image changes between the two runs.
 - Held constant controller knobs: use [current_state_integrated.env](../../../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env) unchanged for both replicates so `SS_ENABLED=1`, `MAX_DYNAMIC_STORAGE=5`, and `MAX_DYNAMIC_COMPUTE=2` are fixed without editing the shared base env in place.
-- Held constant workload sizing: `CLIENTS=3`, `DEVICES=600`, `NODES=100` for both runs. The seeded snapshot is large enough to create meaningful storage pressure, while Tier 1 remains compatible with this run shape because promotion is gated by collection-level read volume and cross-region ratio rather than by a per-document minimum-hit threshold.
+- Held constant workload sizing: `CLIENTS=8`, `DEVICES=600`, `NODES=100` for both runs. The phase file uses `client_fraction` (0.5–1.0) to vary how many of the 8 clients are active per phase — hotspot phases use 1.0 (all 8 active), low-load phases use 0.5 (~4 active). This prevents individual client stalls from dominating aggregate failure stats while keeping total load comparable to the previous 3-client baseline. Tier 1 remains compatible because promotion is gated by collection-level read volume and cross-region ratio rather than by a per-document minimum-hit threshold.
 - Abort rule: if any runtime-bearing file, controller env value, or image changes after `current_state_integrated_a`, discard the pair and restart from `current_state_integrated_a` under a new label family.
 
 ## Run Matrix
@@ -31,7 +31,7 @@ Run order is fixed: `current_state_integrated_b` only starts after `current_stat
 - `--phases-config`: `source/scripts/testing/phases_experiment_integrated_baseline.json` via `PHASES_CONFIG=testing/phases_experiment_integrated_baseline.json`.
 - `--run-label`: `current_state_integrated_a` and `current_state_integrated_b`.
 - `--batch-dir`: omitted in the default `make` path.
-- `--clients-per-lan`: `3` via `CLIENTS=3`.
+- `--clients-per-lan`: `8` via `CLIENTS=8`.
 - `--seed-devices`: `600` via `DEVICES=600`.
 - `--seed-nodes`: `100` via `NODES=100`.
 - Skip flags: `SKIP_CLIENTS=1`, `SKIP_SEED=1`, and `SKIP_SNAPSHOT=1` inside `run_experiment`, because the same `make` call already runs `setup_network`, `create_clients`, and `setup_test_data` before `run_experiment`.
@@ -46,14 +46,14 @@ sudo -n make -C source/scripts setup_network create_clients setup_test_data run_
    OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
   RUN_LABEL=current_state_integrated_a \
   PHASES_CONFIG=testing/phases_experiment_integrated_baseline.json \
-  CLIENTS=3 DEVICES=600 NODES=100 \
+  CLIENTS=8 DEVICES=600 NODES=100 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 
 sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
    OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
   RUN_LABEL=current_state_integrated_b \
   PHASES_CONFIG=testing/phases_experiment_integrated_baseline.json \
-  CLIENTS=3 DEVICES=600 NODES=100 \
+  CLIENTS=8 DEVICES=600 NODES=100 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 ```
 
@@ -123,5 +123,14 @@ Expected later analysis outputs:
 - A direct comparison output for `current_state_integrated_a` and `current_state_integrated_b`, preferably using the existing analysis CLIs documented in [analysis_toolchain.md](../../../analysis_toolchain.md).
 - A focused integrated-mechanisms note that records first storage add, first Tier 1 `ACTIVE` window per direction, first compute add, the cleanup sequence, and any residual debt or phase-local failure spikes.
 No additional experiment-specific outputs are required beyond the artifacts and summaries listed above.
+
+## Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-06-05 | Edge server circuit breaker removed (Approach B) | Breaker caused 46.9% false failure rate during normal storage churn. Removed `_CircuitBreaker`, `CircuitOpenError`, replaced with 500ms lightweight failure gate on `_MongoEpoch.last_failure_at`. See [results.md](./results.md) §2–§4 for full investigation and decision record. |
+| 2026-06-05 | CLIENTS=3 → CLIENTS=8; added `client_fraction` to phase file and traffic generator | Individual client stalls at 3 clients dominated aggregate failure stats. 8 clients with per-phase subset selection provides more realistic workload model while keeping total load comparable. |
+| 2026-06-05 | `getMore` cursor failure investigation | Service log analysis revealed 3,257 `getMore` failures (53% of all errors) — pymongo cannot retry cursor continuation. Root cause: VIP routing changes sever in-flight TCP connections between cursor batches. Fix: `batch_size=200` on dashboard `find()` reduces `getMore` calls from ~6 to ≤2. See [results.md](./results.md) §6–§7. |
+| 2026-06-05 | Option B: increased rebind limit for replay-safe reads | `max_rebinds=2` (was 1) for `replay_safe=True` operations. Defense-in-depth alongside `batch_size` fix. |
 <!-- end -->
 

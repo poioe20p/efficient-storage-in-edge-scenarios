@@ -7,7 +7,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, Literal, TypeVar
+from typing import Any, Callable, TypeVar
 
 from flask import g, request
 from pymongo import MongoClient
@@ -26,7 +26,6 @@ DB_PORT = CONFIG.db_port
 MAX_IDLE_MS = CONFIG.max_idle_ms
 MONGO_CLIENT_RETIRE_GRACE_S = CONFIG.mongo_client_retire_grace_s
 VIP_DATA_RECOVERY_SESSION_MAX_AGE_S = CONFIG.vip_data_recovery_session_max_age_s
-CIRCUIT_COOLDOWN_S = CONFIG.circuit_cooldown_s
 
 
 class StorageVipConfigurationError(RuntimeError):
@@ -52,6 +51,7 @@ class _MongoEpoch:
     retire_requested_at: float | None = None
     drain_deadline: float | None = None
     recovery_expires_at: float | None = None
+    last_failure_at: float = 0.0
 
 
 class RequestLeaseLifecycle(Enum):
@@ -78,7 +78,6 @@ class _LanEpochState:
     lifecycle_lock: threading.Lock = field(default_factory=threading.Lock)
     normal_vip_ip: str | None = None
     recovery_vip_ip: str | None = None
-    breaker: "_CircuitBreaker | None" = None
     current: _MongoEpoch | None = None
     retiring: list[_MongoEpoch] = field(default_factory=list)
     next_epoch_id: int = 1
@@ -255,9 +254,14 @@ def _bind_new_request_lease(lan: str) -> RequestLease:
             )
             state.current = current
 
-        breaker = _get_or_create_breaker_locked(state)
-        if not breaker.check():
-            raise CircuitOpenError(f"circuit open for {lan} epoch={current.epoch_id}")
+        # Fast-fail gate: if the last DB operation on this epoch failed within
+        # the last 500ms, reject immediately to prevent thread storms during
+        # genuine outages. pymongo serverSelectionTimeoutMS (3s) handles the
+        # actual health check on the next probe.
+        if time.monotonic() - current.last_failure_at < 0.5:
+            raise PyMongoError(
+                f"epoch {current.epoch_id} for {lan} in cooldown after recent failure"
+            )
 
         now = time.monotonic()
         current.lease_count += 1
@@ -282,7 +286,10 @@ def _get_or_bind_request_lease(lan: str) -> RequestLease:
 
 
 def _rebind_request_lease_after_autoreconnect(lease: RequestLease) -> _MongoEpoch:
-    if lease.rebinds_used >= 1 or not lease.replay_safe:
+    # Replay-safe reads are allowed one extra rebind — the second
+    # attempt picks up a new normal epoch after recovery expiry.
+    max_rebinds = 2 if lease.replay_safe else 1
+    if lease.rebinds_used >= max_rebinds or not lease.replay_safe:
         lease.lifecycle = RequestLeaseLifecycle.FAILED
         lease.terminal_reason = "rebind_not_allowed"
         raise AutoReconnect("request lease cannot rebind again")
@@ -637,93 +644,8 @@ def _accumulate_tdados(lan: str, elapsed: float) -> None:
     per_lan[lan] = per_lan.get(lan, 0.0) + elapsed
 
 
-class _CircuitState(Enum):
-    CLOSED = auto()
-    OPEN = auto()
-    HALF_OPEN = auto()
-
-
-class _CircuitBreaker:
-    """Per-LAN circuit breaker for MongoDB connections."""
-
-    def __init__(self):
-        self.state = _CircuitState.CLOSED
-        self._opened_at: float = 0.0
-        self._lock = threading.Lock()
-
-    def check(self) -> bool:
-        with self._lock:
-            if self.state is _CircuitState.CLOSED:
-                return True
-            if self.state is _CircuitState.OPEN:
-                if time.monotonic() - self._opened_at >= CIRCUIT_COOLDOWN_S:
-                    self.state = _CircuitState.HALF_OPEN
-                    log.info("Circuit -> HALF_OPEN (cooldown elapsed)")
-                    return True
-                return False
-            self.state = _CircuitState.OPEN
-            return True
-
-    def record_success(self) -> None:
-        with self._lock:
-            if self.state is _CircuitState.HALF_OPEN:
-                log.info("Circuit -> CLOSED (probe succeeded)")
-            self.state = _CircuitState.CLOSED
-
-    def record_failure(self) -> None:
-        with self._lock:
-            self.state = _CircuitState.OPEN
-            self._opened_at = time.monotonic()
-
-    def snapshot(self) -> dict[str, float | str]:
-        with self._lock:
-            cooldown_remaining_s = 0.0
-            if self.state is _CircuitState.OPEN:
-                cooldown_remaining_s = max(
-                    0.0,
-                    CIRCUIT_COOLDOWN_S - (time.monotonic() - self._opened_at),
-                )
-            return {
-                "state": self.state.name,
-                "cooldown_remaining_s": round(cooldown_remaining_s, 3),
-            }
-
-
-class CircuitOpenError(PyMongoError):
-    """Raised when the circuit breaker for a LAN is open."""
-
-
-def _get_or_create_breaker_locked(state: _LanEpochState) -> _CircuitBreaker:
-    breaker = state.breaker
-    if breaker is None:
-        breaker = _CircuitBreaker()
-        state.breaker = breaker
-    return breaker
-
-
-def _get_breaker_snapshot(lan: str | None) -> dict[str, float | str]:
-    if not lan:
-        return {"state": "UNKNOWN", "cooldown_remaining_s": 0.0}
-
-    with _epoch_states_registry_lock:
-        state = _epoch_states.get(lan)
-    if state is None:
-        return {"state": "UNKNOWN", "cooldown_remaining_s": 0.0}
-
-    with state.lifecycle_lock:
-        breaker = state.breaker
-        if breaker is None:
-            return {"state": "UNINITIALIZED", "cooldown_remaining_s": 0.0}
-        snapshot = breaker.snapshot()
-    return {
-        "state": str(snapshot["state"]),
-        "cooldown_remaining_s": float(snapshot["cooldown_remaining_s"]),
-    }
-
-
 def log_db_failure(route_name: str, exc: Exception, lan: str | None = None) -> None:
     failure_lan = lan or getattr(g, "db_last_lan", None) or "unknown"
-    breaker_snapshot = _get_breaker_snapshot(None if failure_lan == "unknown" else failure_lan)
     request_epoch = getattr(g, "db_epoch_context", None) or _snapshot_epoch(None)
     current_epoch = (
         _get_current_epoch_snapshot(failure_lan)
@@ -734,7 +656,6 @@ def log_db_failure(route_name: str, exc: Exception, lan: str | None = None) -> N
         "db_failure route=%s request_id=%s method=%s path=%s lan=%s "
         "request_epoch_id=%s request_epoch_mode=%s request_epoch_vip=%s request_epoch_retiring=%s "
         "current_epoch_id=%s current_epoch_mode=%s current_epoch_vip=%s current_epoch_retiring=%s "
-        "breaker_state=%s breaker_cooldown_remaining_s=%.3f "
         "exc_type=%s exc=%s last_cmd=%s last_cmd_db=%s last_cmd_target=%s "
         "last_cmd_failed=%s last_cmd_s=%s tdados_s=%.6f tdb_read_s=%.6f "
         "tdb_write_s=%.6f tdb_cmd_count=%d",
@@ -751,8 +672,6 @@ def log_db_failure(route_name: str, exc: Exception, lan: str | None = None) -> N
         current_epoch["mode"],
         current_epoch["vip_ip"],
         current_epoch["retiring"],
-        breaker_snapshot["state"],
-        float(breaker_snapshot["cooldown_remaining_s"]),
         type(exc).__name__,
         exc,
         getattr(g, "db_last_command", None),
@@ -841,28 +760,6 @@ def _ensure_materialized_result(op_name: str, result: T) -> T:
     return result
 
 
-def _record_breaker_outcome_if_authoritative(
-    lan: str,
-    epoch: _MongoEpoch,
-    *,
-    outcome: Literal["success", "failure"],
-    used_epoch_client: bool = True,
-) -> None:
-    if outcome == "success" and not used_epoch_client:
-        return
-
-    state = _get_lan_epoch_state(lan)
-    with state.lifecycle_lock:
-        current = state.current
-        if current is None or current.epoch_id != epoch.epoch_id:
-            return
-        breaker = _get_or_create_breaker_locked(state)
-        if outcome == "success":
-            breaker.record_success()
-        else:
-            breaker.record_failure()
-
-
 def _run_db_op_once(
     lan: str,
     lease: RequestLease,
@@ -879,15 +776,9 @@ def _run_db_op_once(
         client = _get_or_create_epoch_client(lan, epoch)
         result = fn(client[DB_NAME])
         result = _ensure_materialized_result(op_name, result)
-        _record_breaker_outcome_if_authoritative(
-            lan,
-            epoch,
-            outcome="success",
-            used_epoch_client=getattr(g, "db_used_epoch_client", False),
-        )
         return result
     except AutoReconnect:
-        _record_breaker_outcome_if_authoritative(lan, epoch, outcome="failure")
+        epoch.last_failure_at = time.monotonic()
         raise
     finally:
         _owner_lan.reset(owner_token)
@@ -917,7 +808,8 @@ def run_with_request_lease(
         try:
             return _run_db_op_once(lan, lease, op_name, fn)
         except AutoReconnect:
-            if attempts > 1 or lease.rebinds_used >= 1 or not lease.replay_safe:
+            max_attempts = 2 if replay_safe else 1
+            if attempts > max_attempts or lease.rebinds_used >= max_attempts or not lease.replay_safe:
                 lease.lifecycle = RequestLeaseLifecycle.FAILED
                 lease.terminal_reason = f"{op_name}:terminal_recovery_failure"
                 raise
@@ -952,15 +844,8 @@ def timed_db(lan: str):
         client = _get_or_create_epoch_client(lan, epoch)
         yield client[DB_NAME]
     except AutoReconnect:
-        _record_breaker_outcome_if_authoritative(lan, lease.epoch, outcome="failure")
+        lease.epoch.last_failure_at = time.monotonic()
         raise
-    else:
-        _record_breaker_outcome_if_authoritative(
-            lan,
-            lease.epoch,
-            outcome="success",
-            used_epoch_client=True,
-        )
     finally:
         _owner_lan.reset(owner_token)
         _accumulate_tdados(lan, time.monotonic() - t0)

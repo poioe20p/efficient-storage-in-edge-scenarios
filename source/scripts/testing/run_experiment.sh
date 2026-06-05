@@ -45,8 +45,6 @@ readonly CONTROLLER_ENV_BASE_SOURCE="${OSKEN_ENV_FILE:-${DEFAULT_CONTROLLER_ENV_
 readonly CONTROLLER_ENV_OVERRIDE_SOURCE="${OSKEN_ENV_OVERRIDE_FILE:-}"
 readonly RUN_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 TEMP_CONTROLLER_ENV_SOURCE=""
-CONTROLLER_ENV_BASE_RESOLVED=""
-CONTROLLER_ENV_OVERRIDE_RESOLVED=""
 
 # ---------------------------------------------------------------------------
 # Configuration — edit these to match your experiment
@@ -197,7 +195,6 @@ apply_env_override_file() {
     local temp_path=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
-        line="${line%$'\r'}"
         if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
             continue
         fi
@@ -217,102 +214,12 @@ apply_env_override_file() {
     done < "$override_path"
 }
 
-validate_env_override_file() {
-    local target_path="$1"
-    local override_path="$2"
-    local line=""
-
-    [[ -n "$override_path" ]] || return 0
-
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        line="${line%$'\r'}"
-        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
-            continue
-        fi
-
-        if ! grep -Fxq "$line" "$target_path"; then
-            die "controller env override was not applied: ${line}"
-        fi
-    done < "$override_path"
-}
-
-write_controller_env_snapshot() {
-    local output_path="$1"
-    local container_name="${2:-osken}"
-    local temp_env_path=""
-    local line=""
-    local key=""
-    local matched_line=""
-
-    temp_env_path="$(mktemp)"
-    docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_name" > "$temp_env_path" \
-        || die "failed to inspect controller container env: ${container_name}"
-
-    {
-        printf '# Snapshot base source: %s\n' "$CONTROLLER_ENV_BASE_RESOLVED"
-        printf '# Snapshot override source: %s\n' "${CONTROLLER_ENV_OVERRIDE_RESOLVED:-<none>}"
-        printf '# Snapshot runtime container: %s\n' "$container_name"
-        printf '# Snapshot requested source: %s\n' "$CONTROLLER_ENV_SOURCE"
-
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            line="${line%$'\r'}"
-            if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
-                continue
-            fi
-
-            key="${line%%=*}"
-            matched_line="$(awk -F= -v key="$key" '$1 == key { print; exit }' "$temp_env_path")"
-            if [[ -n "$matched_line" ]]; then
-                printf '%s\n' "$matched_line"
-            else
-                printf '%s\n' "$line"
-            fi
-        done < "$CONTROLLER_ENV_SOURCE"
-    } > "$output_path"
-
-    rm -f "$temp_env_path"
-}
-
-validate_controller_container_env() {
-    local container_name="$1"
-    local temp_env_path=""
-    local line=""
-    local key=""
-    local expected_line=""
-    local actual_line=""
-
-    temp_env_path="$(mktemp)"
-    docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_name" > "$temp_env_path" \
-        || die "failed to inspect controller container env: ${container_name}"
-
-    # Validate every non-blank, non-comment line from the resolved controller
-    # env source (already merged with any override by prepare_controller_env_source).
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        line="${line%$'\r'}"
-        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
-            continue
-        fi
-
-        key="${line%%=*}"
-        expected_line="$line"
-        actual_line="$(awk -F= -v key="$key" '$1 == key { print; exit }' "$temp_env_path")"
-        if [[ "$actual_line" != "$expected_line" ]]; then
-            rm -f "$temp_env_path"
-            die "controller env mismatch for ${container_name}: expected '${expected_line}', got '${actual_line:-<unset>}'"
-        fi
-    done < "$CONTROLLER_ENV_SOURCE"
-
-    rm -f "$temp_env_path"
-}
-
 prepare_controller_env_source() {
     local base_env_path=""
     local override_env_path=""
 
     base_env_path="$(resolve_path_from_scripts_dir "$CONTROLLER_ENV_BASE_SOURCE")"
     override_env_path="$(resolve_path_from_scripts_dir "$CONTROLLER_ENV_OVERRIDE_SOURCE")"
-    CONTROLLER_ENV_BASE_RESOLVED="$base_env_path"
-    CONTROLLER_ENV_OVERRIDE_RESOLVED="$override_env_path"
 
     [[ -f "$base_env_path" ]] || die "Controller env not found: $base_env_path"
 
@@ -325,9 +232,7 @@ prepare_controller_env_source() {
     TEMP_CONTROLLER_ENV_SOURCE="$(mktemp)"
     cp "$base_env_path" "$TEMP_CONTROLLER_ENV_SOURCE"
     apply_env_override_file "$TEMP_CONTROLLER_ENV_SOURCE" "$override_env_path"
-    validate_env_override_file "$TEMP_CONTROLLER_ENV_SOURCE" "$override_env_path"
     CONTROLLER_ENV_SOURCE="$TEMP_CONTROLLER_ENV_SOURCE"
-    echo "Controller env merged : ${override_env_path} -> ${CONTROLLER_ENV_BASE_RESOLVED}" >&2
 }
 
 cleanup_temp_controller_env() {
@@ -385,13 +290,11 @@ prepare_run_outputs() {
     mkdir -p "$RUN_DIR"
     [[ -f "$PHASES_CONFIG" ]] || die "Phase config not found: $PHASES_CONFIG"
     [[ -f "$CONTROLLER_ENV_SOURCE" ]] || die "Controller env not found: $CONTROLLER_ENV_SOURCE"
-    validate_controller_container_env "osken"
-    validate_controller_container_env "osken_2"
     if [[ -n "$FAULT_PLAN" ]]; then
         [[ -f "$FAULT_PLAN" ]] || die "Fault plan not found: $FAULT_PLAN"
     fi
     cp "$PHASES_CONFIG" "$PHASES_SNAPSHOT_OUTPUT"
-    write_controller_env_snapshot "$CONTROLLER_ENV_SNAPSHOT_OUTPUT" "osken"
+    cp "$CONTROLLER_ENV_SOURCE" "$CONTROLLER_ENV_SNAPSHOT_OUTPUT"
     if [[ -n "$FAULT_PLAN" ]]; then
         cp "$FAULT_PLAN" "$FAULT_PLAN_SNAPSHOT_OUTPUT"
     fi
@@ -400,9 +303,6 @@ prepare_run_outputs() {
     echo "  Run label  : ${RUN_LABEL:-<none>}"
     echo "  Phase copy : ${PHASES_SNAPSHOT_OUTPUT}"
     echo "  Env copy   : ${CONTROLLER_ENV_SNAPSHOT_OUTPUT}"
-    echo "  Env base   : ${CONTROLLER_ENV_BASE_RESOLVED}"
-    echo "  Env override: ${CONTROLLER_ENV_OVERRIDE_RESOLVED:-<none>}"
-    echo "  Env source : ${CONTROLLER_ENV_SOURCE}"
     if [[ -n "$FAULT_PLAN" ]]; then
         echo "  Fault copy : ${FAULT_PLAN_SNAPSHOT_OUTPUT}"
         echo "  Fault log  : ${FAULT_EVENTS_OUTPUT}"

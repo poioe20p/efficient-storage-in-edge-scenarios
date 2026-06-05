@@ -184,6 +184,7 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
                                     "region_origin": 1,
                                     "last_updated": 1,
                                 },
+                                batch_size=200,
                             )
                         ),
                     )

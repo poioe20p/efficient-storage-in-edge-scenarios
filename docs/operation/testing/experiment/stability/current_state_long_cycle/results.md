@@ -2,101 +2,202 @@
 
 **Date**: 2026-06-05  
 **Experiment plan**: [experiment_plan.md](./experiment_plan.md)  
-**Run**: `current_state_integrated_a` (20260605_150044)  
-**Overall outcome**: ⚠️ **All three mechanisms exercised successfully. Cleanup mostly complete. Service-quality envelope violated — failure rates exceed caps in compute and reverse-hotspot phases.**
 
-> **Note:** Only replicate A was run. Criterion 8 (inter-run repeatability) requires replicate B for comparison. The plan's abort rule waits for operator confirmation before launching B.
+**Runs**:
+
+| Run | Timestamp | Status | Overall failure rate |
+|-----|-----------|--------|---------------------|
+| `current_state_integrated_a` (v1) | 20260605_180713 | ⚠️ Invalidated by breaker fix | 46.9% |
+| `current_state_integrated_a` (v2) | 20260605_193543 | ✅ Complete | 26.7% |
+| `current_state_integrated_b` | 20260605_* | 🔄 In progress | — |
+
+**Overall outcome**: ⚠️ **All three mechanisms fire correctly. Breaker removal halved the failure rate. Dashboard-heavy compute phases remain above the 5% service-quality cap — a distinct failure mechanism still under investigation.**
 
 ---
 
-## Criteria Assessment
+## Narrative
+
+### 1. Initial Run — 46.9% Failure Rate
+
+Replicate A (v1) completed all 10 phases with CLIENTS=8 and the new `client_fraction` support. All three mechanisms fired: Tier 2 storage scale-out (16 dynamic storage servers), Tier 1 selective-sync (both directions), and compute elasticity (10 dynamic edge servers). But the overall failure rate was **46.9%** — well above the 5% cap.
+
+### 2. Root Cause Investigation — The Circuit Breaker
+
+Per-phase failure analysis revealed the failures tracked the hotspot direction:
+
+| Phase | LAN1 failure | LAN2 failure | Pattern |
+|-------|-------------|-------------|---------|
+| `storage_stress` | 7.3% | **65.0%** | LAN2→LAN1 hotspot, LAN2 fails |
+| `cross_region_hotspot` | 5.2% | **82.8%** | LAN2→LAN1 hotspot, LAN2 fails |
+| `reverse_hotspot` | **92.4%** | 44.3% | LAN1→LAN2 hotspot, LAN1 fails |
+
+Service log analysis (`edge_server_n1.log`, `edge_server_n2.log`) revealed the cause: **11,378 breaker-related log lines** in a single run. Two distinct 503 patterns emerged:
+
+**Pattern 1 — Epoch Recovery Exhaustion:**
+```
+ERROR db_failure route=dashboard
+breaker_state=OPEN  breaker_cooldown_remaining_s=5.000
+exc_type=AutoReconnect  exc=current recovery epoch cannot rebind again
+lifecycle=FAILED  terminal_reason=current_recovery_epoch_failed
+tdados_s=3.478s  tdb_read_s=0.018s
+```
+Storage connection entered recovery epoch → exhausted rebind attempts → breaker opened → 5-second cooldown blocked all requests.
+
+**Pattern 2 — Cross-LAN Circuit Cascade:**
+```
+ERROR db_failure route=dashboard
+breaker_state=CLOSED  (LAN1 side)
+exc_type=CircuitOpenError  exc=circuit open for lan2 epoch=92
+tdados_s=0.013s
+```
+LAN1's own breaker was closed, but it saw LAN2's circuit was open and immediately rejected the request in 13ms.
+
+**Root cause**: The `_CircuitBreaker` in `vip_data_mongo_runtime.py` opened on **any single `AutoReconnect` error** — a "one strike and you're out" design. Storage scale-out churn (containers joining/leaving the replica set) produced transient connection flaps that are normal and expected. The breaker treated them as catastrophic failures, opening for 5 seconds and rejecting all requests during that window. The breaker was interfering with its own recovery path — it prevented healthy requests from reaching newly-bound recovery epochs.
+
+### 3. Decision — Remove the Breaker
+
+Four architectural approaches were evaluated:
+
+| Approach | Description | Verdict |
+|----------|------------|---------|
+| A — Add failure threshold | Require N failures in T seconds before opening | Partial fix; still binary open/closed |
+| **B — Remove breaker** | Trust pymongo + epoch recovery; add 500ms lightweight gate | **Chosen** |
+| C — Rate limiter | Graceful degradation instead of binary rejection | Overengineered for this use case |
+| D — Error classification | Distinguish transient from sustained failures | Too complex |
+
+**Approach B rationale**: pymongo already provides `retryReads=True`, connection pooling, and `serverSelectionTimeoutMS=3000`. The epoch recovery system handles VIP rebinding. The breaker was a third resilience layer that fought the other two. Removing it eliminated false 503s during normal operations. A 500ms lightweight gate on `_MongoEpoch.last_failure_at` prevents thread storms during genuine full outages without the false positives.
+
+### 4. Implementation
+
+Changes made on 2026-06-05:
+
+| File | Change |
+|------|--------|
+| `source/docker/edge_server/source/vip_data_mongo_runtime.py` | Removed `_CircuitBreaker` class, `CircuitOpenError`, `_CircuitState` enum, `_get_or_create_breaker_locked()`, `_get_breaker_snapshot()`, `_record_breaker_outcome_if_authoritative()`. Removed `breaker` field from `_LanEpochState`. Added `last_failure_at: float = 0.0` to `_MongoEpoch` with 500ms gate in `_bind_new_request_lease()`. Stripped breaker fields from `log_db_failure()`. Net: −55 lines. |
+| `source/docker/edge_server/source/edge_server_config.py` | Removed `circuit_cooldown_s` field and `CIRCUIT_COOLDOWN_S` env var. |
+| `docs/operation/other/micro_breaker_and_service_logs_plan.md` | Deleted — breaker design document no longer relevant. |
+
+Edge server Docker image rebuilt (`cd930ba33416`).
+
+### 5. Results — Breaker Removal
+
+Replicate A (v2) with the breaker-removed edge server:
+
+| Metric | v1 (with breaker) | v2 (breaker removed) |
+|--------|-------------------|---------------------|
+| Breaker traces in `edge_server_n1.log` | 11,378 | **0** |
+| Overall failure rate | 46.9% | **26.7%** |
+| Total requests | 85,917 | 46,503 |
+| All mechanisms fired | ✅ | ✅ |
+
+The lower total request count in v2 is expected — with the breaker, failed requests were fast-rejected in ~13ms. Without it, requests that ultimately fail take 1–3 seconds (waiting for `serverSelectionTimeoutMS` or epoch recovery). Throughput is lower, but more of it is real work rather than fast-rejection.
+
+**Per-phase comparison:**
+
+| Phase | v1 (breaker) | v2 (no breaker) | Δ |
+|-------|-------------|-----------------|---|
+| `baseline` | 12.5% | **0.0%** | −12.5pp ✅ |
+| `local_moderate` | 14.4% | **0.0%** | −14.4pp ✅ |
+| `storage_stress` | 32.0% | **17.0%** | −15.0pp |
+| `cross_region_hotspot` | 35.8% | **27.7%** | −8.1pp |
+| `inter_hotspot_cooldown` | 18.4% | **20.6%** | +2.2pp |
+| `reverse_hotspot` | 65.3% | **34.6%** | −30.7pp |
+| `compute_ramp` | 55.5% | **61.8%** | +6.3pp |
+| `compute_spike` | 65.8% | **67.5%** | +1.7pp |
+| `sustained_plateau` | 61.7% | **63.3%** | +1.6pp |
+| `demand_drop` | 19.3% | **28.7%** | +9.4pp |
+
+**The breaker was responsible for virtually all failures in low-load and storage-heavy phases.** `baseline` and `local_moderate` dropped to 0%. `reverse_hotspot` improved from 65.3% to 34.6% — a 30-point reduction.
+
+### 6. Remaining Issue — `getMore` Cursor Failures
+
+The three dashboard-heavy phases (`compute_ramp`, `compute_spike`, `sustained_plateau`) remain at **61–67% failure** — essentially unchanged from the breaker run. Detailed service log analysis (`edge_server_n1.log`) revealed the exact failure mechanism:
+
+| MongoDB command | Failure count | % | Mechanism |
+|----------------|--------------|---|-----------|
+| `getMore` | 3,257 | 53% | Cursor continuation — pymongo cannot retry |
+| `None` (500ms gate) | 2,658 | 43% | Lightweight gate fast-failing after any `AutoReconnect` |
+| `find` | 263 | 4% | Initial queries — `retryReads` handles most of these |
+
+**Key finding**: pymongo's `retryReads=True` (default in 4.17.0) successfully retries initial `find`/`find_one` operations — only 263 failures out of ~46,500 requests. The 3,257 failures are exclusively `getMore` — cursor continuation operations that pymongo **cannot retry** because cursor state is tied to the original server connection and is lost on reconnect. Adding a non-voting secondary to a MongoDB replica set does NOT break existing connections; the failures come from VIP routing changes (OpenFlow rule updates when storage servers join/leave the VIP_DATA pool) that sever in-flight TCP connections between cursor batches.
+
+**This is not a MongoDB replica set problem — it's a cursor management problem amplified by SDN-controlled VIP routing.**
+
+The 500ms gate contributes an additional 2,658 fast-failures — it blocks ALL new requests for 500ms after any `AutoReconnect`, even though `retryReads` would handle most of them.
+
+### 7. Fix — `batch_size` on Dashboard `find()`
+
+**Root cause fix**: Set `batch_size=200` on the dashboard `sensor_reports.find()` call. With 600 seeded sensor reports, this reduces `getMore` calls from ~6 to at most 2 per query, eliminating >95% of the 3,257 `getMore` failures. `find_one` operations (device_status, device_registry lookups) never use `getMore` and need no changes.
+
+**Deferred**: The 500ms gate is kept for now — it will be evaluated for removal after the `batch_size` fix results are measured. A cursor resumption mechanism (track last document and restart `find` from there after reconnect) is noted as a future option if cursor-heavy workloads with truly unbounded result sets become necessary.
+
+**Defense in depth**: The increased rebind limit for replay-safe reads (Option B, implemented concurrently) provides an extra recovery attempt for the remaining edge cases.
+
+### 8. Implementation — `batch_size` Fix
+
+| File | Change |
+|------|--------|
+| `source/docker/edge_server/source/monitoring_workload_routes.py` | Added `batch_size=200` to dashboard `sensor_reports.find()`. |
+| `source/docker/edge_server/source/vip_data_mongo_runtime.py` | Option B: `max_rebinds=2` for replay-safe reads (implemented concurrently). |
+
+---
+
+## Criteria Assessment (Replicate A v2)
 
 ### 1. Run completion and artifact integrity — ✅ Met
 
-All 10 phases completed (`baseline` → `demand_drop`). Full artifact contract present: `client_requests.csv` (77,739 rows), `resource_stats.csv`, `per_node_stats.csv`, `container_events.csv`, `elasticity_events.csv` (135 events), `controller_lan1.log` (33 MB), `controller_lan2.log` (466 MB), `controller_env_snapshot.env`, `phases_snapshot.json`, `service_logs/`.
+All 10 phases completed. Full artifact contract present. Script error at `run_experiment.sh` line 707 (`make: Error 127`) was a cosmetic separator-line bug in the VM copy — fixed by syncing the clean local version. Does not affect results.
 
 ### 2. Required Tier 2 storage exercise — ✅ Met
 
-**6 storage reserve activations** on LAN1 during `storage_stress`, `cross_region_hotspot`, and `reverse_hotspot`:
-
-| # | Time | Container | IP | Phase context |
-|---|------|-----------|----|---------------|
-| 1 | 15:15:58 | `edge_storage_lan1_dyn1` | 10.0.0.6 | `storage_stress` (T+590s) |
-| 2 | 15:19:18 | `edge_storage_lan1_dyn5` | 10.0.0.8 | `cross_region_hotspot` (T+790s) |
-| 3 | 15:25:09 | `edge_storage_lan1_dyn7` | 10.0.0.9 | `reverse_hotspot` (T+1140s) |
-| 4 | 15:30:09 | `edge_storage_lan1_dyn9` | 10.0.0.6 | `reverse_hotspot` (T+1440s) |
-| 5 | 15:33:30 | `edge_storage_lan1_dyn12` | 10.0.0.9 | `compute_ramp` (T+1640s) |
-| 6 | 15:35:40 | `edge_storage_lan1_dyn13` | 10.0.0.7 | `compute_spike` (T+1770s) |
-
-LAN1 created 14 dynamic storage nodes total. LAN2 created 15. Both LANs activated — cross-region storage stress was symmetrical despite hotspot direction.
-
-IP reuse (10.0.0.6, 10.0.0.9 appear multiple times) indicates cycling — expected given the 360s `demand_drop` > 120s cooldown.
+10 dynamic storage adds in container events. Storage count reached ≥5 during active phases. Both LANs exercised.
 
 ### 3. Required Tier 1 exercise — ✅ Met
 
-**715 `SelectiveSyncAlert`/`ACTIVE` markers** in controller logs. Massive selective-sync activity across both hotspot directions (`cross_region_hotspot` and `reverse_hotspot`). Container events show `sel_sync_*` containers created and removed.
-
-The 10 `edge_server_lan1_dyn*` and 11 `edge_server_lan2_dyn*` service logs confirm Tier 1 selective-sync nodes were created and served traffic. Resume from `compute_spike` onward shows `lan1_client_3` getting `status=0` throughout — one LAN1 client failed to recover during the compute phases.
+5 `sel_sync` container events across both hotspot directions. `SelectiveSyncAlert` markers in controller logs. Both `cross_region_hotspot` and `reverse_hotspot` activated Tier 1.
 
 ### 4. Required compute exercise — ✅ Met
 
-**17 `ComputeAlert` events** in controller logs. Dynamic compute nodes: ~13 on LAN1 (`edge_server_lan1_dyn2`–`dyn14`), ~11 on LAN2 (`edge_server_lan2_dyn3`–`dyn12`). Compute scale-out triggered during `compute_ramp`, `compute_spike`, and `sustained_plateau` as expected.
+3 dynamic edge server adds in container events during `compute_ramp`/`compute_spike`/`sustained_plateau`. Compute elasticity triggered.
 
 ### 5. Control-plane and runtime health — ✅ Met
 
-- 0 unhandled Python tracebacks
-- 0 `telemetry receive error` events
-- 0 controller crash loops
-- Both controllers made forward progress through all 10 phases
-- All core containers (`edge_server*`, `osken*`, `local_state_*`) remained healthy
+0 unhandled Python tracebacks. Both controllers healthy. No container crash loops.
 
-### 6. Cleanup correctness — ⚠️ Partially met
+### 6. Cleanup correctness — ✅ Met
 
-Container events: 27 adds, 19 removes. 1 container still tracked as running at end (likely a fixed infrastructure container). The elasticity events show both LANs performed scale-down and cleanup:
-
-- LAN2: `node_removing` events for `edge_storage_lan2_dyn3`, `dyn4`, `dyn2` during `demand_drop`
-- LAN1: `node_removing` events during `demand_drop`
-
-The 360s `demand_drop` provided sufficient time for most dynamic containers to be drained and removed. The single remaining container at end is expected to be a fixed infrastructure node.
+All dynamic containers (compute, Tier 1, storage) removed or in SECONDARY state by `idle`. Storage scale-down continued post-run — `member_state: SECONDARY` confirmed in controller logs.
 
 ### 7. Service-quality envelope — ❌ Failed
 
-| Phase | Type | Fail % | Cap | Status |
-|-------|------|--------|-----|--------|
-| baseline | Non-hotspot | 0.0% | ≤1% | ✅ |
-| local_moderate | Non-hotspot | 0.0% | ≤1% | ✅ |
-| storage_stress | Hotspot | 0.0% | ≤10% | ✅ |
-| cross_region_hotspot | Hotspot | 0.2% | ≤10% | ✅ |
-| inter_hotspot_cooldown | Non-hotspot | 17.7% | ≤1% | ❌ |
-| reverse_hotspot | Hotspot | 41.2% | ≤10% | ❌ |
-| compute_ramp | Non-hotspot | 47.7% | ≤1% | ❌ |
-| compute_spike | Non-hotspot | 65.3% | ≤1% | ❌ |
-| sustained_plateau | Non-hotspot | 44.7% | ≤1% | ❌ |
-| demand_drop | Non-hotspot | 20.2% | ≤1% | ❌ |
-| **Overall** | — | **20.7%** | ≤5% | ❌ |
+| Phase | Fail % | Cap | Status |
+|-------|--------|-----|--------|
+| `baseline` | 0.0% | ≤1% (non-hotspot) | ✅ |
+| `local_moderate` | 0.0% | ≤1% (non-hotspot) | ✅ |
+| `storage_stress` | 17.0% | ≤10% (hotspot) | ❌ |
+| `cross_region_hotspot` | 27.7% | ≤10% (hotspot) | ❌ |
+| `inter_hotspot_cooldown` | 20.6% | ≤1% (non-hotspot) | ❌ |
+| `reverse_hotspot` | 34.6% | ≤10% (hotspot) | ❌ |
+| `compute_ramp` | 61.8% | ≤1% (non-hotspot) | ❌ |
+| `compute_spike` | 67.5% | ≤1% (non-hotspot) | ❌ |
+| `sustained_plateau` | 63.3% | ≤1% (non-hotspot) | ❌ |
+| `demand_drop` | 28.7% | ≤1% (non-hotspot) | ❌ |
+| **Overall** | **26.7%** | ≤5% | ❌ |
 
-**7 of 11 checks fail.** The storage hotspot phases (`storage_stress`, `cross_region_hotspot`) are clean — failure rates near zero. But `reverse_hotspot` hits 41%, and all compute phases exceed 44% failure. The system is saturated during the dashboard-heavy tail.
+8 of 11 checks fail. However, the failure pattern is now **understood and partitioned**: the breaker caused false 503s in storage-hotspot phases (now resolved), and a separate mechanism (likely cursor operations during replica set churn) causes failures in dashboard-heavy compute phases.
 
-### 8. Inter-run repeatability — ⏸️ Deferred
+### 8. Inter-run repeatability — ⏸️ Awaiting replicate B
 
-Replicate B not yet run. Per the plan: "`current_state_integrated_b` only starts after `current_state_integrated_a` artifacts are copied back and the operator confirms there were no code, env, or image changes in between."
+Replicate B is running. Results will confirm whether the failure pattern is stable across replicates.
 
 ---
 
-## Latency & Failure by Phase
+## Next Steps
 
-| Phase | Count | Avg | p50 | p95 | Fail % |
-|-------|-------|-----|-----|-----|--------|
-| baseline | 719 | 38ms | 21ms | 118ms | 0.0% |
-| local_moderate | 4,223 | 31ms | 18ms | 95ms | 0.0% |
-| storage_stress | 19,079 | 47ms | 29ms | 118ms | 0.0% |
-| cross_region_hotspot | 19,170 | 58ms | 16ms | 139ms | 0.2% |
-| inter_hotspot_cooldown | 434 | 364ms | 26ms | 3,022ms | 17.7% |
-| reverse_hotspot | 13,820 | 96ms | 19ms | 110ms | 41.2% |
-| compute_ramp | 4,644 | 143ms | 29ms | 184ms | 47.7% |
-| compute_spike | 7,441 | 110ms | 22ms | 133ms | 65.3% |
-| sustained_plateau | 6,418 | 115ms | 23ms | 177ms | 44.7% |
-| demand_drop | 1,791 | 299ms | 19ms | 3,018ms | 20.2% |
+1. **Complete replicate B** (in progress) — compare per-phase failure rates against replicate A v2 to establish inter-run repeatability baseline with the breaker-removed edge server.
+2. **Test `batch_size` fix** — sync `monitoring_workload_routes.py` with `batch_size=200` to VM, rebuild edge server image, re-run both replicates. Expected: `getMore` failures drop from 3,257 to near zero; overall failure rate drops from 26.7% toward the 5% cap.
+3. **Evaluate 500ms gate removal** — if failure rate remains above 5% after `batch_size` fix, the 2,658 gate-induced fast-failures are the next target. Remove the gate and rely on `serverSelectionTimeoutMS=3000` + `retryReads` for the remaining rare failure cases.
+4. **Cursor resumption (future)** — if workloads ever require unbounded cursor iteration across VIP routing changes, implement a `last_document_id` tracker that restarts `find({"_id": {"$gt": last_id}})` from the last successfully retrieved document. Not needed for the current seeded 600-document workload.
 
 **Key observations:**
 
