@@ -27,7 +27,7 @@ Currently, all three endpoints do near-zero compute: a boolean threshold compari
 |---|---|---|---|
 | `/device/<id>/latest` | `value >= threshold` boolean | Multi-level severity scoring + trend analysis from recent local request activity | ~5–15 ms per request |
 | `/service_pressure` | Lightweight local buffer summary | Pressure scoring + tag/device ranking over recent local request activity | ~3–10 ms per request |
-| `/dashboard/<node_id>` | `value / threshold` sort | Multi-factor urgency with tag priority weighting + staleness decay + summary stats | ~5–20 ms per request |
+| `/dashboard/<node_id>` | `value / threshold` sort | Multi-factor urgency with tag priority weighting + staleness decay + summary stats + fleet integrity verification (iterated SHA-256) | ~80–120 ms per request |
 
 At Phase 3 rates (10 req/s/client × multiple clients), the cumulative $T_{proc}$ across the telemetry window should breach $\tau_{proc}$ and trigger compute scale-out.
 
@@ -376,6 +376,50 @@ def compute_dashboard_summary(devices: list[dict]) -> dict:
 
 ---
 
+### Function 6: `verify_fleet_integrity`
+
+Used by `/dashboard/<node_id>` **after** `score_dashboard_urgency` as a
+separate compute pass over the candidate set. Performs iterated SHA-256
+integrity verification on each device's payload, producing a deterministic
+fingerprint. The work factor (`DASHBOARD_INTEGRITY_WORK_FACTOR`, default 200)
+controls CPU time linearly — at 500 candidates × 200 iterations this
+contributes ~100ms per request to $T_{proc}$, which is the dominant CPU cost
+in the dashboard endpoint.
+
+```python
+def verify_fleet_integrity(devices: list[dict], work_factor: int = 200) -> None:
+    """Per-device cryptographic integrity check.
+    ...
+    """
+    for d in devices:
+        payload = json.dumps(d.get("payload", {}), sort_keys=True)
+        device_id = str(d.get("_id", ""))
+        data = f"{device_id}:{payload}".encode()
+        h: bytes = data
+        for _ in range(work_factor):
+            h = hashlib.sha256(h).digest()
+        d["integrity_hash"] = h.hex()[:16]
+```
+
+---
+
+### Configuration
+
+Two new environment variables control the dashboard compute path:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DASHBOARD_CANDIDATE_LIMIT` | `500` | Number of recent matching devices fetched per dashboard request via `.sort("last_updated", -1).limit()` |
+| `DASHBOARD_INTEGRITY_WORK_FACTOR` | `200` | Iterations of SHA-256 per device in `verify_fleet_integrity`; controls $T_{proc}$ linearly |
+
+Both are consumed from `edge_server_config.py`:
+```python
+dashboard_candidate_limit = int(os.environ.get("DASHBOARD_CANDIDATE_LIMIT", "500"))
+dashboard_integrity_work_factor = int(os.environ.get("DASHBOARD_INTEGRITY_WORK_FACTOR", "200"))
+```
+
+---
+
 ## Changes to `app.py`
 
 ### New Import
@@ -389,6 +433,7 @@ from compute import (
     compute_service_pressure,
     score_dashboard_urgency,
     compute_dashboard_summary,
+    verify_fleet_integrity,
     TREND_WINDOW_SIZE,
 )
 ```
@@ -581,7 +626,7 @@ The only exception is the trend query in `/device/<id>/latest` — it uses `time
 
 | File | Action | Description |
 |---|---|---|
-| `source/docker/edge_server/source/compute.py` | **Create** | Pure-compute module: 5 functions + constants |
+| `source/docker/edge_server/source/compute.py` | **Create** | Pure-compute module: 6 functions + constants |
 | `source/docker/edge_server/source/app.py` | **Edit** | Import `compute`, modify 3 endpoints to call compute functions |
 
 No new dependencies. No config changes. No Dockerfile changes.

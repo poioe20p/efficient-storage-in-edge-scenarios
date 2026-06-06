@@ -33,6 +33,8 @@ from tier1_stats import TIER1_ALL_COLUMNS, build_tier1_row, peer_lan
 
 # Trimmed main view — raw inputs and derived helpers that directly matter to
 # elasticity reasoning.  Keep small and focused on scale-up/scale-down inputs.
+# Tier 1 columns added so basic lifecycle status (coord_state_owner_lan,
+# tier1_lifecycle_active_count) is visible without the debug CSV.
 MAIN_FIELDNAMES = [
     "timestamp",
     "phase",
@@ -48,6 +50,8 @@ MAIN_FIELDNAMES = [
     "server_count",
     "storage_count",
     "avg_repl_lag_ms",
+    "coord_state_owner_lan",
+    "tier1_lifecycle_active_count",
 ]
 
 # Broad debug view — preserves the historical broad schema (median-heavy,
@@ -377,6 +381,10 @@ def main():
                     "storage_count":             storage_count,
                     "avg_repl_lag_ms":           avg_repl_lag,
                 }
+                # Append Tier 1 lifecycle fields from the same helper used by the debug CSV.
+                t1 = build_tier1_row(summary, coord_state_by_lan.get(coord_lan, {}))
+                main_row["coord_state_owner_lan"] = t1.get("coord_state_owner_lan", "NONE")
+                main_row["tier1_lifecycle_active_count"] = t1.get("tier1_lifecycle_active_count", 0)
                 writer.writerow(main_row)
                 csv_file.flush()
 

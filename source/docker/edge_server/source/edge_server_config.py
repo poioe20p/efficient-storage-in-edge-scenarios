@@ -24,6 +24,8 @@ class EdgeServerConfig:
     service_pressure_default_limit: int
     mongo_client_retire_grace_s: float
     vip_data_recovery_session_max_age_s: float
+    dashboard_candidate_limit: int
+    dashboard_integrity_work_factor: int
 
     @classmethod
     def from_env(cls) -> "EdgeServerConfig":
@@ -79,6 +81,12 @@ class EdgeServerConfig:
             ),
             vip_data_recovery_session_max_age_s=float(
                 os.environ.get("VIP_DATA_RECOVERY_SESSION_MAX_AGE_S", "35")
+            ),
+            dashboard_candidate_limit=int(
+                os.environ.get("DASHBOARD_CANDIDATE_LIMIT", "500")
+            ),
+            dashboard_integrity_work_factor=int(
+                os.environ.get("DASHBOARD_INTEGRITY_WORK_FACTOR", "200")
             ),
         )
 

@@ -13,6 +13,7 @@ from compute import (
     compute_trend,
     score_dashboard_urgency,
     score_device_severity,
+    verify_fleet_integrity,
 )
 from edge_request_lifecycle import stage_local_request_event
 from platform_cache import cached_collection
@@ -184,14 +185,14 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
                                     "region_origin": 1,
                                     "last_updated": 1,
                                 },
-                                batch_size=200,
-                            )
+                            ).sort("last_updated", -1).limit(config.DASHBOARD_CANDIDATE_LIMIT)
                         ),
                     )
                 )
 
             devices = score_dashboard_urgency(devices)
             devices = devices[:limit]
+            verify_fleet_integrity(devices, config.DASHBOARD_INTEGRITY_WORK_FACTOR)
             summary = compute_dashboard_summary(devices)
 
             stage_local_request_event(

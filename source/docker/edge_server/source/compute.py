@@ -10,6 +10,7 @@ data already retrieved by the monitoring workload route module.
 """
 
 import hashlib
+import json
 import math
 import statistics
 from datetime import datetime, timezone
@@ -515,3 +516,28 @@ def compute_dashboard_summary(devices: list[dict]) -> dict:
         summary["ratio_max"] = round(max(ratios), 4)
 
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Function 6: Fleet integrity verification (cryptographic CPU work)
+# ---------------------------------------------------------------------------
+
+def verify_fleet_integrity(devices: list[dict], work_factor: int = 200) -> None:
+    """Per-device cryptographic integrity check.
+
+    Simulates edge-side data integrity verification — each device's payload
+    is hashed iteratively to produce a short integrity fingerprint. The
+    *work_factor* controls CPU time linearly. Pure compute, no I/O.
+
+    Each device dict is enriched with ``integrity_hash`` (first 16 hex chars
+    of the final SHA-256 digest). The hash is deterministic: same device
+    + same payload always produces the same fingerprint.
+    """
+    for d in devices:
+        payload = json.dumps(d.get("payload", {}), sort_keys=True)
+        device_id = str(d.get("_id", ""))
+        data = f"{device_id}:{payload}".encode()
+        h: bytes = data
+        for _ in range(work_factor): #work_factor controls how much CPU time to spend here
+            h = hashlib.sha256(h).digest()
+        d["integrity_hash"] = h.hex()[:16]

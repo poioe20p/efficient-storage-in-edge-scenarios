@@ -248,12 +248,13 @@ GET /dashboard/<node_id>?limit=<N>
 Edge server:
 
 - Read `device_registry` for `node_id` (via `VIP_Dados` for the node's LAN) to get `subscribed_tags`
-- Query `sensor_reports` across **all LANs** where `tags` intersects `subscribed_tags` (`$in` array match)
+- Query `sensor_reports` across **all LANs** where `tags` intersects `subscribed_tags` (`$in` array match), sorted by `last_updated` descending and limited to `DASHBOARD_CANDIDATE_LIMIT` (default 500) — bounding the result set to a constant-size candidate pool regardless of total collection size
 - Compute urgency via `score_dashboard_urgency()`: 4-factor scoring per device
   - Threshold proximity (40%): `(value / alert_threshold)^3` — exponential near threshold
   - Tag priority (25%): average of per-tag weights (e.g. high-priority=2.0, industrial=1.3)
   - Status severity (20%): critical=3.0, warning=2.0, elevated=1.5, normal=1.0
   - Staleness decay (15%): exponential decay from `last_updated` with 300s half-life
+- Verify fleet integrity via `verify_fleet_integrity()`: iterated SHA-256 over each device's payload, producing a deterministic integrity fingerprint as CPU-bound work
 - Sort by urgency score descending, limit to N
 - Compute fleet summary via `compute_dashboard_summary()`: urgency mean/std/max and status distribution across returned devices
 

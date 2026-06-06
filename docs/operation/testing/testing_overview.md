@@ -86,8 +86,8 @@ artifacts:
 | # | Artifact | Source | Purpose |
 | --- | --- | --- | --- |
 | 1 | `client_requests.csv` | `traffic_generator.py` | Aggregate per-request latency CSV (only default request CSV) |
-| 2 | `resource_stats.csv` | `collect_resource_stats.py` | **Trimmed** per-window domain metrics — raw elasticity inputs and derived helpers only |
-| 3 | `resource_stats_debug.csv` | `collect_resource_stats.py` | **Broad** per-window domain metrics — median-heavy, Tier 1 helpers, decomposed DB timings for deep diagnosis |
+| 2 | `resource_stats.csv` | `collect_resource_stats.py` | **Trimmed** per-window domain metrics — raw elasticity inputs and derived helpers only; includes `coord_state_owner_lan` and `tier1_lifecycle_active_count` for basic Tier 1 lifecycle checks |
+| 3 | `resource_stats_debug.csv` | `collect_resource_stats.py` | **Broad** per-window domain metrics — median-heavy, all 16 Tier 1 columns, decomposed DB timings for deep diagnosis |
 | 4 | `policy_state.csv` | `reconstruct_policy_state.py` (post-run) | Reconstructed per-window per-LAN policy state — scores, thresholds, cooldowns, hit counts, controller annotations |
 | 5 | `per_node_stats.csv` | `collect_resource_stats.py` | Per-container per-window metrics |
 | 6 | `container_events.csv` | `poll_container_events.py` | Docker container lifecycle events |
@@ -329,6 +329,8 @@ The collector ([`collect_resource_stats.py`](../../../source/scripts/testing/col
 `tier1_reporting_count` is intentionally a supply-side reporting metric, not a lifecycle truth signal: quiet Tier 1 windows can keep it at `0` even when the coordinator state is `ACTIVE`. Use `tier1_lifecycle_active_count` or `coord_state_owner_lan` when the question is whether Tier 1 actually reached service. `tier1_reporting_count` is retained as a deprecated alias so older analysis and historical CSV schemas still load.
 
 Empty/baseline rows (no telemetry, `SS_ENABLED=0`) yield zeros and `coord_state_owner_lan="NONE"`.
+
+**Which CSV contains which columns:** The trimmed `resource_stats.csv` carries only `coord_state_owner_lan` and `tier1_lifecycle_active_count` — enough to answer "did Tier 1 reach ACTIVE?" without the full debug schema. All 16 Tier 1 columns are present in `resource_stats_debug.csv`. Use the debug CSV for deep lifecycle diagnosis (coordinator state transitions, breach ring progress, per-collection hot-doc counts).
 
 #### `container_events.csv` — container life-cycle audit
 
