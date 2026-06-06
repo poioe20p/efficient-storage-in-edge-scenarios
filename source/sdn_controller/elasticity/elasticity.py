@@ -20,7 +20,12 @@ from typing import Any, Callable, Mapping, Optional, Protocol
 from .node_common import IpAllocator, NodeInfo, RemovalResult, log_ready_timing
 from .compute_node_manager import ComputeNodeAdder, PendingDrain
 from .storage_node_manager import StorageNodeAdder
-from .selective_storage_manager import SelectiveStorageNodeAdder
+from .selective_storage_manager import (
+    SelectiveStorageNodeAdder,
+    _ADMIN_PORT,
+    _READINESS_MAX_WAIT_S,
+    _wait_for_port,
+)
 
 logger = logging.getLogger("os_ken.elasticity")
 
@@ -981,6 +986,50 @@ class ElasticityManager:
         )
         with self._addition_complete_lock:
             self._addition_complete_infos.append(info)
+
+        # Wait for the container's admin server to be reachable before
+        # marking ACTIVE.  The container needs time to start mongod +
+        # Flask after OVS attach; without this wait the first reconfigure
+        # POST races against container startup and fails (observed: 48
+        # consecutive HTTPConnectionPool errors across the container's
+        # entire lifecycle).
+        ready = _wait_for_port(result.ip, _ADMIN_PORT, _READINESS_MAX_WAIT_S)
+        if not ready:
+            logger.error(
+                "[elasticity] tier1: %s admin port %s:%d not ready after %.0fs — "
+                "cleaning up and draining",
+                name, result.ip, _ADMIN_PORT, _READINESS_MAX_WAIT_S,
+            )
+            self._selective_adder._cleanup_container(name)
+            self._get_allocator(alert.lan).release(ip)
+            if self._coordinator is not None:
+                try:
+                    self._coordinator.drain(alert.owner_lan, reason="spawn_failed")
+                except Exception:
+                    logger.exception("[tier1] coordinator.drain(spawn_failed) raised")
+            return
+
+        # Initial reconfigure — the container is confirmed reachable.
+        # Subsequent hot-set changes are handled by the normal reconfigure
+        # alert path, which targets an already-healthy container.
+        if not self._selective_adder.reconfigure(
+            container_name=name,
+            ip=result.ip,
+            collections=alert.collections,
+        ):
+            logger.error(
+                "[elasticity] tier1: initial reconfigure failed for %s — "
+                "cleaning up and draining",
+                name,
+            )
+            self._selective_adder._cleanup_container(name)
+            self._get_allocator(alert.lan).release(ip)
+            if self._coordinator is not None:
+                try:
+                    self._coordinator.drain(alert.owner_lan, reason="spawn_failed")
+                except Exception:
+                    logger.exception("[tier1] coordinator.drain(spawn_failed) raised")
+            return
 
         # Hand off to the coordinator for SPAWNING -> ACTIVE + manifest broadcast.
         # Single broadcast site on the add path.

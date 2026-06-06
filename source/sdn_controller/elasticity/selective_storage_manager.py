@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import socket
 import subprocess
 import time
 import requests
@@ -43,6 +44,27 @@ logger = logging.getLogger("os_ken.node_manager")
 _ADMIN_PORT = 5001
 _DRAIN_TIMEOUT_S = 2.0
 _RECONFIGURE_TIMEOUT_S = 5.0
+
+# TCP readiness probe — how long to wait for a newly spawned Tier 1 container
+# to bind its admin port before giving up.
+_READINESS_POLL_INTERVAL_S = 0.5
+_READINESS_MAX_WAIT_S = 30.0
+
+
+def _wait_for_port(ip: str, port: int, timeout: float) -> bool:
+    """Block until {ip}:{port} accepts a TCP connection, or *timeout* expires.
+
+    Used by the elasticity manager to confirm a Tier 1 container's admin
+    server is listening before marking the spawn as ACTIVE.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((ip, port), timeout=1.0):
+                return True
+        except (OSError, ConnectionRefusedError, TimeoutError):
+            time.sleep(_READINESS_POLL_INTERVAL_S)
+    return False
 
 
 class SelectiveStorageNodeAdder(_BaseNodeAdder):

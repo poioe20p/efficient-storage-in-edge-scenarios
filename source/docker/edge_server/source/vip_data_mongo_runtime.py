@@ -254,15 +254,6 @@ def _bind_new_request_lease(lan: str) -> RequestLease:
             )
             state.current = current
 
-        # Fast-fail gate: if the last DB operation on this epoch failed within
-        # the last 500ms, reject immediately to prevent thread storms during
-        # genuine outages. pymongo serverSelectionTimeoutMS (3s) handles the
-        # actual health check on the next probe.
-        if time.monotonic() - current.last_failure_at < 0.5:
-            raise PyMongoError(
-                f"epoch {current.epoch_id} for {lan} in cooldown after recent failure"
-            )
-
         now = time.monotonic()
         current.lease_count += 1
         if current.first_lease_at is None:

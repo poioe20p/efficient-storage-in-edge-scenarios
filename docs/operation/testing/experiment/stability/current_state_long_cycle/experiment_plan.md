@@ -2,7 +2,7 @@
 
 ## Intent
 
-This experiment evaluates the current integrated system state with one single phased workload profile that must exercise the mechanisms already implemented in the platform inside the same run: Tier 2 storage scale-out, Tier 1 selective-sync activation, compute scale-out, and final cleanup. It answers one operational question: is the current code and controller snapshot in a stable enough state that all elasticity mechanisms can be exercised together, repeatedly, and cleanly before newer features are added? The plan is grounded in the testing contract in [testing_overview.md](../../../testing_overview.md), the current traffic-generator schema in [traffic_generator.md](../../../traffic_generator.md), the shared runner in [run_experiment.sh](../../../../../../source/scripts/testing/run_experiment.sh), the approved `make` entrypoint in [Makefile](../../../../../../source/scripts/Makefile), the controller knobs in [osken-controller.env](../../../../../../source/scripts/osken-controller.env) and [scaling_config.py](../../../../../../source/sdn_controller/scaling_config.py), the Tier 1 promotion gate in [promotion.py](../../../../../../source/sdn_controller/selective_sync/promotion.py) and [hotness.py](../../../../../../source/sdn_controller/selective_sync/hotness.py), the new integrated phase file [phases_experiment_integrated_baseline.json](../../../../../../source/scripts/testing/phases_experiment_integrated_baseline.json), and the historical combined-policy evidence recorded in [experiment_campaign_brief.md](../../../experiment_campaign_brief.md).
+This experiment evaluates the current integrated system state with one single phased workload profile that must exercise the mechanisms already implemented in the platform inside the same run: Tier 2 storage scale-out, Tier 1 selective-sync activation, compute scale-out, and final cleanup. It answers one operational question: is the current code and controller snapshot in a stable enough state that all elasticity mechanisms can be exercised together, repeatedly, and cleanly before newer features are added? The plan is grounded in the testing contract in [testing_overview.md](../../../testing_overview.md), the current traffic-generator schema in [traffic_generator.md](../../../traffic_generator.md), the shared runner in [run_experiment.sh](../../../../../../source/scripts/testing/run_experiment.sh), the approved `make` entrypoint in [Makefile](../../../../../../source/scripts/Makefile), the controller knobs in [osken-controller.env](../../../../../../source/scripts/osken-controller.env) and [scaling_config.py](../../../../../../source/sdn_controller/scaling_config.py), the Tier 1 promotion gate in [promotion.py](../../../../../../source/sdn_controller/selective_sync/promotion.py) and [hotness.py](../../../../../../source/sdn_controller/selective_sync/hotness.py), the canonical phase file [phases.json](../../../../../../source/scripts/testing/phases.json), and the historical combined-policy evidence recorded in [experiment_campaign_brief.md](../../../experiment_campaign_brief.md).
 
 ## Hypothesis / Expected Outcome
 
@@ -11,8 +11,8 @@ If the current system state is baseline-ready, two identical runs of the integra
 ## Independent Variable & Held-Constant Set
 
 - Independent variable: run replicate only (`current_state_integrated_a` versus `current_state_integrated_b`).
-- Held constant: current repository HEAD, current container images, the shared base env [osken-controller.env](../../../../../../source/scripts/osken-controller.env) plus the fixed override [current_state_integrated.env](../../../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env), the integrated phase file [phases_experiment_integrated_baseline.json](../../../../../../source/scripts/testing/phases_experiment_integrated_baseline.json), no `--fault-plan`, same operator host/VM, same WAN profile, same launch path, and no code, env, or image changes between the two runs.
-- Held constant controller knobs: use [current_state_integrated.env](../../../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env) unchanged for both replicates so `SS_ENABLED=1`, `MAX_DYNAMIC_STORAGE=5`, and `MAX_DYNAMIC_COMPUTE=2` are fixed without editing the shared base env in place.
+- Held constant: current repository HEAD, current container images, the shared base env [osken-controller.env](../../../../../../source/scripts/osken-controller.env) plus the fixed override [current_state_integrated.env](../../../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env), the canonical phase file [phases.json](../../../../../../source/scripts/testing/phases.json), no `--fault-plan`, same operator host/VM, same WAN profile, same launch path, and no code, env, or image changes between the two runs.
+- Held constant controller knobs: use [current_state_integrated.env](../../../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env) unchanged for both replicates. Storage: `SS_ENABLED=1`, `MAX_DYNAMIC_STORAGE=5`, `SCALEUP_STORAGE_BASE_THRESHOLD=0.12`. Compute: `MAX_DYNAMIC_COMPUTE=6`, `SCALEUP_COMPUTE_BASE_THRESHOLD=0.20`, `SCALEUP_CPU_FLOOR=3`, `SCALEUP_T_PROC_FLOOR=15`, `SCALEDOWN_COMPUTE_COOLDOWN_S=120`, `SCALE_DOWN_COMPUTE_REQUIRED=9` (see changelog for rationale).
 - Held constant workload sizing: `CLIENTS=8`, `DEVICES=600`, `NODES=100` for both runs. The phase file uses `client_fraction` (0.5–1.0) to vary how many of the 8 clients are active per phase — hotspot phases use 1.0 (all 8 active), low-load phases use 0.5 (~4 active). This prevents individual client stalls from dominating aggregate failure stats while keeping total load comparable to the previous 3-client baseline. Tier 1 remains compatible because promotion is gated by collection-level read volume and cross-region ratio rather than by a per-document minimum-hit threshold.
 - Abort rule: if any runtime-bearing file, controller env value, or image changes after `current_state_integrated_a`, discard the pair and restart from `current_state_integrated_a` under a new label family.
 
@@ -20,15 +20,15 @@ If the current system state is baseline-ready, two identical runs of the integra
 
 | Run label | What changes | Phase file |
 | --- | --- | --- |
-| `current_state_integrated_a` | First integrated baseline replicate | [phases_experiment_integrated_baseline.json](../../../../../../source/scripts/testing/phases_experiment_integrated_baseline.json) |
-| `current_state_integrated_b` | Second integrated baseline replicate | [phases_experiment_integrated_baseline.json](../../../../../../source/scripts/testing/phases_experiment_integrated_baseline.json) |
+| `current_state_integrated_a` | First integrated baseline replicate | [phases.json](../../../../../../source/scripts/testing/phases.json) |
+| `current_state_integrated_b` | Second integrated baseline replicate | [phases.json](../../../../../../source/scripts/testing/phases.json) |
 
 Run order is fixed: `current_state_integrated_b` only starts after `current_state_integrated_a` artifacts are copied back and the operator confirms there were no code, env, or image changes in between.
 
 ## Run Configuration
 
 - Launch path: verified non-interactive `make` workflow from [Makefile](../../../../../../source/scripts/Makefile).
-- `--phases-config`: `source/scripts/testing/phases_experiment_integrated_baseline.json` via `PHASES_CONFIG=testing/phases_experiment_integrated_baseline.json`.
+- `--phases-config`: `source/scripts/testing/phases.json` via `PHASES_CONFIG=testing/phases.json`.
 - `--run-label`: `current_state_integrated_a` and `current_state_integrated_b`.
 - `--batch-dir`: omitted in the default `make` path.
 - `--clients-per-lan`: `8` via `CLIENTS=8`.
@@ -45,14 +45,14 @@ Concrete commands:
 sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
    OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
   RUN_LABEL=current_state_integrated_a \
-  PHASES_CONFIG=testing/phases_experiment_integrated_baseline.json \
+  PHASES_CONFIG=testing/phases.json \
   CLIENTS=8 DEVICES=600 NODES=100 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 
 sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
    OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
   RUN_LABEL=current_state_integrated_b \
-  PHASES_CONFIG=testing/phases_experiment_integrated_baseline.json \
+  PHASES_CONFIG=testing/phases.json \
   CLIENTS=8 DEVICES=600 NODES=100 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 ```
@@ -78,7 +78,7 @@ Secondary focus: `per_node_stats.csv`, `policy_state.csv`, `elasticity_events.cs
 The current state is considered baseline-ready only if both integrated replicates satisfy all criteria below.
 
 1. Run completion and artifact integrity.
-   Both runs must reach `current_phase.txt=idle`, complete all ten phases from [phases_experiment_integrated_baseline.json](../../../../../../source/scripts/testing/phases_experiment_integrated_baseline.json), and emit the standard artifact contract from [testing_overview.md](../../../testing_overview.md).
+   Both runs must reach `current_phase.txt=idle`, complete all ten phases from [phases.json](../../../../../../source/scripts/testing/phases.json), and emit the standard artifact contract from [testing_overview.md](../../../testing_overview.md).
 2. Required Tier 2 storage exercise.
    Both runs must show `storage_count > 1` in `resource_stats.csv` and at least one dynamic storage add event in `container_events.csv` or `elasticity_events.csv` during `storage_stress`, `cross_region_hotspot`, or `reverse_hotspot`.
 3. Required Tier 1 exercise.
@@ -132,5 +132,9 @@ No additional experiment-specific outputs are required beyond the artifacts and 
 | 2026-06-05 | CLIENTS=3 → CLIENTS=8; added `client_fraction` to phase file and traffic generator | Individual client stalls at 3 clients dominated aggregate failure stats. 8 clients with per-phase subset selection provides more realistic workload model while keeping total load comparable. |
 | 2026-06-05 | `getMore` cursor failure investigation | Service log analysis revealed 3,257 `getMore` failures (53% of all errors) — pymongo cannot retry cursor continuation. Root cause: VIP routing changes sever in-flight TCP connections between cursor batches. Fix: `batch_size=200` on dashboard `find()` reduces `getMore` calls from ~6 to ≤2. See [results.md](./results.md) §6–§7. |
 | 2026-06-05 | Option B: increased rebind limit for replay-safe reads | `max_rebinds=2` (was 1) for `replay_safe=True` operations. Defense-in-depth alongside `batch_size` fix. |
+| 2026-06-06 | Phase file consolidated to canonical `phases.json` | Removed redundant `phases_experiment_integrated_baseline.json`. The run auto-snapshots the phases config into the run folder as `phases_snapshot.json`. All experiments use the single source of truth. |
+| 2026-06-06 | Compute elasticity thresholds lowered | `MAX_DYNAMIC_COMPUTE` 2→6 (room for both LANs). `SCALEUP_COMPUTE_BASE_THRESHOLD` 0.45→0.20 (was never tuned unlike storage's 0.12). `SCALEUP_CPU_FLOOR` 5→3, `SCALEUP_T_PROC_FLOOR` 20→15 (lower baseline). `SCALEDOWN_COMPUTE_COOLDOWN_S` 40→120 (nodes not removed immediately after spawning). `SCALE_DOWN_COMPUTE_REQUIRED` 7→9 (stricter: 9 of 12 windows must be healthy before removal). See [results.md](./results.md) §10 for full analysis. |
+| 2026-06-06 | 500ms gate removed from edge server | The lightweight failure gate on `_MongoEpoch.last_failure_at` was removed. Evidence from two completed runs showed it caused 3–15% false failures in baseline phases by blocking all requests for 500ms after any `AutoReconnect` during normal storage replica-set churn. `serverSelectionTimeoutMS=3000` + `retryReads=True` already handle transient reconnects. See [results.md](./results.md) §11. |
+| 2026-06-06 | Tier 1 spawn path hardened with TCP readiness probe (Approach B) | Containers now go through `docker run → OVS attach → TCP wait (≤30s) → initial reconfigure → on_spawned() → ACTIVE`. Previously, `on_spawned()` fired before the container's admin server was listening, causing up to 48 consecutive `HTTPConnectionPool` errors per container lifecycle. Failed spawns now clean up and drain with `reason="spawn_failed"`. See [results.md](./results.md) §12. |
 <!-- end -->
 
