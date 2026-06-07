@@ -5,18 +5,15 @@ VIP server/data handling, and punt-rule installation.
 from os_ken.lib.packet import arp as arp_lib
 from os_ken.lib.packet import ethernet as eth_lib
 from os_ken.lib.packet import ether_types, ipv4, packet
-from os_ken.lib.packet import tcp as tcp_lib
 
 from .config import logger
 from . import flows, selection
 
 
 def _iter_vip_bindings(controller):
-    yield (controller.vip_server_ip, controller.vip_server_mac, "server", False)
-    yield (controller.vip_data_n1_ip, controller.vip_data_n1_mac, "n1", False)
-    yield (controller.vip_data_n2_ip, controller.vip_data_n2_mac, "n2", False)
-    yield (controller.vip_data_recovery_n1_ip, controller.vip_data_recovery_n1_mac, "n1", True)
-    yield (controller.vip_data_recovery_n2_ip, controller.vip_data_recovery_n2_mac, "n2", True)
+    yield (controller.vip_server_ip, controller.vip_server_mac, "server")
+    yield (controller.vip_data_n1_ip, controller.vip_data_n1_mac, "n1")
+    yield (controller.vip_data_n2_ip, controller.vip_data_n2_mac, "n2")
 
 
 def snoop_arp(controller, pkt) -> None:
@@ -50,7 +47,7 @@ def handle_vip_packet_in(controller, datapath, in_port, pkt, eth) -> bool:
         if (
             arp_pkt is not None
             and arp_pkt.opcode == arp_lib.ARP_REQUEST
-            and any(arp_pkt.dst_ip == vip_ip for vip_ip, _, _, _ in _iter_vip_bindings(controller))
+            and any(arp_pkt.dst_ip == vip_ip for vip_ip, _, _ in _iter_vip_bindings(controller))
         ):
             logger.debug("vip ARP request: dpid=%s in_port=%s arp=%s", datapath.id, in_port, arp_pkt)
             return _reply_vip_arp(controller, datapath, in_port, arp_pkt)
@@ -81,16 +78,6 @@ def handle_vip_packet_in(controller, datapath, in_port, pkt, eth) -> bool:
     if dst_ip == controller.vip_data_n2_ip:
         logger.debug("vip data n2 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
         return _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n2")
-    if dst_ip == controller.vip_data_recovery_n1_ip:
-        logger.debug("vip data recovery n1 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
-        return _handle_vip_data(
-            controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n1", recovery=True,
-        )
-    if dst_ip == controller.vip_data_recovery_n2_ip:
-        logger.debug("vip data recovery n2 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
-        return _handle_vip_data(
-            controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, domain="n2", recovery=True,
-        )
 
     return False
 
@@ -103,7 +90,7 @@ def _reply_vip_arp(controller, datapath, in_port, arp_req) -> bool:
     """Craft and send an ARP reply for a VIP address request."""
     vip_ip = None
     vip_mac = None
-    for candidate_ip, candidate_mac, _, _ in _iter_vip_bindings(controller):
+    for candidate_ip, candidate_mac, _ in _iter_vip_bindings(controller):
         if arp_req.dst_ip == candidate_ip:
             vip_ip = candidate_ip
             vip_mac = candidate_mac
@@ -187,23 +174,8 @@ def _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_p
 # VIP_DATA (MongoDB) — fixed storage node per domain
 # ------------------------------------------------------------------
 
-def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain, recovery=False) -> bool:
-    tcp_src_port = None
-    tcp_dst_port = None
-    if recovery:
-        tcp_pkt = pkt.get_protocol(tcp_lib.tcp)
-        if ip_proto != 6 or tcp_pkt is None or tcp_pkt.dst_port != 27018:
-            logger.warning(
-                "vip_data(%s) recovery: non-Mongo recovery packet dropped proto=%s dst_port=%s",
-                domain,
-                ip_proto,
-                getattr(tcp_pkt, "dst_port", None),
-            )
-            return True
-        tcp_src_port = tcp_pkt.src_port
-        tcp_dst_port = tcp_pkt.dst_port
-
-    storage = selection.select_storage(controller, domain, src_mac, recovery=recovery)
+def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain) -> bool:
+    storage = selection.select_storage(controller, domain, src_mac)
     if storage is None:
         logger.warning("vip_data(%s): pool empty, packet dropped", domain)
         return True
@@ -218,16 +190,10 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
         )
         return True
 
-    if recovery and domain == "n1":
-        vip_ip, vip_mac = controller.vip_data_recovery_n1_ip, controller.vip_data_recovery_n1_mac
-    elif recovery and domain == "n2":
-        vip_ip, vip_mac = controller.vip_data_recovery_n2_ip, controller.vip_data_recovery_n2_mac
-    elif domain == "n1":
+    if domain == "n1":
         vip_ip, vip_mac = controller.vip_data_n1_ip, controller.vip_data_n1_mac
     else:
         vip_ip, vip_mac = controller.vip_data_n2_ip, controller.vip_data_n2_mac
-
-    from .config import _VIP_DATA_RECOVERY_IDLE_TIMEOUT, _VIP_DATA_RECOVERY_HARD_TIMEOUT
 
     flows.install_vip_dnat_snat(
         controller,
@@ -239,15 +205,11 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
         vip_mac=vip_mac,
         real_backend_ip=storage_ip,
         real_backend_mac=storage_mac,
-        tcp_src_port=tcp_src_port,
-        tcp_dst_port=tcp_dst_port,
-        idle_timeout=_VIP_DATA_RECOVERY_IDLE_TIMEOUT if recovery else None,
-        hard_timeout=_VIP_DATA_RECOVERY_HARD_TIMEOUT if recovery else None,
     )
 
     logger.info(
-        "vip_data(%s): client=%s -> vip=%s -> real=%s recovery=%s",
-        domain, src_ip, vip_ip, storage_ip, recovery,
+        "vip_data(%s): client=%s -> vip=%s -> real=%s",
+        domain, src_ip, vip_ip, storage_ip,
     )
 
     return True
@@ -268,7 +230,7 @@ def install_vip_arp_punt_rules(controller, datapath) -> None:
     parser  = datapath.ofproto_parser
     ofproto = datapath.ofproto
 
-    for vip_ip, _, _, _ in _iter_vip_bindings(controller):
+    for vip_ip, _, _ in _iter_vip_bindings(controller):
         match   = parser.OFPMatch(eth_type=0x0806, arp_tpa=vip_ip)
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]
@@ -292,7 +254,7 @@ def install_vip_punt_rules(controller, datapath) -> None:
     parser  = datapath.ofproto_parser
     ofproto = datapath.ofproto
 
-    for vip_ip, _, _, _ in _iter_vip_bindings(controller):
+    for vip_ip, _, _ in _iter_vip_bindings(controller):
         match   = parser.OFPMatch(eth_type=0x0800, ipv4_dst=vip_ip)
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]

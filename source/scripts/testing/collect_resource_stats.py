@@ -381,15 +381,15 @@ def main():
                     "storage_count":             storage_count,
                     "avg_repl_lag_ms":           avg_repl_lag,
                 }
+                # --- Broad debug row ---
+                coord_lan = peer_lan(network_id) if network_id in ("lan1", "lan2") else network_id
+
                 # Append Tier 1 lifecycle fields from the same helper used by the debug CSV.
                 t1 = build_tier1_row(summary, coord_state_by_lan.get(coord_lan, {}))
                 main_row["coord_state_owner_lan"] = t1.get("coord_state_owner_lan", "NONE")
                 main_row["tier1_lifecycle_active_count"] = t1.get("tier1_lifecycle_active_count", 0)
                 writer.writerow(main_row)
                 csv_file.flush()
-
-                # --- Broad debug row ---
-                coord_lan = peer_lan(network_id) if network_id in ("lan1", "lan2") else network_id
                 debug_row = {
                     "timestamp":                   ts_str,
                     "phase":                       phase,

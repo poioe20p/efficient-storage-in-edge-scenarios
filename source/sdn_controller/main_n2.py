@@ -43,48 +43,6 @@ _REQUIRED_APP = ['os_ken.topology.switches']
 
 logger = logging.getLogger('os_ken.main_n2')
 
-_RECOVERY_DISTRESS_OUTCOMES = frozenset({
-    "success_after_rebind",
-    "failure_terminal",
-    "recovery_rebind",
-    "terminal_recovery_failure",
-    "circuit_open",
-})
-
-
-def _domain_summary_has_recovery_distress(domain_summary: object | None, lan: str) -> bool:
-    if domain_summary is None:
-        return False
-
-    helper = getattr(domain_summary, "has_recovery_distress", None)
-    if callable(helper):
-        try:
-            return bool(helper(lan))
-        except Exception:
-            logger.debug(
-                "[reserve] recovery-distress helper failed for %s",
-                lan,
-                exc_info=True,
-            )
-
-    outcomes_per_lan = getattr(domain_summary, "request_lease_outcomes_per_lan", None)
-    if not isinstance(outcomes_per_lan, dict):
-        return False
-
-    outcomes = outcomes_per_lan.get(lan, {})
-    if not isinstance(outcomes, dict):
-        return False
-
-    for outcome in _RECOVERY_DISTRESS_OUTCOMES:
-        value = outcomes.get(outcome, 0)
-        try:
-            if float(value or 0) > 0:
-                return True
-        except (TypeError, ValueError):
-            continue
-
-    return False
-
 
 @dataclass(frozen=True)
 class _ComputeScaleDownCandidate:
@@ -445,13 +403,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         ds = summary.domain_summary
 
-        # 5b. Recovery-distress trigger — activate reserve if storage recovery is observed.
-        lan_str = f"lan{lan}"
-        if _domain_summary_has_recovery_distress(ds, lan_str):
-            logger.info("[reserve] recovery distress detected for %s", lan_str)
-            self._handle_storage_reserve_trigger(summary, lan, "recovery")
-
-        # 6. Scale-up evaluation
+        # 5. Scale-up evaluation
         dynamic_storage_count = self._node_registry.count_dynamic("storage")
         registry_dynamic_compute_count = self._node_registry.count_dynamic("compute")
         pending_compute_drain_count = self._elasticity.pending_compute_drain_count()
@@ -513,7 +465,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             logger.debug("[scale-down] elasticity manager is busy — skipping scaling evaluation")
             return
 
-        # 7. Scale-down evaluation (with cooldown gating)
+        # 6. Scale-down evaluation (with cooldown gating)
         remaining = self._scaling_policy.compute_cooldown_remaining()
         if remaining > 0:
             logger.debug("[scale-down] compute within %.0fs cooldown — skipping", remaining)

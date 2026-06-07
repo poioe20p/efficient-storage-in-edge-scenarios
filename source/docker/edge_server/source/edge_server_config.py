@@ -23,9 +23,11 @@ class EdgeServerConfig:
     local_request_per_device_window: int
     service_pressure_default_limit: int
     mongo_client_retire_grace_s: float
-    vip_data_recovery_session_max_age_s: float
     dashboard_candidate_limit: int
     dashboard_integrity_work_factor: int
+    mongo_retry_backoff_ms: int
+    mongo_retry_max_attempts: int
+    mongo_server_selection_timeout_ms: int
 
     @classmethod
     def from_env(cls) -> "EdgeServerConfig":
@@ -79,14 +81,20 @@ class EdgeServerConfig:
             mongo_client_retire_grace_s=float(
                 os.environ.get("MONGO_CLIENT_RETIRE_GRACE_S", "30")
             ),
-            vip_data_recovery_session_max_age_s=float(
-                os.environ.get("VIP_DATA_RECOVERY_SESSION_MAX_AGE_S", "35")
-            ),
             dashboard_candidate_limit=int(
                 os.environ.get("DASHBOARD_CANDIDATE_LIMIT", "500")
             ),
             dashboard_integrity_work_factor=int(
                 os.environ.get("DASHBOARD_INTEGRITY_WORK_FACTOR", "200")
+            ),
+            mongo_retry_backoff_ms=int(
+                os.environ.get("MONGO_RETRY_BACKOFF_MS", "100")
+            ),
+            mongo_retry_max_attempts=int(
+                os.environ.get("MONGO_RETRY_MAX_ATTEMPTS", "3")
+            ),
+            mongo_server_selection_timeout_ms=int(
+                os.environ.get("MONGO_SERVER_SELECTION_TIMEOUT_MS", "3000")
             ),
         )
 

@@ -177,11 +177,11 @@ in mind:
 - Control-plane routes such as `/health`, `/drain`, `/vip_data`,
   `/tier1_manifest`, and `/wait_time` are not part of the normal client mix.
 
-| Request type | Endpoint | Purpose | Why it exists |
-| --- | --- | --- | --- |
-| `device_status` | `/device/<device_id>/latest?node_id=<node_id>` | Return one device's latest state for a monitoring node. | It is the primary data-locality request and the main driver of cross-region storage pressure. |
-| `service_pressure` | `/service_pressure?window_min=<minutes>&limit=<N>` | Summarize recent pressure seen by the serving edge. | It exposes local analytics pressure without adding synchronous MongoDB traffic. |
-| `dashboard` | `/dashboard/<node_id>?limit=<N>` | Return a ranked overview of urgent devices for one node. | It is the primary compute-heavy request and justifies edge-server scaling. |
+| Request type         | Endpoint                                             | Purpose                                                  | Why it exists                                                                                 |
+| -------------------- | ---------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `device_status`    | `/device/<device_id>/latest?node_id=<node_id>`     | Return one device's latest state for a monitoring node.  | It is the primary data-locality request and the main driver of cross-region storage pressure. |
+| `service_pressure` | `/service_pressure?window_min=<minutes>&limit=<N>` | Summarize recent pressure seen by the serving edge.      | It exposes local analytics pressure without adding synchronous MongoDB traffic.               |
+| `dashboard`        | `/dashboard/<node_id>?limit=<N>`                   | Return a ranked overview of urgent devices for one node. | It is the primary compute-heavy request and justifies edge-server scaling.                    |
 
 ## 1. Device Status Read (Primary Data Gravity Driver)
 
@@ -275,12 +275,12 @@ metadata-rich ranking and summary work on the edge server.
 
 ## It creates all required stresses
 
-| Component             | Trigger                                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| Compute scaling       | Dashboard-led metadata analytics and fleet summary work during compute phases                    |
-| Data scaling          | Cross-region device-status hotspot during storage phases                                         |
-| Routing balancing     | Multiple edge servers serving simultaneous dashboard and status requests                         |
-| MongoDB justification | Heterogeneous device payloads, tag arrays, aggregation pipelines, TTL, schema flexibility        |
+| Component             | Trigger                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| Compute scaling       | Dashboard-led metadata analytics and fleet summary work during compute phases             |
+| Data scaling          | Cross-region device-status hotspot during storage phases                                  |
+| Routing balancing     | Multiple edge servers serving simultaneous dashboard and status requests                  |
+| MongoDB justification | Heterogeneous device payloads, tag arrays, aggregation pipelines, TTL, schema flexibility |
 
 ---
 
@@ -310,17 +310,17 @@ effective whole-workload cross-region share is therefore lower than the raw
 ratio, which is why `storage_stress` intentionally uses a lower ratio than the
 hotspot phases.
 
-| Phase | Duration | Rate/client | `cross_region_ratio` | Mix (`device_status / dashboard / service_pressure`) | Role |
-| --- | ---: | ---: | ---: | --- | --- |
-| `baseline` | 60 s | 1.0 | 0.00 | `0.35 / 0.35 / 0.30` | Tier 0 control |
-| `local_moderate` | 90 s | 5.0 | 0.00 | `0.35 / 0.35 / 0.30` | Local warm-up without cross-region pressure |
-| `storage_stress` | 240 s | 7.0 | 0.50 | `0.80 / 0.10 / 0.10` | Tier 2 pressure build-up; deliberately milder than full hotspot |
-| `cross_region_hotspot` | 300 s | 8.0 | 0.85 | `0.80 / 0.10 / 0.10` | Observe Tier 2 benefit after readiness on `lan2_to_lan1` |
-| `reverse_hotspot` | 300 s | 8.0 | 0.85 | `0.80 / 0.10 / 0.10` | Same observation window in the opposite direction |
-| `compute_ramp` | 120 s | 11.0 | 0.05 | `0.35 / 0.50 / 0.15` | Shift emphasis from data gravity toward dashboard-led server-side work |
-| `compute_spike` | 150 s | 17.0 | 0.05 | `0.25 / 0.60 / 0.15` | Peak compute stress with dashboard as the dominant route |
-| `sustained_plateau` | 120 s | 10.0 | 0.05 | `0.30 / 0.55 / 0.15` | Hold compute pressure after the spike |
-| `demand_drop` | 300 s | 1.0 | 0.00 | `0.60 / 0.30 / 0.10` | Observe cooldown-gated scale-in |
+| Phase                    | Duration | Rate/client | `cross_region_ratio` | Mix (`device_status / dashboard / service_pressure`) | Role                                                                   |
+| ------------------------ | -------: | ----------: | ---------------------: | ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `baseline`             |     60 s |         1.0 |                   0.00 | `0.35 / 0.35 / 0.30`                                 | Tier 0 control                                                         |
+| `local_moderate`       |     90 s |         5.0 |                   0.00 | `0.35 / 0.35 / 0.30`                                 | Local warm-up without cross-region pressure                            |
+| `storage_stress`       |    240 s |         7.0 |                   0.50 | `0.80 / 0.10 / 0.10`                                 | Tier 2 pressure build-up; deliberately milder than full hotspot        |
+| `cross_region_hotspot` |    300 s |         8.0 |                   0.85 | `0.80 / 0.10 / 0.10`                                 | Observe Tier 2 benefit after readiness on `lan2_to_lan1`             |
+| `reverse_hotspot`      |    300 s |         8.0 |                   0.85 | `0.80 / 0.10 / 0.10`                                 | Same observation window in the opposite direction                      |
+| `compute_ramp`         |    120 s |        11.0 |                   0.05 | `0.35 / 0.50 / 0.15`                                 | Shift emphasis from data gravity toward dashboard-led server-side work |
+| `compute_spike`        |    150 s |        17.0 |                   0.05 | `0.25 / 0.60 / 0.15`                                 | Peak compute stress with dashboard as the dominant route               |
+| `sustained_plateau`    |    120 s |        10.0 |                   0.05 | `0.30 / 0.55 / 0.15`                                 | Hold compute pressure after the spike                                  |
+| `demand_drop`          |    300 s |         1.0 |                   0.00 | `0.60 / 0.30 / 0.10`                                 | Observe cooldown-gated scale-in                                        |
 
 ### Node-Profile Seeding
 
@@ -377,14 +377,14 @@ extends the storage-locality window so the controller sees several sustained
 10-second telemetry windows above the storage CPU or DB-latency floor without
 retuning the controller policy.
 
-| Phase | Duration | Rate/client | `cross_region_ratio` | Mix (`device_status / dashboard / service_pressure`) | Role |
-| --- | ---: | ---: | ---: | --- | --- |
-| `baseline` | 60 s | 2.0 | 0.00 | `0.60 / 0.25 / 0.15` | Short Tier 0 control before the storage-focused ramp |
-| `local_moderate` | 120 s | 6.0 | 0.00 | `0.75 / 0.15 / 0.10` | Local warm-up with a larger working set but no cross-region reads |
-| `storage_stress` | 420 s | 10.0 | 0.75 | `0.90 / 0.05 / 0.05` | Long pre-trigger storage build-up intended to arm the first Tier 2 alert |
-| `cross_region_hotspot` | 420 s | 12.0 | 0.95 | `0.90 / 0.05 / 0.05` | Main Tier 2 observation window on `lan2_to_lan1` |
-| `reverse_hotspot` | 420 s | 12.0 | 0.95 | `0.90 / 0.05 / 0.05` | Same Tier 2 observation window in the opposite direction |
-| `demand_drop` | 360 s | 1.0 | 0.00 | `0.70 / 0.20 / 0.10` | Cooldown and storage scale-down observation |
+| Phase                    | Duration | Rate/client | `cross_region_ratio` | Mix (`device_status / dashboard / service_pressure`) | Role                                                                     |
+| ------------------------ | -------: | ----------: | ---------------------: | ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `baseline`             |     60 s |         2.0 |                   0.00 | `0.60 / 0.25 / 0.15`                                 | Short Tier 0 control before the storage-focused ramp                     |
+| `local_moderate`       |    120 s |         6.0 |                   0.00 | `0.75 / 0.15 / 0.10`                                 | Local warm-up with a larger working set but no cross-region reads        |
+| `storage_stress`       |    420 s |        10.0 |                   0.75 | `0.90 / 0.05 / 0.05`                                 | Long pre-trigger storage build-up intended to arm the first Tier 2 alert |
+| `cross_region_hotspot` |    420 s |        12.0 |                   0.95 | `0.90 / 0.05 / 0.05`                                 | Main Tier 2 observation window on `lan2_to_lan1`                       |
+| `reverse_hotspot`      |    420 s |        12.0 |                   0.95 | `0.90 / 0.05 / 0.05`                                 | Same Tier 2 observation window in the opposite direction                 |
+| `demand_drop`          |    360 s |         1.0 |                   0.00 | `0.70 / 0.20 / 0.10`                                 | Cooldown and storage scale-down observation                              |
 
 Expected signatures for this companion profile:
 

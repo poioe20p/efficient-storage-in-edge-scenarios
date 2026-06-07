@@ -23,11 +23,11 @@ Currently, all three endpoints do near-zero compute: a boolean threshold compari
 
 ## Overview of Changes
 
-| Endpoint | Current Compute | Added Compute | Expected $T_{proc}$ Impact |
-|---|---|---|---|
-| `/device/<id>/latest` | `value >= threshold` boolean | Multi-level severity scoring + trend analysis from recent local request activity | ~5–15 ms per request |
-| `/service_pressure` | Lightweight local buffer summary | Pressure scoring + tag/device ranking over recent local request activity | ~3–10 ms per request |
-| `/dashboard/<node_id>` | `value / threshold` sort | Multi-factor urgency with tag priority weighting + staleness decay + summary stats + fleet integrity verification (iterated SHA-256) | ~80–120 ms per request |
+| Endpoint                 | Current Compute                  | Added Compute                                                                                                                        | Expected$T_{proc}$ Impact |
+| ------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| `/device/<id>/latest`  | `value >= threshold` boolean   | Multi-level severity scoring + trend analysis from recent local request activity                                                     | ~5–15 ms per request       |
+| `/service_pressure`    | Lightweight local buffer summary | Pressure scoring + tag/device ranking over recent local request activity                                                             | ~3–10 ms per request       |
+| `/dashboard/<node_id>` | `value / threshold` sort       | Multi-factor urgency with tag priority weighting + staleness decay + summary stats + fleet integrity verification (iterated SHA-256) | ~80–120 ms per request     |
 
 At Phase 3 rates (10 req/s/client × multiple clients), the cumulative $T_{proc}$ across the telemetry window should breach $\tau_{proc}$ and trigger compute scale-out.
 
@@ -407,12 +407,13 @@ def verify_fleet_integrity(devices: list[dict], work_factor: int = 200) -> None:
 
 Two new environment variables control the dashboard compute path:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `DASHBOARD_CANDIDATE_LIMIT` | `500` | Number of recent matching devices fetched per dashboard request via `.sort("last_updated", -1).limit()` |
-| `DASHBOARD_INTEGRITY_WORK_FACTOR` | `200` | Iterations of SHA-256 per device in `verify_fleet_integrity`; controls $T_{proc}$ linearly |
+| Variable                            | Default | Purpose                                                                                                   |
+| ----------------------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `DASHBOARD_CANDIDATE_LIMIT`       | `500` | Number of recent matching devices fetched per dashboard request via `.sort("last_updated", -1).limit()` |
+| `DASHBOARD_INTEGRITY_WORK_FACTOR` | `200` | Iterations of SHA-256 per device in `verify_fleet_integrity`; controls $T_{proc}$ linearly            |
 
 Both are consumed from `edge_server_config.py`:
+
 ```python
 dashboard_candidate_limit = int(os.environ.get("DASHBOARD_CANDIDATE_LIMIT", "500"))
 dashboard_integrity_work_factor = int(os.environ.get("DASHBOARD_INTEGRITY_WORK_FACTOR", "200"))
@@ -624,9 +625,9 @@ The only exception is the trend query in `/device/<id>/latest` — it uses `time
 
 ## Summary of Files Changed
 
-| File | Action | Description |
-|---|---|---|
-| `source/docker/edge_server/source/compute.py` | **Create** | Pure-compute module: 6 functions + constants |
-| `source/docker/edge_server/source/app.py` | **Edit** | Import `compute`, modify 3 endpoints to call compute functions |
+| File                                            | Action           | Description                                                      |
+| ----------------------------------------------- | ---------------- | ---------------------------------------------------------------- |
+| `source/docker/edge_server/source/compute.py` | **Create** | Pure-compute module: 6 functions + constants                     |
+| `source/docker/edge_server/source/app.py`     | **Edit**   | Import `compute`, modify 3 endpoints to call compute functions |
 
 No new dependencies. No config changes. No Dockerfile changes.

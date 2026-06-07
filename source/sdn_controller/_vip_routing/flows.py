@@ -11,7 +11,6 @@ def install_vip_dnat_snat(
     controller, datapath, in_port, pkt, *,
     client_mac, client_ip, ip_proto, vip_ip, vip_mac,
     real_backend_ip, real_backend_mac,
-    tcp_src_port=None, tcp_dst_port=None,
     idle_timeout=None, hard_timeout=None,
 ) -> None:
     """Install a DNAT + SNAT flow rule pair and Packet-Out the first packet.
@@ -25,11 +24,9 @@ def install_vip_dnat_snat(
               ipv4_src=backend, ipv4_dst=client, ip_proto)
         → set_field(eth_src=VIP_mac, ipv4_src=VIP_ip), output to client port
 
-    By default, transport ports are excluded so one steady-state VIP_DATA
+    Transport ports are excluded so one steady-state VIP_DATA
     rule can cover concurrent connections from the same web server without
-    tier-transition inconsistency. The recovery VIP path can optionally
-    narrow both DNAT and SNAT rules to one TCP connection by passing
-    tcp_src_port/tcp_dst_port and custom timeouts.
+    tier-transition inconsistency.
     """
     parser  = datapath.ofproto_parser
     ofproto = datapath.ofproto
@@ -60,11 +57,6 @@ def install_vip_dnat_snat(
     # eth_dst=vip_mac: the client sends to VIP_MAC (from our ARP reply).
     # ipv4_src=client_ip: scopes the rule to this specific client so
     #   multiple simultaneous clients each select their own backend.
-    has_tcp_ports = (
-        ip_proto == 6
-        and tcp_src_port is not None
-        and tcp_dst_port is not None
-    )
     dnat_fields = {
         "eth_type": 0x0800,
         "eth_src": client_mac,
@@ -73,9 +65,6 @@ def install_vip_dnat_snat(
         "ipv4_dst": vip_ip,
         "ip_proto": ip_proto,
     }
-    if has_tcp_ports:
-        dnat_fields["tcp_src"] = tcp_src_port
-        dnat_fields["tcp_dst"] = tcp_dst_port
     dnat_match = parser.OFPMatch(**dnat_fields)
     # Cross-network: the frame must be addressed to the router's LAN MAC so
     # the router's kernel IP stack accepts it for L3 forwarding.  Sending
@@ -120,9 +109,6 @@ def install_vip_dnat_snat(
         "ipv4_dst": client_ip,
         "ip_proto": ip_proto,
     }
-    if has_tcp_ports:
-        snat_fields["tcp_src"] = tcp_dst_port
-        snat_fields["tcp_dst"] = tcp_src_port
     snat_match = parser.OFPMatch(**snat_fields)
     snat_actions = [
         parser.OFPActionSetField(eth_src=vip_mac),
@@ -137,12 +123,11 @@ def install_vip_dnat_snat(
     )
 
     logger.info(
-        "dnat/snat installed: vip=%s -> real=%s (idle=%ds hard=%ds recovery_ports=%s)",
+        "dnat/snat installed: vip=%s -> real=%s (idle=%ds hard=%ds)",
         vip_ip,
         real_backend_ip,
         idle_timeout if idle_timeout is not None else _VIP_IDLE_TIMEOUT,
         hard_timeout if hard_timeout is not None else _VIP_HARD_TIMEOUT,
-        has_tcp_ports,
     )
 
     # Packet-Out the first packet with DNAT actions so it reaches the backend

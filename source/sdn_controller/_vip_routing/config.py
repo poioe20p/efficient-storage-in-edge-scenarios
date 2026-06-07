@@ -32,8 +32,6 @@ _W_STORAGE_HOPS        = float(os.environ.get("W_STORAGE_HOPS",        "0.3"))
 
 _VIP_IDLE_TIMEOUT = int(os.environ.get("VIP_IDLE_TIMEOUT", "30"))
 _VIP_HARD_TIMEOUT = int(os.environ.get("VIP_HARD_TIMEOUT", "120"))
-_VIP_DATA_RECOVERY_IDLE_TIMEOUT = int(os.environ.get("VIP_DATA_RECOVERY_IDLE_TIMEOUT", "40"))
-_VIP_DATA_RECOVERY_HARD_TIMEOUT = int(os.environ.get("VIP_DATA_RECOVERY_HARD_TIMEOUT", "45"))
 
 # Cross-network routing: OVS port number connected to the inter-LAN router.
 # 0 = disabled (local-only mode).  Set to the actual port (e.g. 3) to enable

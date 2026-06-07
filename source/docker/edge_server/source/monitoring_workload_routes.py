@@ -185,14 +185,15 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
                                     "region_origin": 1,
                                     "last_updated": 1,
                                 },
-                            ).sort("last_updated", -1).limit(config.DASHBOARD_CANDIDATE_LIMIT)
+                                batch_size=config.dashboard_candidate_limit,
+                            ).sort("last_updated", -1).limit(config.dashboard_candidate_limit)
                         ),
                     )
                 )
 
             devices = score_dashboard_urgency(devices)
             devices = devices[:limit]
-            verify_fleet_integrity(devices, config.DASHBOARD_INTEGRITY_WORK_FACTOR)
+            verify_fleet_integrity(devices, config.dashboard_integrity_work_factor)
             summary = compute_dashboard_summary(devices)
 
             stage_local_request_event(

@@ -12,15 +12,6 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-_RECOVERY_DISTRESS_OUTCOMES = frozenset({
-    "success_after_rebind",
-    "failure_terminal",
-    "recovery_rebind",
-    "terminal_recovery_failure",
-    "circuit_open",
-})
-
-
 class EdgeAccessStats(BaseModel):
     """Per-(owner_lan, collection) hotness slice produced by the aggregator
     from the wrapped edge-server reads within one telemetry window.
@@ -105,11 +96,6 @@ class DomainSummary(BaseModel):
     # Keys: "lan1", "lan2". Each value is {outcome: count} where outcome
     # is one of "success_normal", "success_after_rebind", "failure_terminal".
     request_lease_outcomes_per_lan: dict[str, dict[str, int]] = {}
-
-    def has_recovery_distress(self, lan: str) -> bool:
-        """True when *lan* shows recovery rebinds or terminal failures this window."""
-        outcomes = self.request_lease_outcomes_per_lan.get(lan, {})
-        return any(outcomes.get(outcome, 0) > 0 for outcome in _RECOVERY_DISTRESS_OUTCOMES)
 
 
 class TelemetrySummary(BaseModel):

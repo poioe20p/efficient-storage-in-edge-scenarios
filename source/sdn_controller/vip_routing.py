@@ -47,8 +47,6 @@ class VipRoutingMixin:
     Depends on TopologyMixin attributes (set at __init__ time):
         vip_server_ip, vip_server_mac,
         vip_data_n1_ip, vip_data_n1_mac, vip_data_n2_ip, vip_data_n2_mac,
-        vip_data_recovery_n1_ip, vip_data_recovery_n1_mac,
-        vip_data_recovery_n2_ip, vip_data_recovery_n2_mac,
         vip_server_pool, vip_storage_pool_n1, vip_storage_pool_n2,
         hop_cache, _hop_cache_max, host_attachment
 
@@ -115,9 +113,9 @@ class VipRoutingMixin:
         """Pick the web server with the lowest WSM cost from vip_server_pool."""
         return selection.select_server(self, client_mac)
 
-    def select_storage(self, domain: str, client_mac: str, *, recovery: bool = False) -> dict | None:
+    def select_storage(self, domain: str, client_mac: str) -> dict | None:
         """Pick the storage node with the lowest WSM cost from the domain's pool."""
-        return selection.select_storage(self, domain, client_mac, recovery=recovery)
+        return selection.select_storage(self, domain, client_mac)
 
     # ------------------------------------------------------------------
     # Public API — telemetry integration (called from Thread 2)

@@ -56,9 +56,6 @@ def init_vip_routing_state(controller) -> None:
         "n1": {},
         "n2": {},
     }  # domain -> (mac -> lease)
-    # (edge_server_mac, domain) -> backend_mac for the last normal
-    # VIP_DATA choice. Recovery selections must not overwrite this state.
-    controller._last_normal_storage_choice: dict[tuple[str, str], str] = {}
 
     from .config import (
         _W_CPU, _W_RAM, _W_REQUESTS, _W_HOPS,
@@ -153,7 +150,6 @@ def unregister_server_backend(controller, mac: str) -> None:
 def unregister_storage_backend(controller, mac: str, domain: str) -> None:
     controller.remove_storage_mac(mac, domain)
     clear_storage_backend_warm(controller, mac, domain)
-    _forget_normal_storage_choice(controller, mac, domain)
 
 
 # --- Telemetry cache updates (Thread 2 facing) ---
@@ -189,30 +185,4 @@ def update_storage_stats(controller, storage_servers: dict) -> None:
             mac, summary.avg_cpu_percent,
             summary.avg_ram_used_mb, summary.avg_connections,
             summary.avg_repl_lag_s,
-        )
-
-
-# --- Internal helpers (also used by selection.py) ---
-
-def _remember_normal_storage_choice(controller, client_mac: str, domain: str, backend_mac: str) -> None:
-    with controller._warm_lock:
-        controller._last_normal_storage_choice[(client_mac, domain)] = backend_mac
-
-
-def _forget_normal_storage_choice(controller, backend_mac: str, domain: str) -> None:
-    with controller._warm_lock:
-        stale_keys = [
-            key
-            for key, remembered_mac in controller._last_normal_storage_choice.items()
-            if key[1] == domain and remembered_mac == backend_mac
-        ]
-        for key in stale_keys:
-            controller._last_normal_storage_choice.pop(key, None)
-
-    if stale_keys:
-        logger.info(
-            "vip_data(%s): forgot %d remembered normal choices for removed backend mac=%s",
-            domain,
-            len(stale_keys),
-            backend_mac,
         )

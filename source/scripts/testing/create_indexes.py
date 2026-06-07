@@ -19,6 +19,7 @@ def setup(uri: str, label: str):
     # sensor_reports
     db.sensor_reports.create_index([("region_origin", ASCENDING)])
     db.sensor_reports.create_index([("tags", ASCENDING)])
+    db.sensor_reports.create_index([("tags", ASCENDING), ("last_updated", DESCENDING)])
     db.sensor_reports.create_index([("device_type", ASCENDING), ("payload.status", ASCENDING)])
 
     # device_registry

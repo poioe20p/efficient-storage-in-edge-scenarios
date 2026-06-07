@@ -25,7 +25,6 @@ DB_NAME = CONFIG.db_name
 DB_PORT = CONFIG.db_port
 MAX_IDLE_MS = CONFIG.max_idle_ms
 MONGO_CLIENT_RETIRE_GRACE_S = CONFIG.mongo_client_retire_grace_s
-VIP_DATA_RECOVERY_SESSION_MAX_AGE_S = CONFIG.vip_data_recovery_session_max_age_s
 
 
 class StorageVipConfigurationError(RuntimeError):
@@ -50,8 +49,8 @@ class _MongoEpoch:
     retiring: bool = False
     retire_requested_at: float | None = None
     drain_deadline: float | None = None
-    recovery_expires_at: float | None = None
     last_failure_at: float = 0.0
+    recent_failures: int = 0  # Observability — no longer gates rotation
 
 
 class RequestLeaseLifecycle(Enum):
@@ -69,7 +68,6 @@ class RequestLease:
     first_bound_at: float
     lifecycle: RequestLeaseLifecycle = RequestLeaseLifecycle.ACTIVE
     replay_safe: bool = True
-    rebinds_used: int = 0
     terminal_reason: str | None = None
 
 
@@ -77,7 +75,6 @@ class RequestLease:
 class _LanEpochState:
     lifecycle_lock: threading.Lock = field(default_factory=threading.Lock)
     normal_vip_ip: str | None = None
-    recovery_vip_ip: str | None = None
     current: _MongoEpoch | None = None
     retiring: list[_MongoEpoch] = field(default_factory=list)
     next_epoch_id: int = 1
@@ -86,10 +83,6 @@ class _LanEpochState:
 vip_data_per_domain = {
     "lan1": "10.0.0.254",
     "lan2": "10.0.1.254",
-}
-vip_data_recovery_per_domain = {
-    "lan1": os.environ.get("VIP_DATA_RECOVERY_N1_IP", "10.0.0.252"),
-    "lan2": os.environ.get("VIP_DATA_RECOVERY_N2_IP", "10.0.1.252"),
 }
 
 _epoch_states_registry_lock = threading.Lock()
@@ -100,17 +93,11 @@ _epoch_housekeeping_started = False
 
 def _seed_epoch_states_from_config() -> None:
     configured_lans = set(vip_data_per_domain)
-    recovery_lans = set(vip_data_recovery_per_domain)
-    if configured_lans != recovery_lans:
-        raise StorageVipConfigurationError(
-            "startup VIP configuration requires matching normal and recovery LAN sets"
-        )
 
     seeded: dict[str, _LanEpochState] = {}
     for lan in sorted(configured_lans):
         seeded[lan] = _LanEpochState(
             normal_vip_ip=vip_data_per_domain[lan],
-            recovery_vip_ip=vip_data_recovery_per_domain[lan],
         )
 
     with _epoch_states_registry_lock:
@@ -124,26 +111,6 @@ def _get_lan_epoch_state(lan: str) -> _LanEpochState:
     if state is None:
         raise StorageVipConfigurationError(f"unknown configured LAN: {lan}")
     return state
-
-
-def _snapshot_vip_ip_for_epoch(lan: str, mode: str) -> str:
-    state = _get_lan_epoch_state(lan)
-    with state.lifecycle_lock:
-        if mode == "normal":
-            vip_ip = state.normal_vip_ip
-            if vip_ip is None:
-                raise StorageVipConfigurationError(f"missing normal VIP mapping for {lan}")
-            return vip_ip
-
-        if mode == "recovery":
-            vip_ip = state.recovery_vip_ip
-            if vip_ip is None:
-                raise StorageVipConfigurationError(
-                    f"missing recovery VIP mapping for {lan}"
-                )
-            return vip_ip
-
-    raise ValueError(f"unsupported epoch mode: {mode}")
 
 
 def _new_epoch_locked(
@@ -200,24 +167,19 @@ def _get_or_create_epoch_client(lan: str, epoch: _MongoEpoch) -> MongoClient:
             url,
             maxPoolSize=1,
             maxIdleTimeMS=MAX_IDLE_MS,
-            serverSelectionTimeoutMS=3000,
+            serverSelectionTimeoutMS=CONFIG.mongo_server_selection_timeout_ms,
             socketTimeoutMS=15000,
             directConnection=True,
         )
         epoch.client_created_at = time.monotonic()
-        if epoch.mode == "recovery" and epoch.recovery_expires_at is None:
-            epoch.recovery_expires_at = (
-                epoch.client_created_at + VIP_DATA_RECOVERY_SESSION_MAX_AGE_S
-            )
         log.info(
             "Created MongoClient for %s epoch=%s mode=%s via %s "
-            "(maxIdleTimeMS=%d recovery_session_max_age_s=%.1f)",
+            "(maxIdleTimeMS=%d)",
             lan,
             epoch.epoch_id,
             epoch.mode,
             url,
             MAX_IDLE_MS,
-            VIP_DATA_RECOVERY_SESSION_MAX_AGE_S,
         )
         return epoch.client
 
@@ -276,132 +238,6 @@ def _get_or_bind_request_lease(lan: str) -> RequestLease:
     return _bind_new_request_lease(lan)
 
 
-def _rebind_request_lease_after_autoreconnect(lease: RequestLease) -> _MongoEpoch:
-    # Replay-safe reads are allowed one extra rebind — the second
-    # attempt picks up a new normal epoch after recovery expiry.
-    max_rebinds = 2 if lease.replay_safe else 1
-    if lease.rebinds_used >= max_rebinds or not lease.replay_safe:
-        lease.lifecycle = RequestLeaseLifecycle.FAILED
-        lease.terminal_reason = "rebind_not_allowed"
-        raise AutoReconnect("request lease cannot rebind again")
-
-    state = _get_lan_epoch_state(lease.lan)
-    failed_epoch = lease.epoch
-
-    with state.lifecycle_lock:
-        current_epoch = state.current
-        if current_epoch is None:
-            raise RuntimeError(f"no current epoch for {lease.lan}")
-
-        if current_epoch.epoch_id == failed_epoch.epoch_id:
-            if failed_epoch.mode != "normal":
-                lease.lifecycle = RequestLeaseLifecycle.FAILED
-                lease.terminal_reason = "current_recovery_epoch_failed"
-                raise AutoReconnect("current recovery epoch cannot rebind again")
-
-            next_vip_ip = state.recovery_vip_ip
-            if next_vip_ip is None:
-                raise StorageVipConfigurationError(
-                    f"missing recovery VIP mapping for {lease.lan}"
-                )
-            adopted_epoch = _rotate_epoch_if_current_locked(
-                lease.lan,
-                state,
-                expected_epoch_id=failed_epoch.epoch_id,
-                reason="request_lease_auto_reconnect",
-                next_mode="recovery",
-                next_vip_ip=next_vip_ip,
-            )
-        else:
-            adopted_epoch = current_epoch
-
-        if adopted_epoch.epoch_id == failed_epoch.epoch_id:
-            raise RuntimeError("rebind helper must adopt a different epoch")
-
-        now = time.monotonic()
-        adopted_epoch.lease_count += 1
-        if adopted_epoch.first_lease_at is None:
-            adopted_epoch.first_lease_at = now
-        lease.epoch = adopted_epoch
-        lease.rebinds_used += 1
-
-    _release_epoch(lease.lan, failed_epoch)
-    return adopted_epoch
-
-
-def _rotate_epoch_if_current_locked(
-    lan: str,
-    state: _LanEpochState,
-    expected_epoch_id: int,
-    reason: str,
-    next_mode: str,
-    next_vip_ip: str,
-) -> _MongoEpoch:
-    current = state.current
-
-    if current is None:
-        state.current = _new_epoch_locked(
-            state,
-            mode=next_mode,
-            vip_ip=next_vip_ip,
-        )
-        log.info(
-            "Initialized epoch for %s via %s: epoch=%s mode=%s vip=%s",
-            lan,
-            reason,
-            state.current.epoch_id,
-            state.current.mode,
-            state.current.vip_ip,
-        )
-        return state.current
-
-    if current.epoch_id != expected_epoch_id:
-        log.info(
-            "Skipped epoch rotation for %s via %s; current=%s expected=%s",
-            lan,
-            reason,
-            current.epoch_id,
-            expected_epoch_id,
-        )
-        return current
-
-    _mark_epoch_retiring_locked(state, current)
-    state.current = _new_epoch_locked(
-        state,
-        mode=next_mode,
-        vip_ip=next_vip_ip,
-    )
-    log.info(
-        "Rotated epoch for %s via %s: %s -> %s (mode=%s vip=%s)",
-        lan,
-        reason,
-        current.epoch_id,
-        state.current.epoch_id,
-        state.current.mode,
-        state.current.vip_ip,
-    )
-    return state.current
-
-
-def _rotate_epoch_if_current(
-    lan: str,
-    expected_epoch_id: int,
-    reason: str,
-    next_mode: str,
-    next_vip_ip: str,
-) -> _MongoEpoch:
-    state = _get_lan_epoch_state(lan)
-    with state.lifecycle_lock:
-        return _rotate_epoch_if_current_locked(
-            lan,
-            state,
-            expected_epoch_id,
-            reason,
-            next_mode,
-            next_vip_ip,
-        )
-
-
 def _rotate_current_epoch_locked(
     lan: str,
     state: _LanEpochState,
@@ -428,46 +264,6 @@ def _rotate_current_epoch_locked(
         state.current.vip_ip,
     )
     return state.current
-
-
-def _collect_expired_recovery_epochs() -> list[tuple[str, int]]:
-    expired: list[tuple[str, int]] = []
-    now = time.monotonic()
-
-    with _epoch_states_registry_lock:
-        items = list(_epoch_states.items())
-
-    for lan, state in items:
-        with state.lifecycle_lock:
-            current = state.current
-            if current is None or current.mode != "recovery":
-                continue
-            if current.first_lease_at is None or current.recovery_expires_at is None:
-                continue
-            if now >= current.recovery_expires_at:
-                expired.append((lan, current.epoch_id))
-
-    return expired
-
-
-def _roll_expired_recovery_epochs() -> None:
-    for lan, expected_epoch_id in _collect_expired_recovery_epochs():
-        try:
-            next_vip_ip = _snapshot_vip_ip_for_epoch(lan, mode="normal")
-        except StorageVipConfigurationError as exc:
-            log.error(
-                "storage_vip_configuration_error during recovery rollback for %s: %s",
-                lan,
-                exc,
-            )
-            continue
-        _rotate_epoch_if_current(
-            lan,
-            expected_epoch_id=expected_epoch_id,
-            reason="recovery_expired",
-            next_mode="normal",
-            next_vip_ip=next_vip_ip,
-        )
 
 
 def _close_drained_epochs() -> None:
@@ -514,7 +310,6 @@ def _epoch_housekeeping_loop() -> None:
     while True:
         time.sleep(sweep_interval)
         try:
-            _roll_expired_recovery_epochs()
             _close_drained_epochs()
         except Exception:
             log.exception("epoch housekeeping sweep failed")
@@ -686,8 +481,6 @@ def _project_request_lease_outcome(lease: RequestLease) -> dict[str, Any]:
 
     if projected_lifecycle == RequestLeaseLifecycle.FAILED:
         outcome = "failure_terminal"
-    elif lease.rebinds_used > 0:
-        outcome = "success_after_rebind"
     else:
         outcome = "success_normal"
 
@@ -697,7 +490,6 @@ def _project_request_lease_outcome(lease: RequestLease) -> dict[str, Any]:
         "epoch_mode": lease.epoch.mode,
         "lifecycle": projected_lifecycle.name,
         "outcome": outcome,
-        "rebinds_used": lease.rebinds_used,
         "replay_safe": lease.replay_safe,
         "terminal_reason": lease.terminal_reason,
     }
@@ -714,7 +506,7 @@ def collect_request_lease_outcomes() -> list[dict[str, Any]]:
 def log_request_lease_outcome(entry: dict[str, Any]) -> None:
     log.info(
         "request lease outcome request_id=%s lan=%s lifecycle=%s outcome=%s "
-        "epoch_id=%s epoch_mode=%s rebinds_used=%s replay_safe=%s "
+        "epoch_id=%s epoch_mode=%s replay_safe=%s "
         "terminal_reason=%s",
         getattr(g, "request_id", "unknown"),
         entry["lan"],
@@ -722,7 +514,6 @@ def log_request_lease_outcome(entry: dict[str, Any]) -> None:
         entry["outcome"],
         entry["epoch_id"],
         entry["epoch_mode"],
-        entry["rebinds_used"],
         entry["replay_safe"],
         entry["terminal_reason"],
     )
@@ -767,9 +558,11 @@ def _run_db_op_once(
         client = _get_or_create_epoch_client(lan, epoch)
         result = fn(client[DB_NAME])
         result = _ensure_materialized_result(op_name, result)
+        epoch.recent_failures = 0
         return result
     except AutoReconnect:
         epoch.last_failure_at = time.monotonic()
+        epoch.recent_failures += 1
         raise
     finally:
         _owner_lan.reset(owner_token)
@@ -799,21 +592,24 @@ def run_with_request_lease(
         try:
             return _run_db_op_once(lan, lease, op_name, fn)
         except AutoReconnect:
-            max_attempts = 2 if replay_safe else 1
-            if attempts > max_attempts or lease.rebinds_used >= max_attempts or not lease.replay_safe:
-                lease.lifecycle = RequestLeaseLifecycle.FAILED
-                lease.terminal_reason = f"{op_name}:terminal_recovery_failure"
-                raise
-            _rebind_request_lease_after_autoreconnect(lease)
+            # _run_db_op_once already incremented lease.epoch.recent_failures
+            if attempts <= CONFIG.mongo_retry_max_attempts:
+                backoff_ms = CONFIG.mongo_retry_backoff_ms * (2 ** (attempts - 1))
+                time.sleep(backoff_ms / 1000.0)
+                continue
+
+            # Exhausted all retry attempts
+            lease.lifecycle = RequestLeaseLifecycle.FAILED
+            lease.terminal_reason = f"{op_name}:retries_exhausted"
+            raise
 
 
 @contextmanager
 def timed_db(lan: str):
     """Compatibility context manager for low-level DB access.
 
-    Serving-path MongoDB work should use run_with_request_lease(...) so replay
-    safety and bounded rebind stay attached to the explicit operation boundary
-    instead of a yielded DB handle.
+    Serving-path MongoDB work should use run_with_request_lease(...) so
+    the explicit operation boundary is tracked instead of a yielded DB handle.
     """
 
     g.db_last_lan = lan

@@ -19,7 +19,6 @@ from telemetry import init_telemetry
 from vip_data_mongo_runtime import (
     snapshot_normal_vip_config,
     start_epoch_housekeeping,
-    vip_data_recovery_per_domain,
 )
 
 logging.basicConfig(
@@ -49,16 +48,13 @@ register_post_telemetry_request_hooks(app, process_state)
 if __name__ == "__main__":
     log.info(
         "Starting edge-server on %s:%d  lan=%s  db_name=%s  vip_data=%s"
-        "  vip_data_recovery=%s"
-        "  maxIdleTimeMS=%d  tau_dados=%.0fms  recovery_session_max_age_s=%.1f",
+        "  maxIdleTimeMS=%d  tau_dados=%.0fms",
         CONFIG.bind_host,
         CONFIG.bind_port,
         CONFIG.lan_id,
         CONFIG.db_name,
         snapshot_normal_vip_config(),
-        vip_data_recovery_per_domain,
         CONFIG.max_idle_ms,
         CONFIG.tau_dados_ms,
-        CONFIG.vip_data_recovery_session_max_age_s,
     )
     app.run(host=CONFIG.bind_host, port=CONFIG.bind_port, threaded=True)

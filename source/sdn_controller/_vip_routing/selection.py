@@ -56,42 +56,6 @@ def _claim_warm_backend(
     return chosen
 
 
-def _filter_previous_normal_backend(
-    controller,
-    domain: str,
-    client_mac: str,
-    pool: dict[str, dict],
-) -> dict[str, dict]:
-    key = (client_mac, domain)
-    with controller._warm_lock:
-        previous_normal_mac = controller._last_normal_storage_choice.get(key)
-
-    if previous_normal_mac is None or previous_normal_mac not in pool:
-        return pool
-
-    filtered = {
-        mac: entry
-        for mac, entry in pool.items()
-        if mac != previous_normal_mac
-    }
-    if filtered:
-        logger.info(
-            "select_storage(%s): recovery avoiding last normal backend mac=%s client=%s",
-            domain,
-            previous_normal_mac,
-            client_mac,
-        )
-        return filtered
-
-    logger.info(
-        "select_storage(%s): recovery fallback to full pool after avoidance would empty candidates client=%s mac=%s",
-        domain,
-        client_mac,
-        previous_normal_mac,
-    )
-    return pool
-
-
 def select_server(controller, client_mac: str) -> dict | None:
     """Pick the web server with the lowest WSM cost from vip_server_pool.
 
@@ -177,8 +141,6 @@ def select_storage(
     controller,
     domain: str,
     client_mac: str,
-    *,
-    recovery: bool = False,
 ) -> dict | None:
     """Pick the storage node with the lowest WSM cost from the domain's pool.
 
@@ -195,9 +157,6 @@ def select_storage(
         logger.warning("select_storage(%s): pool empty", domain)
         return None
 
-    if recovery:
-        pool = _filter_previous_normal_backend(controller, domain, client_mac, pool)
-
     warm = _claim_warm_backend(
         controller,
         f"vip_data({domain})",
@@ -205,9 +164,6 @@ def select_storage(
         pool,
     )
     if warm is not None:
-        if not recovery:
-            from .state import _remember_normal_storage_choice
-            _remember_normal_storage_choice(controller, client_mac, domain, warm["mac"])
         return warm
 
     pool_stats = [controller._storage_stats[m] for m in pool if m in controller._storage_stats]
@@ -271,7 +227,4 @@ def select_storage(
         "select_storage(%s): selected=%s cost=%.4f (tied=%d rr_idx=%d)",
         domain, chosen["mac"], best_cost, len(tied), rr_idx,
     )
-    if not recovery:
-        from .state import _remember_normal_storage_choice
-        _remember_normal_storage_choice(controller, client_mac, domain, chosen["mac"])
     return chosen
