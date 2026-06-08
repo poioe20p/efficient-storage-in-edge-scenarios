@@ -9,6 +9,7 @@ import logging
 import time
 
 from .config import WarmLease, logger
+from . import flows
 from ..scaling_config import _VIP_WARM_SERVER_SECONDS, _VIP_WARM_STORAGE_SECONDS
 
 # Re-export for convenience (used by selection.py)
@@ -150,6 +151,18 @@ def unregister_server_backend(controller, mac: str) -> None:
 def unregister_storage_backend(controller, mac: str, domain: str) -> None:
     controller.remove_storage_mac(mac, domain)
     clear_storage_backend_warm(controller, mac, domain)
+
+    # Delete the forward rule so new connections get a fresh backend.
+    # The reply rule is NOT deleted — it's shared and handles all
+    # established connections via conntrack state.
+    for dp_id, datapath in controller.datapaths.items():
+        try:
+            flows.delete_vip_data_forward_rule(controller, datapath, domain)
+        except Exception:
+            logger.exception(
+                "vip_data(%s): failed to delete forward rule on dp=%s",
+                domain, dp_id,
+            )
 
 
 # --- Telemetry cache updates (Thread 2 facing) ---

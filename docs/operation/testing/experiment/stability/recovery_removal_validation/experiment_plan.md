@@ -1,7 +1,7 @@
 # Experiment Plan — VIP Recovery Removal Validation
 
 **Date**: 2026-06-07
-**Status**: Plan — ready
+**Status**: Complete — validated ✅ (see [results.md](results.md))
 **Depends on**: [recovery_removal_plan](../../../vip_routing/implementation/plans/recovery_removal/recovery_removal_plan.md) (implemented)
 
 ## Intent
@@ -117,3 +117,10 @@ metrics/<batch_dir>/<timestamp>_recovery_removed_val_a/
 ```
 
 No experiment-specific additional files expected.
+
+## Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-06-07 | Initial plan created for recovery removal validation | New experiment |
+| 2026-06-07 | Ran `recovery_removed_val_a` — all 8 criteria passed | [results.md §1](results.md) |

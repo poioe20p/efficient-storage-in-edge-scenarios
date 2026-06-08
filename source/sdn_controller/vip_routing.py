@@ -35,7 +35,33 @@ Implementation is delegated to the private _vip_routing package:
   - ingress     ARP snooping, VIP packet dispatch, punt rules
 """
 
+import subprocess
+
 from ._vip_routing import config, flows, ingress, selection, state
+
+
+def _verify_conntrack_available():
+    """Refuse to start if OVS conntrack is not available on the system."""
+    try:
+        result = subprocess.run(
+            ["ovs-appctl", "dpctl/dump-conntrack"],
+            capture_output=True, timeout=5,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                "OVS conntrack is required for VIP_DATA routing. "
+                "Ensure the kernel datapath has conntrack support enabled."
+            )
+    except FileNotFoundError:
+        raise RuntimeError(
+            "ovs-appctl not found — is OVS installed?"
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "ovs-appctl dpctl/dump-conntrack timed out — "
+            "conntrack may not be functional."
+        )
+    config.logger.info("OVS conntrack available — VIP_DATA routing ready")
 
 
 class VipRoutingMixin:
@@ -67,6 +93,12 @@ class VipRoutingMixin:
         super()._on_datapath_connected(datapath)
         self.install_vip_arp_punt_rules(datapath)
         self.install_vip_punt_rules(datapath)
+
+        # Verify conntrack is available on first datapath connection.
+        # Refuse to operate if OVS conntrack is not functional.
+        if not getattr(self, "_conntrack_verified", False):
+            _verify_conntrack_available()
+            self._conntrack_verified = True
 
     # ------------------------------------------------------------------
     # Public API — ARP snooping & VIP packet handling

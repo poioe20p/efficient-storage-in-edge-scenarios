@@ -107,7 +107,7 @@ $$
 
 ## 6. Storage Selection
 
-`select_storage(domain, client_mac, *, recovery=False)` picks the storage
+`select_storage(domain, client_mac)` picks the storage
 backend with the lowest WSM cost from the domain's pool
 (`vip_storage_pool_n1` or `vip_storage_pool_n2`).
 
@@ -329,5 +329,5 @@ because Thread 3 is a native thread while Thread 1 is an eventlet greenthread.
 |---------|---------|---------------------|
 | `VIP_IDLE_TIMEOUT` | `30` | After this idle period the DNAT rule expires and the next packet triggers fresh selection |
 | `VIP_HARD_TIMEOUT` | `120` | Hard limit on DNAT rule lifetime; forces fresh selection |
-| `VIP_DATA_RECOVERY_IDLE_TIMEOUT` | `40` | Idle timeout for recovery flows |
-| `VIP_DATA_RECOVERY_HARD_TIMEOUT` | `45` | Hard timeout for recovery flows |
+| `VIP_DATA_RECOVERY_IDLE_TIMEOUT` | `40` | ❌ Removed — recovery VIPs no longer exist |
+| `VIP_DATA_RECOVERY_HARD_TIMEOUT` | `45` | ❌ Removed — recovery VIPs no longer exist |

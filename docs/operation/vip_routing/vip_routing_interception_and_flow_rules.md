@@ -47,22 +47,18 @@ chains through `super()._on_datapath_connected(datapath)` to
 
 ## 4. VIP Address Binding Set
 
-`_iter_vip_bindings()` yields five `(vip_ip, vip_mac, domain, is_recovery)`
-tuples that drive all punt rule installation, ARP matching, and packet
-dispatch:
+`_iter_vip_bindings()` yields three `(vip_ip, vip_mac, domain)` tuples that
+drive all punt rule installation, ARP matching, and packet dispatch:
 
-| Binding | Domain | Recovery |
-| ------- | ------ | -------- |
-| `VIP_SERVER` | `"server"` | No |
-| `VIP_DATA_N1` | `"n1"` | No |
-| `VIP_DATA_N2` | `"n2"` | No |
-| `VIP_DATA_RECOVERY_N1` | `"n1"` | Yes |
-| `VIP_DATA_RECOVERY_N2` | `"n2"` | Yes |
+| Binding | Domain |
+| ------- | ------ |
+| `VIP_SERVER` | `"server"` |
+| `VIP_DATA_N1` | `"n1"` |
+| `VIP_DATA_N2` | `"n2"` |
 
-The IP and MAC values are read from `TopologyMixin` attributes (populated from
-environment variables at startup). All five bindings get ARP and IP punt rules
-installed; the recovery bindings additionally trigger narrow-flow DNAT/SNAT
-behaviour (see Section 9).
+Recovery VIP bindings (`VIP_DATA_RECOVERY_N1`, `VIP_DATA_RECOVERY_N2`) were
+removed in v5.x. They were a workaround for stale OVS flow rules on backend
+unregister — now eliminated by conntrack-based flow rules (see §10).
 
 ## 5. ARP Snooping and VIP ARP Replies
 
@@ -208,7 +204,17 @@ rewrites `eth_src` to its own LAN MAC during L3 forwarding.
 applied to the buffered packet data so the first packet reaches the backend
 immediately.
 
-## 9. Recovery-VIP Narrow Flow Behavior
+## 9. Recovery-VIP Narrow Flow Behavior (Deprecated — Removed in v5.x)
+
+> **Deprecated.** The recovery VIP mechanism was removed as part of the
+> conntrack-based VIP_DATA routing changes. The stale-flow-rule problem it
+> worked around is now solved at the source: conntrack enables safe deletion
+> of forward rules on `unregister_storage_backend` without breaking
+> established connections. See §10 for the replacement architecture.
+
+The section below is preserved for historical reference only.
+
+## 9. Recovery-VIP Narrow Flow Behavior (Historical)
 
 When `_handle_vip_data()` is called with `recovery=True` (destination IP
 matches `VIP_DATA_RECOVERY_N1` or `VIP_DATA_RECOVERY_N2`), three differences
@@ -281,6 +287,89 @@ The facade then chains through `TopologyMixin`'s no-op extension hook via
 | 100 | VIP ARP punt → controller | `install_vip_arp_punt_rules()` | Switch connect |
 | 100 | VIP IP punt → controller | `install_vip_punt_rules()` | Switch connect |
 | 200 | DNAT/SNAT (per-flow, timed) | `_install_vip_dnat_snat()` | First VIP `PacketIn` |
+| 200 | Forward rule (conntrack, per-client) | `install_vip_data_forward_rule()` | First VIP_DATA `PacketIn` |
+| 200 | Reply rule (conntrack, per-client) | `install_vip_data_reply_rule()` | First VIP_DATA `PacketIn` |
+
+## 11. Conntrack-Based VIP_DATA Routing
+
+> **Added v5.x.** The conntrack architecture replaces static DNAT/SNAT for
+> VIP_DATA with OVS connection-tracking-based rules. Design rationale is
+> documented in [conntrack_vip_routing_design.md](implementation/plans/conntrack_vip_routing/conntrack_vip_routing_design.md);
+> implementation steps in [conntrack_vip_routing_plan.md](implementation/plans/conntrack_vip_routing/conntrack_vip_routing_plan.md).
+
+### Why Conntrack?
+
+The v5.x experiment campaign identified stale OVS flow rules as the root cause
+of 55–65% failure rates in compute phases. When a storage backend is removed
+from the VIP_DATA pool, the existing static DNAT+SNAT rule pair was NOT
+deleted. The stale rule continued to DNAT new TCP connections to the dead
+backend for up to 120 s (hard timeout).
+
+OVS conntrack separates **connection establishment** (flow rules) from
+**connection state** (conntrack table). Once a connection is established, its
+NAT mapping lives in the kernel conntrack table independently of the flow rule
+that created it. The forward rule can be safely deleted — established
+connections survive in conntrack, and new connections trigger a fresh
+`select_storage` via the priority-100 punt rule.
+
+### Rule Structure
+
+Two rule types replace the old DNAT+SNAT pair:
+
+**Forward rule** (per-client, per-domain):
+
+```
+Match: eth_src=client_mac, eth_dst=vip_mac, ipv4_src=client_ip, ipv4_dst=vip_ip, tcp_dst=27018
+Action: ct(commit, zone=N, nat(dst=backend_ip)), set_field(eth_dst=backend_mac), output:port
+Idle: 10 s | Hard: 120 s | Priority: 200 | Cookie: per-domain
+```
+
+**Reply rule** (per-client, per-domain):
+
+```
+Match: ct_state=+est+trk, ct_zone=N, eth_dst=client_mac, ipv4_dst=client_ip
+Action: set_field(eth_src=vip_mac), output:in_port
+Idle: 0 | Hard: 0 | Priority: 200 | Cookie: 0
+```
+
+### Key Design Points
+
+| Concept | Detail |
+| ------- | ------ |
+| **Per-client match** | `eth_src` and `ipv4_src` scope the forward rule to one edge server — preserves per-client WSM load distribution |
+| **No `tcp_src`** | All TCP connections from the same client route to the same backend; pymongo connection pools are handled correctly |
+| **ct_zone differentiation** | Zone 1 for n1, zone 2 for n2 — prevents reply rule collision for the same client across domains |
+| **Bulk deletion by cookie** | All forward rules for a domain share one cookie — `unregister_storage_backend` deletes them in one `OFPFC_DELETE` |
+| **Reply rules never expire** | Conntrack manages the connection lifecycle; the reply rule just gates established traffic |
+| **Idle timeout 10 s** | Reduced from 30 s — the 10 s fallback ensures stale rules don't persist if proactive deletion fails |
+| **Safe deletion** | Deleting the forward rule cannot affect in-flight connections — their NAT state lives in kernel conntrack, not in OVS |
+
+### Connection Lifecycle
+
+```
+NEW CONNECTION:
+  SYN → matches forward rule → ct(commit) creates conntrack entry
+  → DNAT to backend → reply packets match reply rule via ct_state=+est+trk
+
+ESTABLISHED CONNECTION:
+  All subsequent packets match the reply rule → ct(nat) reverses NAT
+  → Forward rule never consulted again for this connection
+
+AFTER FORWARD RULE DELETED (unregister_storage_backend):
+  Established connections: reply rules + conntrack still handle them ✅
+  New SYNs: no matching forward rule → punt rule → controller → fresh select_storage() ✅
+```
+
+### Comparison: Static NAT vs Conntrack
+
+| Aspect | Static NAT | Conntrack |
+| ------ | ---------- | --------- |
+| Forward mechanism | `SetField(ipv4_dst, eth_dst)` | `ct(commit, nat(dst=...))` |
+| Reply mechanism | `SetField(ipv4_src, eth_src)` with backend match | `ct_state=+est+trk` match with `SetField(eth_src)` |
+| Connection state | In the flow rule itself | In kernel conntrack table |
+| Safe to delete rule? | ❌ Breaks in-flight connections | ✅ Conntrack entries survive |
+| Stale rule window | 30–120 s (idle/hard timeout) | 0 s (proactive deletion on unregister) |
+| Rule count | 2 per client per domain (DNAT + SNAT) | 2 per client per domain (forward + reply) |
 
 Lower-priority rules (0--10) are installed by `TopologyMixin` (ARP flood at
 priority 1, L2 forwarding at lower priorities).

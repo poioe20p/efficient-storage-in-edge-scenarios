@@ -6,7 +6,7 @@ from os_ken.lib.packet import arp as arp_lib
 from os_ken.lib.packet import ethernet as eth_lib
 from os_ken.lib.packet import ether_types, ipv4, packet
 
-from .config import logger
+from .config import _ROUTER_MAC, _ROUTER_OVS_PORT, logger
 from . import flows, selection
 
 
@@ -195,17 +195,81 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
     else:
         vip_ip, vip_mac = controller.vip_data_n2_ip, controller.vip_data_n2_mac
 
-    flows.install_vip_dnat_snat(
-        controller,
-        datapath, in_port, pkt,
-        client_mac=src_mac,
-        client_ip=src_ip,
-        ip_proto=ip_proto,
-        vip_ip=vip_ip,
-        vip_mac=vip_mac,
-        real_backend_ip=storage_ip,
-        real_backend_mac=storage_mac,
+    # Determine if cross-network
+    parser = datapath.ofproto_parser
+    ofproto = datapath.ofproto
+    backend_port = controller.get_next_hop_port(datapath.id, src_mac, storage_mac)
+    is_cross_network = False
+    if backend_port is None:
+        backend_loc = controller.host_attachment.get(storage_mac)
+        if backend_loc is not None:
+            _, backend_port = backend_loc
+        elif storage_mac in controller.peer_hosts and _ROUTER_OVS_PORT > 0:
+            backend_port = _ROUTER_OVS_PORT
+            is_cross_network = True
+            logger.info(
+                "vip_data(%s): cross-network mac=%s -> router port %d",
+                domain, storage_mac, _ROUTER_OVS_PORT,
+            )
+        else:
+            logger.warning(
+                "vip_data(%s): mac=%s not reachable from dpid=%s, skipping",
+                domain, storage_mac, datapath.id,
+            )
+            return True
+
+    # Install/update the per-client forward rule with conntrack
+    flows.install_vip_data_forward_rule(
+        controller, datapath,
+        vip_ip=vip_ip, vip_mac=vip_mac, domain=domain,
+        client_mac=src_mac, client_ip=src_ip,
+        backend_ip=storage_ip,
+        backend_mac=storage_mac,
+        backend_port=backend_port,
+        is_cross_network=is_cross_network,
     )
+
+    # Install reply rule for this client+domain (idempotent — same match means
+    # re-installation is a no-op). ct_zone keeps n1/n2 rules from colliding.
+    flows.install_vip_data_reply_rule(
+        controller, datapath,
+        client_mac=src_mac, client_ip=src_ip,
+        vip_mac=vip_mac, in_port=in_port, domain=domain,
+    )
+
+    # Packet-Out the first packet so it reaches the backend immediately
+    # while the new flow rules propagate through the pipeline.
+    # Must include ct(commit, nat(...)) so the first SYN creates a conntrack
+    # entry — without it the reply rule's ct_state=+est+trk match fails.
+    dnat_eth_dst = (_ROUTER_MAC if is_cross_network and _ROUTER_MAC
+                    else storage_mac)
+    ct_action = parser.NXActionCT(
+        flags=1,
+        zone_src=None,
+        zone_ofs_nbits={"n1": 1, "n2": 2}[domain],
+        recirc_table=ofproto.OFPTT_ALL,
+        alg=0,
+        actions=[
+            parser.NXActionNAT(
+                flags=0,
+                range_ipv4_min=storage_ip,
+                range_ipv4_max=storage_ip,
+            ),
+        ],
+    )
+    dnat_actions = [
+        ct_action,
+        parser.OFPActionSetField(eth_dst=dnat_eth_dst),
+        parser.OFPActionOutput(backend_port),
+    ]
+    out = parser.OFPPacketOut(
+        datapath=datapath,
+        buffer_id=ofproto.OFP_NO_BUFFER,
+        in_port=in_port,
+        actions=dnat_actions,
+        data=pkt.data,
+    )
+    datapath.send_msg(out)
 
     logger.info(
         "vip_data(%s): client=%s -> vip=%s -> real=%s",

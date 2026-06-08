@@ -18,9 +18,11 @@ Usage:
 import argparse
 import csv
 import json
+import logging
 import os
 import signal
 import statistics
+import subprocess
 import time
 
 import zmq
@@ -52,6 +54,8 @@ MAIN_FIELDNAMES = [
     "avg_repl_lag_ms",
     "coord_state_owner_lan",
     "tier1_lifecycle_active_count",
+    "conntrack_entries_n1",
+    "conntrack_entries_n2",
 ]
 
 # Broad debug view — preserves the historical broad schema (median-heavy,
@@ -220,6 +224,52 @@ def _read_phase(phase_file: str) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+_logger = logging.getLogger("collect_resource_stats")
+
+
+def _collect_conntrack_stats():
+    """Collect conntrack entry counts per VIP_DATA domain.
+
+    Returns dict with keys:
+      conntrack_entries_n1: int
+      conntrack_entries_n2: int
+      conntrack_entries_total: int
+      conntrack_dump_ok: bool
+    """
+    result = {
+        "conntrack_entries_n1": 0,
+        "conntrack_entries_n2": 0,
+        "conntrack_entries_total": 0,
+        "conntrack_dump_ok": False,
+    }
+    try:
+        proc = subprocess.run(
+            ["ovs-appctl", "dpctl/dump-conntrack"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if proc.returncode != 0:
+            return result
+
+        for line in proc.stdout.splitlines():
+            result["conntrack_entries_total"] += 1
+            if "10.0.0.254" in line:
+                result["conntrack_entries_n1"] += 1
+            elif "10.0.1.254" in line:
+                result["conntrack_entries_n2"] += 1
+
+        result["conntrack_dump_ok"] = True
+
+        if result["conntrack_entries_total"] == 0:
+            _logger.warning(
+                "conntrack: zero entries — no active VIP_DATA connections?"
+            )
+
+    except Exception:
+        _logger.exception("conntrack dump failed")
+
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Collect CPU/RAM stats from aggregator ZMQ PUB sockets"
@@ -339,6 +389,9 @@ def main():
                 if lan:
                     coord_state_by_lan[lan] = frame
 
+            # Collect conntrack stats once per poll cycle (global on host).
+            ct_stats = _collect_conntrack_stats()
+
             for sock in (sub1, sub2):
                 if socks.get(sock) != zmq.POLLIN:
                     continue
@@ -388,6 +441,10 @@ def main():
                 t1 = build_tier1_row(summary, coord_state_by_lan.get(coord_lan, {}))
                 main_row["coord_state_owner_lan"] = t1.get("coord_state_owner_lan", "NONE")
                 main_row["tier1_lifecycle_active_count"] = t1.get("tier1_lifecycle_active_count", 0)
+
+                # Append conntrack entry counts (global on host — same for both LANs).
+                main_row["conntrack_entries_n1"] = ct_stats.get("conntrack_entries_n1", "")
+                main_row["conntrack_entries_n2"] = ct_stats.get("conntrack_entries_n2", "")
                 writer.writerow(main_row)
                 csv_file.flush()
                 debug_row = {
