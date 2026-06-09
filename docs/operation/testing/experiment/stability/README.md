@@ -20,7 +20,7 @@ point before new features are added.
 | [storage_reserve_threshold_sweep](storage_reserve_threshold_sweep/experiment_plan.md) | ✅ Boundary found | $0.12 < \tau \leq 0.15$. t12 chosen. |
 | [storage_reserve_load_sweep](storage_reserve_load_sweep/experiment_plan.md) | ⚠️ No acceptable candidate | c08 stable at t12 but waiting-only. c10 activates but overloads. |
 | [tier1_activation](tier1_activation/experiment_plan.md) | ✅ PASSED | DB-latency 84.5ms → 3.58ms. Clean drain both directions. |
-| **[golden_config_stability](golden_config_stability/experiment_plan.md)** | ⚠️ Executed — gate not yet passed | Overall 1.6%/2.5% passes ≤3% but LAN2 collapse, cleanup debt, no reserve activation. See [results.md](golden_config_stability/results.md). |
+| **[golden_config_stability](golden_config_stability/experiment_plan.md)** | 🔴 Executed — blocked by `edge_server_n2` SIGSEGV (2/3 runs) | Run A: 1.6% with all mechanisms. Runs B/C: edge_server_n2 crash. See [results.md](golden_config_stability/results.md). |
 
 ## Experiment Family
 

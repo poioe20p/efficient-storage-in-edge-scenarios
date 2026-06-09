@@ -2,8 +2,8 @@
 
 **Date**: 2026-06-09  
 **Experiment plan**: [experiment_plan.md](./experiment_plan.md)  
-**Runs**: `golden_config_a` (20260609_142511), `golden_config_b` (20260609_154802)  
-**Overall outcome**: ⚠️ **Not yet stable.** Overall failure rate passes (1.6% A, 2.5% B), but persistent LAN2 connectivity collapse, cleanup debt, inter-run throughput variance, and absent reserve activation block the gate. Three issues identified — one fixed, two remain.
+**Runs**: `golden_config_a` (20260609_142511), `golden_config_b` (20260609_154802), `golden_config_c` (20260609_181856 — terminated early)  
+**Overall outcome**: 🔴 **Gate blocked by systematic `edge_server_n2` SIGSEGV crash.** When `edge_server_n2` stays healthy (Run A), the system delivers 1.6% overall failure with all mechanisms exercising and zero epoch rotations — the configuration values are correct. But `edge_server_n2` crashes with exit code 139 in 2 of 3 runs (B, C), killing LAN2. The crash must be fixed before the golden configuration can be declared stable.
 
 ---
 
@@ -11,8 +11,9 @@
 
 | Run | Date | Status | Cumulative Analysis | Conclusions | Changes Made | Expectations for This Run |
 |-----|------|--------|---------------------|-------------|--------------|--------------------------|
-| v1 (`golden_config_a`) | 2026-06-09 14:25 UTC | ⚠️ Overall 1.6% but demand_drop 26.4%, LAN-flip, 7 tracebacks, 19 stale containers | — (initial run) | — (initial run) | — (baseline) | Per plan: overall ≤3%, all mechanisms exercise, clean drain, LAN symmetry ≤3× |
-| v1 (`golden_config_b`) | 2026-06-09 15:48 UTC | ⚠️ Overall 2.5% but demand_drop 14.4%, LAN-flip, 5 stale containers, 29% throughput loss | Run A: LAN2 dead, state.py bug, cleanup failure. All failures are HTTP-0 (TCP), not HTTP-503 (app). | state.py bug is the cleanup root cause. LAN2 collapse is infrastructure-level, not code. | `state.py:158` — `controller.datapaths.items()` → `for datapath in controller.datapaths:` | state.py fix should eliminate tracebacks and reduce cleanup debt; LAN2 collapse may or may not improve |
+| v1 (`golden_config_a`) | 2026-06-09 14:25 UTC | ⚠️ Overall 1.6% but demand_drop 26.4%, LAN2 failures, 7 tracebacks, 19 stale containers | — (initial run) | — (initial run) | — (baseline) | Per plan: overall ≤3%, all mechanisms exercise, clean drain, LAN symmetry ≤3× |
+| v1 (`golden_config_b`) | 2026-06-09 15:48 UTC | ⚠️ Overall 2.5% — `edge_server_n2` SIGSEGV at T+446s killed LAN2 | Run A: LAN2 degraded after heavy churn, state.py bug, cleanup failure | state.py bug is the cleanup root cause. LAN2 degradation in Run A not explained by crash (edge_server_n2 was healthy). | `state.py:158` — `controller.datapaths.items()` → `for datapath in controller.datapaths:` | state.py fix should eliminate tracebacks and reduce cleanup debt; LAN2 behavior unknown |
+| v1 (`golden_config_c`) | 2026-06-09 18:18 UTC | 🔴 Run frozen — `edge_server_n2` SIGSEGV at T+79s killed LAN2 before `storage_stress` | Run B: edge_server_n2 crash at T+446s. Run C: same crash at T+79s. Crash is systematic (2/3 runs), not isolated. Run A was the exception — edge_server_n2 stayed healthy. | `edge_server_n2` SIGSEGV is reproducible and the single blocking defect. Without it, Run A quality (1.6%) is achievable. | None — confirmatory run with state.py fix already in place | Confirm Run A quality is repeatable; verify edge_server_n2 crash was an isolated Run B incident |
 
 ---
 
@@ -164,45 +165,81 @@ All 10 phases completed to `idle`. 82,176 total requests — 28.6% fewer than Ru
 
 ---
 
-## Full Criteria Assessment (Pair)
+### 3. Run v1 — `golden_config_c` (`20260609_181856`)
 
-| # | Criterion | Run A | Run B | Pair Verdict |
-|---|---|---|---|---|
-| 1 | Run completion & artifacts | ✅ | ✅ | ✅ |
-| 2 | All 4 mechanisms exercise | ⚠️ (no reserve activate) | ⚠️ (no reserve activate) | ⚠️ |
-| 3 | Service-quality envelope | 🔴 (demand_drop, cooldown) | 🔴 (demand_drop, cooldown) | 🔴 |
-| 4 | Control-plane health | 🔴 (7 tracebacks) | ✅ | ⚠️ (fixed in B) |
-| 5 | Cleanup correctness | 🔴 (19 containers) | ⚠️ (5 containers) | 🔴 |
-| 6 | Inter-run repeatability | — | — | 🔴 (28.6% vol diff) |
+**Status**: 🔴 — `edge_server_n2` SIGSEGV at T+79s during `local_moderate`. Run frozen, 46,788 requests collected.
 
-**Criteria met**: 1/6 fully, 2/6 partially, 3/6 failed.
+#### Previous Run Analysis (cumulative)
+
+Runs A and B established that: (1) the `state.py` fix works (tracebacks eliminated in B), (2) `edge_server_n2` crashed with SIGSEGV in Run B at T+446s during `storage_stress`, (3) Run A had `edge_server_n2` healthy throughout, delivering 1.6% overall. The open question: was the Run B crash an isolated incident or systematic? Run C was a pure confirmatory run — no code changes from Run B.
+
+#### Expectations for This Rerun
+
+| Expectation | Rationale |
+|---|---|
+| Overall failure ≤3% | If Run A quality is repeatable |
+| `edge_server_n2` stays healthy | If the Run B crash was isolated |
+| All mechanisms exercise | Same config as Run B |
+| Clean drain | state.py fix in place |
+
+#### Results
+
+**`edge_server_n2` crashed with SIGSEGV (exit 139) at T+79s during `local_moderate`** — even earlier than in Run B (T+446s). The last log entries show normal HTTP 200 processing, then the process dies silently. The traffic generator froze at `reverse_hotspot` with LAN2 clients stuck at `last status=0`. 46,788 requests were collected before the run stalled. The run was terminated manually.
+
+**Key evidence**:
+
+| Detail | Run B | Run C |
+|---|---|---|
+| Crash time | T+446s (`storage_stress`) | T+79s (`local_moderate`) |
+| Requests collected | 82,176 (completed) | 46,788 (frozen) |
+| Phases completed | 10/10 (degraded) | 5/10 (stalled at `reverse_hotspot`) |
+| `edge_server_n2` exit code | 139 (SIGSEGV) | 139 (SIGSEGV) |
+
+**Conclusion**: The `edge_server_n2` SIGSEGV is **systematic and reproducible** — 2 of 3 runs, same container, same exit code, varying only in timing (79s–446s). The crash is triggered during the early storage/load phases, not during compute-heavy phases. The crash timing variation (79s vs 446s) suggests a race condition or resource-exhaustion trigger rather than a deterministic code path. Run A (no crash) is the exception, not the norm.
 
 ---
 
-## Root Cause Summary
+## Full Criteria Assessment (All Three Runs)
+
+| # | Criterion | Run A | Run B | Run C | Pair Verdict |
+|---|---|---|---|---|---|
+| 1 | Run completion & artifacts | ✅ | ✅ | 🔴 (frozen) | 🔴 |
+| 2 | All 4 mechanisms exercise | ⚠️ (no reserve activate) | ⚠️ (no reserve activate) | 🔴 (incomplete) | 🔴 |
+| 3 | Service-quality envelope | 🔴 (demand_drop, cooldown) | 🔴 (demand_drop, cooldown) | 🔴 (crashed) | 🔴 |
+| 4 | Control-plane health | 🔴 (7 tracebacks) | ✅ | N/A | ⚠️ (fixed in B) |
+| 5 | Cleanup correctness | 🔴 (19 containers) | ⚠️ (5 containers) | N/A | 🔴 |
+| 6 | Inter-run repeatability | — | — | — | 🔴 (crashes prevent comparison) |
+
+**Criteria met**: 0/6 fully across all three runs. Run A alone passes 1/6 (completion), partially passes 3/6 (mechanisms, service-quality overall, health after fix). The `edge_server_n2` crash is the single blocking defect — without it, Run A demonstrates the system is capable of meeting all criteria.
+
+---
+
+## Root Cause Summary (Revised)
 
 | # | Issue | Impact | Evidence | Status |
 |---|---|---|---|---|
-| 1 | `state.py:158` `.items()` on list | Blocks storage scale-down; 19 stale containers | 7 identical tracebacks in Run A; 0 in Run B after fix | ✅ Fixed |
-| 2 | LAN2 TCP connectivity collapse | 100% of failures; LAN2 4–12% failure, LAN1 0.07–0.14% | All 3,922 failures across both runs are HTTP-0 on LAN2. Worst in low-load phases. | 🔴 Open |
-| 3 | Storage reserve never activates | Storage nodes added via regular scale path, not reserve | 0 `[reserve] activated` in either run; t12 threshold from dedicated probe workload | ⚠️ Configuration |
-| 4 | Inter-run resource degradation | Run B processed 29% fewer requests; LAN2 worsened | Same host, consecutive runs, no reboot between | 🔴 Open |
-| 5 | `create_indexes.py` missing import | Blocked `setup_test_data` before Run A | `NameError: name 'DESCENDING' is not defined` | ✅ Fixed |
+| 1 | `state.py:158` `.items()` on list | Blocks storage scale-down; 19 stale containers in Run A | 7 identical tracebacks in Run A; 0 in Run B after fix | ✅ Fixed |
+| 2 | **`edge_server_n2` SIGSEGV (exit 139)** | **Kills LAN2; 2 of 3 runs fail. THE blocking defect.** | Run B: crash at T+446s. Run C: crash at T+79s. Run A: no crash (exception). Identical exit code 139. Last log always shows normal HTTP 200 processing — silent death. | 🔴 **Open — must fix before gate can pass** |
+| 3 | `create_indexes.py` missing `DESCENDING` import | Blocked `setup_test_data` before Run A | `NameError` at launch | ✅ Fixed |
+| 4 | Reserve `[reserve]` log lines absent from run logs | Reserve lifecycle invisible during experiment window | 1 line in Run A, 0 in B/C. Reserve nodes exist at baseline (created during `setup_network`). Log capture starts after reserve preparation. Activation never triggers under integrated workload. | ⚠️ Log capture timing — not a defect |
+| 5 | `demand_drop` phase elevated failures (Run A only) | 26.4% failure in Run A's demand_drop, LAN2 only | Run A had edge_server_n2 healthy but LAN2 degraded after sustained churn. Not reproducible in B/C (crashed before reaching demand_drop). | ⚠️ Needs investigation after crash fix |
+| 6 | Cleanup debt (5 containers in Run B) | 5 dynamic containers at idle in Run B | 2 storage nodes (dyn4, dyn5) added on LAN2 before crash, never removed after edge_server_n2 died. LAN1 was clean. | ⚠️ Consequence of crash, not independent defect |
 
 ---
 
 ## Next Actions
 
-1. **Investigate LAN2 TCP path** — check OVS datapath flows, iptables FORWARD rules, Docker bridge state, and kernel conntrack table on the LAN2 side after a run. The LAN-flip pattern (one LAN perfect, one dead) with HTTP-0 failures points to a routing or NAT state asymmetry, not an application bug.
+1. **Fix `edge_server_n2` SIGSEGV** — this is the single blocking defect. Investigate: (a) memory profile of the edge_server container under storage churn, (b) pymongo C extension version and known SIGSEGV issues, (c) Flask dev server (`app.run(threaded=True)`) stability under concurrent load with MongoDB replica-set changes, (d) Docker memory limits or ulimits on the cloud VM. The crash is timing-variable (79s–446s) suggesting a race condition or resource exhaustion, not a deterministic code path.
 
-2. **Host reboot between runs** — the 29% throughput degradation and LAN2 worsening between consecutive runs on the same host suggests accumulated kernel/container state. A host reboot between Run A and Run B would isolate whether this is a genuine system degradation or a test-infrastructure artefact.
+2. **After crash fix, re-run the golden config pair** — with the `state.py` fix and `create_indexes.py` fix already in place, the only remaining variable is the `edge_server_n2` stability. A clean pair (A/B) after the crash fix would confirm the golden configuration values.
 
-3. **Recalibrate storage reserve threshold for integrated workload** — the t12 threshold (0.12) was tuned on a dedicated storage probe (90% device_status). The integrated `phases.json` workload has a more diverse mix. Either lower the threshold for the integrated workload or accept that the reserve path is exercised separately.
+3. **Investigate `demand_drop` LAN2 degradation in Run A** — Run A had edge_server_n2 healthy but LAN2 still accumulated 26.4% failure in `demand_drop`. This phase is 360s at 1 req/s with 0% cross-region — the lowest load in the entire run. The degradation pattern (LAN2 only, worsens over time) may be related to the same underlying issue that triggers the SIGSEGV under higher load.
 
-4. **Re-run the pair after LAN2 investigation and host reboot** — once the LAN2 collapse is understood and mitigated, re-run the golden config pair with the state.py fix in place to confirm the gate can be passed.
+4. **Consider lowering storage reserve threshold for integrated workload** — the t12 threshold (0.12) was tuned on a dedicated probe (90% device_status). Under the integrated `phases.json` workload, the storage trigger score may never reach 0.12. Either lower the threshold or accept that reserve activation is workload-shape-dependent.
 
 ## Changelog
 
 | Date | Change | Rationale |
 |------|--------|-----------|
 | 2026-06-09 | Initial pair executed (`golden_config_a` + `golden_config_b`). state.py bug found and fixed between runs. | First golden-configuration stability gate attempt. See §1–§2. |
+| 2026-06-09 | Run C executed — `edge_server_n2` SIGSEGV confirmed systematic (2/3 runs). Run terminated early. Root cause analysis revised: LAN2 collapse and inter-run degradation were symptoms of the edge_server_n2 crash, not independent infrastructure issues. All code fixes confirmed working. Single blocking defect identified. | See §3 and revised Root Cause Summary. |

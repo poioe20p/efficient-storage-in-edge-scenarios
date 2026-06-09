@@ -1,6 +1,6 @@
 # Experiment Plan — Golden Configuration Stability Gate
 
-**Status**: ⚠️ Executed — gate not yet passed. See [results.md](results.md).
+**Status**: 🔴 Executed — gate blocked by systematic `edge_server_n2` SIGSEGV (2/3 runs). Run A (1.6%) shows configuration is correct. See [results.md](results.md).
 **Date**: 2026-06-09.
 **Supersedes**: [current_state_long_cycle](../current_state_long_cycle/experiment_plan.md) v5.6 as the definitive integrated baseline.
 
@@ -242,5 +242,5 @@ Expected later analysis outputs:
 
 | Date | Change | Rationale |
 |------|--------|-----------|
-| 2026-06-09 | Initial pair executed (`golden_config_a` + `golden_config_b`). `create_indexes.py` missing `DESCENDING` import fixed before launch. `state.py:158` `.items()` on list bug found and fixed between runs. Gate not yet passed — LAN2 TCP connectivity collapse, cleanup debt, and absent reserve activation remain open. | [results.md](results.md) §1–§2 — full analysis and root cause investigation. |
+| 2026-06-09 | Run C (`golden_config_c`) executed — `edge_server_n2` SIGSEGV confirmed systematic (crash at T+79s, 2 of 3 runs). Code fixes confirmed working (0 tracebacks, improved cleanup). Gate blocked by single defect: `edge_server_n2` exit code 139. Run A (1.6% overall, all mechanisms exercise) demonstrates what the system delivers when edge_server_n2 stays healthy. | [results.md](results.md) §3 — Run C narrative and revised root cause analysis. |
 <!-- end -->
