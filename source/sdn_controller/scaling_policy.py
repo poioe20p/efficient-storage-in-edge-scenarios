@@ -336,7 +336,7 @@ class ScalingPolicy:
     def evaluate_scale_down_storage(self, ds: DomainSummary) -> bool:
         """Returns True if storage underutilisation threshold met."""
         if ds.avg_time_db_ms > _SCALE_DOWN_DB_TIMEOUT_CEILING_MS:
-            logger.debug(
+            logger.info(
                 "[scale-down] storage eval: db=%.1f exceeds ceiling (%.0f) — window skipped",
                 ds.avg_time_db_ms, _SCALE_DOWN_DB_TIMEOUT_CEILING_MS,
             )
@@ -348,7 +348,7 @@ class ScalingPolicy:
         hits = sum(self._scale_down_storage_window)
         armed = hits >= _SCALE_DOWN_STORAGE_REQUIRED
 
-        logger.debug(
+        logger.info(
             "[scale-down] storage eval: stCpu=%.1f/%.0f db=%.1f/%.0f below=%s hits=%d/%d armed=%s",
             ds.avg_storage_cpu_percent, _TAU_STORAGE_CPU_DOWN,
             ds.avg_time_db_ms, _TAU_DB_DOWN_MS,

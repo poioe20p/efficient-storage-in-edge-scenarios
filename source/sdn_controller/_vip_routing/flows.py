@@ -20,6 +20,11 @@ _COOKIE_VIP_DATA_FWD = {
 # Reply rules match on the same zone so they can set the correct VIP MAC.
 _CT_ZONE = {"n1": 1, "n2": 2}
 
+# Backend subnet for each domain — used to differentiate n1/n2 reply rules.
+# n1 backends are always on LAN1 (10.0.0.0/24), n2 on LAN2 (10.0.1.0/24).
+# This is a fixed topology property; no other LANs are expected.
+_BACKEND_SUBNET = {"n1": "10.0.0.0/24", "n2": "10.0.1.0/24"}
+
 
 def install_vip_data_forward_rule(
     controller, datapath,
@@ -69,7 +74,7 @@ def install_vip_data_forward_rule(
         alg=0,
         actions=[
             parser.NXActionNAT(
-                flags=0,            # 0 = DNAT
+                flags=2,            # 2 = NX_NAT_F_DST (destination NAT)
                 range_ipv4_min=backend_ip,
                 range_ipv4_max=backend_ip,
             ),
@@ -109,27 +114,56 @@ def install_vip_data_reply_rule(
 ):
     """Install a reply rule for VIP_DATA traffic for one client+domain.
 
-    The reply rule matches packets belonging to established connections
-    (already in conntrack) and rewrites their source to the domain's VIP MAC.
-    The IP NAT reversal is handled automatically by conntrack's ct(nat).
+    The reply rule matches MongoDB reply packets (tcp_src=27018) addressed
+    to the client and sends them through conntrack with ct(zone=N,nat) for
+    automatic reverse NAT (backend IP → VIP IP).  After NAT, the source MAC
+    is rewritten to the VIP MAC so the client sees the VIP as the source.
 
-    ct_zone scoping ensures n1 and n2 reply rules have different matches
-    and can coexist for the same client without collision.
+    The ipv4_src match on the backend subnet differentiates n1 (10.0.0.0/24)
+    from n2 (10.0.1.0/24) so both reply rules can coexist for the same client
+    without collision.  The ct(zone=N,nat) action then ensures the kernel looks
+    up the connection in the correct conntrack zone.
+
+    IMPORTANT: This rule does NOT match on ct_state because the reply packet
+    has not been through ct() yet.  Instead, the ct(zone=N,nat) action in the
+    pipeline processes the packet through conntrack, which applies reverse
+    NAT and sets ct_state for the kernel's own state tracking.
     """
     parser = datapath.ofproto_parser
     ofproto = datapath.ofproto
 
-    # Match established+tracked connections in the domain's conntrack zone.
-    # ct_state=(3, 3) => bits 0 (tracked) and 1 (established) both set.
+    # Match MongoDB reply packets from this domain's backend subnet.
+    # No ct_state match — the reply packet must go through ct() first,
+    # and that is handled by the ct_action below.
+    # ipv4_src on the backend subnet is the domain differentiator that
+    # replaces the (broken) ct_zone match from the original design.
     match = parser.OFPMatch(
-        ct_state=(3, 3),
-        ct_zone=_CT_ZONE[domain],
         eth_type=0x0800,
         eth_dst=client_mac,
+        ipv4_src=_BACKEND_SUBNET[domain],  # domain differentiator (n1 vs n2)
         ipv4_dst=client_ip,
         ip_proto=6,
+        tcp_src=27018,          # MongoDB reply packets
     )
+
+    # ct(zone=N, nat) — triggers conntrack lookup and automatic reverse NAT.
+    # flags=0 (no commit), no specific NAT direction (flags=0 on NXActionNAT
+    # means "apply NAT from connection state").
+    ct_action = parser.NXActionCT(
+        flags=0,                    # no commit — connection already exists
+        zone_src=None,              # immediate zone value
+        zone_ofs_nbits=_CT_ZONE[domain],
+        recirc_table=ofproto.OFPTT_ALL,  # continue with next action (no recirc)
+        alg=0,
+        actions=[
+            parser.NXActionNAT(
+                flags=0,            # automatic NAT (reverse of forward direction)
+            ),
+        ],
+    )
+
     actions = [
+        ct_action,
         parser.OFPActionSetField(eth_src=vip_mac),
         parser.OFPActionOutput(in_port),
     ]

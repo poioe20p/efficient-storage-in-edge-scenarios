@@ -56,14 +56,14 @@ Per-client forward rules (one per client per domain), shared reply rules:
     Action: ct(commit, nat(dst=backend_Y_ip)), set_field(eth_dst=backend_Y_mac), output:backend_port
     Idle: 10s | Hard: 120s | Priority: 200 | Cookie: per-domain (same cookie for all clients)
 
-  Rule REV-A-n1 (reply, established → client A, domain n1):
-    Match: ct_state=+est+trk, ct_zone=1, eth_dst=clientA_mac, ipv4_dst=clientA_ip
-    Action: set_field(eth_src=vip_n1_mac), output:clientA_port
+  Rule REV-A-n1 (reply, ANY n1 backend → client A):
+    Match: eth_dst=clientA_mac, ipv4_src=10.0.0.0/24, ipv4_dst=clientA_ip, tcp_src=27018
+    Action: ct(zone=1,nat), set_field(eth_src=vip_n1_mac), output:clientA_port
     Idle: 0 (never) | Hard: 0 (never) | Priority: 200
 
-  Rule REV-A-n2 (reply, established → client A, domain n2):
-    Match: ct_state=+est+trk, ct_zone=2, eth_dst=clientA_mac, ipv4_dst=clientA_ip
-    Action: set_field(eth_src=vip_n2_mac), output:clientA_port
+  Rule REV-A-n2 (reply, ANY n2 backend → client A):
+    Match: eth_dst=clientA_mac, ipv4_src=10.0.1.0/24, ipv4_dst=clientA_ip, tcp_src=27018
+    Action: ct(zone=2,nat), set_field(eth_src=vip_n2_mac), output:clientA_port
     Idle: 0 (never) | Hard: 0 (never) | Priority: 200
 
   Conntrack table (automatic, per-connection):
@@ -84,30 +84,35 @@ Per-client WSM distribution preserved:
   → On client A's next selection (idle expiration): new Rule FWD-A overwrites old one
     (same match fields), client B's Rule FWD-B untouched ✅
 
-Domain differentiation via ct_zone:
+Domain differentiation via backend subnet + ct_zone:
   → Forward rules use ct(commit, zone=1, ...) for n1, ct(commit, zone=2, ...) for n2
-  → Reply rules match ct_zone=1 or ct_zone=2 — different matches, no collision
-  → Kernel conntrack automatically places reply packets in the correct zone ✅
+  → Reply rules match ipv4_src=10.0.0.0/24 (n1) or ipv4_src=10.0.1.0/24 (n2) —
+    the backend's real IP reveals the domain BEFORE ct(nat) rewrites it.
+  → ct(zone=N,nat) in the action ensures kernel conntrack looks up the correct zone.
+  → ct_zone cannot be used in the match because ct_state/ct_zone are only populated
+    AFTER a packet passes through ct() — and reply packets haven't yet (see §3k).
 ```
 
 ### 2c. Connection Lifecycle
 
 ```
 NEW CONNECTION (client A):
-  SYN → matches Rule FWD-A (eth_src=clientA_mac, ...) → ct(commit) creates conntrack entry
-  → DNAT to backend_X → SYN-ACK returns
-  → Reply packets match Rule REV-A (ct_state=+est+trk, eth_dst=clientA_mac)
-  → ct(nat) reverses mapping → Connection in conntrack, no longer needs Rule FWD-A
+  SYN → matches Rule FWD-A (eth_src=clientA_mac, ...) → ct(commit,zone=N,nat(dst=X))
+  → creates conntrack entry (5-tuple), DNAT to backend_X → SYN-ACK returns
+  → Reply packet (src=backend_X, dst=clientA, sport=27018) enters OVS
+  → Matches Rule REV-A (ipv4_src=backend_subnet, ...) — NO ct_state required
+  → ct(zone=N,nat) looks up the 5-tuple in kernel conntrack, reverse-NATs src to VIP
+  → set_field(eth_src=vip_mac), output:clientA_port → client sees src=VIP ✅
 
 NEW CONNECTION (client B, same domain):
-  SYN → matches Rule FWD-B (eth_src=clientB_mac, ...) → ct(commit) creates conntrack entry
-  → DNAT to backend_Y (possibly different from client A's backend)
-  → Reply packets match Rule REV-B → conntrack reverses mapping
+  SYN → matches Rule FWD-B (eth_src=clientB_mac, ...) → ct(commit,zone=N,nat(dst=Y))
+  → creates conntrack entry, DNAT to backend_Y (possibly different from client A's)
+  → Reply packets match Rule REV-B (same structure, different client MAC/IP)
   → Each client independently load-balanced via WSM cost function
 
 ESTABLISHED CONNECTION:
-  All subsequent packets match the per-client reply rule (ct_state=+est+trk)
-  → ct(nat) applies the stored NAT mapping automatically
+  All subsequent packets match the per-client reply rule (ipv4_src=backend_subnet, ...)
+  → ct(zone=N,nat) applies the stored NAT mapping automatically
   → The forward rule is never consulted again for this connection
 
 AFTER ALL FWD RULES DELETED (unregister_storage_backend):
@@ -129,7 +134,7 @@ Each piece of the conntrack design has a distinct role. They are not interchange
 | Piece                                       | Purpose                                                                                                                                                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ct(commit, zone=1, nat(dst=10.0.0.100))` | **Creates** an entry for this packet's 5-tuple. The kernel auto-generates the entry identity from `(src_ip, src_port, dst_ip, dst_port, protocol)`. This is the *only* piece that writes state.                                                                                                                            |
-| `ct_state=+est+trk`                       | **Matches** ANY packet whose 5-tuple already has an entry in the kernel conntrack table. It is a broad gate — it does not reference a specific entry ID. Every established connection in the zone satisfies it.                                                                                                               |
+| `ct_state=+est+trk`                       | **Matches** packets that have ALREADY passed through a `ct()` action and whose 5-tuple has a conntrack entry in ESTABLISHED state. **This only works if the packet went through `ct()` first** — see §3k for why the original design using this match was broken.                                                                               |
 | The kernel's 5-tuple lookup                 | **Routes** each reply packet to the correct entry. The kernel compares the packet's `(src_ip, src_port, dst_ip, dst_port, protocol)` against every entry in the zone. When the reply direction matches, `ct(nat)` reverses the NAT automatically. This is transparent — no flow rule action is needed for the IP rewrite. |
 
 ```
@@ -145,17 +150,19 @@ hits the same rule. The only difference between entries is the source port.
 The kernel uses the full 5-tuple to tell them apart.
 
 When a reply packet arrives from 10.0.0.100:27018 → 10.0.0.10:50002:
-  → Kernel finds entry #2 (reply direction matches)
-  → ct(nat) rewrites src to 10.0.0.254 (the VIP)
-  → The reply rule's ct_state=+est+trk match gates entry into the flow
+  → Packet matches reply rule by L2/L3/L4 fields (eth_dst, ipv4_dst, ipv4_src, tcp_src)
+  → ct(zone=1,nat) sends packet to conntrack → kernel finds entry #2 by 5-tuple
+  → Kernel applies reverse NAT: rewrites src from 10.0.0.100 to 10.0.0.254 (VIP)
   → set_field(eth_src=VIP_N1_MAC) fixes the L2 header
+  → output:clientA_port delivers to client A
 ```
 
 The flow rules never know about individual entries. The kernel handles
 per-connection identity entirely on its own. This is why deleting the
 forward rule is safe: the entries are not stored in OVS, they're in the
-kernel's conntrack table, and the reply rule (`ct_state=+est+trk`) still
-matches them regardless of whether the forward rule exists.
+kernel's conntrack table, and the reply rule (`ct(zone=N,nat)` in its
+actions) still reverse-NATs them regardless of whether the forward rule
+exists.
 
 ## 3. Design Decisions & Rationale
 
@@ -248,44 +255,60 @@ This is why the reply rule is per-client: the L2 rewrite (`eth_src=vip_mac`)
 and output port (`output:in_port`) are client-specific and must be matched
 to the correct client via `eth_dst=client_mac, ipv4_dst=client_ip`.
 
-The `ct_state=+est+trk` match ensures the rule only processes packets that
-belong to established conntrack connections. A backend talking to a random
-non-VIP host would have no conntrack entry and would not match. The per-client
-MAC/IP match is an additional safety filter — defense in depth.
+The `ct(zone=N,nat)` action ensures only packets belonging to established
+conntrack connections get reverse-NAT'd — a backend talking to a random
+non-VIP host would have no conntrack entry, so `ct(nat)` would be a no-op.
+The per-client MAC/IP match is an additional safety filter — defense in depth.
 
 **Client distinction in the reply direction works the same way as the current
 static NAT SNAT rules:** the current `install_vip_dnat_snat` installs SNAT
 rules scoped to `eth_src=backend_mac, eth_dst=client_mac, ipv4_src=backend_ip,
 ipv4_dst=client_ip`. The conntrack reply rule replaces the `eth_src` and
-`ipv4_src` match fields with `ct_state=+est+trk` (kernel handles the backend
-identification), but keeps `eth_dst` and `ipv4_dst` for client identification.
+`ipv4_src` match fields with `ipv4_src=backend_subnet/24` (matching all
+backends in the domain) and adds `ct(zone=N,nat)` as an action to trigger
+reverse NAT. Client identification (`eth_dst`, `ipv4_dst`) is preserved.
 This is a simplification of the current design, not a new concept.
 
-### 3f. Domain Differentiation via ct_zone
+### 3f. Domain Differentiation via Backend Subnet + ct_zone
 
 The reply rule must set `eth_src` to the correct VIP MAC — and
 `VIP_DATA_N1_MAC` ≠ `VIP_DATA_N2_MAC`. A single reply rule per client
 can only set one `eth_src` value, and two reply rules with identical match
 fields would collide (last-one-wins overwrite).
 
-**Solution**: the forward rule tags each connection with `ct_zone=N` (1 for n1,
-2 for n2). The reply rule matches `ct_zone=N` in addition to `ct_state`
-and client fields. Since the match now differs by zone, both reply rules
-coexist for the same client without collision. The kernel automatically
-places reply packets in the zone where the original conntrack entry was
-created — no extra logic needed.
+The original design used `ct_zone=N` in the reply rule **match** to
+differentiate n1 from n2. This does not work because `ct_zone` (like
+`ct_state`) is only populated after a packet passes through `ct()` —
+and the reply packet has not been through `ct()` yet (see §3k).
 
-Zones are also useful for monitoring: `ovs-appctl dpctl/dump-conntrack`
-can be filtered per-zone to get per-domain connection counts without
-parsing VIP IPs from the conntrack output.
+**Working solution**: use the backend's source IP subnet in the match.
+Before `ct(nat)` rewrites it, the reply packet's `ipv4_src` is the
+backend's real IP:
+
+- n1 backends are always on LAN1: `10.0.0.0/24`
+- n2 backends are always on LAN2: `10.0.1.0/24`
+
+This is a fixed topology property — no other LANs exist. The forward rule
+still uses `ct(commit, zone=N, nat(dst=...))` to tag the connection, and
+the reply rule uses `ct(zone=N, nat)` as an **action** to look up the
+correct zone. Zones remain useful for monitoring (`ovs-appctl
+dpctl/dump-conntrack zone=1`).
+
+**Trade-off**: the subnet match is broader than a zone match — any backend
+on the LAN could match a reply rule. However, only VIP-routed backends
+have conntrack entries, so non-VIP traffic from backends is processed
+by `ct(nat)` (which finds no entry) and continues without NAT. The
+`eth_dst=client_mac` and `tcp_src=27018` matches provide additional
+filtering. This is a pragmatic trade-off: reliability over strictness.
 
 ### 3g. Multi-Client Reply Rules
 
 The reply rule is per-client because the L2 destination (`eth_dst=client_mac`,
 `output:in_port`) is client-specific — conntrack handles the IP NAT reversal
-but does not store OVS port numbers or MAC addresses (see §3e). An incidental
-benefit is that backends cannot hijack non-VIP traffic: a packet not belonging
-to a conntrack entry won't match `ct_state=+est+trk`.
+but does not store OVS port numbers or MAC addresses (see §3e). A backend
+talking to a random non-VIP host would have no conntrack entry; `ct(nat)`
+would find nothing and the packet would be output to the client unchanged
+— harmless noise, not a security concern in this closed test environment.
 
 With 8 clients × 2 domains = 16 forward rules + 16 reply rules = 32 total
 rules — same count as the current static NAT design (2 rules × 8 clients ×
@@ -315,6 +338,54 @@ equivalent and version-agnostic.
 
 **Conclusion**: Both images already support conntrack as built today.
 No Docker image rebuilds are required for the conntrack changes.
+
+### 3k. The ct_state Pitfall — Why the Original Design Failed
+
+The original design (§2b, §2d) assumed that `ct_state=+est+trk` could match
+reply packets whose 5-tuple already had a conntrack entry. This is incorrect
+in OVS. Here is why:
+
+**OVS conntrack is not automatic like Linux netfilter.** In Linux netfilter,
+every packet passing through the kernel automatically gets conntrack state
+assigned. In OVS, `ct_state` is only set when the packet **explicitly passes
+through a `ct()` action** in the flow pipeline.
+
+Think of it as a customs checkpoint:
+
+```
+Forward path (works):
+  Client SYN → ct(commit, zone=1, nat(dst=X)) → ct_state set → entry created ✅
+
+Reply path (broken in original design):
+  Backend SYN-ACK → enters OVS → NO ct() action → ct_state = 0
+  → reply rule checks ct_state=+est+trk (34) → MISMATCH (0 ≠ 34) → rule skipped
+  → packet falls through → no reverse NAT → connection fails ❌
+```
+
+The conntrack entry IS created by the forward rule. The kernel CAN find
+it by 5-tuple if asked. But the reply rule never asks — it only checks
+for a stamp (`ct_state`) that the reply packet never received.
+
+**The fix**: instead of **matching** on `ct_state` (which requires prior
+`ct()`), **apply** `ct(zone=N,nat)` as an **action** in the reply rule.
+This sends the reply packet through the checkpoint on the spot:
+
+```
+Reply path (fixed):
+  Backend SYN-ACK → enters OVS → matches reply rule by L2/L3/L4 fields
+  → ct(zone=1,nat) → kernel looks up 5-tuple in zone 1 → finds entry
+  → reverse NAT applied: src=backend_ip → src=vip_ip
+  → set_field(eth_src=vip_mac), output:client_port → delivered ✅
+```
+
+The 5-tuple lookup still works. The zone isolation still works (forward
+rule wrote zone=N, reply action reads zone=N). The only thing that changed
+is **when** the packet visits the checkpoint: as an action, not as a
+pre-condition.
+
+This also explains why `ct_zone` cannot be used in the reply rule **match**
+(§3f): same reason — `ct_zone` is only populated after `ct()`. The backend
+subnet (`ipv4_src`) replaces it as the domain differentiator.
 
 ### 3j. Conntrack Table Capacity and Entry Lifecycle
 

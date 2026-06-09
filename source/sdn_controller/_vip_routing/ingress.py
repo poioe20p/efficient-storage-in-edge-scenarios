@@ -239,8 +239,8 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
 
     # Packet-Out the first packet so it reaches the backend immediately
     # while the new flow rules propagate through the pipeline.
-    # Must include ct(commit, nat(...)) so the first SYN creates a conntrack
-    # entry — without it the reply rule's ct_state=+est+trk match fails.
+    # Must include ct(commit, nat(dst=...)) so the first SYN creates a conntrack
+    # entry — the reply rule uses ct(zone=N,nat) to reverse-NAT reply packets.
     dnat_eth_dst = (_ROUTER_MAC if is_cross_network and _ROUTER_MAC
                     else storage_mac)
     ct_action = parser.NXActionCT(
@@ -251,7 +251,7 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
         alg=0,
         actions=[
             parser.NXActionNAT(
-                flags=0,
+                flags=2,            # 2 = NX_NAT_F_DST (destination NAT)
                 range_ipv4_min=storage_ip,
                 range_ipv4_max=storage_ip,
             ),

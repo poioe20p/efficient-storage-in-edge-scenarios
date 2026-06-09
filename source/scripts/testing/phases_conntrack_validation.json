@@ -1,0 +1,46 @@
+{
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_s": 30,
+      "rate_per_client": 5.0,
+      "cross_region_ratio": 0.0,
+      "hotspot_direction": "lan2_to_lan1",
+      "mix": {
+        "device_status": 0.80,
+        "dashboard": 0.10,
+        "service_pressure": 0.10
+      },
+      "client_fraction": 1.0,
+      "comment": "Quick warm-up with local traffic only — verify basic conntrack connectivity"
+    },
+    {
+      "name": "storage_stress",
+      "duration_s": 180,
+      "rate_per_client": 7.0,
+      "cross_region_ratio": 0.75,
+      "hotspot_direction": "lan2_to_lan1",
+      "mix": {
+        "device_status": 0.90,
+        "dashboard": 0.05,
+        "service_pressure": 0.05
+      },
+      "client_fraction": 1.0,
+      "comment": "Storage pressure with cross-region reads — exercise conntrack during storage churn"
+    },
+    {
+      "name": "demand_drop",
+      "duration_s": 60,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "hotspot_direction": "lan2_to_lan1",
+      "mix": {
+        "device_status": 0.60,
+        "dashboard": 0.20,
+        "service_pressure": 0.20
+      },
+      "client_fraction": 0.5,
+      "comment": "Low-load cooldown — verify conntrack rules clean up correctly"
+    }
+  ]
+}

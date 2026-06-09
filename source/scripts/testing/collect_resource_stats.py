@@ -244,7 +244,7 @@ def _collect_conntrack_stats():
     }
     try:
         proc = subprocess.run(
-            ["ovs-appctl", "dpctl/dump-conntrack"],
+            ["docker", "exec", "ovs", "ovs-appctl", "dpctl/dump-conntrack"],
             capture_output=True, text=True, timeout=5,
         )
         if proc.returncode != 0:

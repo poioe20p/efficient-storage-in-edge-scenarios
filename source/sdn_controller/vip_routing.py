@@ -41,27 +41,33 @@ from ._vip_routing import config, flows, ingress, selection, state
 
 
 def _verify_conntrack_available():
-    """Refuse to start if OVS conntrack is not available on the system."""
+    """Verify OVS conntrack is available (ovs-appctl is inside the OVS container)."""
     try:
         result = subprocess.run(
-            ["ovs-appctl", "dpctl/dump-conntrack"],
+            ["docker", "exec", "ovs", "ovs-appctl", "dpctl/dump-conntrack"],
             capture_output=True, timeout=5,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                "OVS conntrack is required for VIP_DATA routing. "
-                "Ensure the kernel datapath has conntrack support enabled."
+            config.logger.warning(
+                "OVS conntrack check failed (rc=%d) — "
+                "VIP_DATA routing may not work correctly. "
+                "Ensure the kernel datapath has conntrack support enabled.",
+                result.returncode,
             )
+            return False
     except FileNotFoundError:
-        raise RuntimeError(
-            "ovs-appctl not found — is OVS installed?"
+        config.logger.warning(
+            "docker not found — cannot verify OVS conntrack availability"
         )
+        return False
     except subprocess.TimeoutExpired:
-        raise RuntimeError(
+        config.logger.warning(
             "ovs-appctl dpctl/dump-conntrack timed out — "
-            "conntrack may not be functional."
+            "conntrack may not be functional"
         )
+        return False
     config.logger.info("OVS conntrack available — VIP_DATA routing ready")
+    return True
 
 
 class VipRoutingMixin:

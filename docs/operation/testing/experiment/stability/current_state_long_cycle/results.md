@@ -1,6 +1,6 @@
 # Results — Current State Integrated Baseline Cycle
 
-**Date**: 2026-06-05 / 2026-06-06  
+**Date**: 2026-06-05 / 2026-06-08  
 **Experiment plan**: [experiment_plan.md](./experiment_plan.md)  
 
 **Runs**:
@@ -20,12 +20,16 @@
 | `current_state_integrated_b` (v5.4) | 20260607_105325 | ✅ Complete | 8.1% | accelerated recovery expiry |
 | `current_state_integrated_a` (v5.5) | 20260607_144234 | ✅ Complete | 17.6% | retry arch, timeout=1000ms |
 | `current_state_integrated_b` (v5.5) | 20260607_154628 | ✅ Complete | 6.7% | retry arch, timeout=3000ms |
+| `current_state_integrated_a` (v5.6) | 20260608_131830 | ✅ Complete | 2.2% | conntrack VIP_DATA |
+| `current_state_integrated_b` (v5.6) | 20260608_140225 | ✅ Complete | 21.3% | conntrack VIP_DATA |
 
 **Overall outcome (v3 pair)**: ❌ Both runs complete but fail the service-quality envelope. The failure pattern inverts between runs — exposing a cross-LAN edge-server bottleneck, Docker daemon saturation, a 500ms gate, and a Tier 1 network-attachment race. All root causes identified and fixed (§10–§12).
 
 **Overall outcome (v4 pair)**: ⚠️ Both runs complete. Tier 1 selective-sync reaches ACTIVE in both directions (11–13s activation, spawn hardening confirmed). Baseline and storage phases are pristine (0.0% failure). But service-quality envelope fails (7.6–8.3% overall) due to Flask dev server concurrency bottleneck in compute phases and non-deterministic `reverse_hotspot` behavior. Storage and Tier 1 infrastructure are solid; compute/edge-server concurrency is the remaining gap. See §15.
 
 **Overall outcome (v5.0–v5.4 campaign)**: ⚠️ Five incremental runs narrowed the failure space systematically. Dashboard rework (`DASHBOARD_CANDIDATE_LIMIT` + `verify_fleet_integrity`) eliminated unbounded DB fetches. `batch_size` using config variable prevented cursor exhaustion. `coord_lan` fix restored resource_stats.csv telemetry. Accelerated recovery expiry (5s vs 35s) reduced stuck recovery windows. The v5.4 pair reveals the remaining root cause is **epoch rotation on isolated failures** — v5.4 A hit 2.0% overall (epoch never triggered; zero failures in edge server log), while v5.4 B hit 8.1% (epoch rotated on transient `AutoReconnect` during normal storage churn). Deep log analysis across 2,776 failure runs confirmed **92% of failures are isolated single events** — the epoch rotation is the remaining failure amplifier. See §16.
+
+**Overall outcome (v5.6 — conntrack VIP_DATA, 2026-06-08)**: ⚠️ Mixed. Conntrack routing eliminates stale-rule failures — storage-churn phases average 0.1% (vs variable static NAT), zero epoch rotations on the good-WAN side in both runs. Run A meets all targets (2.2% overall, ≤3% conntrack target). Run B fails at 21.3% due to WAN asymmetry — the same LAN-flip pattern seen in v5.4 (2.0% vs 8.1%). With stale-rule noise removed by conntrack, WAN non-determinism is the dominant and sole remaining failure amplifier. The conntrack fix is validated; WAN stability improvements would further close the pair spread. See §17.
 
 ---
 
