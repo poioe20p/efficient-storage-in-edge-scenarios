@@ -3,7 +3,7 @@
 create_indexes.py — run once after seeding, creates indexes on both replica-set primaries
 """
 
-from pymongo import MongoClient, ASCENDING
+from pymongo import MongoClient, ASCENDING, DESCENDING
 import argparse
 
 REGIONS = {

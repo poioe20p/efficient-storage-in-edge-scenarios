@@ -1,59 +1,76 @@
 # Stability Evaluation
 
-This folder holds the experiment plans that together form the current
-stability evaluation for the architecture.
+This folder holds the experiment plans that together form the complete
+stability evaluation for the architecture. Every mechanism has been
+validated in isolation, every fix has been confirmed, and the integrated
+configuration has been tuned through six major iterations. The final gate
+is the **golden configuration stability pair** — the definitive reference
+point before new features are added.
 
-Latest analyzed results:
+## Status Summary (2026-06-09)
 
-- [storage_reserve_validation/results.md](storage_reserve_validation/results.md) — `storage_reserve_smoke` passed the reserve-liveness gate; activation remained untested.
-- [tier1_activation/results.md](tier1_activation/results.md) — **PASSED.** Authoritative runs `20260604_204334` (control, SS_ENABLED=0) and `20260604_205108` (enabled, SS_ENABLED=1) with Tier 2 fully isolated. Tier 1 activated and drained cleanly in both directions; the first-direction DB-latency comparison shows Tier 1 eliminating the cross-region penalty (84.5 ms → 3.58 ms).
+| Experiment | Status | Key result |
+|---|---|---|
+| [current_state_long_cycle](current_state_long_cycle/experiment_plan.md) | ⚠️ v5.6 — Run A 2.2%, Run B 21.3% (WAN asymmetry, now fixed) | Iterated v1→v5.6; all root causes identified and fixed |
+| [conntrack_routing](conntrack_routing/experiment_plan.md) | ✅ Validated | Compute 56–65% → 1.4%. Zero epoch rotations. |
+| [wan_http0_root_cause](wan_http0_root_cause/experiment_plan.md) | ✅ Fix confirmed | Cross-LAN veth TX queue. R2: **0.05% at CLIENTS=8**. |
+| [recovery_removal_validation](recovery_removal_validation/experiment_plan.md) | ✅ Validated | All 8 criteria passed. |
+| [storage_reserve_validation](storage_reserve_validation/experiment_plan.md) | ✅ Liveness passed | Heartbeat stable, no cleanup loops. |
+| [storage_reserve_use_validation](storage_reserve_use_validation/experiment_plan.md) | ✅ `reserve-used` | Activated reserve carries VIP_DATA traffic. |
+| [storage_reserve_threshold_sweep](storage_reserve_threshold_sweep/experiment_plan.md) | ✅ Boundary found | $0.12 < \tau \leq 0.15$. t12 chosen. |
+| [storage_reserve_load_sweep](storage_reserve_load_sweep/experiment_plan.md) | ⚠️ No acceptable candidate | c08 stable at t12 but waiting-only. c10 activates but overloads. |
+| [tier1_activation](tier1_activation/experiment_plan.md) | ✅ PASSED | DB-latency 84.5ms → 3.58ms. Clean drain both directions. |
+| **[golden_config_stability](golden_config_stability/experiment_plan.md)** | ⚠️ Executed — gate not yet passed | Overall 1.6%/2.5% passes ≤3% but LAN2 collapse, cleanup debt, no reserve activation. See [results.md](golden_config_stability/results.md). |
 
-In this repository, `stability` means validation-first work for the
-current system, plus a small number of reserve-specific tuning follow-ups.
-These plans answer:
+## Experiment Family
 
-1. Does the unchanged baseline stay bounded under the standard long-cycle workload?
-2. When one mechanism is exercised directly, does it behave correctly without destabilizing the run?
-3. After reserve is already proved usable, which coarse operating point should later campaigns keep?
+### Infrastructure & Correctness (run once, already validated)
 
-Experiments in this family:
+These experiments validated fixes and removals that are now part of the
+deployed system. They do not need to be re-run unless the relevant code changes.
 
-- [current_state_long_cycle/experiment_plan.md](current_state_long_cycle/experiment_plan.md) — baseline repeatability under the standard long-cycle workload.
-- [tier1_activation/experiment_plan.md](tier1_activation/experiment_plan.md) — selective-sync activation, service effect, and clean drain under a dedicated Tier 1 hotspot workload.
-- [tier1_activation/results.md](tier1_activation/results.md) — analyzed June 4 Tier 1 outcome, including the enabled-run verdict and the control-run caveat.
-- [storage_reserve_validation/experiment_plan.md](storage_reserve_validation/experiment_plan.md) — persistent Tier 2 reserve liveness gate after the heartbeat fix.
-- [storage_reserve_validation/results.md](storage_reserve_validation/results.md) — analyzed June 4 reserve-liveness gate result.
-- [storage_reserve_threshold_sweep/experiment_plan.md](storage_reserve_threshold_sweep/experiment_plan.md) — coarse post-usability threshold tuning across three candidate trigger settings.
-- [storage_reserve_load_sweep/experiment_plan.md](storage_reserve_load_sweep/experiment_plan.md) — coarse post-usability load tuning across three candidate client counts.
-- [storage_reserve_use_validation/experiment_plan.md](storage_reserve_use_validation/experiment_plan.md) — targeted proof that an activated reserve actually carries `VIP_DATA` traffic after a forced connection-refresh window.
+- [conntrack_routing/experiment_plan.md](conntrack_routing/experiment_plan.md) — OVS conntrack VIP_DATA routing eliminates stale-rule → AutoReconnect → epoch-rotation cascade.
+- [wan_http0_root_cause/experiment_plan.md](wan_http0_root_cause/experiment_plan.md) — Cross-LAN veth TX queue depth fix (`txqueuelen=10000`). 426× improvement over v5.6 B.
+- [recovery_removal_validation/experiment_plan.md](recovery_removal_validation/experiment_plan.md) — Recovery VIP infrastructure removed. All 8 log-absence criteria passed.
 
-Use this family in two stages.
+### Mechanism Validation (run when the mechanism changes)
 
-Stage 1: always run the baseline first.
+- [tier1_activation/experiment_plan.md](tier1_activation/experiment_plan.md) — Tier 1 selective-sync lifecycle under a dedicated bidirectional hotspot workload.
+- [storage_reserve_validation/experiment_plan.md](storage_reserve_validation/experiment_plan.md) — Tier 2 persistent reserve liveness gate.
+- [storage_reserve_use_validation/experiment_plan.md](storage_reserve_use_validation/experiment_plan.md) — Proves activated reserve carries VIP_DATA traffic (usability gate).
 
-1. [current_state_long_cycle/experiment_plan.md](current_state_long_cycle/experiment_plan.md)
+### Tuning Sweeps (already executed; re-run only if workload shape changes)
 
-Stage 2: run the mechanism validation plan first, then optional reserve tuning only after reserve use is proved.
+- [storage_reserve_threshold_sweep/experiment_plan.md](storage_reserve_threshold_sweep/experiment_plan.md) — Coarse threshold tuning across t10/t12/t15. Activation boundary found. t12 chosen.
+- [storage_reserve_load_sweep/experiment_plan.md](storage_reserve_load_sweep/experiment_plan.md) — Coarse load tuning across c08/c10. c08 stable at t12; capacity ceiling identified.
 
-1. [tier1_activation/experiment_plan.md](tier1_activation/experiment_plan.md) only if you are validating Tier 1 selective-sync
-2. [storage_reserve_validation/experiment_plan.md](storage_reserve_validation/experiment_plan.md) first if you are validating the storage persistent-reserve path at all
-3. [storage_reserve_use_validation/experiment_plan.md](storage_reserve_use_validation/experiment_plan.md) after the liveness gate if the question is whether the promoted reserve actually becomes request-visible capacity
-4. [storage_reserve_threshold_sweep/experiment_plan.md](storage_reserve_threshold_sweep/experiment_plan.md) only after use validation reaches `reserve-used`, if the question is threshold tuning
-5. [storage_reserve_load_sweep/experiment_plan.md](storage_reserve_load_sweep/experiment_plan.md) only after use validation reaches `reserve-used`, if the question is offered-load tuning
+### Integrated Baseline (iterated; superseded by golden_config_stability)
 
-For the storage-reserve work discussed in this repository, the intended order is:
+- [current_state_long_cycle/experiment_plan.md](current_state_long_cycle/experiment_plan.md) — Integrated baseline v1→v5.6. All root causes identified and fixed across the campaign.
 
-1. [current_state_long_cycle/experiment_plan.md](current_state_long_cycle/experiment_plan.md)
-2. [storage_reserve_validation/experiment_plan.md](storage_reserve_validation/experiment_plan.md)
-3. [storage_reserve_use_validation/experiment_plan.md](storage_reserve_use_validation/experiment_plan.md)
-4. [storage_reserve_threshold_sweep/experiment_plan.md](storage_reserve_threshold_sweep/experiment_plan.md) only if threshold tuning is needed
-5. [storage_reserve_load_sweep/experiment_plan.md](storage_reserve_load_sweep/experiment_plan.md) only if offered-load tuning is needed
+### Final Gate (run before any new feature or mechanism)
 
-Do not run the Tier 1 plan as part of the storage-reserve sequence unless you are explicitly validating selective-sync in a separate campaign.
+- **[golden_config_stability/experiment_plan.md](golden_config_stability/experiment_plan.md)** — Definitive stability pair. All fixes + integrated config + canonical workload. Two runs (A/B). Marks the golden configuration values. **This is the only experiment that must pass before new development begins.**
 
-If the campaign goal is to gate selective-sync behind reserve liveness, the allowed order is:
+## Quick Start — Running the Final Gate
 
-1. [storage_reserve_validation/experiment_plan.md](storage_reserve_validation/experiment_plan.md)
-2. [tier1_activation/experiment_plan.md](tier1_activation/experiment_plan.md) only if the reserve-validation success criteria are met
+```bash
+# Run A
+sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
+  OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
+  RUN_LABEL=golden_config_a \
+  PHASES_CONFIG=testing/phases.json \
+  CLIENTS=8 DEVICES=600 NODES=100 \
+  SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 
-Use validation stays separate from the two tuning sweeps. It proves request-visible reserve use. The threshold sweep then varies `SCALEUP_STORAGE_BASE_THRESHOLD` only, and the load sweep varies offered load only. Each remains single-variable, but the tuning work now happens only after usability is already established.
+# Run B (only after A artifacts saved and no code/env/image changes)
+sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
+  OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
+  RUN_LABEL=golden_config_b \
+  PHASES_CONFIG=testing/phases.json \
+  CLIENTS=8 DEVICES=600 NODES=100 \
+  SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
+```
+
+See the [golden config plan](golden_config_stability/experiment_plan.md) for
+full success criteria, checkpoints, and the marked configuration values.

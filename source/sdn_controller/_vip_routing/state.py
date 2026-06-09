@@ -155,7 +155,8 @@ def unregister_storage_backend(controller, mac: str, domain: str) -> None:
     # Delete the forward rule so new connections get a fresh backend.
     # The reply rule is NOT deleted — it's shared and handles all
     # established connections via conntrack state.
-    for dp_id, datapath in controller.datapaths.items():
+    for datapath in controller.datapaths:
+        dp_id = datapath.id
         try:
             flows.delete_vip_data_forward_rule(controller, datapath, domain)
         except Exception:
