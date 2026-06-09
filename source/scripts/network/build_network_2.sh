@@ -86,6 +86,7 @@ echo "Bringing up veth interfaces inside OVS namespace..."
 docker exec ovs ip link set veth21 up # interface connected to edge_server_n2
 docker exec ovs ip link set veth22 up # interface connected to edge_storage_server_n2
 docker exec ovs ip link set veth23 up # interface connected to router LAN side
+docker exec ovs ip link set veth23 txqueuelen 10000
 docker exec ovs ip link set veth24 up # interface connected to aggregator_n2
 
 # ==============================
@@ -185,6 +186,7 @@ echo "Configuring NAT router interfaces..."
 sudo nsenter -t $PID_ROUTER -n ip link set veth23-peer name eth2 # port number 3 on OVS (veth23 <-> ovs-br1)
 sudo nsenter -t $PID_ROUTER -n ip link set eth2 address 00:00:00:00:00:CC  # router LAN MAC
 sudo nsenter -t $PID_ROUTER -n ip link set eth2 up
+sudo nsenter -t $PID_ROUTER -n ip link set eth2 txqueuelen 10000
 sudo nsenter -t $PID_ROUTER -n ip addr add 10.0.1.1/24 dev eth2  # default GW for LAN
 
 
