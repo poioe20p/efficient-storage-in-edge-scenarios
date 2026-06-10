@@ -38,7 +38,7 @@ from .scaling_config import (
 from .elasticity.elasticity import ComputeAlert, DataAlert
 from .telemetry.models import DomainSummary
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('os_ken.scaling_policy')
 
 
 class ScalingPolicy:
