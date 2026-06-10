@@ -22,6 +22,7 @@ point before new features are added.
 | [tier1_activation](tier1_activation/experiment_plan.md) | ✅ PASSED | DB-latency 84.5ms → 3.58ms. Clean drain both directions. |
 | **[golden_config_stability](golden_config_stability/experiment_plan.md)** | ⚠️ Executed — excessive variance (1.6%–11.8%) | 5 runs, 2/5 SIGSEGV. Two bugs fixed. Variance blocks gate. See [results.md](golden_config_stability/results.md). |
 | **[variance_reduction](variance_reduction/experiment_plan.md)** | ✅ **Fix verified — `SCALEDOWN_COMPUTE_COOLDOWN_S=180`** | 4 runs. Root cause: 120s cooldown too short for storage→compute phase transition. Fix: 180s cooldown. Compute phases now 0.04–0.63%. Overall 0.23%. See [results.md](variance_reduction/results.md). |
+| **[zombie_node_fix](zombie_node_fix/experiment_plan.md)** | 🔄 **Planned** | Verify `effective_mac`/`effective_ip` fallback fix. 15 min condensed workload + 6 min idle tail. Check: zero zombies after scale-down. |
 
 ## Experiment Family
 

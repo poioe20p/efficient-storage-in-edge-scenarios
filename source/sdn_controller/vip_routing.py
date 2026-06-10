@@ -143,6 +143,22 @@ class VipRoutingMixin:
         """Remove a storage backend from the VIP pool."""
         return state.unregister_storage_backend(self, mac, domain)
 
+    def mark_server_backend_warm(self, mac: str) -> None:
+        """Create a warm lease for a server backend (bypasses cold-start penalty)."""
+        return state.mark_server_backend_warm(self, mac)
+
+    def mark_storage_backend_warm(self, mac: str, domain: str) -> None:
+        """Create a warm lease for a storage backend (bypasses cold-start penalty)."""
+        return state.mark_storage_backend_warm(self, mac, domain)
+
+    def clear_server_backend_warm(self, mac: str) -> None:
+        """Remove the warm lease for a server backend."""
+        return state.clear_server_backend_warm(self, mac)
+
+    def clear_storage_backend_warm(self, mac: str, domain: str) -> None:
+        """Remove the warm lease for a storage backend."""
+        return state.clear_storage_backend_warm(self, mac, domain)
+
     # ------------------------------------------------------------------
     # Public API — backend selection
     # ------------------------------------------------------------------

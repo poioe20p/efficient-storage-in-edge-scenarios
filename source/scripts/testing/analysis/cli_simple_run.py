@@ -1,8 +1,9 @@
 """cli_simple_run — simple run-level service and node-count plots.
 
-Produces <run_dir>/analysis/simple_run.png with five panels:
+Produces <run_dir>/analysis/simple_run.png with six panels:
   - average latency over time
   - p95 latency over time
+  - p99 latency over time
   - failure rate over time
   - total active nodes over time
   - active nodes by type over time
@@ -45,7 +46,7 @@ def run(run_dir: Path, bucket_s: int = 30) -> None:
     client_buckets = bucket_client_rows(r.all_client_rows, origin_ts, bucket_s=bucket_s)
     node_points = build_container_step_series(r.container_event_rows, origin_ts)
 
-    fig, axes = plt.subplots(5, 1, figsize=(14, 16), sharex=True)
+    fig, axes = plt.subplots(6, 1, figsize=(14, 19), sharex=True)
     fig.suptitle(f"Simple run summary — {Path(run_dir).name}", fontsize=12)
 
     x_bucket = [row["bucket_mid_s"] for row in client_buckets]
@@ -63,19 +64,25 @@ def run(run_dir: Path, bucket_s: int = 30) -> None:
     shade_phases(ax, bounds, origin_ts)
 
     ax = axes[2]
+    ax.plot(x_bucket, [row["p99_latency_ms"] for row in client_buckets], color="#8b1a8b", linewidth=1.6)
+    ax.set_ylabel("ms")
+    ax.set_title("p99 latency")
+    shade_phases(ax, bounds, origin_ts)
+
+    ax = axes[3]
     ax.plot(x_bucket, [row["failure_rate_pct"] for row in client_buckets], color="#bf1a1a", linewidth=1.6)
     ax.set_ylabel("%")
     ax.set_title("Failure rate")
     shade_phases(ax, bounds, origin_ts)
 
-    ax = axes[3]
+    ax = axes[4]
     node_x = [row["t_s"] for row in node_points]
     ax.step(node_x, [row["total_nodes"] for row in node_points], where="post", color="#1a7abf", linewidth=1.6)
     ax.set_ylabel("nodes")
     ax.set_title("Total active nodes")
     shade_phases(ax, bounds, origin_ts)
 
-    ax = axes[4]
+    ax = axes[5]
     ax.step(node_x, [row["compute_nodes"] for row in node_points], where="post", color="#1a7abf", linewidth=1.5, label="compute")
     ax.step(node_x, [row["storage_nodes"] for row in node_points], where="post", color="#bf5a1a", linewidth=1.5, label="storage")
     ax.step(node_x, [row["selective_nodes"] for row in node_points], where="post", color="#1abf4a", linewidth=1.5, label="selective")

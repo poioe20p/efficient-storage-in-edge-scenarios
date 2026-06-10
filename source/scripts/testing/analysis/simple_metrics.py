@@ -128,6 +128,7 @@ def bucket_client_rows(rows: list[dict], origin_ts: float, bucket_s: int = 30) -
         failure_count = int(bucket["failure_count"])
         avg_latency_ms = (sum(latencies) / request_count) if request_count else 0.0
         p95_latency_ms = percentile(latencies, 0.95) if latencies else 0.0
+        p99_latency_ms = percentile(latencies, 0.99) if latencies else 0.0
         failure_rate_pct = (100.0 * failure_count / request_count) if request_count else 0.0
         out.append({
             "bucket_index": index,
@@ -139,6 +140,7 @@ def bucket_client_rows(rows: list[dict], origin_ts: float, bucket_s: int = 30) -
             "success_count": request_count - failure_count,
             "avg_latency_ms": avg_latency_ms,
             "p95_latency_ms": p95_latency_ms,
+            "p99_latency_ms": p99_latency_ms,
             "failure_rate_pct": failure_rate_pct,
         })
     return out
@@ -220,12 +222,14 @@ def summarize_client_rows(rows: list[dict]) -> dict:
     latencies_ms = [1000.0 * safe_float(row.get("latency_s"), 0.0) for row in rows]
     avg_latency_ms = (sum(latencies_ms) / request_count) if request_count else 0.0
     p95_latency_ms = percentile(latencies_ms, 0.95) if latencies_ms else 0.0
+    p99_latency_ms = percentile(latencies_ms, 0.99) if latencies_ms else 0.0
     failure_rate_pct = (100.0 * failure_count / request_count) if request_count else 0.0
     return {
         "request_count": request_count,
         "failure_count": failure_count,
         "avg_latency_ms": avg_latency_ms,
         "p95_latency_ms": p95_latency_ms,
+        "p99_latency_ms": p99_latency_ms,
         "failure_rate_pct": failure_rate_pct,
     }
 

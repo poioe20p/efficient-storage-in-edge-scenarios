@@ -530,9 +530,11 @@ class ElasticityManager:
         logger.debug("[elasticity] compute result: success=%s ip=%s mac=%s", result.success, result.ip, result.mac)
 
         if result.success and result.ip:
-            if result.mac:
+            effective_mac = result.mac or mac
+            effective_ip  = result.ip or ip
+            if effective_mac:
 
-                self._topo.register_new_server_backend(result.mac, result.ip)
+                self._topo.register_new_server_backend(effective_mac, effective_ip)
                 log_ready_timing(
                     name,
                     "compute",
@@ -541,12 +543,12 @@ class ElasticityManager:
                 )
                 logger.info(
                     "[elasticity] compute: %s online  ip=%s  mac=%s",
-                    name, result.ip, result.mac,
+                    name, effective_ip, effective_mac,
                 )
                 # Notify Thread 2 so it can track this MAC for scale-down
                 info = NodeInfo(
-                    mac=result.mac, lan=alert.lan, network_id=alert.network_id,
-                    name=name, ip=result.ip, node_type="compute",
+                    mac=effective_mac, lan=alert.lan, network_id=alert.network_id,
+                    name=name, ip=effective_ip, node_type="compute",
                     spawn_started_monotonic_s=spawn_started_monotonic_s,
                     ready_logged=True,
                 )
@@ -581,21 +583,23 @@ class ElasticityManager:
         logger.debug("[elasticity] data result: success=%s ip=%s mac=%s", result.success, result.ip, result.mac)
 
         if result.success and result.ip:
-            if result.mac:
+            effective_mac = result.mac or mac
+            effective_ip  = result.ip or ip
+            if effective_mac:
                 # Pre-seed IP↔MAC table so Thread 1 has the mapping ready
                 # when the node eventually enters the VIP pool.
-                self._topo.register_backend_ip(result.mac, result.ip)
+                self._topo.register_backend_ip(effective_mac, effective_ip)
 
                 # Do NOT call add_storage_mac() here — the node is not SECONDARY yet.
                 # VIP registration is deferred until rs_secondary_ready arrives (Phase F).
                 logger.info(
                     "[elasticity] data: %s online  ip=%s  mac=%s  (VIP deferred until SECONDARY)",
-                    name, result.ip, result.mac,
+                    name, effective_ip, effective_mac,
                 )
                 # Notify Thread 2 so it can track this MAC for scale-down
                 info = NodeInfo(
-                    mac=result.mac, lan=alert.lan, network_id=alert.network_id,
-                    name=name, ip=result.ip, node_type="storage",
+                    mac=effective_mac, lan=alert.lan, network_id=alert.network_id,
+                    name=name, ip=effective_ip, node_type="storage",
                     rs_name=alert.rs_name,
                     primary_container=alert.primary_container,
                     port=alert.port,
@@ -676,16 +680,18 @@ class ElasticityManager:
         self._record({"type": "prepare_standby_storage", "alert": alert, "name": name, "result": result})
 
         if result.success and result.ip and result.mac:
-            self._topo.register_backend_ip(result.mac, result.ip)
+            effective_mac = result.mac or mac
+            effective_ip  = result.ip or ip
+            self._topo.register_backend_ip(effective_mac, effective_ip)
             logger.info(
                 "[elasticity] standby_storage: %s online  ip=%s  mac=%s  (VIP deferred, standby_reserved)",
-                name, result.ip, result.mac,
+                name, effective_ip, effective_mac,
             )
             # Notify Thread 2 with standby_reserved=True — the node stays
             # out of VIP and out of ordinary dynamic storage accounting.
             info = NodeInfo(
-                mac=result.mac, lan=alert.lan, network_id=alert.network_id,
-                name=name, ip=result.ip, node_type="storage",
+                mac=effective_mac, lan=alert.lan, network_id=alert.network_id,
+                name=name, ip=effective_ip, node_type="storage",
                 rs_name=alert.rs_name,
                 primary_container=alert.primary_container,
                 port=alert.port,
@@ -966,7 +972,7 @@ class ElasticityManager:
         self._selective_adder.log_timings(result)
         self._record({"type": "selective_sync", "alert": alert, "name": name, "result": result})
 
-        if not (result.success and result.ip and result.mac):
+        if not (result.success and result.ip):
             self._get_allocator(alert.lan).release(ip)
             logger.error("[elasticity] tier1: failed to spawn %s", name)
             # Tell the coordinator (if any) so its entry exits SPAWNING.
@@ -977,10 +983,13 @@ class ElasticityManager:
                     logger.exception("[tier1] coordinator.drain(spawn_failed) raised")
             return
 
+        effective_mac = result.mac or mac
+        effective_ip  = result.ip or ip
+
         # Register the node so absence detection and scale-down tracking work.
         info = NodeInfo(
-            mac=result.mac, lan=alert.lan, network_id=alert.network_id,
-            name=name, ip=result.ip, node_type="selective_storage",
+            mac=effective_mac, lan=alert.lan, network_id=alert.network_id,
+            name=name, ip=effective_ip, node_type="selective_storage",
             owner_lan=alert.owner_lan,
             spawn_started_monotonic_s=spawn_started_monotonic_s,
         )
@@ -993,12 +1002,12 @@ class ElasticityManager:
         # POST races against container startup and fails (observed: 48
         # consecutive HTTPConnectionPool errors across the container's
         # entire lifecycle).
-        ready = _wait_for_port(result.ip, _ADMIN_PORT, _READINESS_MAX_WAIT_S)
+        ready = _wait_for_port(effective_ip, _ADMIN_PORT, _READINESS_MAX_WAIT_S)
         if not ready:
             logger.error(
                 "[elasticity] tier1: %s admin port %s:%d not ready after %.0fs — "
                 "cleaning up and draining",
-                name, result.ip, _ADMIN_PORT, _READINESS_MAX_WAIT_S,
+                name, effective_ip, _ADMIN_PORT, _READINESS_MAX_WAIT_S,
             )
             self._selective_adder._cleanup_container(name)
             self._get_allocator(alert.lan).release(ip)
@@ -1014,7 +1023,7 @@ class ElasticityManager:
         # alert path, which targets an already-healthy container.
         if not self._selective_adder.reconfigure(
             container_name=name,
-            ip=result.ip,
+            ip=effective_ip,
             collections=alert.collections,
         ):
             logger.error(
@@ -1038,8 +1047,8 @@ class ElasticityManager:
                 self._coordinator.on_spawned(
                     owner_lan=alert.owner_lan,
                     container=name,
-                    mac=result.mac,
-                    ip=result.ip,
+                    mac=effective_mac,
+                    ip=effective_ip,
                     spawn_started_monotonic_s=spawn_started_monotonic_s,
                 )
             except Exception:  
@@ -1049,7 +1058,7 @@ class ElasticityManager:
             # end-to-end via direct alert submission.
             self._broadcast_tier1_manifest(alert.network_id, {
                 "owner_lan":   alert.owner_lan,
-                "host":        f"{result.ip}:27018",
+                "host":        f"{effective_ip}:27018",
                 "collections": {c: list(ids) for c, ids in alert.collections.items()},
             })
             log_ready_timing(
@@ -1059,7 +1068,7 @@ class ElasticityManager:
                 time.monotonic() - spawn_started_monotonic_s,
                 state="ACTIVE",
             )
-        logger.info("[elasticity] tier1: %s online ip=%s mac=%s", name, result.ip, result.mac)
+        logger.info("[elasticity] tier1: %s online ip=%s mac=%s", name, effective_ip, effective_mac)
 
     def _handle_selective_sync_reconfigure(self, alert: SelectiveSyncReconfigureAlert) -> None:
         """Live update. Manifest first so edges stop traffic on dropped

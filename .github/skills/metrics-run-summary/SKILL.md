@@ -23,6 +23,14 @@ only transient controller log files: `controller_lan[0-9].log`. Before deleting
 controller logs, parse and retain `elasticity_events.csv` and
 `node_lifecycle_timings.csv`. Leave every other file in the run folder intact.
 
+**Analysis location rule**: the full analysis (all graph CLIs + log parsing)
+always runs **where the controller logs reside**. If the run folder is on
+`cloud-vm` and controller logs are still present, run the entire analysis on
+`cloud-vm` — then clean up and optionally copy back. If controller logs have
+already been copied locally (or the run was local to begin with), run the
+analysis locally. Never delete controller logs before the analysis that depends
+on them completes.
+
 When the run folder lives on `cloud-vm`, this skill is also the default remote
 size-reduction step. Unless the user says controller logs still need to be kept
 or the remote folder must remain in place, copy the reduced run folder back to
@@ -76,18 +84,48 @@ The first command processes `client_requests.csv`, prints latency statistics,
 and appends `latency_summary.csv`. The second processes `resource_stats.csv`
 and appends `resource_summary.csv`.
 
-Use the analysis package when the needed input files exist:
+Use the analysis package when the needed input files exist.
+
+**System-level time-series** (always run):
 
 ```powershell
 python -m source.scripts.testing.analysis.cli_overview --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.cli_simple_run --run-dir "<run_dir>"
+```
+
+**Per-phase aggregated charts** (always run — shows component exercise):
+
+```powershell
+python -m source.scripts.testing.analysis.cli_phase_summary --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.cli_endpoint_breakdown --run-dir "<run_dir>"
+```
+
+**Elasticity diagnostics** (run when dynamic containers exist):
+
+```powershell
 python -m source.scripts.testing.analysis.cli_scale_down --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.cli_lifecycle_gantt --run-dir "<run_dir>"
+```
+
+**Per-node diagnostics** (run when `per_node_stats.csv` exists):
+
+```powershell
 python -m source.scripts.testing.analysis.cli_cpu_drivers --run-dir "<run_dir>"
 python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir "<run_dir>"
 ```
 
-These commands create or append files under `<run_dir>/analysis/`, including
-`overview.png`, `scale_down.png`, `cpu_drivers.png`, `tdb_drivers.png`, and
-`analysis/summary.md` when their data dependencies are available.
+These commands create files under `<run_dir>/analysis/`, including:
+
+| CLI | Output | What it shows |
+|-----|--------|---------------|
+| `cli_overview` | `overview.png` | Request rate, CPU, T_proc, T_db, node counts (time-series) |
+| `cli_simple_run` | `simple_run.png` | Avg/p95/p99 latency, failure rate, active nodes by type (time-series) |
+| `cli_phase_summary` | `phase_summary.png` | Latency percentiles, max node counts by type, per-LAN p95 (grouped bars) |
+| `cli_endpoint_breakdown` | `endpoint_breakdown.png` | Per-endpoint latency and failures by phase (compute vs data plane) |
+| `cli_scale_down` | `scale_down.png` | Scale-down predicate timeline (why scale-down did/didn't arm) |
+| `cli_lifecycle_gantt` | `lifecycle_gantt.png` | Container lifecycle bars: spawn→online→removed, coloured by role |
+| `cli_cpu_drivers` | `cpu_drivers.png` | Per-node CPU load balance (old vs new nodes) |
+| `cli_tdb_drivers` | `tdb_drivers.png` | T_db_write vs storage_count regression |
 
 If `matplotlib` is missing, install the analysis requirements before running the
 plotting CLIs:
@@ -102,6 +140,72 @@ When controller logs exist, parse them before cleanup and keep both CSV outputs:
 python source/scripts/tools/parse_elasticity_logs.py "<run_dir>/controller_lan1.log" "<run_dir>/controller_lan2.log" -o "<run_dir>/elasticity_events.csv" --timings-output "<run_dir>/node_lifecycle_timings.csv"
 ```
 
+## Full Analysis Command Sequence (single run)
+
+When the user requests a "full analysis" or "run the complete analysis" for a
+**single** run folder, execute **all** of the following commands in order.
+Steps A, C, D, and E are unconditional (require only `client_requests.csv` and
+`container_events.csv`); steps B and F depend on optional artifacts.
+
+### Step A — Statistics (always)
+
+```powershell
+python source/scripts/tools/metrics_stats.py "<run_dir>" --by-phase --by-lan --by-endpoint
+python source/scripts/tools/metrics_stats.py -r "<run_dir>/resource_stats.csv" --by-phase --by-network
+```
+
+### Step B — Controller log parsing (when controller logs exist)
+
+```powershell
+python source/scripts/tools/parse_elasticity_logs.py "<run_dir>/controller_lan1.log" "<run_dir>/controller_lan2.log" -o "<run_dir>/elasticity_events.csv" --timings-output "<run_dir>/node_lifecycle_timings.csv"
+```
+
+### Step C — System-level time-series (always — 2 CLIs)
+
+```powershell
+python -m source.scripts.testing.analysis.cli_overview --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.cli_simple_run --run-dir "<run_dir>"
+```
+
+### Step D — Per-phase aggregated charts (always — 2 CLIs, shows component exercise)
+
+```powershell
+python -m source.scripts.testing.analysis.cli_phase_summary --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.cli_endpoint_breakdown --run-dir "<run_dir>"
+```
+
+### Step E — Elasticity diagnostics (always — 2 CLIs, needs dynamic containers)
+
+```powershell
+python -m source.scripts.testing.analysis.cli_scale_down --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.cli_lifecycle_gantt --run-dir "<run_dir>"
+```
+
+### Step F — Per-node diagnostics (when `per_node_stats.csv` exists — 2 CLIs)
+
+```powershell
+python -m source.scripts.testing.analysis.cli_cpu_drivers --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir "<run_dir>"
+```
+
+### Minimum output expected after full analysis
+
+| File | Always? | What it shows |
+|------|---------|---------------|
+| `latency_summary.csv` | ✅ | Request latency statistics |
+| `resource_summary.csv` | ✅ | Resource statistics |
+| `elasticity_events.csv` | If logs exist | Parsed controller events |
+| `node_lifecycle_timings.csv` | If logs exist | Node add/remove timing |
+| `analysis/overview.png` | ✅ | Request rate, CPU, T_proc, T_db, node counts |
+| `analysis/simple_run.png` | ✅ | Avg/p95/p99 latency, failure rate, nodes by type |
+| `analysis/phase_summary.png` | ✅ | Latency %iles, max nodes by type, per-LAN p95 |
+| `analysis/endpoint_breakdown.png` | ✅ | Per-endpoint latency & failures by phase |
+| `analysis/lifecycle_gantt.png` | ✅ | Container lifecycle Gantt |
+| `analysis/scale_down.png` | ✅ | Scale-down predicate timeline |
+| `analysis/cpu_drivers.png` | If per_node_stats.csv | Per-node CPU load balance |
+| `analysis/tdb_drivers.png` | If per_node_stats.csv | T_db_write vs storage_count |
+| `run_summary.md` | ✅ | Narrative summary |
+
 ## Analysis Procedure
 
 1. Identify the run and collect artifact availability.
@@ -112,10 +216,15 @@ python source/scripts/tools/parse_elasticity_logs.py "<run_dir>/controller_lan1.
 
 2. Generate statistics.
    - Run `metrics_stats.py` for latency and resource summaries.
-  - Run `parse_elasticity_logs.py` when controller logs exist, producing
-    `elasticity_events.csv` and `node_lifecycle_timings.csv` before any log
-    cleanup.
-   - Run the analysis CLIs that match the available artifacts.
+   - Run `parse_elasticity_logs.py` when controller logs exist, producing
+     `elasticity_events.csv` and `node_lifecycle_timings.csv` before any log
+     cleanup.
+   - Run the system-level and per-phase analysis CLIs (`cli_overview`,
+     `cli_simple_run`, `cli_phase_summary`, `cli_endpoint_breakdown`) — these
+     require only `client_requests.csv` and `container_events.csv`, which are
+     always present.
+   - Run the elasticity and per-node diagnostics when the needed optional
+     artifacts exist.
    - Prefer generated summary CSVs and analysis outputs for quantitative claims,
      but cross-check surprising results against raw CSV/log snippets.
 
@@ -234,18 +343,20 @@ and the summary is based on the data that will be removed.
 
 Use this procedure when the analyzed run folder is on `cloud-vm`.
 
-1. Confirm whether controller logs still need to be retained.
-2. If controller logs are still needed, stop after the summary or copy the full
-  folder first and do not delete the remote run folder.
-3. If controller logs are no longer needed, run the cleanup procedure above.
-4. Copy the remaining run folder back to the local machine with `scp`, `rsync`,
-  or a similar transfer tool.
-5. Verify the local copy exists and contains the expected summary and retained
-  artifacts.
-6. Unless the user asked to retain the remote copy, delete the remote run
-  folder only after the local copy is verified.
-7. If transfer verification fails, keep the remote run folder and report the
-  failure instead of deleting it.
+1. Run the **full analysis on `cloud-vm`** first — the controller logs are
+   there and the analysis depends on them. Do NOT copy the folder before
+   running the analysis.
+2. After the full analysis (including `elasticity_events.csv` and
+   `node_lifecycle_timings.csv` from log parsing) is complete, run the cleanup
+   procedure above to delete `controller_lan[0-9].log`.
+3. Copy the reduced run folder (with all retained artifacts and `analysis/`
+   PNGs) back to the local machine with `scp`, `rsync`, or a similar tool.
+4. Verify the local copy exists and contains the expected summary, CSVs, and
+   `analysis/` PNGs.
+5. Unless the user asked to retain the remote copy, delete the remote run
+   folder only after the local copy is verified.
+6. If transfer verification fails, keep the remote run folder and report the
+   failure instead of deleting it.
 
 ## Completion Checks
 
@@ -256,8 +367,11 @@ Use this procedure when the analyzed run folder is on `cloud-vm`.
   was available.
 - `elasticity_events.csv` and `node_lifecycle_timings.csv` exist when controller
   logs were available before cleanup.
-- Analysis PNGs or `analysis/summary.md` exist when the corresponding analysis
-  CLIs were runnable.
+- Analysis PNGs exist: `overview.png`, `simple_run.png`, `phase_summary.png`,
+  `endpoint_breakdown.png` at minimum. `lifecycle_gantt.png`, `scale_down.png`,
+  `cpu_drivers.png`, `tdb_drivers.png` when the optional artifacts they depend
+  on are available.
+- `analysis/summary.md` exists when the corresponding analysis CLIs were runnable.
 - The transient client request CSV and controller log files have been removed
   from the run folder after the summary was produced.
 - If the cloud copy-back workflow was used, the verified local copy exists and

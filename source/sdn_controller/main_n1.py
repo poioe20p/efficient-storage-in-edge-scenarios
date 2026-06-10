@@ -480,7 +480,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                     self._elasticity.submit_cancel_compute_drain()
 
         if self._elasticity.is_busy():
-            logger.debug("[scale-down] elasticity manager is busy — skipping scaling evaluation")
+            logger.info("[scale-down] elasticity manager is busy — skipping scaling evaluation")
             return
 
         # 6. Scale-down evaluation (with cooldown gating)
@@ -504,7 +504,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         remaining = self._scaling_policy.storage_cooldown_remaining()
         if remaining > 0:
-            logger.debug("[scale-down] storage within %.0fs cooldown — skipping", remaining)
+            logger.info("[scale-down] storage within %.0fs cooldown — skipping", remaining)
         else:
             if self._scaling_policy.evaluate_scale_down_storage(ds):
                 node = self._node_registry.find_last_dynamic("storage")

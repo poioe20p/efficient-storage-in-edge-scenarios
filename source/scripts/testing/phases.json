@@ -2,7 +2,7 @@
   "phases": [
     {
       "name": "baseline",
-      "duration_s": 60,
+      "duration_s": 30,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "client_fraction": 0.5,
@@ -13,20 +13,8 @@
       }
     },
     {
-      "name": "local_moderate",
-      "duration_s": 120,
-      "rate_per_client": 3.0,
-      "cross_region_ratio": 0.0,
-      "client_fraction": 0.75,
-      "mix": {
-        "device_status": 0.75,
-        "dashboard": 0.15,
-        "service_pressure": 0.10
-      }
-    },
-    {
       "name": "storage_stress",
-      "duration_s": 360,
+      "duration_s": 120,
       "rate_per_client": 5.0,
       "cross_region_ratio": 0.75,
       "hotspot_direction": "lan2_to_lan1",
@@ -39,7 +27,7 @@
     },
     {
       "name": "cross_region_hotspot",
-      "duration_s": 360,
+      "duration_s": 120,
       "rate_per_client": 6.0,
       "cross_region_ratio": 0.95,
       "hotspot_direction": "lan2_to_lan1",
@@ -51,33 +39,8 @@
       }
     },
     {
-      "name": "inter_hotspot_cooldown",
-      "duration_s": 90,
-      "rate_per_client": 1.0,
-      "cross_region_ratio": 0.0,
-      "client_fraction": 0.5,
-      "mix": {
-        "device_status": 0.65,
-        "dashboard": 0.20,
-        "service_pressure": 0.15
-      }
-    },
-    {
-      "name": "reverse_hotspot",
-      "duration_s": 360,
-      "rate_per_client": 6.0,
-      "cross_region_ratio": 0.95,
-      "hotspot_direction": "lan1_to_lan2",
-      "client_fraction": 1.0,
-      "mix": {
-        "device_status": 0.92,
-        "dashboard": 0.05,
-        "service_pressure": 0.03
-      }
-    },
-    {
       "name": "compute_ramp",
-      "duration_s": 150,
+      "duration_s": 90,
       "rate_per_client": 5.0,
       "cross_region_ratio": 0.05,
       "hotspot_direction": "lan2_to_lan1",
@@ -90,7 +53,7 @@
     },
     {
       "name": "compute_spike",
-      "duration_s": 180,
+      "duration_s": 120,
       "rate_per_client": 7.0,
       "cross_region_ratio": 0.05,
       "hotspot_direction": "lan2_to_lan1",
@@ -103,7 +66,7 @@
     },
     {
       "name": "sustained_plateau",
-      "duration_s": 180,
+      "duration_s": 60,
       "rate_per_client": 5.0,
       "cross_region_ratio": 0.05,
       "hotspot_direction": "lan2_to_lan1",
