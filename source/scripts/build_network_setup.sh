@@ -283,7 +283,7 @@ fi
 # --network host: use host network (needed for SDN controller communication)
 # -v /lib/modules:/lib/modules: share host kernel modules with container
 echo "Starting OVS container..."
-docker run -dit --name ovs --privileged \
+docker run -dit --name ovs --privileged --restart=on-failure \
   --cap-add=NET_ADMIN --cap-add=SYS_MODULE \
   --network host \
   -v /lib/modules:/lib/modules \
@@ -300,7 +300,7 @@ sleep 1
 # 2 - Start nat-router container
 # ===============================
 echo "Starting NAT router container..."
-docker run -dit --name nat-router --privileged --network none ubuntu-nat-router
+docker run -dit --name nat-router --privileged --network none --restart=on-failure ubuntu-nat-router
 
 if [[ $? -ne 0 ]]; then
     echo "Failed to start NAT router container. Aborting."
@@ -461,7 +461,7 @@ echo "Current directory for OS-Ken controller: $PWD"
 echo "Starting os-ken SDN controller container..."
 docker rm -f osken 2>/dev/null
 
-docker run -dit --name osken --network host \
+docker run -dit --name osken --network host --restart=on-failure \
     --privileged --pid=host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
@@ -476,7 +476,7 @@ docker run -dit --name osken --network host \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n1
 
-docker run -dit --name osken_2 --network host \
+docker run -dit --name osken_2 --network host --restart=on-failure \
     --privileged --pid=host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \

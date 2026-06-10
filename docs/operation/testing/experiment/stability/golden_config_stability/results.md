@@ -2,8 +2,8 @@
 
 **Date**: 2026-06-09  
 **Experiment plan**: [experiment_plan.md](./experiment_plan.md)  
-**Runs**: `golden_config_a` (20260609_142511), `golden_config_b` (20260609_154802), `golden_config_c` (20260609_181856 — terminated early)  
-**Overall outcome**: 🔴 **Gate blocked by systematic `edge_server_n2` SIGSEGV crash.** When `edge_server_n2` stays healthy (Run A), the system delivers 1.6% overall failure with all mechanisms exercising and zero epoch rotations — the configuration values are correct. But `edge_server_n2` crashes with exit code 139 in 2 of 3 runs (B, C), killing LAN2. The crash must be fixed before the golden configuration can be declared stable.
+**Runs**: 5 total across two campaigns: original pair (A,B,C) + `--restart=on-failure` pair (no_restart, with_restart)  
+**Overall outcome**: ⚠️ **Gate not passed — excessive variance across runs.** Overall failure ranges from 1.6% to 11.8% with identical configuration. The `edge_server_n2` SIGSEGV is intermittent (2/5 runs, 40%). Two code bugs found and fixed (`state.py`, `create_indexes.py`). `--restart=on-failure` was not tested because no crash occurred in the restart pair. The system needs a variance-reduction experiment before this gate can be evaluated.
 
 ---
 
@@ -14,6 +14,8 @@
 | v1 (`golden_config_a`) | 2026-06-09 14:25 UTC | ⚠️ Overall 1.6% but demand_drop 26.4%, LAN2 failures, 7 tracebacks, 19 stale containers | — (initial run) | — (initial run) | — (baseline) | Per plan: overall ≤3%, all mechanisms exercise, clean drain, LAN symmetry ≤3× |
 | v1 (`golden_config_b`) | 2026-06-09 15:48 UTC | ⚠️ Overall 2.5% — `edge_server_n2` SIGSEGV at T+446s killed LAN2 | Run A: LAN2 degraded after heavy churn, state.py bug, cleanup failure | state.py bug is the cleanup root cause. LAN2 degradation in Run A not explained by crash (edge_server_n2 was healthy). | `state.py:158` — `controller.datapaths.items()` → `for datapath in controller.datapaths:` | state.py fix should eliminate tracebacks and reduce cleanup debt; LAN2 behavior unknown |
 | v1 (`golden_config_c`) | 2026-06-09 18:18 UTC | 🔴 Run frozen — `edge_server_n2` SIGSEGV at T+79s killed LAN2 before `storage_stress` | Run B: edge_server_n2 crash at T+446s. Run C: same crash at T+79s. Crash is systematic (2/3 runs), not isolated. Run A was the exception — edge_server_n2 stayed healthy. | `edge_server_n2` SIGSEGV is reproducible and the single blocking defect. Without it, Run A quality (1.6%) is achievable. | None — confirmatory run with state.py fix already in place | Confirm Run A quality is repeatable; verify edge_server_n2 crash was an isolated Run B incident |
+| v2 (`golden_config_no_restart`) | 2026-06-09 21:01 UTC | ⚠️ 11.8% overall, no crash, reverse_hotspot 33.1%, compute_spike 34.4% | Crash rate now 2/4 (50%). Original Run A (1.6%) was the best result — not replicated since. Variance is the dominant issue: 1.6%→11.8% with identical config. | Edge server image rebuilt between campaigns — source code identical but pip/Docker cache may differ. Host state accumulated across 5 consecutive runs. | Reverted build scripts to original (no `--restart=on-failure`). Image rebuilt from identical source. | Reproduce original Run A quality (~1.6%) to confirm configuration values are correct |
+| v2 (`golden_config_with_restart`) | 2026-06-09 21:49 UTC | ⚠️ 5.8% overall, no crash, compute_spike 38.2%, sustained_plateau 41.9% | Crash rate now 2/5 (40%). `--restart=on-failure` never triggered — edge_server_n2 stayed healthy. Both runs in this pair had no crash. | The restart fix cannot be evaluated without a crash. The configuration produces results ranging from 1.6% to 11.8% — excessive variance. | Re-applied `--restart=on-failure` to 8 static containers (excl. storage). Same image as no_restart run. | Identify whether `--restart=on-failure` allows recovery from SIGSEGV |
 
 ---
 
@@ -165,7 +167,81 @@ All 10 phases completed to `idle`. 82,176 total requests — 28.6% fewer than Ru
 
 ---
 
-### 3. Run v1 — `golden_config_c` (`20260609_181856`)
+### 4. Run v2 — `golden_config_no_restart` (`20260609_210114`)
+
+**Status**: ⚠️ — No crash, but 11.8% overall. `--restart=on-failure` absent (control).
+
+#### Expectations
+
+| Expectation | Rationale |
+|---|---|
+| Overall failure ~1.6% (match original Run A) | Same code, same config, same workload |
+| edge_server_n2 status | Either crash (confirms reproducibility) or healthy (refutes it) |
+
+#### Results
+
+**No SIGSEGV.** `edge_server_n2` ran for the full 37 minutes without crashing. Crash rate now 2/4 (50%). The `--restart=on-failure` control run produced 11.8% overall — far worse than original Run A's 1.6%. `reverse_hotspot` (33.1%) and `compute_spike` (34.4%) dominated failures, all on LAN2.
+
+**Key metrics**: 114,118 requests, 13,492 failures (11.8%), LAN1=0.0%, all HTTP-0 on LAN2.
+
+---
+
+### 5. Run v2 — `golden_config_with_restart` (`20260609_214908`)
+
+**Status**: ⚠️ — No crash, 5.8% overall. `--restart=on-failure` present but never needed.
+
+#### Expectations
+
+| Expectation | Rationale |
+|---|---|
+| If crash occurs, LAN2 recovers within seconds | Docker auto-restart should bring edge_server_n2 back |
+| Overall rate comparable to no_restart control | Same code, same config |
+
+#### Results
+
+**No SIGSEGV.** `edge_server_n2` ran the full run without crashing (same container ID at initial and final). `--restart=on-failure` was never triggered. Crash rate now 2/5 (40%). Overall rate improved to 5.8% vs 11.8% in the control, but `compute_spike` (38.2%) and `sustained_plateau` (41.9%) were catastrophic — the system nearly collapsed during compute phases.
+
+---
+
+## Cross-Campaign Comparison (All 5 Runs)
+
+| Run | Label | Overall | SIGSEGV | `reverse_hotspot` | `compute_spike` | `demand_drop` |
+|---|---|---|---|---|---|---|
+| v1 A | `golden_config_a` | **1.6%** | ❌ | 4.0% | 0.6% | 26.4% |
+| v1 B | `golden_config_b` | 2.5% | ✅ T+446s | 1.7% | 2.4% | 14.4% |
+| v1 C | `golden_config_c` | N/A | ✅ T+79s | N/A | N/A | N/A |
+| v2 A | `golden_config_no_restart` | 11.8% | ❌ | **33.1%** | **34.4%** | 25.1% |
+| v2 B | `golden_config_with_restart` | 5.8% | ❌ | 1.5% | **38.2%** | 9.3% |
+
+**Variance range**: Overall 1.6%–11.8% (7.4× spread). `reverse_hotspot` 1.5%–33.1% (22×). `compute_spike` 0.6%–38.2% (64×). This is not a stable baseline.
+
+---
+
+## Updated Root Cause Summary
+
+| # | Issue | Impact | Status |
+|---|---|---|---|
+| 1 | `state.py:158` `.items()` on list | 7 tracebacks, 19 stale containers in v1 A | ✅ Fixed |
+| 2 | `create_indexes.py` missing `DESCENDING` | Blocked v1 A launch | ✅ Fixed |
+| 3 | `edge_server_n2` SIGSEGV (exit 139) | Kills LAN2; 2/5 runs (40%), intermittent | ⚠️ Intermittent |
+| 4 | **Excessive inter-run variance** | 1.6%→11.8% with identical config; 7.4× spread | 🔴 **New — blocks gate** |
+| 5 | `--restart=on-failure` untested | No crash occurred in restart pair | ⚠️ Defense-in-depth kept |
+| 6 | Reserve `[reserve]` activation absent | 0 activations in any run | ⚠️ Threshold mismatch |
+
+## Next Actions
+
+1. **Design a variance-reduction experiment** — control for host state (reboot between runs), use fixed random seed, run ≥3 replicates to establish a confidence interval. The current 7.4× spread makes the golden config gate uninterpretable.
+
+2. **Keep `--restart=on-failure`** — it costs nothing and adds resilience. Even though untested, it should stay in the build scripts.
+
+3. **Investigate compute-phase degradation** — `compute_spike` and `sustained_plateau` failures spiked in v2, suggesting the rebuilt Docker image or accumulated host state introduced a regression in DB query performance under dashboard-heavy load.
+
+## Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-06-09 | Original 3-run campaign (A,B,C). state.py bug found and fixed. SIGSEGV identified. | Initial golden-configuration stability gate attempt. See §1–§3. |
+| 2026-06-09 | `--restart=on-failure` pair executed (no_restart, with_restart). No crash in either run. Excessive variance discovered: 1.6%→11.8% with identical config. | Restart fix untested. Variance is now the primary blocker. See §4–§5. |
 
 **Status**: 🔴 — `edge_server_n2` SIGSEGV at T+79s during `local_moderate`. Run frozen, 46,788 requests collected.
 

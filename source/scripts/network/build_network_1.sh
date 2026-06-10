@@ -97,7 +97,7 @@ echo "Launching application containers..."
 # ==============================
 # --network none: prevents Docker from creating default network
 # --privileged for NAT router: needed to run iptables inside it
-docker run -dit --name edge_server_n1 --network none \
+docker run -dit --name edge_server_n1 --network none --restart=on-failure \
   -e LAN_ID=lan1 \
   -e VIP_DATA_RECOVERY_N1_IP=10.0.0.252 \
   -e VIP_DATA_RECOVERY_N2_IP=10.0.1.252 \
@@ -120,7 +120,7 @@ docker run -dit --name edge_storage_server_n1 --network none \
   -v edge_storage_server_n1-data:/data/db edge_storage_server
 
 echo "Starting aggregator_n1 container..."
-docker run -dit --name aggregator_n1 --network none \
+docker run -dit --name aggregator_n1 --network none --restart=on-failure \
   -e NETWORK_ID=lan1 \
   -e PULL_ADDR=tcp://0.0.0.0:5555 \
   -e PUB_ADDR=tcp://0.0.0.0:5556 \
