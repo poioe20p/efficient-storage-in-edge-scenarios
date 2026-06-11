@@ -1,9 +1,11 @@
+import json
 import os
 import statistics
 import threading
 import time
 import logging
 from collections import Counter
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import zmq
 
@@ -48,6 +50,11 @@ ctx = zmq.Context()
 pull = ctx.socket(zmq.PULL)
 _pull_addr = os.environ.get("PULL_ADDR", "tcp://0.0.0.0:5555")
 pull.bind(_pull_addr)
+
+# Cached latest summary per network_id, served to polling controllers.
+# Updated after every ZMQ publish so both push and poll paths carry the
+# identical summary object.
+_latest_summary: dict[str, dict] = {}
 logger.info("PULL socket bound to %s", _pull_addr)
 
 pub = ctx.socket(zmq.PUB)
@@ -490,7 +497,36 @@ def _publish_loop() -> None:
         )
         logger.debug("Full summary: %s", summary)
         pub.send_json(summary)
+        _latest_summary[NETWORK_ID] = summary   # cache for HTTP polling
 
 
 threading.Thread(target=_receive_loop, daemon=True).start()
+
+# ── HTTP cache endpoint for polling controllers ─────────────────────────
+_CACHE_PORT = int(os.environ.get("SUMMARY_CACHE_PORT", "5558"))
+
+class _SummaryHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.path == "/latest_summary":
+            summary = _latest_summary.get(NETWORK_ID, {})
+            body = json.dumps(summary).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    # Suppress stderr logging of each request (noisy at 1 s polling).
+    def log_message(self, format, *args):
+        logger.debug("HTTP %s", format % args)
+
+
+_cache_server = HTTPServer(("0.0.0.0", _CACHE_PORT), _SummaryHandler)
+_cache_thread = threading.Thread(target=_cache_server.serve_forever, daemon=True)
+_cache_thread.start()
+logger.info("Summary cache HTTP server listening on port %s", _CACHE_PORT)
+
 _publish_loop()

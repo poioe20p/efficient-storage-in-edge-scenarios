@@ -90,7 +90,7 @@ Domain differentiation via backend subnet + ct_zone:
     the backend's real IP reveals the domain BEFORE ct(nat) rewrites it.
   → ct(zone=N,nat) in the action ensures kernel conntrack looks up the correct zone.
   → ct_zone cannot be used in the match because ct_state/ct_zone are only populated
-    AFTER a packet passes through ct() — and reply packets haven't yet (see §3k).
+    AFTER a packet passes through ct() — and reply packets haven't yet (see § 3k).
 ```
 
 ### 2c. Connection Lifecycle
@@ -134,7 +134,7 @@ Each piece of the conntrack design has a distinct role. They are not interchange
 | Piece                                       | Purpose                                                                                                                                                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ct(commit, zone=1, nat(dst=10.0.0.100))` | **Creates** an entry for this packet's 5-tuple. The kernel auto-generates the entry identity from `(src_ip, src_port, dst_ip, dst_port, protocol)`. This is the *only* piece that writes state.                                                                                                                            |
-| `ct_state=+est+trk`                       | **Matches** packets that have ALREADY passed through a `ct()` action and whose 5-tuple has a conntrack entry in ESTABLISHED state. **This only works if the packet went through `ct()` first** — see §3k for why the original design using this match was broken.                                                                               |
+| `ct_state=+est+trk`                       | **Matches** packets that have ALREADY passed through a `ct()` action and whose 5-tuple has a conntrack entry in ESTABLISHED state. **This only works if the packet went through `ct()` first** — see § 3k for why the original design using this match was broken.                                                                               |
 | The kernel's 5-tuple lookup                 | **Routes** each reply packet to the correct entry. The kernel compares the packet's `(src_ip, src_port, dst_ip, dst_port, protocol)` against every entry in the zone. When the reply direction matches, `ct(nat)` reverses the NAT automatically. This is transparent — no flow rule action is needed for the IP rewrite. |
 
 ```
@@ -279,7 +279,7 @@ fields would collide (last-one-wins overwrite).
 The original design used `ct_zone=N` in the reply rule **match** to
 differentiate n1 from n2. This does not work because `ct_zone` (like
 `ct_state`) is only populated after a packet passes through `ct()` —
-and the reply packet has not been through `ct()` yet (see §3k).
+and the reply packet has not been through `ct()` yet (see § 3k).
 
 **Working solution**: use the backend's source IP subnet in the match.
 Before `ct(nat)` rewrites it, the reply packet's `ipv4_src` is the
@@ -305,7 +305,7 @@ filtering. This is a pragmatic trade-off: reliability over strictness.
 
 The reply rule is per-client because the L2 destination (`eth_dst=client_mac`,
 `output:in_port`) is client-specific — conntrack handles the IP NAT reversal
-but does not store OVS port numbers or MAC addresses (see §3e). A backend
+but does not store OVS port numbers or MAC addresses (see § 3e). A backend
 talking to a random non-VIP host would have no conntrack entry; `ct(nat)`
 would find nothing and the packet would be output to the client unchanged
 — harmless noise, not a security concern in this closed test environment.
@@ -341,7 +341,7 @@ No Docker image rebuilds are required for the conntrack changes.
 
 ### 3k. The ct_state Pitfall — Why the Original Design Failed
 
-The original design (§2b, §2d) assumed that `ct_state=+est+trk` could match
+The original design (§ 2b, § 2d) assumed that `ct_state=+est+trk` could match
 reply packets whose 5-tuple already had a conntrack entry. This is incorrect
 in OVS. Here is why:
 
@@ -384,7 +384,7 @@ is **when** the packet visits the checkpoint: as an action, not as a
 pre-condition.
 
 This also explains why `ct_zone` cannot be used in the reply rule **match**
-(§3f): same reason — `ct_zone` is only populated after `ct()`. The backend
+(§ 3f): same reason — `ct_zone` is only populated after `ct()`. The backend
 subnet (`ipv4_src`) replaces it as the domain differentiator.
 
 ### 3j. Conntrack Table Capacity and Entry Lifecycle

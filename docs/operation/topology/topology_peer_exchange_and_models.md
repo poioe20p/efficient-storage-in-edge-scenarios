@@ -136,9 +136,9 @@ socket. The receiver distinguishes them by the `type` field in the JSON payload.
 3. **Extract peer data** — reads `snapshot.network_id` to identify the peer,
    then extracts `peer_hosts`, `peer_links`, and `peer_switches` from
    `snapshot.networks[peer_nid]`.
-4. **Merge MAC roles** — replaces peer MAC role sets wholesale (see §7).
+4. **Merge MAC roles** — replaces peer MAC role sets wholesale (see § 7).
 5. **Seed IPs** — calls `register_backend_ip()` for each peer host that
-   carries an `ip` field (see §8).
+   carries an `ip` field (see § 8).
 
 ## 7. Peer MAC and Role Replacement Rules
 

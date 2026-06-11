@@ -20,6 +20,7 @@ from .selective_sync.promotion import PromotionCoordinator
 from .selective_sync.state_publisher import CoordinatorStatePublisher
 from .telemetry.models import ServerSummary, TelemetrySummary
 from .telemetry.zmq_source import ZmqTelemetrySource
+from .telemetry.polling_source import PollingTelemetrySource
 from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
 from .scaling_policy import ScalingPolicy
@@ -81,7 +82,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         logger.info("aggregator endpoints: %s", _aggregator_endpoints)
         logger.info("peer topology endpoints: %s", _peer_endpoints)
 
-        # Thread 3 — must be created before ZmqTelemetrySource
+        # Thread 3 — must be created before telemetry source
         self._elasticity = ElasticityManager(topology_mixin=self)
         self._elasticity.start()
 
@@ -111,12 +112,44 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # coord_* columns.
         self._coordinator_state_publisher = CoordinatorStatePublisher()
 
-        # Thread 2 — ZMQ subscriber
-        self._telemetry = ZmqTelemetrySource(
-            endpoints=_aggregator_endpoints + _peer_endpoints,
-            on_update=self._on_telemetry_update,
-            on_topology_update=self.on_topology_update,
-        )
+        # Thread 2 — telemetry source (ZMQ push or HTTP poll)
+        _telemetry_source_mode = os.environ.get("TELEMETRY_SOURCE", "zmq")
+        if _telemetry_source_mode == "poll":
+            # ── HTTP polling for periodic TelemetrySummary ──────────────
+            _http_endpoints = []
+            for _ep in _aggregator_endpoints:
+                # tcp://10.0.0.5:5556 → http://10.0.0.5:5558
+                _host_port = _ep.replace("tcp://", "")
+                _host, _ = _host_port.rsplit(":", 1)
+                _http_endpoints.append(f"http://{_host}:5558")
+            _poll_interval = float(os.environ.get("POLL_INTERVAL_S", "10"))
+            self._telemetry = PollingTelemetrySource(
+                endpoints=_http_endpoints,
+                interval_s=_poll_interval,
+                on_update=self._on_telemetry_update,
+            )
+            # ── ZMQ SUB for control events + topology (always push) ────
+            # Control events (drain_complete, rs_secondary_ready) are
+            # urgent operational signals — they must always arrive
+            # immediately, regardless of the telemetry delivery mechanism
+            # under test.  Topology snapshots likewise remain on ZMQ.
+            def _forward_control_and_topology(summary):
+                # Only pass mini-summaries (control events) through;
+                # full summaries arrive via HTTP polling.
+                if not summary.servers and not summary.storage_servers:
+                    self._on_telemetry_update(summary)
+            self._control_zmq = ZmqTelemetrySource(
+                endpoints=_aggregator_endpoints + _peer_endpoints,
+                on_update=_forward_control_and_topology,
+                on_topology_update=self.on_topology_update,
+            )
+            self._control_zmq.start()
+        else:
+            self._telemetry = ZmqTelemetrySource(
+                endpoints=_aggregator_endpoints + _peer_endpoints,
+                on_update=self._on_telemetry_update,
+                on_topology_update=self.on_topology_update,
+            )
         self._telemetry.start()
 
     # ------------------------------------------------------------------
@@ -310,6 +343,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
     def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
         """Thread 2 callback — thin mediator that orchestrates composed components."""
+        consumed_at = time.time()
         if summary.network_id != self._lan_id:
             logger.debug("ignoring telemetry for %s (this controller owns %s)",
                          summary.network_id, self._lan_id)
@@ -347,6 +381,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             summary.network_id,
             summary.window_end,
             self._selective_sync_coordinator.snapshot(),
+            consumed_at=consumed_at,
         )
 
         # 4. Fallback VIP promotion

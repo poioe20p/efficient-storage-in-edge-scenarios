@@ -82,13 +82,15 @@ class CoordinatorStatePublisher:
         logger.info("coordinator-state PUB bound on tcp://*:%d", self._port)
 
     def publish(self, network_id: str, window_end: float,
-                snapshot: dict[str, Tier1OwnerState]) -> None:
+                snapshot: dict[str, Tier1OwnerState],
+                consumed_at: float) -> None:
         """Emit one frame. No-op if the publisher is disabled."""
         if self._socket is None:
             return
         payload = {
             "network_id": network_id,
             "window_end": window_end,
+            "consumed_at": consumed_at,
             "owners":     {k: asdict(v) for k, v in snapshot.items()},
         }
         try:

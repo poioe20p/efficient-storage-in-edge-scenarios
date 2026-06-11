@@ -58,7 +58,7 @@ drive all punt rule installation, ARP matching, and packet dispatch:
 
 Recovery VIP bindings (`VIP_DATA_RECOVERY_N1`, `VIP_DATA_RECOVERY_N2`) were
 removed in v5.x. They were a workaround for stale OVS flow rules on backend
-unregister — now eliminated by conntrack-based flow rules (see §10).
+unregister — now eliminated by conntrack-based flow rules (see § 10).
 
 ## 5. ARP Snooping and VIP ARP Replies
 
@@ -210,7 +210,7 @@ immediately.
 > conntrack-based VIP_DATA routing changes. The stale-flow-rule problem it
 > worked around is now solved at the source: conntrack enables safe deletion
 > of forward rules on `unregister_storage_backend` without breaking
-> established connections. See §10 for the replacement architecture.
+> established connections. See § 10 for the replacement architecture.
 
 The section below is preserved for historical reference only.
 

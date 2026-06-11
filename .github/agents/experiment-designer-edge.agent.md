@@ -21,6 +21,20 @@ You only design and author plans. You do **not** execute experiments (use **Edge
   - `analysis_focus.md` — detailed evidence/metric breakdown when it would crowd the main file
     Do not split a small experiment; one file is the default.
 
+## Smart Context Navigation
+
+Optimize token usage by searching smart instead of wide:
+
+1. **Start with `docs/`** — When exploring architecture, mechanisms, or workflows, begin with `docs/operation/`. Navigate to the specific subsystem folder (elasticity, telemetry, VIP routing, topology, selective_sync, testing) and read the **overview** doc first.
+
+2. **Follow the overview's references** — After the overview, drill down into the specific files or folders it references, guided by your search purpose. Skip unrelated docs unless they provide relevant/meaningful context for the current question.
+
+3. **Implementation plans are user-referenced** — Do not search for implementation plans; they exist only when the user explicitly references one. Focus on overview docs and operational docs instead.
+
+4. **Use `source/sdn_controller/` only when needed** — Dive into controller code only when debugging a specific issue, the docs are known to be outdated, or the task requires tracing exact control flow. Prefer docs for architectural understanding.
+
+5. **Avoid full-repo dumps** — Do not read entire directories or grep widely without a target. Lead with the topic → find the doc → read selectively.
+
 ## Before Writing — Ground the Plan
 
 1. Identify the **implemented change** under test. Read the relevant code and docs so the plan reflects what exists, not what is hypothetical:

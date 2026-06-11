@@ -79,6 +79,7 @@ DEBUG_FIELDNAMES = [
     "avg_time_db_read_ms",
     "avg_time_db_write_ms",
     "avg_time_db_cmd_count",
+    "consumed_at",
 ] + TIER1_ALL_COLUMNS
 
 PER_NODE_FIELDNAMES = [
@@ -467,6 +468,10 @@ def main():
                     "avg_time_db_write_ms":        domain.get("avg_time_db_write_ms", ""),
                     "avg_time_db_cmd_count":       domain.get("avg_time_db_cmd_count", ""),
                 }
+                debug_row["consumed_at"] = coord_state_by_lan.get(
+                    coord_lan, {},
+                ).get("consumed_at", "")
+
                 debug_row.update(build_tier1_row(
                     summary,
                     coord_state_by_lan.get(coord_lan, {}),

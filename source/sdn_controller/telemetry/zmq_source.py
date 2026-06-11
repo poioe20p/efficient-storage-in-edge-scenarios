@@ -11,11 +11,14 @@ logger = logging.getLogger('os_ken.telemetry.zmq_source')
 
 
 class ZmqTelemetrySource(TelemetryEventSource):
-    """Receives windowed summaries published by aggregator containers via ZMQ PUB/SUB.
+    """Push-based telemetry source — receives summaries via ZMQ PUB/SUB.
 
-    The aggregator binds a PUB socket on port 5556. This source connects a
-    SUB socket to each aggregator endpoint and receives JSON summaries in a
+    The aggregator binds a PUB socket on port 5556 and publishes each
+    TelemetrySummary at window close. This source connects a SUB socket
+    to each aggregator endpoint and receives JSON summaries in a
     background greenthread via zmq.green (eventlet-compatible ZMQ).
+
+    For the poll-based alternative, see PollingTelemetrySource.
     """
 
     def __init__(self, endpoints: list[str], on_update=None, on_topology_update=None) -> None:
@@ -37,7 +40,7 @@ class ZmqTelemetrySource(TelemetryEventSource):
         self._on_topology_update = on_topology_update
 
     def start(self) -> None:
-        """Spawn the background greenthread that receives summaries."""
+        """Spawn the background greenthread that receives ZMQ-pushed summaries."""
         logger.info("telemetry receive loop starting")
         hub.spawn(self._receive_loop)
 

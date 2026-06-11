@@ -15,6 +15,20 @@ Every analysis is driven by the experiment's plan and answers one question: **di
 - Frame every finding as agreement or divergence from the plan's stated expectations. Call out anything the plan expected but the artifacts do not show, and anything observed that the plan did not anticipate.
 - If the plan is missing or ambiguous about an expectation, state that as a limitation instead of assuming.
 
+## Smart Context Navigation
+
+Optimize token usage by searching smart instead of wide:
+
+1. **Start with `docs/`** — When exploring architecture, mechanisms, or workflows, begin with `docs/operation/`. Navigate to the specific subsystem folder (elasticity, telemetry, VIP routing, topology, selective_sync, testing) and read the **overview** doc first.
+
+2. **Follow the overview's references** — After the overview, drill down into the specific files or folders it references, guided by your search purpose. Skip unrelated docs unless they provide relevant/meaningful context for the current question.
+
+3. **Implementation plans are user-referenced** — Do not search for implementation plans; they exist only when the user explicitly references one. Focus on overview docs and operational docs instead.
+
+4. **Use `source/sdn_controller/` only when needed** — Dive into controller code only when debugging a specific issue, the docs are known to be outdated, or the task requires tracing exact control flow. Prefer docs for architectural understanding.
+
+5. **Avoid full-repo dumps** — Do not read entire directories or grep widely without a target. Lead with the topic → find the doc → read selectively.
+
 ## Scope
 
 - Analyze completed experiment runs under `source/scripts/testing/metrics/` on the local machine or on `cloud-vm`.

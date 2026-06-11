@@ -220,7 +220,7 @@ Thread 3's `_handle_data(alert)` executes the provisioning lifecycle:
 4. **Network attachment:** `add_network_node.sh --lan <N> --name <name> --ip <ip> --mac <mac>`
    — veth pair, OVS attach, IP/MAC/routes inside container namespace.
 5. **IP→MAC seeding:** `TopologyMixin.register_backend_ip(mac, ip)` — Thread 1
-   gets the mapping, but VIP is **not** registered yet (see §8).
+   gets the mapping, but VIP is **not** registered yet (see § 8).
 
 The controller returns after network attachment (~5–12 s) instead of waiting
 for RS sync. The sidecar handles RS join asynchronously.

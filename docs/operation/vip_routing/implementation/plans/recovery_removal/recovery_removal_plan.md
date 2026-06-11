@@ -407,7 +407,7 @@ VIP_DATA_RECOVERY_SESSION_MAX_AGE_S = CONFIG.vip_data_recovery_session_max_age_s
 
 The controller-side recovery removal is covered in detail in the
 [conntrack_vip_routing plan](../conntrack_vip_routing/conntrack_vip_routing_plan.md)
-Phase 3 (§3.1-§3.6). This section summarizes the changes for completeness.
+Phase 3 (§ 3.1-§ 3.6). This section summarizes the changes for completeness.
 
 #### Summary of controller changes
 

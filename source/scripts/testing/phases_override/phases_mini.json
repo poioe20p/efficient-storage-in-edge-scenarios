@@ -1,0 +1,29 @@
+{
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_s": 30,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.5,
+      "mix": {
+        "device_status": 0.60,
+        "dashboard": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "quick_stress",
+      "duration_s": 90,
+      "rate_per_client": 5.0,
+      "cross_region_ratio": 0.75,
+      "hotspot_direction": "lan2_to_lan1",
+      "client_fraction": 1.0,
+      "mix": {
+        "device_status": 0.90,
+        "dashboard": 0.05,
+        "service_pressure": 0.05
+      }
+    }
+  ]
+}

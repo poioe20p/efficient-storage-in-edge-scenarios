@@ -15,6 +15,8 @@ coordination.
 - `source/sdn_controller/telemetry/source.py` — `TelemetryEventSource` ABC.
 - `source/sdn_controller/telemetry/zmq_source.py` — `ZmqTelemetrySource`
   (ZMQ SUB, `eventlet.tpool.execute` bridge, `_receive_loop`).
+- `source/sdn_controller/telemetry/polling_source.py` — `PollingTelemetrySource`
+  (HTTP polling, concurrent aggregator requests, dedup by `window_end`).
 - `source/sdn_controller/main_n1.py` — `_on_telemetry_update()` callback,
   `_log_and_update_stats()`, `update_server_stats()`,
   `update_storage_stats()`.
@@ -56,11 +58,24 @@ ensure backward compatibility with payloads from older aggregators.
 - `get_latest(network_id)` → `TelemetrySummary | None` — return the cached
   latest summary. Thread 1 uses this for WSM cost scoring.
 
-The ZMQ transport is the current implementation. A future
-`MongoTelemetrySource` (Change Streams) would satisfy the same interface
-without touching controller code.
+Two implementations exist:
 
-## 5. ZMQ Subscription and Receive Path
+| Transport | Class | Mode |
+|---|---|---|
+| ZMQ PUB/SUB | `ZmqTelemetrySource` | Push (default, `TELEMETRY_SOURCE=zmq`) |
+| HTTP polling | `PollingTelemetrySource` | Poll (`TELEMETRY_SOURCE=poll`) |
+
+Both poll/retrieve from both aggregators (each controller sees both LANs).
+Only the delivery mechanism differs.
+
+## 5. ZMQ Subscription and Receive Path (Push Mode)
+
+In push mode (`TELEMETRY_SOURCE=zmq`, default) the controller creates a
+single `ZmqTelemetrySource` that receives telemetry summaries, control
+events, and topology snapshots on one ZMQ SUB socket. In poll mode
+(`TELEMETRY_SOURCE=poll`) telemetry summaries arrive via HTTP polling
+(see § 10) while a ZMQ SUB socket remains active for control events and
+topology only.
 
 `ZmqTelemetrySource` is instantiated at controller startup with:
 
@@ -159,9 +174,22 @@ Telemetry summaries feed four controller subsystems:
 | **Storage-role sync**           | Thread 2      | `storage_servers[*].member_state`                                                                                                |
 | **Selective-sync coordination** | Thread 2      | `servers[*].access`, `op_counters`, `t_db_p95_ms_per_lan`; `storage_servers[*].selective_sync_per_collection`              |
 
-## 10. Short Future Transport Note
+## 10. Polling Transport (RQ1)
 
-The current ZMQ SUB path is functional. A future transport revision may move
-summaries to HTTP with periodic ingest and backpressure (the
-`TelemetryEventSource` ABC already isolates the transport from controller
-logic). This is an optimisation, not a blocker for the current pipeline.
+The `PollingTelemetrySource` (enabled via `TELEMETRY_SOURCE=poll`) polls both
+aggregators' HTTP cache endpoints at a configurable interval
+(`POLL_INTERVAL_S`, default 10 s). Both aggregators are polled **concurrently**
+via `hub.spawn` so the two summaries arrive at nearly the same instant,
+minimising skew between the controller's LAN1/LAN2 data views.
+
+Deduplication by `window_end` prevents duplicate `_on_telemetry_update` calls
+when the poll interval is shorter than the aggregation window.
+
+**Only periodic `TelemetrySummary` objects** are delivered via polling.
+Control events (`drain_complete`, `rs_secondary_ready`) and peer topology
+snapshots remain on **ZMQ push** — they are urgent operational signals that
+must always arrive immediately, regardless of the telemetry delivery
+mechanism under test. In poll mode the controller keeps a ZMQ SUB socket
+active for these signals alongside the HTTP polling source.
+
+See `docs/operation/telemetry/implementation/rq1_polling_mechanism/`.

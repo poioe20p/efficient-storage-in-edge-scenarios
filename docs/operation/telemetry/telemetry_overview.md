@@ -24,8 +24,12 @@ edge_selective_storage       ─┘  │  aggregator.py       │        │  co
                                                                  └──────────────────────┘
 ```
 
-One aggregator runs per network. Each controller subscribes to both
+One aggregator runs per network. Each controller retrieves summaries from both
 aggregators because VIP routing is cross-domain.
+
+**Transport:** summaries are delivered via ZMQ PUB/SUB (push, default) or
+HTTP polling (`TELEMETRY_SOURCE=poll`, see § Future Work). Control events and
+topology snapshots always use ZMQ push regardless of the telemetry source mode.
 
 ![End-to-end telemetry propagation](diagram/telemetry_propagation.png)
 
@@ -42,6 +46,7 @@ Detailed behaviour is split by pipeline stage:
 | Producer side — selective sync | [producer_side/selective_sync_telemetry.md](producer_side/selective_sync_telemetry.md) |
 | Aggregation & publication | [aggregation_publication/aggregator.md](aggregation_publication/aggregator.md) |
 | Controller-side consumer | [controller_side/controller_telemetry_consumer.md](controller_side/controller_telemetry_consumer.md) |
+| Polling mechanism (RQ1) | [implementation/rq1_polling_mechanism/rq1_polling_mechanism_plan.md](implementation/rq1_polling_mechanism/rq1_polling_mechanism_plan.md) |
 
 ---
 
@@ -63,6 +68,9 @@ The controller consumes aggregated telemetry summaries for:
 
 - **Staleness cost function** — `last_report_ts` is threaded through the
   pipeline but not yet consumed by WSM scoring.
-- **HTTP transport** — a future revision may move the aggregator→controller
-  path to HTTP with periodic ingest and backpressure. This is an optimisation,
-  not a blocker for the current ZMQ path.
+- **HTTP polling transport** — implemented (2026-06-11). The aggregator
+  caches each `TelemetrySummary` in memory and serves it via HTTP on port
+  `5558` (`GET /latest_summary`). The controller-side `PollingTelemetrySource`
+  polls both aggregators concurrently at a configurable interval
+  (`POLL_INTERVAL_S`, default 10 s). Enabled via `TELEMETRY_SOURCE=poll`.
+  See `implementation/rq1_polling_mechanism/rq1_polling_mechanism_plan.md`.

@@ -3,7 +3,7 @@
 All per-node dicts (``servers``, ``storage_servers``) are keyed by the
 node's **MAC address** (e.g. ``"00:00:00:00:00:02"``).  Each container
 discovers its own MAC from ``/sys/class/net/eth0/address`` and includes it
-in every telemetry event it pushes; the aggregator preserves the key as-is.
+in every telemetry event it emits; the aggregator preserves the key as-is.
 """
 from __future__ import annotations
 

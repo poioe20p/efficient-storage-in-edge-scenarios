@@ -227,7 +227,7 @@ Explicitly remove any default expectation of `client_requests_<phase>.csv`.
 
 ### Step 2 - Split main and debug resource stats outputs
 
-Refactor [source/scripts/testing/collect_resource_stats.py](../../../../../source/scripts/testing/collect_resource_stats.py)
+Refactor `source/scripts/testing/collect_resource_stats.py`
 to write two domain-level CSVs:
 
 1. a trimmed `resource_stats.csv`
@@ -239,8 +239,8 @@ helpers only.
 
 ### Step 3 - Keep request metrics aggregate-only
 
-Confirm that [source/scripts/testing/traffic_generator.py](../../../../../source/scripts/testing/traffic_generator.py)
-and [source/scripts/testing/run_experiment.sh](../../../../../source/scripts/testing/run_experiment.sh)
+Confirm that `source/scripts/testing/traffic_generator.py`
+and `source/scripts/testing/run_experiment.sh`
 only produce `client_requests.csv` by default.
 
 Then update analysis and documentation that still mention
@@ -248,9 +248,7 @@ Then update analysis and documentation that still mention
 
 ### Step 4 - Add a post-run policy reconstruction tool
 
-Add a new script:
-
-1. [source/scripts/tools/reconstruct_policy_state.py](../../../../../source/scripts/tools/reconstruct_policy_state.py)
+Add a new script: `source/scripts/tools/reconstruct_policy_state.py`
 
 Responsibilities:
 
@@ -262,166 +260,18 @@ Responsibilities:
 6. parse controller logs only for controller-only outcomes and annotations
 7. emit `policy_state.csv`
 
-### Step 5 - Reuse and extend existing log parsing instead of inventing a second parser stack
+### Step 5 - Reuse and extend existing log parsing
 
-Refactor [source/scripts/tools/parse_elasticity_logs.py](../../../../../source/scripts/tools/parse_elasticity_logs.py)
+Refactor `source/scripts/tools/parse_elasticity_logs.py`
 so it exposes reusable log-line parsing helpers that are imported directly by
-[source/scripts/tools/reconstruct_policy_state.py](../../../../../source/scripts/tools/reconstruct_policy_state.py).
+`source/scripts/tools/reconstruct_policy_state.py`.
 
-Concrete implementation rule:
-
-1. keep the canonical controller-log regex patterns in
-   [source/scripts/tools/parse_elasticity_logs.py](../../../../../source/scripts/tools/parse_elasticity_logs.py)
-2. add importable helper functions there for classifying lines into policy
-   annotations needed by `policy_state.csv`
-3. have [source/scripts/tools/reconstruct_policy_state.py](../../../../../source/scripts/tools/reconstruct_policy_state.py)
-   import and reuse those helpers instead of re-declaring a second regex stack
-
-Do not add new controller log lines just for this plan.
-
-### Step 6 - Anchor the reconstruction to the 10-second metrics cadence
+### Step 6 - Anchor to the 10-second metrics cadence
 
 The reconstruction must treat the per-window rows from `resource_stats.csv` as
 authoritative time buckets.
 
-For each bucket:
-
-1. compute scale-up scores from the window metrics and env snapshot
-2. infer effective thresholds from dynamic counts and config
-3. reconstruct sliding-window hit counts where recoverable from the derived
-   score series
-4. map busy, cooldown, trigger, candidate, and clear events from controller
-   logs into the matching time bucket
-5. leave unrecoverable fields blank instead of guessing hidden state
-
 ### Step 7 - Prefer per-node evidence for dynamic counts
 
-Use [source/scripts/testing/collect_resource_stats.py](../../../../../source/scripts/testing/collect_resource_stats.py)'s
-`per_node_stats.csv` output as the primary source for dynamic compute and
-storage counts at each window.
-
-Count active dynamic containers by role using container naming conventions and
-per-window membership. Use `container_events.csv` only as a boundary helper for
-windows where per-node coverage is incomplete.
-
-This keeps threshold reconstruction tied to observed runtime state rather than
-to broad total counts.
-
-### Step 8 - Integrate the new post-run step into the harness
-
-Update [source/scripts/testing/run_experiment.sh](../../../../../source/scripts/testing/run_experiment.sh)
-to generate `policy_state.csv` after the run has stopped its live collectors
-and log-capture helpers.
-
-The post-run order should become:
-
-1. stop live helpers
-2. generate `elasticity_events.csv` if not already generated in the run flow
-3. generate `policy_state.csv`
-4. print the artifact paths in the run summary
-
-### Step 9 - Extend the analysis loader to understand the new artifact set
-
-Update [source/scripts/testing/analysis/loader.py](../../../../../source/scripts/testing/analysis/loader.py)
-so it can load:
-
-1. `resource_stats.csv` as the main domain view
-2. `resource_stats_debug.csv` as the broad debug view when present
-3. `policy_state.csv` as the policy timeline when present
-4. `client_requests.csv` as the only default request CSV source
-
-This is the compatibility bridge for downstream analysis commands.
-
-### Step 10 - Retarget analysis helpers to the correct source file
-
-Update the analysis commands and summary helpers that currently assume the old
-`resource_stats.csv` schema.
-
-Update these files in this pass:
-
-1. [source/scripts/testing/analysis/cli_overview.py](../../../../../source/scripts/testing/analysis/cli_overview.py)
-2. [source/scripts/testing/analysis/cli_scale_down.py](../../../../../source/scripts/testing/analysis/cli_scale_down.py)
-3. [source/scripts/tools/metrics_stats.py](../../../../../source/scripts/tools/metrics_stats.py)
-
-Rules:
-
-1. use `resource_stats.csv` for main elasticity-facing summaries
-2. use `resource_stats_debug.csv` for median-heavy or verbose diagnosis
-3. use `policy_state.csv` for policy-timeline or threshold/cooldown analysis
-
-### Step 11 - Update testing documentation to match the new workflow
-
-Update:
-
-1. [docs/operation/testing/testing_overview.md](../../testing_overview.md)
-2. [docs/operation/testing/traffic_generator.md](../../traffic_generator.md)
-3. [docs/operation/testing/analysis_toolchain.md](../../analysis_toolchain.md)
-4. [docs/operation/testing/experiment_campaign_brief.md](../../experiment_campaign_brief.md)
-
-Document clearly that:
-
-1. `policy_state.csv` is post-run and reconstructed
-2. it is aligned to the 10-second metrics windows
-3. it does not require a new controller publisher
-4. `resource_stats.csv` is now trimmed
-5. `resource_stats_debug.csv` is the broad diagnostic file
-
-### Step 12 - Validate with a short run before relying on it for long experiments
-
-Validation criteria:
-
-1. no `client_requests_<phase>.csv` files are produced
-2. `resource_stats.csv` and `resource_stats_debug.csv` both exist
-3. `policy_state.csv` exists after the run completes
-4. row counts in `policy_state.csv` match the `(LANs × windows)` expectation
-5. reconstructed scores match controller log score lines on windows where both
-   signals are available
-6. windows with busy or cooldown skips are annotated correctly from logs
-7. existing analysis commands still run after loader migration
-
-## File Map
-
-Create:
-
-1. [source/scripts/tools/reconstruct_policy_state.py](../../../../../source/scripts/tools/reconstruct_policy_state.py)
-2. [docs/operation/testing/implementation/plans/testing_artifact_workflow_post_run_policy_state_plan.md](./testing_artifact_workflow_post_run_policy_state_plan.md)
-
-Modify:
-
-1. [source/scripts/testing/collect_resource_stats.py](../../../../../source/scripts/testing/collect_resource_stats.py)
-2. [source/scripts/testing/run_experiment.sh](../../../../../source/scripts/testing/run_experiment.sh)
-3. [source/scripts/tools/parse_elasticity_logs.py](../../../../../source/scripts/tools/parse_elasticity_logs.py)
-4. [source/scripts/testing/analysis/loader.py](../../../../../source/scripts/testing/analysis/loader.py)
-5. [source/scripts/testing/analysis/cli_overview.py](../../../../../source/scripts/testing/analysis/cli_overview.py)
-6. [source/scripts/testing/analysis/cli_scale_down.py](../../../../../source/scripts/testing/analysis/cli_scale_down.py)
-7. [source/scripts/tools/metrics_stats.py](../../../../../source/scripts/tools/metrics_stats.py)
-8. [docs/operation/testing/testing_overview.md](../../testing_overview.md)
-9. [docs/operation/testing/traffic_generator.md](../../traffic_generator.md)
-10. [docs/operation/testing/analysis_toolchain.md](../../analysis_toolchain.md)
-11. [docs/operation/testing/experiment_campaign_brief.md](../../experiment_campaign_brief.md)
-
-No `source/sdn_controller/` files should be modified for this plan.
-
-## Dependencies
-
-1. The trimmed `resource_stats.csv` must expose the actual scale inputs needed
-   for post-run score reconstruction.
-2. `per_node_stats.csv` must remain available so dynamic node counts can be
-   reconstructed without controller changes.
-3. `controller_env_snapshot.env` must remain copied into the run folder so the
-   exact thresholds and weights for that run are recoverable.
-4. Controller logs must continue to be captured in the run folder.
-5. The solution must tolerate missing log categories by emitting partial rows
-   instead of failing the whole run summary.
-
-## Documentation Updates
-
-When implementation is complete, update the testing documentation so it no
-longer describes:
-
-1. per-phase request CSVs as part of the default workflow
-2. the old broad `resource_stats.csv` as the main metrics artifact
-3. any need for a controller-side policy-state publisher
-
-The final documentation should describe `policy_state.csv` as a post-run,
-10-second, reconstructed policy timeline derived from run artifacts.
+Use `source/scripts/testing/collect_resource_stats.py`'s
+`per_node_stats.csv` output as the primary source for dynamic node counts.

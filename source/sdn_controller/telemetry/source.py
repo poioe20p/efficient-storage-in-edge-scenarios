@@ -13,15 +13,15 @@ class TelemetryEventSource(ABC):
 
     @abstractmethod
     def start(self) -> None:
-        """Begin receiving summaries in the background.
+        """Begin retrieving summaries in the background.
 
-        For ZMQ: spawns the daemon receive thread.
-        For a future MongoDB source: opens the Change Stream cursor.
+        For ZMQ (push): spawns the daemon receive thread.
+        For HTTP (poll): spawns the greenthread that polls aggregator endpoints.
         Called once at controller startup.
         """
 
     @abstractmethod
     def get_latest(self, network_id: str) -> TelemetrySummary | None:
-        """Return the most recently received summary for network_id, or None
-        if no summary has been received yet.
+        """Return the most recently retrieved summary for network_id, or None
+        if no summary has been retrieved yet.
         """

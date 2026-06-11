@@ -4,8 +4,9 @@
 
 One aggregator container runs per network. It collects raw events from all
 producers on that network via ZMQ PULL, buffers them into time windows, reduces
-them into per-server and domain-level summaries, and publishes the summaries
-via ZMQ PUB to the SDN controllers.
+them into per-server and domain-level summaries, publishes the summaries
+via ZMQ PUB (push), and caches them in memory for HTTP retrieval (poll).
+See § 13 for the HTTP cache endpoint.
 
 ## 2. Current File
 
@@ -40,7 +41,7 @@ The `_receive_loop` runs on a daemon thread, blocking on
 
 If `_extract_control_events()` returns a non-empty list, the frame is
 published immediately as a mini-summary and **not** buffered into the
-aggregation window. See §5.
+aggregation window. See § 5.
 
 ### Window Events (buffered)
 
@@ -89,13 +90,13 @@ Every `WINDOW_S` seconds (default 10), the publish loop:
 
 1. Drains `_buffer` under lock into a local `window` list.
 2. Computes `last_seen` — per-`server_id` max `ts` across all events.
-3. Classifies events into the five buckets (§4).
-4. Reduces HTTP events → `servers` (§7).
-5. Reduces `mongo_stats` events → `storage_servers` (§8).
-6. Promotes heartbeat-only nodes (§9).
-7. Folds selective-sync frames (§11).
-8. Computes domain summary (§10).
-9. Publishes the `TelemetrySummary` JSON frame on the PUB socket (§12).
+3. Classifies events into the five buckets (§ 4).
+4. Reduces HTTP events → `servers` (§ 7).
+5. Reduces `mongo_stats` events → `storage_servers` (§ 8).
+6. Promotes heartbeat-only nodes (§ 9).
+7. Folds selective-sync frames (§ 11).
+8. Computes domain summary (§ 10).
+9. Publishes the `TelemetrySummary` JSON frame on the PUB socket (§ 12).
 
 If the window is empty or contains no valid events, the publish is skipped.
 
@@ -238,3 +239,33 @@ no `domain_summary`. Full window summaries have `control_events: []`.
 - **ZMQ send failures** — not explicitly caught; `send_json` may raise
   `zmq.Again` if no subscribers are connected (PUB socket semantics), but the
   aggregator does not retry — the next window's summary will carry fresh data.
+
+## 13. HTTP Cache Endpoint (Polling Controllers)
+
+Since 2026-06-11 the aggregator also serves the latest full-window summary
+over HTTP for polling controllers.
+
+### Endpoint
+
+```
+GET http://<aggregator_ip>:5558/latest_summary
+```
+
+The port is configurable via ``SUMMARY_CACHE_PORT`` (default ``5558``).
+
+### Behaviour
+
+- **Returns** the most recent full-window ``TelemetrySummary`` JSON, cached
+  in ``_latest_summary`` after every ZMQ publish.
+- **Returns ``{}``** before the first window closes (no summary available).
+- **Mini-summaries** (control events) are **never** cached or served — only
+  full window summaries.
+- The endpoint is served by a daemon-threaded ``http.server.HTTPServer``;
+  it cannot block the ZMQ receive or publish loops.
+
+### Controller Usage
+
+Polling controllers send ``GET /latest_summary`` to both aggregators
+concurrently at a configurable interval (``POLL_INTERVAL_S``, default 10 s).
+See ``source/sdn_controller/telemetry/polling_source.py`` and
+``docs/operation/telemetry/implementation/rq1_polling_mechanism/``.
