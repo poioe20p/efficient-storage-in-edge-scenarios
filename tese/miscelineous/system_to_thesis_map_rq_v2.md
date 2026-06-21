@@ -170,15 +170,18 @@ This RQ isolates the **delivery mechanism** as a control-plane design choice.
 The system aggregates telemetry into summaries over a fixed 10 s window. The
 question is whether the controller should receive these summaries via
 aggregator-paced push (ZMQ at window close) or controller-paced poll (HTTP at
-a configurable interval), and what staleness each mechanism introduces.
+a configurable interval), and what **blind spot** each mechanism introduces
+between telemetry windows.
 
 Polling at intervals slower than the window (e.g., 30 s) encodes the
 architectural property of separated monitoring systems: the controller
-operates on stale state, 1–2 windows behind. This is the same property that
-Prometheus scrape intervals or CloudWatch metric periods impose on separated
-architectures. Polling faster than the window (e.g., 5 s) exercises the
-deduplication path and measures whether faster polling wastes resources
-without freshness benefit.
+**misses intermediate windows** — it sees 1 of every 3 telemetry snapshots.
+This is the same property that Prometheus scrape intervals or CloudWatch
+metric periods impose on separated architectures: the monitoring system
+has no visibility into what happened between scrapes. Polling faster than
+the window (e.g., 5 s) exercises the deduplication path and measures whether
+over-polling wastes resources without benefit — every window is caught, but
+half the polls return a duplicate already seen.
 
 The aggregation window size is held constant at 10 s. Varying window size
 (1 s, 5 s, 30 s) to test the freshness-versus-noise tradeoff is deferred to
@@ -188,8 +191,7 @@ and scaling policy, which is a separate development axis.
 ### Concepts Involved in RQ1
 
 - push versus poll delivery cadence
-- controller state freshness
-- decision staleness window
+- blind spot between telemetry windows
 - reaction latency (breach visible → node operational)
 - transient service quality across workload phases
 - control-plane overhead (CPU, RAM, polling traffic)
@@ -231,12 +233,23 @@ Not required:
 
 ### Measurements Required for RQ1
 
-1. **Decision staleness**
+1. **Decision staleness** (information age at consumption)
    `consumed_at − window_end` per telemetry row. Both timestamps use
-   `time.time()` on the same host. Push mode: sub-second (ZMQ delivery on
-   same Docker host). Poll mode: proportional to `POLL_INTERVAL_S`.
+   `time.time()` on the same host. **All modes: sub-second.** Push mode
+   receives the summary at window close via ZMQ. Poll mode retrieves the
+   freshest cached summary from the aggregator's HTTP endpoint — the cache
+   is always updated at window close, so the retrieved data is fresh
+   regardless of polling interval. This measurement confirms the delivery
+   pipeline works correctly; it does not differentiate between modes.
 
-2. **Reaction latency**
+   The mechanism that actually delays the controller's response is not
+   data staleness at consumption time but **missed windows** — the
+   controller simply does not see telemetry between polls. The
+   breach-detection segment of reaction latency (measurement 2) captures
+   this blind-spot penalty: the controller cannot act on a breach window
+   it has not yet received.
+
+2. **Reaction latency** — the **output** that matters for the thesis
    `spawn_done_ts − breach_window_end`. The breach window is identified by
    independently computing `degradation_score` from telemetry data (same
    formula and thresholds the controller uses). The endpoint is
@@ -258,33 +271,28 @@ Not required:
    from `POLL_INTERVAL_S` and summary size (~2–10 KB per poll).
 
 5. **Scaling outcome description**
-   Each breach (telemetry window where `degradation_score ≥ threshold`) is
-   compared against the controller's actual action (did a `spawn_done`
-   follow?) and the workload phase it fell in, producing a 2×2 description:
-
-   | Breach in… | `spawn_done` exists | No `spawn_done` |
-   |---|---|---|
-   | **High-load phase** | **actionable** — real overload, controller acted | **unactioned** — real overload, but sliding window / cooldown / capacity cap prevented action |
-   | **Low-load / transition phase** | **over-eager** — brief threshold crossing, controller spawned anyway | **transient** — brief crossing, controller correctly suppressed |
-
-   The breach detector fires on the first window where
-   `score ≥ threshold` (accounting for dynamic threshold, peer relief, and
-   cooldown) but does not replicate the controller's sliding window
-   (`REQUIRED` of `WINDOW_SIZE` consecutive hits). The description
-   therefore captures "was overload visible?" independently from "did the
-   controller act?" — the gap between the two is the measurement.
+   A per-phase descriptive table comparing what was visible in telemetry
+   against what the controller did. For each workload phase: total telemetry
+   windows, how many showed overload (degradation_score >= threshold), peak
+   degradation score observed, and how many spawns the controller initiated
+   and completed. No classification labels — the gap between breached-windows
+   and completed-spawns is the observable fact (the sliding window mechanism
+   means a window may breach without triggering a spawn, which is expected
+   behavior). The thesis interprets this gap alongside reaction latency to
+   answer: as the blind spot widens, does the controller still respond
+   adequately?
 
 ### Evaluation Design for RQ1
 
 All conditions use a 10 s aggregation window. Delivery cadence is the
 independent variable:
 
-| Condition | Delivery | Staleness expectation | What it tests |
+| Condition | Delivery | Blind spot | What it tests |
 |---|---|---|---|
-| **Push** | ZMQ at window close | Sub-second | Baseline: no coordination gap |
-| **Poll-12s** | HTTP every 12 s | 0–12 s, mean ~6 s | Fair comparison: polls just after window close, desync-safe |
-| **Poll-5s** | HTTP every 5 s | 0–10 s, mean ~5 s | Faster than window: catches every window, exercises dedup |
-| **Poll-30s** | HTTP every 30 s | 15–35 s | Stale monitoring: controller 1–2 windows behind. Encodes the CloudWatch/Prometheus property |
+| **Push** | ZMQ at window close | None — sees every window | Baseline: no coordination gap |
+| **Poll-5s** | HTTP every 5 s | None — catches every window (dedup filters ~50% of polls) | Faster than window: exercises dedup, no blind spot |
+| **Poll-12s** | HTTP every 12 s | ~1 of 6 windows missed (desync headroom) | Fair comparison: polls just after window close, minor blind spot |
+| **Poll-30s** | HTTP every 30 s | ~2 of 3 windows missed | Blind monitoring: controller sees 1 of 3 telemetry snapshots. Encodes the CloudWatch/Prometheus property |
 
 **Why Poll-12s.** The aggregator and controller are independent processes
 with independent clocks. At exactly 10 s polling, a poll could land just
@@ -296,8 +304,8 @@ evaluation can compare them.
 
 Hold constant:
 
-- Workload shape (`phases_rq1_verify.json`)
-- Scaling thresholds (`rq1_verify.env`)
+- Workload shape (canonical `phases.json`; the shorter `phases_rq1_verify.json` used during instrumentation verification)
+- Scaling thresholds (`current_state_integrated.env` golden config; `rq1_verify.env` used during verification with shortened cooldown)
 - Routing policy
 - Summary schema
 - Aggregation window (10 s)

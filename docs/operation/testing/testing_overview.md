@@ -128,13 +128,13 @@ reference: **[`golden_config.md`](golden_config.md)**.
 All values are encoded in
 [`current_state_integrated.env`](../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env).
 
-Canonical launch:
+Canonical launch (phases file is experiment-specific — replace `<phases_file>`):
 
 ```bash
 sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
   RUN_LABEL=<label> \
-  PHASES_CONFIG=testing/phases.json \
+  PHASES_CONFIG=testing/<phases_file> \
   CLIENTS=8 DEVICES=600 NODES=100 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 ```

@@ -213,22 +213,52 @@ def _plot_reaction_latency(reaction_rows: list[dict], run_name: str,
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle(f"Reaction Latency — {run_name}", fontsize=12)
 
-    # Left: stacked horizontal bars
+    # Left: stacked horizontal bars with value labels
     ax = axes[0]
     labels = [f"{r['lan']}/{r['tier']}#{i}"
               for i, r in enumerate(reaction_rows)]
     detection_vals = [r["breach_detection_s"] for r in reaction_rows]
     provision_vals = [r["provision_time_s"] for r in reaction_rows]
+    total_vals = [r["total_reaction_s"] for r in reaction_rows]
 
-    y_pos = range(len(reaction_rows))
+    y_pos = list(range(len(reaction_rows)))
+
+    # Detection bar (always present)
     ax.barh(y_pos, detection_vals, color="#bf8c1a",
             label="breach → spawn_start")
-    ax.barh(y_pos, provision_vals, left=detection_vals,
-            color="#1a7abf", label="spawn_start → spawn_done")
+
+    # Provision bar — only draw when > 0 (skip zero-width artifacts)
+    for i, pv in enumerate(provision_vals):
+        if pv > 0:
+            ax.barh(i, pv, left=detection_vals[i],
+                    color="#1a7abf", label="spawn_start → spawn_done" if i == 0 else "")
+
+    # Value labels on each segment
+    for i in y_pos:
+        det = detection_vals[i]
+        prv = provision_vals[i]
+        tot = total_vals[i]
+        # Detection label inside the bar
+        ax.text(det / 2, i, f"{det:.1f}s", ha="center", va="center",
+                fontsize=7, color="white", fontweight="bold")
+        # Provision label inside the bar (only when > 0)
+        if prv > 0:
+            ax.text(det + prv / 2, i, f"{prv:.1f}s", ha="center", va="center",
+                    fontsize=7, color="white", fontweight="bold")
+        # Total label outside the bar — placed after with more room when N/D
+        offset = 0.8 if prv == 0 else 0.3
+        note = "  (prov N/D)" if prv == 0 else ""
+        ax.text(tot + offset, i, f"{tot:.1f}s{note}", ha="left", va="center",
+                fontsize=6, color="#333333")
+
     ax.set_yticks(y_pos)
     ax.set_yticklabels(labels, fontsize=7)
     ax.set_xlabel("seconds")
-    ax.legend(fontsize=7)
+    ax.set_xlim(0, max(total_vals) * 1.25 if total_vals else 10)
+    # Deduplicate legend entries
+    handles, legends = ax.get_legend_handles_labels()
+    by_label = dict(zip(legends, handles))
+    ax.legend(by_label.values(), by_label.keys(), fontsize=7)
     ax.set_title("Per-event reaction latency")
 
     # Right: per-phase summary table
@@ -253,8 +283,11 @@ def _plot_reaction_latency(reaction_rows: list[dict], run_name: str,
             d95 = _percentile(grp["detection"], 0.95)
             p95 = _percentile(grp["provision"], 0.95)
             t95 = _percentile(grp["total"], 0.95)
+            d_str = f"{d95:>7.2f}s" if grp["detection"] else "    N/D"
+            p_str = f"{p95:>8.2f}s" if any(v > 0 for v in grp["provision"]) else "     N/D"
+            t_str = f"{t95:>9.2f}s" if grp["total"] else "      N/D"
             text_lines.append(
-                f"{phase:<12} {n:>2}  {d95:>7.2f}s  {p95:>8.2f}s  {t95:>9.2f}s")
+                f"{phase:<12} {n:>2}  {d_str}  {p_str}  {t_str}")
         ax.text(0.05, 0.95, "\n".join(text_lines), transform=ax.transAxes,
                 fontsize=7, fontfamily="monospace", verticalalignment="top")
 

@@ -94,6 +94,7 @@ def _compute_overhead(
 def _plot_overhead_cpu(
     points: list[dict],
     boundaries: list[tuple[str, float, float]],
+    t0: float,
     out_dir: Path,
 ) -> None:
     if not points:
@@ -118,7 +119,7 @@ def _plot_overhead_cpu(
         ax.plot(x, y, "o-", label=container, color=color, linewidth=1.2,
                 markersize=4, alpha=0.8)
 
-    shade_phases(ax, boundaries, 0.0)
+    shade_phases(ax, boundaries, t0)
     ax.set_ylabel("CPU %")
     ax.set_xlabel("Experiment time (s)")
     ax.legend(loc="upper right")
@@ -134,6 +135,7 @@ def _plot_overhead_cpu(
 def _plot_overhead_ram(
     points: list[dict],
     boundaries: list[tuple[str, float, float]],
+    t0: float,
     out_dir: Path,
 ) -> None:
     if not points:
@@ -157,7 +159,7 @@ def _plot_overhead_ram(
         ax.plot(x, y, "o-", label=container, color=color, linewidth=1.2,
                 markersize=4, alpha=0.8)
 
-    shade_phases(ax, boundaries, 0.0)
+    shade_phases(ax, boundaries, t0)
     ax.set_ylabel("RSS (MB)")
     ax.set_xlabel("Experiment time (s)")
     ax.legend(loc="upper right")
@@ -196,8 +198,8 @@ def run(run_dir: Path) -> None:
     points, per_phase = _compute_overhead(raw, r.t0, r.phases)
     boundaries = phase_boundaries(r.t0, r.phases)
 
-    _plot_overhead_cpu(points, boundaries, out_dir)
-    _plot_overhead_ram(points, boundaries, out_dir)
+    _plot_overhead_cpu(points, boundaries, r.t0, out_dir)
+    _plot_overhead_ram(points, boundaries, r.t0, out_dir)
     _write_overhead_csv(per_phase, out_dir)
 
 

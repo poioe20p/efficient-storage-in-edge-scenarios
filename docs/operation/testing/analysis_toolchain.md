@@ -71,7 +71,7 @@ a new controller-side publisher.
 | New | `source/scripts/testing/analysis/rq1/breach_detector.py` | Shared breach detection via degradation_score (used by cli_rq1_timings + cli_rq1_decision_quality) |
 | New | `source/scripts/testing/analysis/rq1/cli_rq1_timings.py` | RQ1 staleness and reaction-latency plots (`consumed_at` from `resource_stats_debug.csv`) |
 | New | `source/scripts/testing/analysis/rq1/cli_rq1_overhead.py` | RQ1 controller CPU/RAM overhead plots (`controller_stats.csv` from Phase 5 sampler) |
-| New | `source/scripts/testing/analysis/rq1/cli_rq1_decision_quality.py` | RQ1 scaling outcome description: 2×2 labels (actionable/unactioned/over-eager/transient) |
+| New | `source/scripts/testing/analysis/rq1/cli_rq1_decision_quality.py` | RQ1 scaling outcome description: per-phase descriptive table |
 | New | `source/scripts/testing/sample_controller_stats.py` | Phase 5 background sampler: periodic `docker stats` on controller containers |
 
 ---
@@ -83,23 +83,34 @@ intervals) affects controller decision quality. Five measurements are produced
 from each run folder. Full details in
 [`rq1_telemetry_freshness/rq1_analysis_tooling_plan.md`](../implementation/rq1_telemetry_freshness/rq1_analysis_tooling_plan.md).
 
-All RQ1 outputs are written to `<run_dir>/analysis/rq1/`.
+All RQ1 outputs are written to `<run_dir>/analysis/`.
 
-### Decision staleness
+### Decision staleness (information age at decision time)
 
 **What it measures**: `consumed_at − window_end` — time from telemetry window
 close to controller consumption. Both timestamps use `time.time()` on the same
 host.
+
+**Role**: Information age at consumption is ~0 for all modes — the HTTP
+cache always serves the freshest completed summary. This measurement
+confirms the delivery pipeline works correctly; it does not differentiate
+between modes. The mechanism that delays the controller's response is
+missed windows between polls, captured by the breach-detection segment
+of reaction latency.
 
 **Tooling**: `cli_rq1_timings.py` reads `resource_stats_debug.csv` (one row
 per telemetry window with paired `consumed_at`). Produces `rq1_staleness.png`
 (time-series per LAN, phase-shaded) and `rq1_staleness.csv` (per-row +
 per-phase mean/p50/p95/max).
 
-**Expected**: Push mode: sub-second. Poll mode: proportional to
-`POLL_INTERVAL_S`.
+**Expected**: **All modes: sub-second.** The aggregator cache always holds the
+freshest completed summary — push and poll are indistinguishable by this
+metric. This measurement confirms the delivery pipeline works correctly;
+it does not differentiate between modes. The mechanism that delays the
+controller's response is missed windows between polls, captured by the
+breach-detection segment of reaction latency.
 
-### Reaction latency
+### Reaction latency — the **output** that matters for the thesis
 
 **What it measures**: `spawn_done_ts − breach_window_end` — time from first
 telemetry window showing overload (`degradation_score ≥ threshold`) to
@@ -149,25 +160,22 @@ estimated from `POLL_INTERVAL_S` and summary size.
 
 ### Scaling outcome description
 
-**What it measures**: A 2×2 description of each breach event comparing
-breach-detector findings against controller actions:
-
-| Breach phase load | `spawn_done` exists | No `spawn_done` |
-|---|---|---|
-| `high` | **actionable** — real overload, controller acted | **unactioned** — real overload, window/cooldown/cap prevented action |
-| `low` / `transition` | **over-eager** — brief crossing, controller spawned anyway | **transient** — brief crossing, correctly suppressed |
+**What it measures**: A per-phase descriptive table comparing what was visible
+in telemetry against what the controller did. For each workload phase: total
+telemetry windows, how many showed overload (degradation_score >= threshold),
+peak degradation score observed, and how many spawns the controller initiated
+and completed. No classification labels — the gap between breached-windows and
+completed-spawns is the observable fact.
 
 **Tooling**: `cli_rq1_decision_quality.py` uses the same
-`breach_detector.py` module as the reaction latency CLI. Each breach is
-mapped to a workload phase via `PHASE_LOAD_CLASSIFICATION` (hardcoded map
-from phase name to `high`/`low`/`transition`). Produces
-`rq1_decision_quality.csv` (per-breach: phase, score, threshold, delay_s,
-label, justification) and `rq1_decision_quality.png` (confusion-style
-heatmap).
+`breach_detector.py` module as the reaction latency CLI. Produces
+`rq1_decision_quality.csv` (per-phase: phase, phase_load, total_windows,
+breached_windows, peak_score, spawns_initiated, spawns_completed) and
+`rq1_decision_quality.png` (rendered table).
 
 **Why no "delayed" label**: Reaction latency is measured separately —
-conflating "was it correct?" with "was it fast?" into one label creates
-confusion. The `delay_s` column is still present in the CSV for reference.
+conflating "was it right?" with "was it fast?" into one label creates
+confusion.
 
 **Why the sliding window is not replicated**: The breach detector's
 output is the *ground truth* of overload visibility. The controller's
@@ -605,12 +613,12 @@ python -m source.scripts.testing.analysis.rq1.cli_rq1_decision_quality --run-dir
 ```
 
 Each writes under `<run-dir>/analysis/` (general) or
-`<run-dir>/analysis/rq1/` (RQ1):
+`<run-dir>/analysis/` (RQ1):
 
 - General: `overview.png`, `cpu_drivers.png`, `scale_down.png`,
-  `tdb_drivers.png`, `simple_run.png`, `phase_summary.csv`
-- RQ1: `rq1_staleness.{png,csv}`, `rq1_staleness_per_phase.csv`,
-  `rq1_reaction_latency.{png,csv}`, `rq1_overhead.{png,csv}`,
+  `tdb_drivers.png`, `simple_run.png`, `phase_summary.png`
+- RQ1: `rq1_staleness.{png,csv}`, `rq1_reaction_latency.{png,csv}`,
+  `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv`,
   `rq1_decision_quality.{png,csv}`
 - `summary.md` (appended by every CLI â€” one section per tool)
 

@@ -1,15 +1,22 @@
 # Golden Configuration
 
-The canonical operating point for all architecture mechanisms — confirmed
-across stability experiments spanning 2026-06-05 to 2026-06-10. These values
-exercise Tier 2 storage reserve, Tier 1 selective-sync, compute elasticity,
-and conntrack VIP_DATA routing under the integrated 10-phase workload.
+The canonical infrastructure sizing, mechanism toggles, and trigger thresholds
+that exercise Tier 2 storage reserve, Tier 1 selective-sync, compute elasticity,
+and conntrack VIP_DATA routing. These values were confirmed across stability
+experiments spanning 2026-06-05 to 2026-06-10.
 
-All values are encoded in
+All toggles and thresholds are encoded in
 [`current_state_integrated.env`](../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env).
 
 **Provenance**: each value was determined by a dedicated stability experiment.
 Full results are in [`experiment/stability/`](experiment/stability/).
+
+**⚠️ The workload shape is NOT part of this configuration.** The phases file
+must be chosen or designed for each experiment's specific intent — different
+questions need different demand profiles. The stability experiments that
+established these thresholds used a 10-phase integrated workload, but that
+workload is an *input to the tuning process*, not a default to be reused
+blindly. See [Workload Sizing](#workload-sizing) below.
 
 ---
 
@@ -20,7 +27,33 @@ Full results are in [`experiment/stability/`](experiment/stability/).
 | `CLIENTS` | **8** | [`storage_reserve_load_sweep`](experiment/stability/storage_reserve_load_sweep/results.md): c08 stable (0.0–1.2% failure), c10 overloads edge server (~100 req/s ceiling). 8 is the highest stable count. |
 | `DEVICES` | **600** | Dataset cardinality. Held constant in all stability experiments. Drives Tier 1 hot-set size and dashboard query diversity. |
 | `NODES` | **100** | Infrastructure scale. Held constant in all stability experiments. |
-| Phase file | **`testing/phases.json`** | Canonical 10-phase integrated workload. Exercises storage, Tier 1, and compute sequentially in one run (~28 min). |
+
+### Phases File — No Default
+
+**There is no canonical phases file.** The workload shape — which phases exist,
+their durations, request rates, mixes, cross-region ratios, and hotspot
+directions — must be evaluated and adapted to each experiment's intent.
+
+The stability experiments that produced these golden thresholds used a 10-phase
+integrated workload (`local_moderate` → `storage_stress` →
+`cross_region_hotspot` → `inter_hotspot_cooldown` → `reverse_hotspot` →
+`compute_ramp` → `compute_spike` → `sustained_plateau` → `demand_drop` →
+`idle`, ~28 min). That workload was designed to exercise all four mechanisms
+sequentially for tuning purposes. It is not appropriate for every experiment:
+
+- **RQ1 (delivery cadence)**: needs a workload that produces enough scaling
+  events for statistical reaction-latency comparison across modes. Both
+  hotspot directions should be present so breaches occur on both LANs.
+- **Storage reserve validation**: used a dedicated probe workload with 90%
+  `device_status` mix and a `sustained_use` phase to verify reserve carries
+  traffic.
+- **Tier 1 activation**: used a bidirectional hotspot profile with compute
+  and storage elasticity disabled to isolate Tier 1 behavior.
+
+Before designing or launching an experiment, evaluate: which mechanisms does
+this experiment need to exercise? How many scaling events are needed for
+statistical power? Is LAN symmetry required, or is unidirectional load
+acceptable? Choose or create the phases file that answers those questions.
 
 ## Mechanism Toggles
 
@@ -81,11 +114,15 @@ the standard deployment, not configuration knobs:
 
 ## Canonical Launch Command
 
+The env override and sizing parameters are fixed. The phases file is always
+experiment-specific — replace `<phases_file>` with the file chosen for the
+experiment's intent.
+
 ```bash
 sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
   RUN_LABEL=<label> \
-  PHASES_CONFIG=testing/phases.json \
+  PHASES_CONFIG=testing/<phases_file> \
   CLIENTS=8 DEVICES=600 NODES=100 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 ```

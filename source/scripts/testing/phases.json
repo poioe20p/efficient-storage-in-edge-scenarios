@@ -2,7 +2,7 @@
   "phases": [
     {
       "name": "baseline",
-      "duration_s": 30,
+      "duration_s": 60,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "client_fraction": 0.5,
@@ -13,8 +13,20 @@
       }
     },
     {
+      "name": "local_moderate",
+      "duration_s": 90,
+      "rate_per_client": 3.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.75,
+      "mix": {
+        "device_status": 0.55,
+        "dashboard": 0.30,
+        "service_pressure": 0.15
+      }
+    },
+    {
       "name": "storage_stress",
-      "duration_s": 120,
+      "duration_s": 180,
       "rate_per_client": 5.0,
       "cross_region_ratio": 0.75,
       "hotspot_direction": "lan2_to_lan1",
@@ -27,10 +39,35 @@
     },
     {
       "name": "cross_region_hotspot",
-      "duration_s": 120,
+      "duration_s": 240,
       "rate_per_client": 6.0,
       "cross_region_ratio": 0.95,
       "hotspot_direction": "lan2_to_lan1",
+      "client_fraction": 1.0,
+      "mix": {
+        "device_status": 0.92,
+        "dashboard": 0.05,
+        "service_pressure": 0.03
+      }
+    },
+    {
+      "name": "inter_hotspot_cooldown",
+      "duration_s": 60,
+      "rate_per_client": 2.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.5,
+      "mix": {
+        "device_status": 0.60,
+        "dashboard": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "reverse_hotspot",
+      "duration_s": 240,
+      "rate_per_client": 6.0,
+      "cross_region_ratio": 0.95,
+      "hotspot_direction": "lan1_to_lan2",
       "client_fraction": 1.0,
       "mix": {
         "device_status": 0.92,
@@ -43,7 +80,6 @@
       "duration_s": 90,
       "rate_per_client": 5.0,
       "cross_region_ratio": 0.05,
-      "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 0.75,
       "mix": {
         "device_status": 0.30,
@@ -53,10 +89,9 @@
     },
     {
       "name": "compute_spike",
-      "duration_s": 120,
+      "duration_s": 150,
       "rate_per_client": 7.0,
       "cross_region_ratio": 0.05,
-      "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 1.0,
       "mix": {
         "device_status": 0.20,
@@ -66,10 +101,9 @@
     },
     {
       "name": "sustained_plateau",
-      "duration_s": 60,
+      "duration_s": 90,
       "rate_per_client": 5.0,
       "cross_region_ratio": 0.05,
-      "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 0.75,
       "mix": {
         "device_status": 0.25,
@@ -79,7 +113,7 @@
     },
     {
       "name": "demand_drop",
-      "duration_s": 360,
+      "duration_s": 300,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "client_fraction": 0.5,
