@@ -65,101 +65,108 @@ def run(run_dir: Path) -> None:
     ) else r.domain_rows
     has_nodes = bool(r.node_rows)
 
-    n_panels = 6
-    fig, axes = plt.subplots(n_panels, 1, figsize=(14, 3 * n_panels), sharex=True)
-    fig.suptitle(f"Run overview — {run_dir.name}", fontsize=12)
+    # Figure 1: Latency (T_proc + T_db)
+    fig1, (ax1a, ax1b) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+    fig1.suptitle(f"Latency - {run_dir.name}", fontsize=12)
 
-    # ── Panel 0: request rate ────────────────────────────────────────────────
-    ax = axes[0]
-    req = [_safe_float(row.get("total_requests", 0)) for row in r.domain_rows]
-    ax.plot(t_domain, req, color="#1a7abf")
-    ax.set_ylabel("requests / window")
-    ax.set_title("Request rate")
-    shade_phases(ax, bounds, r.t0)
-    overlay_events(ax, r.events, r.t0)
+    tproc = [_col(row, "avg_time_proc_ms", "median_time_proc_ms") for row in r.domain_rows]
+    ax1a.plot(t_domain, tproc, color="#1abf4a")
+    ax1a.set_ylabel("ms")
+    ax1a.set_title("T_proc")
+    shade_phases(ax1a, bounds, r.t0)
 
-    # ── Panel 1: compute CPU ─────────────────────────────────────────────────
-    ax = axes[1]
+    tdb = [_col(row, "avg_time_db_ms", "median_time_db_ms") for row in r.domain_rows]
+    ax1b.plot(t_domain, tdb, color="#bf1a8c", linewidth=1.5, label="T_db total")
+    if has_db_decomp:
+        tr = [_safe_float(row.get("avg_time_db_read_ms")) for row in _db_rows]
+        tw = [_safe_float(row.get("avg_time_db_write_ms")) for row in _db_rows]
+        ax1b.fill_between(t_domain, 0, tr, alpha=0.3, color="#1a7abf", label="read")
+        ax1b.fill_between(t_domain, tr, [a + b for a, b in zip(tr, tw)],
+                        alpha=0.3, color="#bf5a1a", label="write")
+    ax1b.set_ylabel("ms")
+    ax1b.set_title("T_db")
+    ax1b.legend(fontsize=7)
+    ax1b.set_xlabel("time (s)")
+    shade_phases(ax1b, bounds, r.t0)
+
+    fig1.tight_layout()
+    fig1.savefig(out_dir / "overview_latency.png", dpi=150)
+    plt.close(fig1)
+    print(f"[cli_overview] wrote {out_dir / 'overview_latency.png'}")
+
+    # Figure 2: Resources (compute CPU + storage CPU)
+    fig2, (ax2a, ax2b) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+    fig2.suptitle(f"Resource usage - {run_dir.name}", fontsize=12)
+
     cpu = [_col(row, "average_cpu_percent", "median_cpu_percent") for row in r.domain_rows]
-    ax.plot(t_domain, cpu, color="#1a7abf", linewidth=1.5, label="avg")
+    ax2a.plot(t_domain, cpu, color="#1a7abf", linewidth=1.5, label="avg")
     if has_nodes:
         for sid in {row["server_id"] for row in r.node_rows if row.get("role") == "compute"}:
             nrows = [row for row in r.node_rows
                      if row.get("role") == "compute" and row["server_id"] == sid]
             nt = [_safe_float(row["window_end"]) - r.t0 for row in nrows]
             nc = [_safe_float(row.get("cpu_percent")) for row in nrows]
-            ax.plot(nt, nc, color="#aac8e0", linewidth=0.5, alpha=0.6)
-    ax.set_ylabel("CPU %")
-    ax.set_title("Compute CPU")
-    shade_phases(ax, bounds, r.t0)
-    overlay_events(ax, r.events, r.t0, tier="compute")
+            ax2a.plot(nt, nc, color="#aac8e0", linewidth=0.5, alpha=0.6)
+    ax2a.set_ylabel("CPU %")
+    ax2a.set_title("Compute CPU")
+    shade_phases(ax2a, bounds, r.t0)
+    overlay_events(ax2a, r.events, r.t0, tier="compute")
 
-    # ── Panel 2: storage CPU ─────────────────────────────────────────────────
-    ax = axes[2]
     stcpu = [_col(row, "avg_storage_cpu_percent", "median_storage_cpu_percent") for row in r.domain_rows]
-    ax.plot(t_domain, stcpu, color="#bf5a1a", linewidth=1.5, label="avg")
+    ax2b.plot(t_domain, stcpu, color="#bf5a1a", linewidth=1.5, label="avg")
     if has_nodes:
         for sid in {row["server_id"] for row in r.node_rows if row.get("role") == "storage"}:
             nrows = [row for row in r.node_rows
                      if row.get("role") == "storage" and row["server_id"] == sid]
             nt = [_safe_float(row["window_end"]) - r.t0 for row in nrows]
             nc = [_safe_float(row.get("cpu_percent")) for row in nrows]
-            ax.plot(nt, nc, color="#e0b89a", linewidth=0.5, alpha=0.6)
-    ax.set_ylabel("CPU %")
-    ax.set_title("Storage CPU")
-    shade_phases(ax, bounds, r.t0)
-    overlay_events(ax, r.events, r.t0, tier="storage")
+            ax2b.plot(nt, nc, color="#e0b89a", linewidth=0.5, alpha=0.6)
+    ax2b.set_ylabel("CPU %")
+    ax2b.set_title("Storage CPU")
+    ax2b.set_xlabel("time (s)")
+    shade_phases(ax2b, bounds, r.t0)
+    overlay_events(ax2b, r.events, r.t0, tier="storage")
 
-    # ── Panel 3: T_proc ──────────────────────────────────────────────────────
-    ax = axes[3]
-    tproc = [_col(row, "avg_time_proc_ms", "median_time_proc_ms") for row in r.domain_rows]
-    ax.plot(t_domain, tproc, color="#1abf4a")
-    ax.set_ylabel("ms")
-    ax.set_title("T_proc (median)")
-    shade_phases(ax, bounds, r.t0)
+    fig2.tight_layout()
+    fig2.savefig(out_dir / "overview_resources.png", dpi=150)
+    plt.close(fig2)
+    print(f"[cli_overview] wrote {out_dir / 'overview_resources.png'}")
 
-    # ── Panel 4: T_db ────────────────────────────────────────────────────────
-    ax = axes[4]
-    tdb = [_col(row, "avg_time_db_ms", "median_time_db_ms") for row in r.domain_rows]
-    ax.plot(t_domain, tdb, color="#bf1a8c", linewidth=1.5, label="T_db total")
-    if has_db_decomp:
-        tr = [_safe_float(row.get("avg_time_db_read_ms")) for row in _db_rows]
-        tw = [_safe_float(row.get("avg_time_db_write_ms")) for row in _db_rows]
-        ax.fill_between(t_domain, 0, tr, alpha=0.3, color="#1a7abf", label="read")
-        ax.fill_between(t_domain, tr, [a + b for a, b in zip(tr, tw)],
-                        alpha=0.3, color="#bf5a1a", label="write")
-    else:
-        warnings.warn("avg_time_db_read/write_ms columns missing — T_db decomposition skipped.")
-    ax.set_ylabel("ms")
-    ax.set_title("T_db")
-    ax.legend(fontsize=7)
-    shade_phases(ax, bounds, r.t0)
+    # Figure 3: Throughput (request rate + node counts)
+    fig3, (ax3a, ax3b) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+    fig3.suptitle(f"Throughput & scale - {run_dir.name}", fontsize=12)
 
-    # ── Panel 5: node counts ─────────────────────────────────────────────────
-    ax = axes[5]
+    req = [_safe_float(row.get("total_requests", 0)) for row in r.domain_rows]
+    ax3a.plot(t_domain, req, color="#1a7abf")
+    ax3a.set_ylabel("requests / window")
+    ax3a.set_title("Request rate")
+    shade_phases(ax3a, bounds, r.t0)
+    overlay_events(ax3a, r.events, r.t0)
+
     nc = [_safe_float(row.get("server_count", 0)) for row in r.domain_rows]
     ns = [_safe_float(row.get("storage_count", 0)) for row in r.domain_rows]
-    ax.plot(t_domain, nc, color="#1a7abf", label="compute")
-    ax.plot(t_domain, ns, color="#bf5a1a", label="storage")
-    ax.set_ylabel("nodes")
-    ax.set_xlabel("time (s)")
-    ax.set_title("Node counts")
-    ax.legend(fontsize=7)
-    shade_phases(ax, bounds, r.t0)
-    overlay_events(ax, r.events, r.t0)
+    ax3b.plot(t_domain, nc, color="#1a7abf", label="compute")
+    ax3b.plot(t_domain, ns, color="#bf5a1a", label="storage")
+    ax3b.set_ylabel("nodes")
+    ax3b.set_xlabel("time (s)")
+    ax3b.set_title("Node counts")
+    ax3b.legend(fontsize=7)
+    shade_phases(ax3b, bounds, r.t0)
+    overlay_events(ax3b, r.events, r.t0)
 
-    plt.tight_layout()
-    out_path = out_dir / "overview.png"
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
-    print(f"[cli_overview] wrote {out_path}")
+    fig3.tight_layout()
+    fig3.savefig(out_dir / "overview_throughput.png", dpi=150)
+    plt.close(fig3)
+    print(f"[cli_overview] wrote {out_dir / 'overview_throughput.png'}")
 
     _append_summary(out_dir / "summary.md", run_dir)
 
 
 def _append_summary(summary_path: Path, run_dir: Path) -> None:
     with summary_path.open("a", encoding="utf-8") as f:
-        f.write(f"\n## Overview\n\nSee `analysis/overview.png` — "
+        f.write(f"\n## Overview\n\nSee `analysis/overview_latency.png`, "
+                f"`analysis/overview_resources.png`, "
+                f"`analysis/overview_throughput.png` — "
                 f"generated from `{run_dir.name}`.\n")
 
 

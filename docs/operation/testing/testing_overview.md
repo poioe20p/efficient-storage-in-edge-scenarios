@@ -119,6 +119,28 @@ Key design decisions:
 
 ---
 
+## Golden Configuration
+
+The canonical workload sizing, mechanism toggles, and trigger thresholds that
+exercise all four architecture mechanisms are documented in the standalone
+reference: **[`golden_config.md`](golden_config.md)**.
+
+All values are encoded in
+[`current_state_integrated.env`](../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env).
+
+Canonical launch:
+
+```bash
+sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
+  OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
+  RUN_LABEL=<label> \
+  PHASES_CONFIG=testing/phases.json \
+  CLIENTS=8 DEVICES=600 NODES=100 \
+  SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
+```
+
+---
+
 ## Client-Facing Workload Requests
 
 The active client workload is deliberately simple and effectively read-only.
@@ -456,11 +478,11 @@ elasticity together on the same controller snapshot.
 
 Recommended launch shape:
 
-- use `CLIENTS=3`, `DEVICES=600`, and `NODES=100` so the run carries enough
-  storage-locality pressure to exercise Tier 2 while keeping one fixed seeded
-  snapshot for the whole integrated profile.
+- Use the [Golden Configuration](#golden-configuration) values above: `CLIENTS=8`,
+  `DEVICES=600`, `NODES=100`, and the full mechanism toggle and threshold
+  bundles from `current_state_integrated.env`.
 - keep the current integrated controller env unchanged, including
-  `SS_ENABLED=1`, `MAX_DYNAMIC_STORAGE=5`, and `MAX_DYNAMIC_COMPUTE=2`.
+  `SS_ENABLED=1`, `MAX_DYNAMIC_STORAGE=5`, and `MAX_DYNAMIC_COMPUTE=6`.
 - run the same integrated profile at least twice so readiness is judged on
   repeatability, not on a single lucky activation.
 - treat the storage-trigger and Tier 1 hotspot companion profiles as
@@ -567,6 +589,7 @@ for the current VIP pool and telemetry tracking model.
 ```
 docs/operation/testing/
 ├── testing_overview.md              ← this file
+├── golden_config.md                 ← canonical operating point (clients, thresholds, toggles)
 ├── testing_workloads.md             ← workload design & phase definitions
 ├── traffic_generator.md             ← traffic generator reference
 ├── edge_server_compute_load.md      ← compute.py & app.py changes

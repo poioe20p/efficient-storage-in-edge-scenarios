@@ -332,8 +332,56 @@ def main():
     coord_sub2.connect(args.lan2_coord_pub)
     coord_sub2.setsockopt_string(zmq.SUBSCRIBE, "")
 
-    # Latest coordinator frame keyed by network_id. Empty until first PUB.
-    coord_state_by_lan: dict[str, dict] = {}
+    # ── Coordinator-state storage ──────────────────────────────────────
+    # Two indexing strategies serve two different consumers:
+    #
+    # _coord_by_window[(network_id, window_end)] → frame
+    #   Exact-match lookup for ``consumed_at`` pairing.  The controller
+    #   publishes one frame per telemetry window it processes; the
+    #   collector joins by (network_id, window_end).  In push mode the
+    #   frame arrives near-synchronously with the telemetry row.  In poll
+    #   mode it may arrive many seconds later — rows that cannot be
+    #   matched immediately are buffered and flushed when the frame
+    #   arrives (or at shutdown with an empty ``consumed_at``).
+    #
+    # _coord_latest_by_lan[network_id] → frame
+    #   Latest-cached for Tier 1 ownership lookups via ``peer_lan``
+    #   (which LAN *owns the copy* of the other LAN's data).  This is
+    #   the pre-existing behaviour and is semantically correct for
+    #   Tier 1 — it is NOT used for ``consumed_at``.
+    _coord_by_window: dict[tuple[str, float], dict] = {}
+    _coord_latest_by_lan: dict[str, dict] = {}
+
+    # ── Row buffer for late-arriving coordinator frames ───────────────
+    # Each entry: (key, main_row, debug_row, summary, phase, ts_str,
+    #               network_id, window_end_raw)
+    _buffered_rows: list = []
+
+    def _try_flush_buffered(
+        match_lan: str, match_we: float, _frame: dict,
+    ) -> None:
+        """Write any buffered row whose (network_id, window_end) matches."""
+        nonlocal _buffered_rows
+        key = (match_lan, match_we)
+        remaining: list = []
+        for entry in _buffered_rows:
+            if entry[0] == key:
+                (_k, m_row, d_row, summ, ph, ts, nid, we_raw) = entry
+                # Patch consumed_at from the now-available coordinator frame
+                d_row["consumed_at"] = _frame.get("consumed_at", "")
+                writer.writerow(m_row)
+                csv_file.flush()
+                debug_writer.writerow(d_row)
+                debug_file.flush()
+                _emit_per_node_rows(
+                    per_node_writer, summ,
+                    phase=ph, ts=ts,
+                    network_id=nid, window_end=we_raw,
+                )
+                per_node_file.flush()
+            else:
+                remaining.append(entry)
+        _buffered_rows = remaining
 
     poller = zmq.Poller()
     poller.register(sub1, zmq.POLLIN)
@@ -387,8 +435,15 @@ def main():
                 except (zmq.ZMQError, json.JSONDecodeError):
                     continue
                 lan = frame.get("network_id")
+                we = frame.get("window_end")
                 if lan:
-                    coord_state_by_lan[lan] = frame
+                    _coord_latest_by_lan[lan] = frame
+                if lan and we is not None:
+                    _coord_by_window[(lan, float(we))] = frame
+                    # Flush any buffered telemetry row that matches this
+                    # coordinator frame (common in poll mode where the
+                    # telemetry row arrived minutes earlier).
+                    _try_flush_buffered(lan, float(we), frame)
 
             # Collect conntrack stats once per poll cycle (global on host).
             ct_stats = _collect_conntrack_stats()
@@ -436,18 +491,21 @@ def main():
                     "avg_repl_lag_ms":           avg_repl_lag,
                 }
                 # --- Broad debug row ---
+                # Tier 1 fields use peer_lan (which LAN *owns the copy*).
+                # consumed_at uses the SAME lan (which controller processed
+                # this summary), matched by window_end for exact pairing.
                 coord_lan = peer_lan(network_id) if network_id in ("lan1", "lan2") else network_id
+                t1_coord = _coord_latest_by_lan.get(coord_lan, {})
 
                 # Append Tier 1 lifecycle fields from the same helper used by the debug CSV.
-                t1 = build_tier1_row(summary, coord_state_by_lan.get(coord_lan, {}))
+                t1 = build_tier1_row(summary, t1_coord)
                 main_row["coord_state_owner_lan"] = t1.get("coord_state_owner_lan", "NONE")
                 main_row["tier1_lifecycle_active_count"] = t1.get("tier1_lifecycle_active_count", 0)
 
                 # Append conntrack entry counts (global on host — same for both LANs).
                 main_row["conntrack_entries_n1"] = ct_stats.get("conntrack_entries_n1", "")
                 main_row["conntrack_entries_n2"] = ct_stats.get("conntrack_entries_n2", "")
-                writer.writerow(main_row)
-                csv_file.flush()
+
                 debug_row = {
                     "timestamp":                   ts_str,
                     "phase":                       phase,
@@ -468,25 +526,59 @@ def main():
                     "avg_time_db_write_ms":        domain.get("avg_time_db_write_ms", ""),
                     "avg_time_db_cmd_count":       domain.get("avg_time_db_cmd_count", ""),
                 }
-                debug_row["consumed_at"] = coord_state_by_lan.get(
-                    coord_lan, {},
-                ).get("consumed_at", "")
 
-                debug_row.update(build_tier1_row(
-                    summary,
-                    coord_state_by_lan.get(coord_lan, {}),
-                ))
-                debug_writer.writerow(debug_row)
-                debug_file.flush()
+                # ── consumed_at: same-LAN, matched by window_end ────────
+                # Look up the coordinator frame that corresponds to THIS
+                # telemetry window.  In push mode the frame arrives
+                # near-synchronously and the lookup succeeds immediately.
+                # In poll mode the controller may not have processed this
+                # window yet — we buffer the row and flush it when the
+                # coordinator frame arrives (see _try_flush_buffered).
+                we_float = float(window_end) if window_end else 0.0
+                coord_key = (network_id, we_float)
+                matched_coord = _coord_by_window.get(coord_key, {})
+                debug_row["consumed_at"] = matched_coord.get("consumed_at", "")
 
-                _emit_per_node_rows(
-                    per_node_writer, summary,
-                    phase=phase, ts=ts_str,
-                    network_id=network_id, window_end=window_end,
-                )
-                per_node_file.flush()
+                debug_row.update(build_tier1_row(summary, t1_coord))
+
+                if matched_coord:
+                    # Coordinator frame already available — write immediately.
+                    writer.writerow(main_row)
+                    csv_file.flush()
+                    debug_writer.writerow(debug_row)
+                    debug_file.flush()
+                    _emit_per_node_rows(
+                        per_node_writer, summary,
+                        phase=phase, ts=ts_str,
+                        network_id=network_id, window_end=window_end,
+                    )
+                    per_node_file.flush()
+                else:
+                    # Coordinator frame not yet arrived — buffer for later.
+                    _buffered_rows.append(
+                        (coord_key, main_row, debug_row, summary,
+                         phase, ts_str, network_id, window_end)
+                    )
 
     finally:
+        # Flush any buffered rows that never received a coordinator frame
+        # (e.g., telemetry windows the controller skipped in poll mode).
+        if _buffered_rows:
+            print(f"[collect_resource_stats] flushing {len(_buffered_rows)} "
+                  f"buffered rows at shutdown", flush=True)
+            for entry in _buffered_rows:
+                (_k, m_row, d_row, summ, ph, ts, nid, we_raw) = entry
+                writer.writerow(m_row)
+                debug_writer.writerow(d_row)
+                _emit_per_node_rows(
+                    per_node_writer, summ,
+                    phase=ph, ts=ts,
+                    network_id=nid, window_end=we_raw,
+                )
+            csv_file.flush()
+            debug_file.flush()
+            per_node_file.flush()
+
         csv_file.close()
         debug_file.close()
         per_node_file.close()

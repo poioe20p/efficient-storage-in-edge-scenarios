@@ -33,6 +33,7 @@ class Run:
     all_client_rows: list[dict]          # aggregate client_requests.csv rows
     container_event_rows: list[dict]     # container_events.csv rows
     fault_event_rows: list[dict]         # experiment_fault_events.csv rows
+    controller_stats_rows: list[dict]    # controller_stats.csv (Phase 5 sampler)
     events: list[ElasticityEvent]
     t0: float                            # earliest window_end, for time normalisation
 
@@ -124,6 +125,7 @@ def load_run(run_dir: Path) -> Run:
 
     container_event_rows = _read_csv(run_dir / "container_events.csv", optional=True)
     fault_event_rows = _read_csv(run_dir / "experiment_fault_events.csv", optional=True)
+    controller_stats_rows = _read_csv(run_dir / "controller_stats.csv", optional=True)
 
     # Controller logs: controller_lan1.log, controller_lan2.log
     log_paths = [
@@ -145,6 +147,7 @@ def load_run(run_dir: Path) -> Run:
         all_client_rows=all_client_rows,
         container_event_rows=container_event_rows,
         fault_event_rows=fault_event_rows,
+        controller_stats_rows=controller_stats_rows,
         events=events,
         t0=t0,
     )

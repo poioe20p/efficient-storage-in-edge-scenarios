@@ -17,7 +17,7 @@ class ElasticityEvent:
     fields: Optional[dict] = field(default=None)
 
 
-_RE_TIMESTAMP = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)")
+_RE_TIMESTAMP = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d+)?)")
 
 _RE_ALERT = re.compile(
     r"alert submitted .*?(ComputeAlert|DataAlert)\(lan=(\d+)"
@@ -48,15 +48,23 @@ _RE_DOWN_CEILING = re.compile(
 
 
 def _parse_ts(line: str) -> float:
-    """Extract a Unix-epoch float from a log line timestamp, or 0.0."""
+    """Extract a Unix-epoch float from a log line timestamp, or 0.0.
+
+    Controller logs use Python's ``%(asctime)s`` which produces
+    comma-separated milliseconds in local time (e.g.
+    ``2026-06-14 00:38:25,822``).  We parse as UTC because the
+    controller and aggregator both use ``time.time()`` (UTC epoch)
+    for all other timestamps.
+    """
+    import calendar
     import time as _time
     m = _RE_TIMESTAMP.match(line)
     if not m:
         return 0.0
-    ts_str = m.group(1)
+    ts_str = m.group(1).replace(",", ".")
     for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
         try:
-            return _time.mktime(_time.strptime(ts_str, fmt))
+            return calendar.timegm(_time.strptime(ts_str, fmt))
         except ValueError:
             continue
     return 0.0

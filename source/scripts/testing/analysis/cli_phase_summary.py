@@ -2,7 +2,7 @@
 
 Produces <run_dir>/analysis/phase_summary.png with three panels:
   - latency percentiles by phase (mean, p50, p95, p99 grouped bars)
-  - max node counts by type per phase (compute, storage, selective grouped bars)
+  - node counts by type per phase (compute, storage, selective grouped bars)
   - per-LAN p95 latency by phase (LAN1 vs LAN2 side-by-side bars)
 
 Usage:
@@ -186,8 +186,8 @@ def run(run_dir: Path) -> None:
         values = [node_max_by_phase.get(p, {}).get(ntype, 0) for p in phases_present]
         ax.bar(x + offset * bar_width, values, bar_width, color=color, label=ntype, alpha=0.85)
 
-    ax.set_ylabel("max nodes")
-    ax.set_title("Max active nodes by type per phase")
+    ax.set_ylabel("nodes")
+    ax.set_title("Nodes by type per phase")
     ax.set_xticks(x)
     ax.set_xticklabels(phases_present, rotation=45, ha="right", fontsize=8)
     ax.legend(fontsize=8)

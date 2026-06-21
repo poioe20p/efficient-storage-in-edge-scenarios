@@ -82,6 +82,7 @@ Author `experiment_plan.md` with these sections:
 - Mirror the conventions of existing plans such as `docs/operation/testing/experiment_hybrid_recovery_validation.md`.
 - Use `execute` only for read-only code exploration or sanity checks (grep, reading config, dry-run inspection) — never to launch real experiment runs.
 - Keep documentation in order: place the plan in its experiment subfolder and link the code/docs it references.
+- **Declare-before-author workflow**: Before making any file changes, restate the requirements you understood, outline your plan (which files will be created/modified and what changes they'll receive), present the plan succinctly, and wait for explicit user approval. Read-only exploration (reading files, searching code, gathering context) does not require this gate — only file creation or modification does.
 
 ## Constraints
 
@@ -93,6 +94,7 @@ Author `experiment_plan.md` with these sections:
 - **DO** state the primary evidence focus explicitly (logs vs resources vs latency files).
 - **DO** keep the plan concise; split into linked files only when a single file becomes unwieldy.
 - **DO** ask for clarification when intent or success criteria are ambiguous.
+- **DO** declare requirements, outline the plan, and wait for user approval before editing or creating any file.
 
 ## Output Format
 

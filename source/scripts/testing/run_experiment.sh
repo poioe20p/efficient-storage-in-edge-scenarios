@@ -87,6 +87,9 @@ CONTAINER_EVENTS_FILTER="${CONTAINER_EVENTS_FILTER:-^(edge_|sel_sync_|nat-router
 # PID of the background stats collector (set by run_collect_stats)
 STATS_PID=""
 
+# PID of the controller overhead sampler (set by run_sample_controller_stats)
+CONTROLLER_STATS_PID=""
+
 # PIDs for controller log capture (set by run_capture_controller_logs)
 CONTROLLER_LOG_PID1=""
 CONTROLLER_LOG_PID2=""
@@ -405,6 +408,34 @@ stop_collect_stats() {
 }
 
 # ---------------------------------------------------------------------------
+# Step 4c — Controller overhead sampler
+# ---------------------------------------------------------------------------
+
+CONTROLLER_STATS_OUTPUT="${RUN_DIR}/controller_stats.csv"
+
+run_sample_controller_stats() {
+    step "Starting controller overhead sampler"
+    echo "  Containers : osken, osken_2"
+    echo "  Interval   : 5s"
+    echo "  Output     : ${CONTROLLER_STATS_OUTPUT}"
+    python3 "${SCRIPT_DIR}/sample_controller_stats.py" \
+        --output "${CONTROLLER_STATS_OUTPUT}" \
+        --phase-file "${PHASE_FILE}" \
+        --interval 5 \
+        --containers osken,osken_2 &
+    CONTROLLER_STATS_PID=$!
+    echo "  Sampler PID: ${CONTROLLER_STATS_PID}"
+}
+
+stop_sample_controller_stats() {
+    [[ -z "${CONTROLLER_STATS_PID:-}" ]] && return 0
+    echo; echo "==> Stopping controller overhead sampler (PID ${CONTROLLER_STATS_PID})"
+    kill -TERM "$CONTROLLER_STATS_PID" 2>/dev/null || true
+    wait "$CONTROLLER_STATS_PID" 2>/dev/null || true
+    CONTROLLER_STATS_PID=""
+}
+
+# ---------------------------------------------------------------------------
 # Step 4b — Capture controller logs (docker logs -f)
 # ---------------------------------------------------------------------------
 
@@ -592,13 +623,14 @@ echo " Dry-run     : ${DRY_RUN}"
 echo "======================================================"
 
 # Stop the run-scoped helpers on any exit (normal, error, or signal)
-trap 'stop_fault_injector; stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_collect_stats; cleanup_temp_controller_env' EXIT
+trap 'stop_fault_injector; stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_sample_controller_stats; stop_collect_stats; cleanup_temp_controller_env' EXIT
 
 prepare_run_outputs
 "$SKIP_CLIENTS"  || run_create_clients
 "$SKIP_SEED"     || run_seed
 "$SKIP_SNAPSHOT" || run_snapshot
 run_collect_stats
+run_sample_controller_stats
 run_capture_controller_logs
 run_capture_service_logs
 run_fault_injector
@@ -607,6 +639,7 @@ run_traffic
 stop_fault_injector
 stop_poll_container_events
 stop_capture_service_logs
+stop_sample_controller_stats
 stop_collect_stats
 
 # Post-run artifact reconstruction

@@ -1,6 +1,6 @@
 # RQ1 Telemetry Freshness Measurement — Implementation Plan
 
-> **Status:** Approved · **Date:** 2026-06-11
+> **Status:** Phases 1–3 ✅ implemented; Phases 4–6 — see `rq1_analysis_tooling_plan.md` · **Date:** 2026-06-12
 > **Parent:** `tese/miscelineous/system_to_thesis_map_rq_v2.md` § RQ1
 > **Mode:** Edge Planning Architect — plan only, no implementation until approved.
 
@@ -20,97 +20,80 @@ from every experiment run artifact and rendered as graphs/tables under
 
 ---
 
-## Phase 1 — Timing Instrumentation (consumed_at)
+## Phase 1 — Timing Instrumentation (consumed_at)  ✅ Implemented
 
 **Goal:** Record when the controller consumes each telemetry summary so
-staleness = `consumed_at_mono - window_end` can be computed post-hoc.
+staleness = `consumed_at - window_end` can be computed post-hoc.
 
-### Step 1.1 — Add `consumed_at_mono` to CoordinatorStatePublisher
+### Step 1.1 — Add `consumed_at` to CoordinatorStatePublisher
 
 **File:** `source/sdn_controller/selective_sync/state_publisher.py`
 
-- Add required `consumed_at_mono: float` parameter to `publish()`.
-- Always include it in the JSON payload.
-- Update both callers (`main_n1.py`, `main_n2.py`) to pass it.
+- Add required `consumed_at: float` parameter to `publish()`.
+- Always include it in the JSON payload as `"consumed_at"`.
+- Update both callers (`main_n1.py`, `main_n2.py`) to pass `time.time()`.
 
 ```python
 # state_publisher.py — signature change
 def publish(self, network_id: str, window_end: float,
             snapshot: dict[str, Tier1OwnerState],
-            consumed_at_mono: float) -> None:
+            consumed_at: float) -> None:
     ...
     payload = {
         "network_id": network_id,
         "window_end": window_end,
-        "consumed_at_mono": consumed_at_mono,
+        "consumed_at": consumed_at,
         "owners": {k: asdict(v) for k, v in snapshot.items()},
     }
 ```
 
-### Step 1.2 — Record consumed_at_mono in the mediator
+### Step 1.2 — Record consumed_at in the mediator
 
 **File:** `source/sdn_controller/main_n2.py` (and mirror in `main_n1.py`)
 
-- At the top of `_on_telemetry_update`, record `time.monotonic()`.
+- At the top of `_on_telemetry_update`, record `time.time()`.
 - Pass it to `_coordinator_state_publisher.publish()`.
+- Record BEFORE the `network_id` early-return guard.
 
 ```python
-# main_n2.py — in _on_telemetry_update, before the early-returns
 def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
-    consumed_at_mono = time.monotonic()
-  
-    if summary.network_id != self._lan_id:
-        ...
+    consumed_at = time.time()
     ...
-    # Existing publish call, add the new argument:
     self._coordinator_state_publisher.publish(
         summary.network_id,
         summary.window_end,
         self._selective_sync_coordinator.snapshot(),
-        consumed_at_mono=consumed_at_mono,   # ← NEW
+        consumed_at=consumed_at,
     )
 ```
 
-- **Important:** Record `consumed_at_mono` BEFORE the `network_id` early-return
-  guard, or the peer-LAN summaries won't get timestamps (and we want both).
-
-### Step 1.3 — Merge consumed_at_mono into resource_stats_debug.csv
+### Step 1.3 — Merge consumed_at into resource_stats_debug.csv
 
 **File:** `source/scripts/testing/collect_resource_stats.py`
 
-- In the debug CSV fieldnames, add `"consumed_at_mono"`.
-- When a coordinator-state frame carries `consumed_at_mono`, include it in
-  the debug row.
+- Add `"consumed_at"` to `DEBUG_FIELDNAMES` (last before Tier 1 columns).
+- Extract from the coordinator-state frame in the writer loop.
 
 ```python
-# collect_resource_stats.py
 DEBUG_FIELDNAMES = [
     ...
     "avg_time_db_cmd_count",
-    "consumed_at_mono",          # ← NEW (last before Tier 1 columns)
+    "consumed_at",
 ] + TIER1_ALL_COLUMNS
+
+debug_row["consumed_at"] = coord_state_by_lan.get(...).get("consumed_at", "")
 ```
-
-- In the writer loop, extract from the coordinator frame:
-
-```python
-debug_row["consumed_at_mono"] = coord_frame.get("consumed_at_mono", "")
-```
-
-(The `.get` with default keeps the collector robust against old controllers
-that haven't been updated yet, but after Phase 1 deployment the field is
-always present.)
 
 ### Step 1.4 — Verify
 
-- Run a short experiment, only with user permission.
-- Confirm `resource_stats_debug.csv` has non-empty `consumed_at_mono` values.
-- Confirm staleness = `consumed_at_mono - window_end` yields sane values
-  (sub-second for push mode).
+- Run a short experiment.
+- Confirm `resource_stats_debug.csv` has non-empty `consumed_at` values.
+- Confirm staleness = `consumed_at - window_end` yields sane values
+  (sub-second for push mode, both fields use `time.time()` on same host).
 
 ---
 
-## Phase 2+3 — Polling Mechanism (Aggregator Cache + PollingTelemetrySource)
+## Phase 2+3 — Polling Mechanism (Aggregator Cache + PollingTelemetrySource) ✅ Implemented
 
 > **Documentation:** `docs/operation/telemetry/controller_side/controller_telemetry_consumer.md` § 4 & § 10;
 > `docs/operation/telemetry/aggregation_publication/aggregator.md` § 13;
@@ -134,6 +117,11 @@ always present.)
 
 ## Phase 4 — RQ1 Analysis CLIs
 
+> **Detailed plan:** `rq1_analysis_tooling_plan.md` § Phase 4a & 4b
+> The complementary plan covers: `cli_rq1_timings.py` (staleness + reaction
+> latency), `cli_rq1_overhead.py` (CPU/RAM overhead), code sketches,
+> integration points, and edge cases.
+
 **Goal:** Produce graphs and tables from run artifacts that answer RQ1.
 
 ### Step 4.1 — New CLI: `cli_rq1_timings`
@@ -142,7 +130,7 @@ always present.)
 
 **Inputs:**
 
-- `resource_stats_debug.csv` (has `window_end`, `consumed_at_mono`)
+- `resource_stats_debug.csv` (has `window_end`, `consumed_at`)
 - Controller logs via `events.py` (has `alert`, `spawn_start`, `spawn_done`)
 - `phases_snapshot.json` (phase boundaries)
 
@@ -157,8 +145,9 @@ always present.)
 
 **Computation:**
 
-- Staleness: `consumed_at_mono - window_end` for each debug row. Plot against
-  `window_end` aligned to t0.
+- Staleness: `consumed_at - window_end` for each debug row. Both fields use
+  `time.time()` (wall clock) on the same Docker host — directly comparable.
+  Plot against `window_end` aligned to t0.
 - Reaction latency segments:
   - `breach_to_alert_s`: `alert_ts - window_end_of_triggering_summary` (join
     alert events to the most recent debug row before the alert)
@@ -169,6 +158,9 @@ always present.)
 ### Step 4.2 — New CLI: `cli_rq1_overhead`
 
 **File:** `source/scripts/testing/analysis/cli_rq1_overhead.py` (new)
+
+**Depends on:** Phase 5 (`sample_controller_stats.py` → `controller_stats.csv`).
+Not executable until the overhead sampler is implemented.
 
 **Inputs:** `controller_stats.csv` (produced by Phase 5 sampler)
 
@@ -187,6 +179,8 @@ always present.)
 ---
 
 ## Phase 5 — Controller Overhead Sampler
+
+> **Detailed plan:** `rq1_analysis_tooling_plan.md` § Phase 5
 
 **Goal:** Periodically sample controller container CPU/RAM during experiments.
 
@@ -221,6 +215,8 @@ timestamp, container, cpu_percent, mem_usage_mb
 ---
 
 ## Phase 6 — False Positive/Negative Classification
+
+> **Detailed plan:** `rq1_analysis_tooling_plan.md` § Phase 6
 
 **Goal:** Classify each scaling decision as correct, premature, delayed, or
 missed by correlating against the workload phase structure.
@@ -267,7 +263,7 @@ or create `cli_rq1_decision_quality.py` (new).
 | New      | `source/scripts/testing/analysis/cli_rq1_overhead.py`                                           | 4     |
 | New      | `source/scripts/testing/sample_controller_stats.py`                                             | 5     |
 | Edit     | `source/scripts/testing/run_experiment.sh`                                                      | 5     |
-| New/Edit | `source/scripts/testing/analysis/cli_rq1_decision_quality.py` (or extend `cli_scale_down.py`) | 6     |
+| New      | `source/scripts/testing/analysis/rq1/cli_rq1_decision_quality.py`                            | 6     |
 | Edit     | `docs/operation/testing/analysis_toolchain.md`                                                  | 4,6   |
 
 ---
@@ -294,11 +290,11 @@ Phases 3, 4, 6 depend on earlier infrastructure.
 
 ## Edge-Specific Considerations
 
-- **Staleness vs monotonic clocks:** `window_end` uses `time.time()` (wall
-  clock), `consumed_at_mono` uses `time.monotonic()`. These are NOT
-  comparable across the network. The aggregator and controller run on the
-  same Docker host in our topology, so clock skew is negligible. Document
-  this assumption.
+- **Staleness vs wall clock:** Both `window_end` and `consumed_at` use
+  `time.time()` (wall clock). The aggregator and controller run on the
+  same Docker host, so clock skew is negligible. `time.time()` can drift
+  under NTP correction but the effect is sub-second on a single host for
+  the duration of a typical experiment run.
 - **Polling mechanism edge considerations:** See
   `docs/operation/telemetry/aggregation_publication/aggregator.md` § 13 for HTTP
   server threading, polling overhead, cache-miss-on-startup, and aggregator
@@ -310,6 +306,6 @@ Phases 3, 4, 6 depend on earlier infrastructure.
 
 | File                                               | Update                                                                                                                                |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/operation/testing/analysis_toolchain.md`   | Add entries for `cli_rq1_timings`, `cli_rq1_overhead`, `cli_rq1_decision_quality`; add `consumed_at_mono` to debug CSV schema |
+| `docs/operation/testing/analysis_toolchain.md`   | Add entries for `cli_rq1_timings`, `cli_rq1_overhead`, `cli_rq1_decision_quality`; add `consumed_at` to debug CSV schema |
 | `docs/operation/telemetry/telemetry_overview.md` | Document polling source and aggregator HTTP cache endpoint |
 | `docs/operation/testing/testing_overview.md`     | Add `controller_stats.csv` artifact and `sample_controller_stats.py`                                                              |
