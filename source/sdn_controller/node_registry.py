@@ -64,12 +64,21 @@ class DynamicNodeRegistry:
 
     def sync(self, elasticity: ElasticityManager) -> None:
         """Consume removal and addition completions from Thread 3."""
-        for mac in elasticity.consume_removal_completions():
+        for mac, name in elasticity.consume_removal_completions():
+            existing = self._active.get(mac)
+            if existing is not None and existing.name != name:
+                logger.warning(
+                    "[registry] skipping stale removal for mac=%s — "
+                    "expected name=%r but _active has name=%r "
+                    "(MAC was recycled after removal was submitted)",
+                    mac, name, existing.name,
+                )
+                continue
             self._dynamic_node_macs.discard(mac)
             self._absent_window_count.pop(mac, None)
             self._active.pop(mac, None)
             self._birth_ts.pop(mac, None)
-            logger.info("[registry] removed MAC %s from tracking after cleanup", mac)
+            logger.info("[registry] removed MAC %s from tracking after cleanup (name=%s)", mac, name)
 
         for info in elasticity.consume_addition_completions():
             self._dynamic_node_macs.add(info.mac)
@@ -173,7 +182,14 @@ class DynamicNodeRegistry:
     def mark_storage_reserve_ready(self, mac: str) -> None:
         """Move the reserve identified by *mac* to READY_RESERVED."""
         info = self.get_node_info(mac)
-        if info is None or not info.standby_reserved:
+        if info is None:
+            logger.warning(
+                "[reserve] mark_storage_reserve_ready called for mac=%s "
+                "but _active lookup returned None — slot NOT marked ready",
+                mac,
+            )
+            return
+        if not info.standby_reserved:
             logger.warning("[reserve] mark_storage_reserve_ready for non-reserved mac=%s — ignoring", mac)
             return
         slot = self._ensure_reserve_slot(info.lan)
@@ -256,15 +272,51 @@ class DynamicNodeRegistry:
     def consume_ready_storage_reserve(self, lan: int) -> NodeInfo | None:
         """Consume the ready reserve for *lan* and return its NodeInfo.
 
-        Returns None if no ready reserve exists. Clears the slot back to NONE.
+        Constructs NodeInfo from the slot's stored identity — does NOT
+        require the node to be present in ``_active`` (survives MAC
+        recycling collisions).  On success the node is re-added or
+        updated in ``_active`` so scale-down and absent detection continue
+        to work.  The slot is cleared ONLY on success.
+
+        Returns None if no ready reserve exists.
         """
         slot = self._ensure_reserve_slot(lan)
         if slot.state != "READY_RESERVED" or not slot.mac:
             return None
-        info = self.get_node_info(slot.mac)
-        # Capture identity before clearing the slot so the log line is accurate.
-        activated_name = info.name if info else "?"
-        activated_ip   = info.ip if info else "?"
+
+        # ── Build NodeInfo from slot identity (self-contained) ──────────
+        # Prefer the live _active entry for optional fields, but never
+        # require it — the slot is the authoritative source for activation.
+        existing = self.get_node_info(slot.mac)
+        if existing is None:
+            logger.warning(
+                "[reserve] slot has mac=%s name=%s but _active lookup returned None "
+                "— constructing NodeInfo from slot (likely MAC recycling collision)",
+                slot.mac, slot.name,
+            )
+            info = NodeInfo(
+                mac=slot.mac,
+                lan=lan,
+                network_id=f"lan{lan}",
+                name=slot.name,
+                ip=slot.ip,
+                node_type="storage",
+                standby_reserved=True,
+            )
+            # Re-add to _active so scale-down / absent detection work.
+            self._active[slot.mac] = info
+            self._dynamic_node_macs.add(slot.mac)
+            self._birth_ts[slot.mac] = time.monotonic()
+            logger.info(
+                "[reserve] re-added mac=%s to _active after slot-based reconstruction",
+                slot.mac,
+            )
+        else:
+            info = existing
+
+        # ── Clear the slot ONLY on success ─────────────────────────────
+        activated_name = info.name
+        activated_ip   = info.ip
         activated_mac  = slot.mac
         activated_reason = slot.pending_reason or "load"
         slot.state = "NONE"

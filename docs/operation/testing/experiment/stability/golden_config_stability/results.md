@@ -100,7 +100,19 @@ Run A revealed three issues: (1) `state.py:158` bug blocking storage scale-down,
 
 3. **System throughput degraded 29% between runs** (new evidence). Run A processed 115,146 requests; Run B processed 82,176. This is consistent with the resource-degradation hypothesis — something on the LAN2 path (kernel conntrack table, OVS datapath, iptables rules, Docker bridge) accumulates state that is not fully cleaned between runs, and the second run starts with degraded capacity.
 
-4. **Storage reserve never activates under the integrated workload** (observation). 0 `[reserve] activated` events in either run. The t12 threshold (0.12) was chosen from a dedicated storage-reserve probe workload with 90% device_status mix. The integrated `phases.json` workload has a more diverse mix (dashboard, service_pressure) that produces a different storage stress profile. The reserve path itself is proven usable (from `storage_reserve_use_validation`), but the trigger threshold needs recalibration for the integrated workload shape.
+4. **Storage reserve is prepared but activation is blocked by a MAC-recycling bug** (root cause found 2026-06-25). Reserve standby nodes are spawned correctly (`prepare_standby_storage`) and reach `READY_RESERVED` state. However, `consume_ready_storage_reserve()` returns `None` because the node's MAC was removed from `_active` by a late cleanup completion for a different (already-removed) node that shared the same MAC. The `IpAllocator` recycles deterministic IP→MAC mappings, so when a Tier 1 node is removed and its IP is released, the next reserve allocation gets the same MAC. A subsequent late cleanup for the old Tier 1 node then removes the new reserve from `_active`. The slot is destructively cleared on failure.
+
+**Timeline** (golden_config_a, lan1):
+- `14:41:59` Tier 1 `sel_sync_lan1_dyn4` spawned (MAC `00:00:00:00:01:07`)
+- `14:46:01` `sel_sync_lan1_dyn4` cleanup done → MAC released to pool
+- `14:46:43` Reserve `edge_storage_lan1_dyn7` spawned — **same MAC** (`00:00:00:00:01:07`)
+- `14:46:56` `dyn7` SECONDARY → slot READY_RESERVED
+- `14:49:10` Late cleanup for `sel_sync_lan1_dyn4` removes MAC from `_active` → **new reserve `dyn7` clobbered**
+- `14:50:51` `consume_ready_storage_reserve` returns None → slot cleared → `DataAlert` fallback spawns `dyn10`
+
+**Two bugs**: **(B1)** `sync()` removes from `_active` by MAC without verifying it's the same node. **(B2)** `consume_ready_storage_reserve` clears the slot destructively on failure.
+
+**Implications for golden config**: `storage_count` 2→8 but most nodes were idle standbys without VIP. The only functional storage scaling was the single `DataAlert` direct spawn (`dyn10`). The `[reserve] activated` log (INFO level) was never emitted because activation failed — it is NOT a log-level or DEBUG-vs-INFO issue. The evidence previously cited (lifecycle timings: `rs_join_s=0`, `docker_run_s`) was misinterpreted; `rs_join_s=0` for all node types. The definitive evidence is in the controller logs.
 
 5. **Conntrack, Tier 1, and compute mechanisms all exercise correctly** (confirmed). Conntrack entries present (n1=52, n2=39), zero epoch rotations, Tier 1 reaches ACTIVE in both directions, compute scales up/down. These mechanisms are not implicated in the LAN2 failure.
 
@@ -311,7 +323,7 @@ Runs A and B established that: (1) the `state.py` fix works (tracebacks eliminat
 
 3. **Investigate `demand_drop` LAN2 degradation in Run A** — Run A had edge_server_n2 healthy but LAN2 still accumulated 26.4% failure in `demand_drop`. This phase is 360s at 1 req/s with 0% cross-region — the lowest load in the entire run. The degradation pattern (LAN2 only, worsens over time) may be related to the same underlying issue that triggers the SIGSEGV under higher load.
 
-4. **Consider lowering storage reserve threshold for integrated workload** — the t12 threshold (0.12) was tuned on a dedicated probe (90% device_status). Under the integrated `phases.json` workload, the storage trigger score may never reach 0.12. Either lower the threshold or accept that reserve activation is workload-shape-dependent.
+4. **Fix MAC-recycling collision in `node_registry.py`** — the reserve mechanism prepares standby nodes correctly but activation is blocked by a late-cleanup collision. `sync()` removes nodes from `_active` by MAC without verifying node identity, so a recycled MAC causes innocent reserve nodes to be removed. `consume_ready_storage_reserve` must be self-contained (construct `NodeInfo` from slot data, not dependent on `_active`), and the slot must not be cleared destructively on failure. See §4 timeline above for the full trace.
 
 ## Changelog
 

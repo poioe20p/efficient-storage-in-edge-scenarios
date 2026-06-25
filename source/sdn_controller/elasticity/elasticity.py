@@ -325,7 +325,7 @@ class ElasticityManager:
         self._addition_complete_lock  = threading.Lock()
         self._addition_complete_infos: list[NodeInfo] = []
         self._removal_complete_lock   = threading.Lock()
-        self._removal_complete_macs:  set[str] = set()
+        self._removal_complete_entries: list[tuple[str, str]] = []  # [(mac, container_name), ...]
 
         # Reserve-specific outcome queues (Thread 3 → Thread 2).
         # Per-LAN ownership — one controller must never drain the other LAN's failures.
@@ -456,11 +456,16 @@ class ElasticityManager:
             result, self._addition_complete_infos = list(self._addition_complete_infos), []
         return result
 
-    def consume_removal_completions(self) -> set[str]:
-        """Called by Thread 2 to collect MACs of fully removed nodes."""
+    def consume_removal_completions(self) -> list[tuple[str, str]]:
+        """Called by Thread 2 to collect (mac, container_name) pairs of fully removed nodes.
+
+        Each pair carries the container name so the registry can verify that
+        the MAC has not been recycled by a newer node before removing it.
+        """
         with self._removal_complete_lock:
-            # Thread safe swap: return current set and reset to empty for next round of removals.
-            result, self._removal_complete_macs = set(self._removal_complete_macs), set()
+            # Thread safe swap: return current list and reset to empty for next round of removals.
+            result = list(self._removal_complete_entries)
+            self._removal_complete_entries.clear()
         return result
 
     def get_active_operations(self) -> list[dict]:
@@ -831,7 +836,7 @@ class ElasticityManager:
             if alert.ip:
                 self._get_allocator(alert.lan).release(alert.ip)
             with self._removal_complete_lock:
-                self._removal_complete_macs.add(alert.mac)
+                self._removal_complete_entries.append((alert.mac, alert.container_name))
             return
 
         pending.ip = alert.ip
@@ -869,7 +874,7 @@ class ElasticityManager:
 
         # Notify Thread 2 that this MAC has been fully cleaned up.
         with self._removal_complete_lock:
-            self._removal_complete_macs.add(alert.mac)
+            self._removal_complete_entries.append((alert.mac, pending.container_name))
 
         if result.success:
             logger.info("[elasticity] cleanup_compute done: container=%s", pending.container_name)
@@ -926,7 +931,7 @@ class ElasticityManager:
 
         # Notify Thread 2 regardless of success so stale tracking is cleared.
         with self._removal_complete_lock:
-            self._removal_complete_macs.add(alert.mac)
+            self._removal_complete_entries.append((alert.mac, alert.container_name))
 
         if result.success:
             logger.info("[elasticity] scale_down_data done: container=%s", alert.container_name)
@@ -1112,7 +1117,7 @@ class ElasticityManager:
             )
             self._get_allocator(alert.lan).release(alert.ip)
             with self._removal_complete_lock:
-                self._removal_complete_macs.add(alert.mac)
+                self._removal_complete_entries.append((alert.mac, alert.container_name))
             if self._coordinator and alert.owner_lan:
                 self._coordinator.on_cleanup_complete(alert.owner_lan)
             return
@@ -1191,7 +1196,7 @@ class ElasticityManager:
             self._get_allocator(pending.lan).release(pending.ip)
 
         with self._removal_complete_lock:
-            self._removal_complete_macs.add(alert.mac)
+            self._removal_complete_entries.append((alert.mac, pending.container_name))
 
         if result.success:
             if self._coordinator is not None and pending.owner_lan:

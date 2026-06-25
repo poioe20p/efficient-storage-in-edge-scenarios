@@ -3,7 +3,7 @@
 The canonical infrastructure sizing, mechanism toggles, and trigger thresholds
 that exercise Tier 2 storage reserve, Tier 1 selective-sync, compute elasticity,
 and conntrack VIP_DATA routing. These values were confirmed across stability
-experiments spanning 2026-06-05 to 2026-06-10.
+experiments spanning 2026-06-05 to 2026-06-25.
 
 All toggles and thresholds are encoded in
 [`current_state_integrated.env`](../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env).
@@ -68,10 +68,28 @@ acceptable? Choose or create the phases file that answers those questions.
 
 The activation boundary is $0.12 < \tau \leq 0.15$.
 **t12 (0.12)** is the highest threshold that still activates the reserve under
-the integrated workload — avoids over-sensitivity while ensuring the mechanism
-fires. Determined by
+the probe workload used for calibration — avoids over-sensitivity while ensuring
+the mechanism fires. Determined by
 [`storage_reserve_threshold_sweep`](experiment/stability/storage_reserve_threshold_sweep/results.md):
 t08 cycles, t12 stable, t20 never activates.
+
+**✅ Fixed (2026-06-25):** A MAC-recycling collision previously blocked reserve
+activation — when a Tier 1 node was removed and its MAC recycled for a new
+reserve, a late cleanup completion for the old node removed the new reserve
+from `_active`, causing `consume_ready_storage_reserve()` to return `None`.
+Two-part fix applied and verified across the fix-verified pair:
+
+- **Name-aware removal completions** — `sync()` now checks container name
+  before removing from `_active`, preventing stale cleanups from clobbering
+  nodes that reuse the same MAC.
+- **Self-contained slot activation** — `consume_ready_storage_reserve()`
+  constructs `NodeInfo` from slot data without depending on `_active` lookup.
+
+**Fix verification**: 7 `[reserve] activated` events across the pair (vs 0
+in all prior runs). The stale-removal guard triggered once — a late Tier 1
+cleanup was correctly skipped because a compute node now occupied the MAC.
+Zero "consume returned None" warnings. See
+[`golden_config_stability/results.md`](experiment/stability/golden_config_stability/results.md) §6–§7.
 
 | Parameter | Value | Notes |
 |---|---|---|

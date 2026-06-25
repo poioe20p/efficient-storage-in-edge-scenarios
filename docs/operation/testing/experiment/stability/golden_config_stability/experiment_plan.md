@@ -1,6 +1,6 @@
 # Experiment Plan — Golden Configuration Stability Gate
 
-**Status**: 🔴 Executed — gate blocked by systematic `edge_server_n2` SIGSEGV (2/3 runs). Run A (1.6%) shows configuration is correct. See [results.md](results.md).
+**Status**: ✅ **Gate passed — 2026-06-25 fix-verified pair.** Run A: 0.18%, Run B: 0.41%. Both ≤3% gate. 7 reserve activations (vs 0). Zero tracebacks. Zero stale containers. No SIGSEGV. See [results.md](results.md).
 **Date**: 2026-06-09.
 **Supersedes**: [current_state_long_cycle](../current_state_long_cycle/experiment_plan.md) v5.6 as the definitive integrated baseline.
 
@@ -243,4 +243,5 @@ Expected later analysis outputs:
 | Date | Change | Rationale |
 |------|--------|-----------|
 | 2026-06-09 | Run C (`golden_config_c`) executed — `edge_server_n2` SIGSEGV confirmed systematic (crash at T+79s, 2 of 3 runs). Code fixes confirmed working (0 tracebacks, improved cleanup). Gate blocked by single defect: `edge_server_n2` exit code 139. Run A (1.6% overall, all mechanisms exercise) demonstrates what the system delivers when edge_server_n2 stays healthy. | [results.md](results.md) §3 — Run C narrative and revised root cause analysis. |
+| 2026-06-25 | Storage reserve MAC-recycling root cause found and fixed (`node_registry.py` + `elasticity.py`). Fix-verified pair executed: Run A 0.18%, Run B 0.41% — both under 3% gate. 7 reserve activations (vs 0 in v1/v2). Zero tracebacks. Zero stale containers. No SIGSEGV. Gate passed. Golden configuration confirmed stable. | [results.md](results.md) §6–§7 — v3 narrative and full criteria assessment. |
 <!-- end -->

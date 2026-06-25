@@ -278,3 +278,76 @@ Use this as the implementation handoff map.
    and becomes ordinary active dynamic storage.
 6. Replenishment must prepare a new reserve node. It must not try to turn the
    just-activated node back into a reserve later.
+
+## Bug Fix: MAC Recycling Collision (2026-06-25)
+
+### Discovery
+
+Analysis of the `golden_config_a` experiment (2026-06-09) revealed that the
+storage persistent reserve was **prepared but never activated**. Reserve nodes
+were spawned, joined the replica set, and reached `READY_RESERVED` — but
+activation (`[reserve] activated`) never occurred. The root cause was a **MAC
+recycling collision** between late removal completions and newly spawned
+reserve nodes.
+
+### Root Cause
+
+The `IpAllocator` deterministically derives MAC addresses from IP suffixes
+(e.g. IP `10.0.0.7` → MAC `00:00:00:00:01:07`). When an old node is removed
+and its IP released, the next allocation reuses the **same MAC**.
+
+The collision sequence:
+
+1. Node A (e.g. `sel_sync_lan1_dyn4`, Tier 1 selective sync) is cleaned up.
+   Its MAC goes into `_removal_complete_macs`.
+2. Node A's IP is released to the pool.
+3. The reserve mechanism allocates a new node (e.g. `edge_storage_lan1_dyn7`),
+   getting the **same MAC**. The new node is added to `_active`.
+4. `mark_storage_reserve_ready` stores the MAC in the reserve slot.
+5. A **second cleanup finalization** for Node A fires (e.g. "already absent —
+   finalizing cleanup state"), pushing the MAC into `_removal_complete_macs`
+   again.
+6. Thread 2's `sync()` consumes the stale removal completion →
+   `_active.pop(mac)` removes the **new** reserve node from tracking.
+7. `consume_ready_storage_reserve` calls `get_node_info(slot.mac)` → returns
+   `None`. The slot is cleared destructively, losing the reserve.
+8. The DataAlert fallback spawns a direct node, which gets the **same MAC
+   again**.
+
+### Fix Applied (Two-Part)
+
+**Part A — Name-aware removal completions** (`elasticity.py` +
+`node_registry.py`):
+
+- `_removal_complete_macs: set[str]` → `_removal_complete_entries:
+  list[tuple[str, str]]` storing `(mac, container_name)`.
+- In `DynamicNodeRegistry.sync()`, a removal is only applied if
+  `_active[mac].name` matches the completion's container name. Stale removals
+  are skipped with a warning log.
+- All 5 removal completion call sites now push `(mac, container_name)`.
+
+**Part B — Self-contained reserve activation** (`node_registry.py`):
+
+- `consume_ready_storage_reserve` no longer depends on `_active` lookup.
+  It constructs a `NodeInfo` from the slot's stored identity (`mac`, `ip`,
+  `name`, `lan`).
+- On success, if the node is missing from `_active`, it is re-added so
+  scale-down and absent detection continue to work.
+- The slot is **never cleared on failure** — preventing the destructive read
+  that permanently lost the reserve.
+
+**Part C — Diagnostic logging** (`node_registry.py`):
+
+- `mark_storage_reserve_ready` now logs a distinct warning when
+  `_active` lookup returns `None` (previously folded into the generic
+  "non-reserved" warning).
+- `consume_ready_storage_reserve` logs when it reconstructs a `NodeInfo`
+  from slot data due to a missing `_active` entry.
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `source/sdn_controller/elasticity/elasticity.py` | Field type change, `consume_removal_completions` signature, 5 call sites |
+| `source/sdn_controller/node_registry.py` | `sync()` name check, `consume_ready_storage_reserve` rewrite, `mark_storage_reserve_ready` diagnostic split |
+
