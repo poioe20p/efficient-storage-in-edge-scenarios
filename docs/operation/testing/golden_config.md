@@ -129,6 +129,8 @@ the standard deployment, not configuration knobs:
 |---|---|---|
 | Conntrack VIP_DATA routing | [`conntrack_routing`](experiment/stability/conntrack_routing/results.md) | Eliminates stale-rule → AutoReconnect cascade. Compute: 56–65 % → 1.4 %. Zero epoch rotations. |
 | Cross-LAN veth TX queue (`txqueuelen=10000`) | [`wan_http0_root_cause`](experiment/stability/wan_http0_root_cause/results.md) | Eliminates TCP collapse on LAN2. 426× improvement. R2: 0.05 % overall. |
+| MAC-recycling collision in `node_registry.py` | [`golden_config_stability`](experiment/stability/golden_config_stability/results.md) §6–§7 | Reserve activation: 0 → 7 `[reserve] activated`. Name-aware removal (B1) + self-contained slot activation (B2). Fixed 2026-06-25. |
+| Virtual-MAC mismatch in `resolve_peer_primary()` | [`rq1_evaluation`](experiment/rq1_evaluation/results.md) §8 | Tier 1 bidirectional activation: unidirectional → bidirectional. `_peer_storage_roles` uses real Docker MACs but `resolve_peer_primary()` was looking them up by virtual MACs. Fixed 2026-06-26. |
 
 ## Canonical Launch Command
 

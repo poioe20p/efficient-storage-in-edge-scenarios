@@ -1,0 +1,66 @@
+{
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_s": 60,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 1.0,
+      "mix": {
+        "device_status": 0.60,
+        "dashboard": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "hotspot_lan2_to_lan1",
+      "duration_s": 180,
+      "rate_per_client": 6.0,
+      "cross_region_ratio": 0.95,
+      "hotspot_direction": "lan2_to_lan1",
+      "client_fraction": 1.0,
+      "mix": {
+        "device_status": 0.92,
+        "dashboard": 0.05,
+        "service_pressure": 0.03
+      }
+    },
+    {
+      "name": "cooldown",
+      "duration_s": 60,
+      "rate_per_client": 2.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.5,
+      "mix": {
+        "device_status": 0.60,
+        "dashboard": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "hotspot_lan1_to_lan2",
+      "duration_s": 180,
+      "rate_per_client": 6.0,
+      "cross_region_ratio": 0.95,
+      "hotspot_direction": "lan1_to_lan2",
+      "client_fraction": 1.0,
+      "mix": {
+        "device_status": 0.92,
+        "dashboard": 0.05,
+        "service_pressure": 0.03
+      }
+    },
+    {
+      "name": "idle",
+      "duration_s": 60,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.5,
+      "mix": {
+        "device_status": 0.60,
+        "dashboard": 0.25,
+        "service_pressure": 0.15
+      }
+    }
+  ]
+}

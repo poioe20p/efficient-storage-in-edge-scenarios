@@ -54,7 +54,6 @@ If this mechanism holds:
    **all** modes. The HTTP cache serves the freshest summary — push and poll
    are indistinguishable by this metric. This confirms the delivery pipeline
    is healthy; it is not expected to differentiate between modes.
-
 2. **Reaction latency increases** with polling interval — this is the
    *consequence* that matters for the thesis. The breach-detection segment
    (`breach_window_end → spawn_start`) grows because the controller cannot
@@ -63,15 +62,12 @@ If this mechanism holds:
    provisioning segment (`spawn_start → spawn_done`) is constant (container
    boot time). Evidence from the verification runs (§5): push detection
    9.9–19.8 s, poll-30s detection 9.3–40.0 s.
-
 3. **Transient service quality degrades** when the blind spot prolongs
    overload. p95/p99 latency and failure rate are higher during demand-shift
    phases (`compute_spike`, `storage_stress`) in poll modes compared to push.
-
 4. **Control-plane overhead** differs by mode. Push: near-zero polling
    traffic, persistent ZMQ subscriber greenthread. Poll: HTTP GET every
    `POLL_INTERVAL_S` seconds.
-
 5. **Scaling outcomes diverge** under extreme blind spots. Poll-30s may spawn
    nodes after the demand spike has passed — the breach detector records
    overload but the controller's spawn arrives too late to help.
@@ -88,11 +84,11 @@ RQ1 (Information Acquisition pillar) from
 This experiment is the **primary evidence** for the RQ1 evaluation chapter
 (thesis Chapter 5). The four conditions map directly to the thesis narrative:
 
-| Condition | Thesis narrative |
-|---|---|
-| **Push** | Baseline: no coordination gap. SDN controller receives telemetry at window close — same-process routing sees new backends immediately. |
-| **Poll-5s** | Fast polling: controller polls faster than the window cadence. Tests whether over-polling wastes resources without benefit. |
-| **Poll-12s** | Fair comparison: polls just after window close with headroom for clock desync. The practical alternative to push — cleaner than raw 10 s polling. |
+| Condition          | Thesis narrative                                                                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Push**     | Baseline: no coordination gap. SDN controller receives telemetry at window close — same-process routing sees new backends immediately.                                     |
+| **Poll-5s**  | Fast polling: controller polls faster than the window cadence. Tests whether over-polling wastes resources without benefit.                                                 |
+| **Poll-12s** | Fair comparison: polls just after window close with headroom for clock desync. The practical alternative to push — cleaner than raw 10 s polling.                          |
 | **Poll-30s** | Blind monitoring: encodes the property of separated architectures (Prometheus scrape interval, CloudWatch metric period). Controller sees 1 of every 3 telemetry snapshots. |
 
 ## Independent Variable & Held-Constant Set
@@ -101,16 +97,16 @@ This experiment is the **primary evidence** for the RQ1 evaluation chapter
 - **Held constant**: everything else — workload, thresholds, infrastructure,
   window size, routing policy, container images
 
-| Parameter | Value | Source |
-|---|---|---|
-| Phase file | `testing/phases.json` | 10-phase integrated workload (~25 min): `baseline` → `local_moderate` → `storage_stress` → `cross_region_hotspot` → `inter_hotspot_cooldown` → `reverse_hotspot` → `compute_ramp` → `compute_spike` → `sustained_plateau` → `demand_drop`. Exercises storage, Tier 1, and compute sequentially. Both hotspot directions present (`lan2_to_lan1` and `lan1_to_lan2`) so breaches occur on both LANs. `demand_drop` (300 s) exceeds the 180 s cooldown — scale-down fires within the run window. |
-| `WINDOW_S` | 10 | Default aggregation window. Held constant for all RQ1 conditions. |
-| Controller env | `current_state_integrated.env` | [Golden config](../../golden_config.md). Proven stable across the variance_reduction experiment (0.23% overall, compute phases 0.04–0.63%). Uses `SCALEDOWN_COMPUTE_COOLDOWN_S=180` (not 60) — scale-down fires during `demand_drop` (300 s > 180 s cooldown) without the premature node removal that 60 s caused in the verification runs. |
-| `CLIENTS` | 8 | Standard |
-| `DEVICES` | 600 | Standard |
-| `NODES` | 100 | Standard |
-| Images | Current HEAD | Must include: fixed collector (`_coord_by_window` pairing), polling source, HTTP summary cache, overhead sampler, conntrack routing, WAN TX queue fix. Rebuild if any component is stale. |
-| WAN profile | `metro` (`WAN_RTT_MS=10`) | Default — required for Tier 1 breach gate to fire |
+| Parameter      | Value                            | Source                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Phase file     | `testing/phases.json`          | 10-phase integrated workload (~25 min):`baseline` → `local_moderate` → `storage_stress` → `cross_region_hotspot` → `inter_hotspot_cooldown` → `reverse_hotspot` → `compute_ramp` → `compute_spike` → `sustained_plateau` → `demand_drop`. Exercises storage, Tier 1, and compute sequentially. Both hotspot directions present (`lan2_to_lan1` and `lan1_to_lan2`) so breaches occur on both LANs. `demand_drop` (300 s) exceeds the 180 s cooldown — scale-down fires within the run window. |
+| `WINDOW_S`   | 10                               | Default aggregation window. Held constant for all RQ1 conditions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Controller env | `current_state_integrated.env` | [Golden config](../../golden_config.md). Proven stable across the variance_reduction experiment (0.23% overall, compute phases 0.04–0.63%). Uses `SCALEDOWN_COMPUTE_COOLDOWN_S=180` (not 60) — scale-down fires during `demand_drop` (300 s > 180 s cooldown) without the premature node removal that 60 s caused in the verification runs.                                                                                                                                                                                       |
+| `CLIENTS`    | 8                                | Standard                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `DEVICES`    | 600                              | Standard                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `NODES`      | 100                              | Standard                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Images         | Current HEAD                     | Must include: fixed collector (`_coord_by_window` pairing), polling source, HTTP summary cache, overhead sampler, conntrack routing, WAN TX queue fix. Rebuild if any component is stale.                                                                                                                                                                                                                                                                                                                                          |
+| WAN profile    | `metro` (`WAN_RTT_MS=10`)    | Default — required for Tier 1 breach gate to fire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ### Why Not `rq1_verify.env`
 
@@ -126,12 +122,12 @@ giving 120 s of below-threshold windows for scale-down to fire.
 
 ## Run Matrix
 
-| Run | `TELEMETRY_SOURCE` | `POLL_INTERVAL_S` | Blind spot | Purpose |
-|---|---|---|---|---|
-| **A** (push) | `zmq` | — | None — sees every window | Baseline: no coordination gap |
-| **B** (poll-5s) | `poll` | `5` | None — catches every window (dedup filters ~50% of polls) | Faster than window: exercises dedup, no blind spot |
-| **C** (poll-12s) | `poll` | `12` | ~1 of 6 windows missed (desync headroom) | Fair comparison: window + headroom, minor blind spot |
-| **D** (poll-30s) | `poll` | `30` | ~2 of 3 windows missed | Blind monitoring stress test |
+| Run                    | `TELEMETRY_SOURCE` | `POLL_INTERVAL_S` | Blind spot                                                 | Purpose                                              |
+| ---------------------- | -------------------- | ------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
+| **A** (push)     | `zmq`              | —                  | None — sees every window                                  | Baseline: no coordination gap                        |
+| **B** (poll-5s)  | `poll`             | `5`               | None — catches every window (dedup filters ~50% of polls) | Faster than window: exercises dedup, no blind spot   |
+| **C** (poll-12s) | `poll`             | `12`              | ~1 of 6 windows missed (desync headroom)                   | Fair comparison: window + headroom, minor blind spot |
+| **D** (poll-30s) | `poll`             | `30`              | ~2 of 3 windows missed                                     | Blind monitoring stress test                         |
 
 **Run order**: A → B → C → D. Each run starts after the previous run's
 artifacts are copied back and verified. If any run fails to complete
@@ -264,13 +260,13 @@ polling introduces. Measurement 1 confirms the HTTP cache works correctly.
 
 ### Primary Focus
 
-| # | Role | Measurement | Artifact | CLI | Output |
-|---|---|---|---|---|---|
-| 1 | **Confirmation** | Information age at consumption (`consumed_at − window_end`) | `resource_stats_debug.csv` | `cli_rq1_timings.py` | `rq1_staleness.png`, `rq1_staleness.csv` |
-| 2 | **Core evidence** | Reaction latency (`spawn_done_ts − breach_window_end`), segmented | `resource_stats_debug.csv` + `elasticity_events.csv` | `cli_rq1_timings.py` | `rq1_reaction_latency.png`, `rq1_reaction_latency.csv` |
-| 3 | **User-visible impact** | Transient service quality (p95/p99 latency, failure rate per phase) | `client_requests.csv` | `cli_simple_run.py`, `cli_phase_summary.py` | `simple_run.png`, `phase_summary.png` |
-| 4 | **Cost** | Control-plane overhead (CPU%, RSS MB per controller) | `controller_stats.csv` | `cli_rq1_overhead.py` | `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` |
-| 5 | **Behavioral divergence** | Scaling outcome description (breached windows vs. spawns per phase) | `resource_stats_debug.csv` + `container_events.csv` | `cli_rq1_decision_quality.py` | `rq1_decision_quality.png`, `rq1_decision_quality.csv` |
+| # | Role                            | Measurement                                                          | Artifact                                                 | CLI                                             | Output                                                                   |
+| - | ------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
+| 1 | **Confirmation**          | Information age at consumption (`consumed_at − window_end`)       | `resource_stats_debug.csv`                             | `cli_rq1_timings.py`                          | `rq1_staleness.png`, `rq1_staleness.csv`                             |
+| 2 | **Core evidence**         | Reaction latency (`spawn_done_ts − breach_window_end`), segmented | `resource_stats_debug.csv` + `elasticity_events.csv` | `cli_rq1_timings.py`                          | `rq1_reaction_latency.png`, `rq1_reaction_latency.csv`               |
+| 3 | **User-visible impact**   | Transient service quality (p95/p99 latency, failure rate per phase)  | `client_requests.csv`                                  | `cli_simple_run.py`, `cli_phase_summary.py` | `simple_run.png`, `phase_summary.png`                                |
+| 4 | **Cost**                  | Control-plane overhead (CPU%, RSS MB per controller)                 | `controller_stats.csv`                                 | `cli_rq1_overhead.py`                         | `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` |
+| 5 | **Behavioral divergence** | Scaling outcome description (breached windows vs. spawns per phase)  | `resource_stats_debug.csv` + `container_events.csv`  | `cli_rq1_decision_quality.py`                 | `rq1_decision_quality.png`, `rq1_decision_quality.csv`               |
 
 **How measurements 1 and 2 connect to the thesis argument**:
 
@@ -297,14 +293,14 @@ run `cli_simple_compare.py` across all four run folders.
 
 ### Secondary Evidence
 
-| Artifact | What to check |
-|---|---|
-| `resource_stats.csv` | `server_count`, `storage_count`, `coord_state_owner_lan` — confirms all 4 mechanisms exercised |
-| `container_events.csv` | `spawn_start`/`spawn_done` in `compute_spike`; `stop`/`destroy` in `demand_drop` |
-| `elasticity_events.csv` | `compute_scale_up` and `compute_scale_down` events; `node_spawning`/`node_online` |
-| `controller_lan1.log` / `lan2.log` | No tracebacks, no SIGSEGV, no abnormal termination |
-| `phases_snapshot.json` | Confirms phase order and durations |
-| `controller_env_snapshot.env` | Confirms thresholds match golden config |
+| Artifact                               | What to check                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `resource_stats.csv`                 | `server_count`, `storage_count`, `coord_state_owner_lan` — confirms all 4 mechanisms exercised |
+| `container_events.csv`               | `spawn_start`/`spawn_done` in `compute_spike`; `stop`/`destroy` in `demand_drop`          |
+| `elasticity_events.csv`              | `compute_scale_up` and `compute_scale_down` events; `node_spawning`/`node_online`             |
+| `controller_lan1.log` / `lan2.log` | No tracebacks, no SIGSEGV, no abnormal termination                                                    |
+| `phases_snapshot.json`               | Confirms phase order and durations                                                                    |
+| `controller_env_snapshot.env`        | Confirms thresholds match golden config                                                               |
 
 ### Cross-Run Comparison
 
@@ -329,17 +325,17 @@ with all four conditions on the same axes.
 These are **evaluation criteria** — they determine whether the experiment
 produced interpretable results. They are not pass/fail gates for the system.
 
-| # | Criterion | How checked | Expectation |
-|---|---|---|---|
-| 1 | All 4 runs complete all phases | `resource_stats.csv` phase column | All 10 phases present (baseline through demand_drop) |
-| 2 | Information age ~0 for all modes | `rq1_staleness.csv` per-phase means | Push, Poll-5s, Poll-12s, Poll-30s all < 1 s. Confirms the HTTP cache works correctly — the controller always retrieves the freshest summary. |
-| 3 | Reaction latency increases with polling interval | `rq1_reaction_latency.csv` breach-detection segment | Push ≤ Poll-5s ≈ Poll-12s < Poll-30s. This is the **core thesis evidence** — the blind spot between polls delays the controller's response to overload. |
-| 4 | All 4 mechanisms exercise in push mode | `resource_stats.csv` + controller logs | Tier 2, Tier 1, compute, conntrack all fire |
-| 5 | `controller_env_snapshot.env` present in all runs | File exists in run folder | Non-empty, contains threshold values |
-| 6 | `elasticity_events.csv` present in all runs | File exists in run folder | ≥ 10 events per run |
-| 7 | No controller crashes or tracebacks | Controller logs (check before deletion in post-run workflow) | Zero `Traceback`, `SIGSEGV`, or `FATAL` |
-| 8 | All RQ1 CLIs produce output without error | CLI exit codes + output files | All measurement outputs generated per run |
-| 9 | Cross-run comparison produces output | `cli_simple_compare` exit code + PNGs | Both comparison PNGs generated |
+| # | Criterion                                           | How checked                                                  | Expectation                                                                                                                                                     |
+| - | --------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | All 4 runs complete all phases                      | `resource_stats.csv` phase column                          | All 10 phases present (baseline through demand_drop)                                                                                                            |
+| 2 | Information age ~0 for all modes                    | `rq1_staleness.csv` per-phase means                        | Push, Poll-5s, Poll-12s, Poll-30s all < 1 s. Confirms the HTTP cache works correctly — the controller always retrieves the freshest summary.                   |
+| 3 | Reaction latency increases with polling interval    | `rq1_reaction_latency.csv` breach-detection segment        | Push ≤ Poll-5s ≈ Poll-12s < Poll-30s. This is the**core thesis evidence** — the blind spot between polls delays the controller's response to overload. |
+| 4 | All 4 mechanisms exercise in push mode              | `resource_stats.csv` + controller logs                     | Tier 2, Tier 1, compute, conntrack all fire                                                                                                                     |
+| 5 | `controller_env_snapshot.env` present in all runs | File exists in run folder                                    | Non-empty, contains threshold values                                                                                                                            |
+| 6 | `elasticity_events.csv` present in all runs       | File exists in run folder                                    | ≥ 10 events per run                                                                                                                                            |
+| 7 | No controller crashes or tracebacks                 | Controller logs (check before deletion in post-run workflow) | Zero`Traceback`, `SIGSEGV`, or `FATAL`                                                                                                                    |
+| 8 | All RQ1 CLIs produce output without error           | CLI exit codes + output files                                | All measurement outputs generated per run                                                                                                                       |
+| 9 | Cross-run comparison produces output                | `cli_simple_compare` exit code + PNGs                      | Both comparison PNGs generated                                                                                                                                  |
 
 **Interpretation note**: Criterion 2 should pass trivially — the HTTP cache
 design guarantees fresh data at every poll. If it fails, the delivery
@@ -355,14 +351,14 @@ seconds adds up to *Y* seconds to breach detection time.
 The operator may observe these in-run triggers. No action is required unless
 a checkpoint answer indicates a blocked experiment.
 
-| # | Trigger | Question | Action if missed |
-|---|---|---|---|
-| C1 | Phase `storage_stress` + 120 s | `storage_count > 1` in at least one LAN? | Storage mechanism not firing — check thresholds in `controller_env_snapshot.env` |
-| C2 | Phase `cross_region_hotspot` + 120 s | `coord_state_owner_lan = ACTIVE` for at least one LAN? | Tier 1 not activating — check WAN latency emulation |
-| C3 | Phase `compute_spike` + 60 s | `server_count > 1` in at least one LAN? | Compute not scaling — check `SCALEUP_COMPUTE_BASE_THRESHOLD` |
-| C4 | Phase `demand_drop` + 240 s | `server_count` and `storage_count` declining? | Scale-down not firing — check cooldown timing |
-| C5 | Run end | All dynamic containers removed? (`container_events.csv`) | Cleanup debt — check controller logs for scale-down blockers |
-| C6 | Any run | `controller_stats.csv` has rows for both `osken` and `osken_2`? | Overhead sampler failed — check `sample_controller_stats.py` process |
+| #  | Trigger                               | Question                                                              | Action if missed                                                                   |
+| -- | ------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| C1 | Phase`storage_stress` + 120 s       | `storage_count > 1` in at least one LAN?                            | Storage mechanism not firing — check thresholds in`controller_env_snapshot.env` |
+| C2 | Phase`cross_region_hotspot` + 120 s | `coord_state_owner_lan = ACTIVE` for at least one LAN?              | Tier 1 not activating — check WAN latency emulation                               |
+| C3 | Phase`compute_spike` + 60 s         | `server_count > 1` in at least one LAN?                             | Compute not scaling — check`SCALEUP_COMPUTE_BASE_THRESHOLD`                     |
+| C4 | Phase`demand_drop` + 240 s          | `server_count` and `storage_count` declining?                     | Scale-down not firing — check cooldown timing                                     |
+| C5 | Run end                               | All dynamic containers removed? (`container_events.csv`)            | Cleanup debt — check controller logs for scale-down blockers                      |
+| C6 | Any run                               | `controller_stats.csv` has rows for both `osken` and `osken_2`? | Overhead sampler failed — check`sample_controller_stats.py` process             |
 
 ## Validity Threats & Limitations
 
@@ -370,33 +366,27 @@ a checkpoint answer indicates a blocked experiment.
    poll-5s show ≤2 pp difference in overall failure rate, variance may
    dominate the signal. The plan allows adding a second replicate per
    condition (see Run Matrix).
-
 2. **`time.time()` wall clock for information age**. Both `window_end` and
    `consumed_at` use `time.time()`. NTP adjustment during a ~25-minute run
    could add ≤1 s error. Negligible — the measurement is ~0 for all modes
    and is only a confirmation check, not a differentiating metric.
-
 3. **Same-host aggregator and controller**. The HTTP polling latency is
    sub-millisecond (same Docker host). In a real deployment, network RTT
    would increase the polling latency but not the blind spot — the controller
    would still miss windows between polls. The measured blind-spot penalty
    is therefore a *lower bound*.
-
 4. **Poll-12s may not generalize**. The 12 s interval (window + 2 s) is
    tuned to the 10 s window. If the window size changes, the headroom must
    be retuned. This condition is a proof-of-concept for desync-safe
    polling, not a universal recommendation.
-
 5. **Scaling outcome description is descriptive, not causal**. The per-phase
    table shows correlation (windows with overload vs. spawns completed) but
    does not prove that the blind spot *caused* a delayed spawn. The thesis
    must interpret this alongside the reaction latency data.
-
 6. **`controller_env_snapshot.env` may be root-owned on cloud VM**. The
    post-run `chown` step must execute before copy-back. If forgotten, the
    breach detector falls back to `scaling_config.py` defaults — which differ
    from the golden config and would produce incorrect threshold comparisons.
-
 7. **Host state accumulation across runs**. Four consecutive ~25-minute runs
    on the same host may accumulate kernel/OVS/Docker state (conntrack table
    entries, OVS datapath flows, Docker network state). The pre-run host
@@ -407,44 +397,49 @@ a checkpoint answer indicates a blocked experiment.
 Standard run-folder layout per [`testing_overview.md`](../../testing_overview.md)
 plus the RQ1 analysis outputs. Each run folder must contain:
 
-| Artifact | Required | Notes |
-|---|---|---|
-| `client_requests.csv` | ✅ | Aggregate request log with `phase` column |
-| `resource_stats.csv` | ✅ | Trimmed domain metrics |
-| `resource_stats_debug.csv` | ✅ | Broad domain metrics with `consumed_at` |
-| `per_node_stats.csv` | ✅ | Per-container per-window metrics |
-| `container_events.csv` | ✅ | Docker lifecycle events |
-| `elasticity_events.csv` | ✅ | Parsed controller events (must be generated before log deletion) |
-| `controller_lan1.log` / `lan2.log` | ✅ | Raw controller logs (may be deleted after `elasticity_events.csv` generation) |
-| `controller_env_snapshot.env` | ✅ | Must survive copy-back (post-run `chown`) |
-| `phases_snapshot.json` | ✅ | Phase configuration snapshot |
-| `controller_stats.csv` | ✅ | Controller CPU/RAM samples |
-| `service_logs/` | ✅ | Edge/storage container logs |
+| Artifact                               | Required | Notes                                                                          |
+| -------------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| `client_requests.csv`                | ✅       | Aggregate request log with`phase` column                                     |
+| `resource_stats.csv`                 | ✅       | Trimmed domain metrics                                                         |
+| `resource_stats_debug.csv`           | ✅       | Broad domain metrics with`consumed_at`                                       |
+| `per_node_stats.csv`                 | ✅       | Per-container per-window metrics                                               |
+| `container_events.csv`               | ✅       | Docker lifecycle events                                                        |
+| `elasticity_events.csv`              | ✅       | Parsed controller events (must be generated before log deletion)               |
+| `controller_lan1.log` / `lan2.log` | ✅       | Raw controller logs (may be deleted after`elasticity_events.csv` generation) |
+| `controller_env_snapshot.env`        | ✅       | Must survive copy-back (post-run`chown`)                                     |
+| `phases_snapshot.json`               | ✅       | Phase configuration snapshot                                                   |
+| `controller_stats.csv`               | ✅       | Controller CPU/RAM samples                                                     |
+| `service_logs/`                      | ✅       | Edge/storage container logs                                                    |
 
 After running the full analysis pipeline, each run folder adds under `analysis/`:
 
-| Analysis Output | CLI |
-|---|---|
-| `rq1_staleness.png`, `rq1_staleness.csv` | `cli_rq1_timings` |
-| `rq1_reaction_latency.png`, `rq1_reaction_latency.csv` | `cli_rq1_timings` |
-| `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` | `cli_rq1_overhead` |
-| `rq1_decision_quality.png`, `rq1_decision_quality.csv` | `cli_rq1_decision_quality` |
-| `simple_run.png` | `cli_simple_run` |
-| `overview.png` | `cli_overview` |
-| `phase_summary.png` | `cli_phase_summary` |
+| Analysis Output                                                          | CLI                          |
+| ------------------------------------------------------------------------ | ---------------------------- |
+| `rq1_staleness.png`, `rq1_staleness.csv`                             | `cli_rq1_timings`          |
+| `rq1_reaction_latency.png`, `rq1_reaction_latency.csv`               | `cli_rq1_timings`          |
+| `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` | `cli_rq1_overhead`         |
+| `rq1_decision_quality.png`, `rq1_decision_quality.csv`               | `cli_rq1_decision_quality` |
+| `simple_run.png`                                                       | `cli_simple_run`           |
+| `overview.png`                                                         | `cli_overview`             |
+| `phase_summary.png`                                                    | `cli_phase_summary`        |
 
 Cross-run comparison outputs go to a separate directory (not inside any
 single run folder):
 
-| Comparison Output | CLI |
-|---|---|
+| Comparison Output              | CLI                    |
+| ------------------------------ | ---------------------- |
 | `simple_compare_overall.png` | `cli_simple_compare` |
-| `simple_compare_phase.png` | `cli_simple_compare` |
+| `simple_compare_phase.png`   | `cli_simple_compare` |
 
 ---
 
 ## Changelog
 
-| Date | Change | Rationale |
-|------|--------|-----------|
-| 2026-06-21 | Initial plan — full RQ1 evaluation with canonical phases.json + golden config | Supersedes rq1_instrumentation_verification |
+| Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Rationale                                       |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| 2026-06-21 | Initial plan — full RQ1 evaluation with canonical phases.json + golden config                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Supersedes rq1_instrumentation_verification     |
+| 2026-06-22 | All 4 runs (A–D) completed and analyzed. Key findings: information age ~0 for all modes (criterion 2 ✅); reaction latency increases with blind spot but not monotonic (criterion 3 ⚠️); Tier 1 only fired in Poll-12s (criterion 4 ⚠️); overhead indistinguishable (criterion 4 ✅).                                                                                                                                                                                                                                                                     | Initial v1 analysis; see`results.md` §1–§6 |
+| 2026-06-25 | **Rerun approved.** MAC-recycling bug in `node_registry.py` fixed (B1: name-aware removal, B2: self-contained slot activation). Verified with 7 `[reserve] activated` events across golden_config pair, 1 stale-removal guard trigger, 0 "consume returned None." Earlier "Push preempted Tier 1" theory withdrawn — Tier 1 regression from golden_config_stability is a separate, unresolved issue. Fix alone justifies rerun: reaction latency baseline stronger with reserve fast path working.                                                 | See`results.md` §7–§8                      |
+| 2026-06-26 | **v2 complete.** All 4 runs (A–D) executed with fixed code. Reserve activation confirmed (6–7 in fast modes, degrades to 1–3 in slow polling). Tier 1 fires in lan1→lan2 direction (34→30→32→0 ACTIVE); reverse direction blocked by virtual-MAC mismatch in `resolve_peer_primary()` — **fixed 2026-06-26**. Service quality degrades monotonically: 0.14%→0.29%→1.20%→1.70% (12× from Push to Poll-30s). Variance condition met (0.15pp ≤ 2pp) — replicates recommended. v2 cross-run comparison at `rq1_eval_v2_comparison/`. | See`results.md` §8                           |
+| 2026-06-26 | **Virtual-MAC mismatch in `resolve_peer_primary()` fixed.** `_peer_storage_roles` uses real Docker MACs but the method looked them up by virtual MACs from `STORAGE_MACS_N*`. Fix: two-step resolution — confirm primary via `_peer_storage_roles` (real MACs), resolve IP via `_peer_storage_macs_n*` → `peer_hosts` (virtual MACs). Smoke test passed (bidirectional Tier 1 in tier1_smoke). Replicates confirm: 0 "no primary known" across all 4 runs.                                                                                 | See`tier1_activation_smoke_test/results.md`   |
+| 2026-06-26 | **v2-replicates complete.** All 4 runs (A′–D′) with topology fix. Bidirectional Tier 1 restored — first time since June 9. Zero "no primary known." Reserve 5–8 per run. BUT — extreme variance: Push replicate 5.04% vs v2 Push 0.14% (35×). v2 monotonic degradation NOT replicated. Poll-12s consistently worst-case (370.4s). Service quality and mechanism suppression claims from v2 withdrawn. n=2 insufficient.                                                                                                                           | See`results.md` §9                           |

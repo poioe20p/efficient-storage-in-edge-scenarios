@@ -8,6 +8,8 @@ When making changes, try to understand where in terms of context it belongs to a
 
 Always keep documentation in order and updated.
 
+Disregard development cost, as it's not actually important.
+
 ## Canonical Experiment Files — No Duplicates
 
 - **Phases file**: There is exactly ONE canonical phases JSON at `source/scripts/testing/phases.json`. When an experiment needs a different workload, EDIT this file in place. Never create `phases_<variant>.json` duplicates. The experiment run folder automatically captures a `phases_snapshot.json` copy.

@@ -49,7 +49,6 @@ windows. The controller can receive these summaries in two ways:
 
 - **Push** (ZMQ): the aggregator publishes each summary at window close.
   The controller sees every window within milliseconds of its completion.
-
 - **Poll** (HTTP): the controller fetches the latest cached summary from
   the aggregator at a configurable interval (5 s, 12 s, or 30 s).
 
@@ -95,12 +94,12 @@ polling staleness matters only above some cadence threshold.
 
 ### 4.2 What Each Condition Encodes
 
-| Condition | Delivery | Blind spot | Encodes |
-|---|---|---|---|
-| **Push** | ZMQ at window close | None | The unified architecture: telemetry arrives immediately, no handoff delay |
-| **Poll-5s** | HTTP every 5 s | None (catches every window; ~50% of polls are duplicates) | Over-polling: wastes resources without benefit |
-| **Poll-12s** | HTTP every 12 s | Minor (~1 of 6 windows missed) | Practical alternative to push — polls just after window close with headroom for clock desync |
-| **Poll-30s** | HTTP every 30 s | Major (~2 of 3 windows missed) | Separated-architecture property: Prometheus scrape interval, CloudWatch metric period |
+| Condition          | Delivery            | Blind spot                                                | Encodes                                                                                       |
+| ------------------ | ------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Push**     | ZMQ at window close | None                                                      | The unified architecture: telemetry arrives immediately, no handoff delay                     |
+| **Poll-5s**  | HTTP every 5 s      | None (catches every window; ~50% of polls are duplicates) | Over-polling: wastes resources without benefit                                                |
+| **Poll-12s** | HTTP every 12 s     | Minor (~1 of 6 windows missed)                            | Practical alternative to push — polls just after window close with headroom for clock desync |
+| **Poll-30s** | HTTP every 30 s     | Major (~2 of 3 windows missed)                            | Separated-architecture property: Prometheus scrape interval, CloudWatch metric period         |
 
 Poll-30s is the critical condition. If the controller sees only 1 of every 3
 telemetry snapshots and its reaction to overload is measurably slower or its
@@ -148,7 +147,6 @@ Segmented into:
   this is dominated by the controller's evaluation logic (sliding window,
   cooldown, ~10–20 s). In poll-30s the blind spot adds up to 30 s on top.
   **This is the segment where the polling penalty appears.**
-
 - **Provisioning** (`spawn_done_ts − spawn_start_ts`): container boot time +
   OVS wiring. Expected constant (~1–2 s) across all modes.
 
@@ -184,7 +182,7 @@ widens, does the controller still respond adequately?
 
 ### 5.6 Measurement Chain
 
-```text
+```JavaScript
 Polling interval ↑
   → missed windows between polls ↑   (the mechanism)
   → breach-detection segment ↑        (measurement 5.2 — core evidence)
@@ -204,12 +202,12 @@ workload (`phases.json`, ~28 min). All runs use the [golden
 configuration](../operation/testing/golden_config.md): `CLIENTS=8`,
 `DEVICES=600`, `NODES=100`, thresholds from `current_state_integrated.env`.
 
-| Run | Delivery | Blind spot |
-|---|---|---|
-| **Push** | ZMQ at window close | None |
-| **Poll-5s** | HTTP every 5 s | None (dedup filters ~50% of polls) |
-| **Poll-12s** | HTTP every 12 s | ~1 of 6 windows missed |
-| **Poll-30s** | HTTP every 30 s | ~2 of 3 windows missed |
+| Run                | Delivery            | Blind spot                         |
+| ------------------ | ------------------- | ---------------------------------- |
+| **Push**     | ZMQ at window close | None                               |
+| **Poll-5s**  | HTTP every 5 s      | None (dedup filters ~50% of polls) |
+| **Poll-12s** | HTTP every 12 s     | ~1 of 6 windows missed             |
+| **Poll-30s** | HTTP every 30 s     | ~2 of 3 windows missed             |
 
 Full operational details — run matrix, shell commands, pre-run checklist,
 artifact contract, success criteria, and validity threats — are in the
@@ -221,20 +219,16 @@ artifact contract, success criteria, and validity threats — are in the
 
 1. **Information age at consumption** is ~0 s for all four conditions.
    Confirms the delivery pipeline is healthy and the HTTP cache works.
-
 2. **Reaction latency increases with polling interval.** The
    breach-detection segment grows as the blind spot widens. Push and
    poll-5s should be comparable (both catch every window). Poll-12s may
    show a small increase. Poll-30s should show the largest detection
    latency.
-
 3. **Transient service quality degrades** when the blind spot prolongs
    overload. p95/p99 latency and failure rate are higher in demand-shift
    phases under poll-30s compared to push.
-
 4. **Control-plane overhead** differs modestly between push (persistent
    ZMQ greenthread) and poll (periodic HTTP GET).
-
 5. **Scaling outcomes may diverge** under poll-30s: spawns may arrive
    after the demand spike has passed.
 
@@ -249,10 +243,10 @@ breach detection time.
 
 ## 8. Related Documents
 
-| Document | Purpose |
-|---|---|
-| [`system_to_thesis_map_rq_v2.md`](../../tese/miscelineous/system_to_thesis_map_rq_v2.md) | Full three-pillar thesis framing; RQ1 in context of RQ2 and RQ3 |
-| [`experiment_plan.md`](../operation/testing/experiment/rq1_evaluation/experiment_plan.md) | Operational experiment plan: run matrix, commands, artifact contract, success criteria |
-| [`analysis_toolchain.md`](../operation/testing/analysis_toolchain.md) | Analysis CLI reference: how each measurement is produced from run artifacts |
-| [`golden_config.md`](../operation/testing/golden_config.md) | Canonical workload sizing, thresholds, and toggles |
-| [`rq1_instrumentation_verification/results.md`](../operation/testing/experiment/stability/rq1_instrumentation_verification/results.md) | Evidence that the measurement pipeline works; §5 confirms staleness ~0 for all modes |
+| Document                                                                                                                              | Purpose                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [`system_to_thesis_map_rq_v2.md`](../../tese/miscelineous/system_to_thesis_map_rq_v2.md)                                               | Full three-pillar thesis framing; RQ1 in context of RQ2 and RQ3                        |
+| [`experiment_plan.md`](../operation/testing/experiment/rq1_evaluation/experiment_plan.md)                                              | Operational experiment plan: run matrix, commands, artifact contract, success criteria |
+| [`analysis_toolchain.md`](../operation/testing/analysis_toolchain.md)                                                                  | Analysis CLI reference: how each measurement is produced from run artifacts            |
+| [`golden_config.md`](../operation/testing/golden_config.md)                                                                            | Canonical workload sizing, thresholds, and toggles                                     |
+| [`rq1_instrumentation_verification/results.md`](../operation/testing/experiment/stability/rq1_instrumentation_verification/results.md) | Evidence that the measurement pipeline works; §5 confirms staleness ~0 for all modes  |

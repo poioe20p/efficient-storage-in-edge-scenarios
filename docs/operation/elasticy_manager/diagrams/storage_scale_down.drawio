@@ -10,7 +10,7 @@
                 <mxCell id="title" value="STORAGE SCALE-DOWN" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" parent="1" vertex="1">
                     <mxGeometry x="600" y="20" width="600" height="36" as="geometry"/>
                 </mxCell>
-                <mxCell id="subtitle" value="Reclaim an idle MongoDB secondary via synchronous four-step teardown: isolate → rs.remove() → script cleanup → release IP" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#555555;" parent="1" vertex="1">
+                <mxCell id="subtitle" value="Reclaim an idle MongoDB secondary via synchronous four-step teardown: isolate → rs.remove() → script cleanup → release IP — gated by reserve floor" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#555555;" parent="1" vertex="1">
                     <mxGeometry x="300" y="56" width="1200" height="22" as="geometry"/>
                 </mxCell>
                 <mxCell id="ph1" value="1 · DETECT (idle)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" parent="1" vertex="1">
@@ -73,16 +73,16 @@
                 <mxCell id="n_agg_pub" value="&lt;b&gt;TelemetrySummary&lt;/b&gt;&lt;br/&gt;(CPU, T_db, ~10 s window)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="270" y="160" width="220" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="n_t2_idle" value="&lt;b&gt;AND-gate idle&lt;/b&gt;&lt;br/&gt;CPU &lt; τ  &amp;  T_db &lt; τ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="280" y="290" width="200" height="50" as="geometry"/>
+                <mxCell id="n_t2_idle" value="&lt;b&gt;AND-gate idle&lt;/b&gt;&lt;br/&gt;CPU &lt; τ  &amp;  T_db &lt; τ&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;T_db &gt; ceiling → window skipped&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="290" width="200" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="n_t2_window" value="&lt;b&gt;Sustained idle&lt;/b&gt;&lt;br/&gt;7-of-12 window · cooldown 120 s&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;keep ≥ 1 dynamic secondary&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="590" y="285" width="220" height="60" as="geometry"/>
+                <mxCell id="n_t2_window" value="&lt;b&gt;Sustained idle&lt;/b&gt;&lt;br/&gt;K-of-N window · cooldown&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;reserve floor: READY_RESERVED must exist post-removal&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="285" width="240" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="n_alert" value="&lt;b&gt;ScaleDownDataAlert&lt;/b&gt;&lt;br/&gt;(mac, ip, lan, rs_name,&lt;br/&gt;primary, container_name, port)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="980" y="285" width="240" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="n_t3_queue" value="&lt;b&gt;PriorityQueue&lt;/b&gt;&lt;br/&gt;storage scale-down · priority 4" style="shape=document;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                <mxCell id="n_t3_queue" value="&lt;b&gt;PriorityQueue&lt;/b&gt;&lt;br/&gt;ScaleDownDataAlert · priority 8" style="shape=document;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="270" y="430" width="240" height="70" as="geometry"/>
                 </mxCell>
                 <mxCell id="n_t3_handler" value="&lt;b&gt;_handle_scale_down_data&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;remove_storage_mac() · StorageNodeAdder.remove_storage_node()&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
@@ -189,7 +189,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_feedback" value="telemetry feedback — member removed" style="endArrow=classic;html=1;dashed=1;strokeColor=#888888;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="n_goal" target="n_agg_pub" edge="1">
+                <mxCell id="e_feedback" value="telemetry feedback — member removed · reserve unchanged" style="endArrow=classic;html=1;dashed=1;strokeColor=#888888;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="n_goal" target="n_agg_pub" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="1000" y="195"/>

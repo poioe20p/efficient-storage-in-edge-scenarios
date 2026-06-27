@@ -1,0 +1,252 @@
+<mxfile host="65bd71144e">
+    <diagram id="storage-reserve-lifecycle" name="Storage Reserve Lifecycle">
+        <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="900" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <!-- Title -->
+                <mxCell id="title" value="STORAGE RESERVE LIFECYCLE" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="20" width="800" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="Maintain one ready same-LAN standby SECONDARY per LAN — activate on load/recovery, replenish immediately. Feature gate: STORAGE_PERSISTENT_RESERVE_ENABLED" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#555555;" parent="1" vertex="1">
+                    <mxGeometry x="150" y="56" width="1500" height="22" as="geometry"/>
+                </mxCell>
+                <!-- Phase headers -->
+                <mxCell id="ph1" value="1 · PREPARE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="100" width="220" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph2" value="2 · SPAWN (standby)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="360" y="100" width="260" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph3" value="3 · READY (reserved)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="100" width="260" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph4" value="4 · ACTIVATE (load / recovery)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="920" y="100" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ph5" value="5 · REPLENISH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1280" y="100" width="220" height="30" as="geometry"/>
+                </mxCell>
+                <!-- Phase separators -->
+                <mxCell id="sep1" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="350" y="140" as="sourcePoint"/>
+                        <mxPoint x="350" y="850" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep2" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="630" y="140" as="sourcePoint"/>
+                        <mxPoint x="630" y="850" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep3" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="910" y="140" as="sourcePoint"/>
+                        <mxPoint x="910" y="850" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="sep4" style="endArrow=none;html=1;strokeColor=#cccccc;dashed=1;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1270" y="140" as="sourcePoint"/>
+                        <mxPoint x="1270" y="850" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <!-- Lane: Thread 2 -->
+                <mxCell id="lane_t2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f2f7ff;strokeColor=#6c8ebf;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="150" width="1670" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t2_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;Thread 2 — Observer&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#1a3a6b&quot;&gt;(DynamicNodeRegistry · StorageReserveSlot)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="10" y="190" width="90" height="100" as="geometry"/>
+                </mxCell>
+                <!-- Lane: Thread 3 -->
+                <mxCell id="lane_t3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff7f6;strokeColor=#b85450;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="340" width="1670" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_t3_hdr" value="&lt;b&gt;SDN Controller&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;Thread 3 — Elasticity Manager&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;(StorageNodeAdder · synchronous)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="10" y="375" width="90" height="100" as="geometry"/>
+                </mxCell>
+                <!-- Lane: Infrastructure -->
+                <mxCell id="lane_infra" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffef2;strokeColor=#d6b656;opacity=40;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="510" width="1670" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_infra_hdr" value="&lt;b&gt;Infrastructure&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;Docker · OVS&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#7d5300&quot;&gt;MongoDB RS · sidecar&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="10" y="545" width="90" height="100" as="geometry"/>
+                </mxCell>
+                <!-- Lane: Loss path -->
+                <mxCell id="lane_loss" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff5f5;strokeColor=#b85450;opacity=30;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="680" width="1670" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_loss_hdr" value="&lt;b&gt;Loss Path&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;telemetry timeout&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px;color:#6b1a1a&quot;&gt;or crash&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;strokeWidth=2;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="10" y="720" width="90" height="90" as="geometry"/>
+                </mxCell>
+                <!-- ===== PHASE 1: PREPARE (T2) ===== -->
+                <mxCell id="n_none" value="&lt;b&gt;NONE&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;slot state · no reserve&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="140" y="180" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_should_prepare" value="&lt;b&gt;should_prepare_storage_reserve(lan)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;slot == NONE &amp;&amp; PRIMARY visible&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="140" y="260" width="190" height="50" as="geometry"/>
+                </mxCell>
+                <!-- ===== PHASE 2: SPAWN (T3) ===== -->
+                <mxCell id="n_preparing" value="&lt;b&gt;PREPARING&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;slot state · creation in flight&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="180" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_prepare_alert" value="&lt;b&gt;PrepareStandbyStorageAlert&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;priority 4 · submit() → T3 queue&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="260" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_spawn" value="&lt;b&gt;_handle_prepare_standby_storage()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;StorageNodeAdder.add_storage_node(&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;standby_reserved=True · heartbeat_enabled=True)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="370" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_docker_run" value="docker run&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;--network none · RS_ADD_SELF=true&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="370" y="540" width="180" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_net_attach" value="add_network_node.sh&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;veth + OVS attach · IP/MAC&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="370" y="600" width="180" height="40" as="geometry"/>
+                </mxCell>
+                <!-- ===== PHASE 3: READY (T2) ===== -->
+                <mxCell id="n_ready_reserved" value="&lt;b&gt;READY_RESERVED&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;slot state · outside VIP_DATA&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;heartbeating · eligible for activation&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="660" y="175" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_rs_ready" value="&lt;b&gt;rs_secondary_ready&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;control-event → mark_storage_reserve_ready(mac)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="660" y="260" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_sidecar" value="&lt;b&gt;mongo_telemetry sidecar&lt;/b&gt;&lt;br/&gt;RS_ADD_SELF via RS_SEED_HOST&lt;br/&gt;→ emits &lt;i&gt;rs_secondary_ready&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="540" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_rs_icon" value="" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/database.svg;" parent="1" vertex="1">
+                    <mxGeometry x="1000" y="540" width="130" height="96" as="geometry"/>
+                </mxCell>
+                <!-- ===== PHASE 4: ACTIVATE (T2→VIP) ===== -->
+                <mxCell id="n_activate" value="&lt;b&gt;consume_ready_storage_reserve(lan)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;triggered by DataAlert (priority 1)&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;or recovery-distress signal&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="180" width="230" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_vip_promote" value="&lt;b&gt;add_storage_mac() → VIP_DATA&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;standby_reserved cleared · cooldowns reset&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;record_storage_activation()&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="270" width="230" height="60" as="geometry"/>
+                </mxCell>
+                <!-- ===== PHASE 5: REPLENISH ===== -->
+                <mxCell id="n_replenish" value="&lt;b&gt;Replenish&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;slot → NONE → PREPARING&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;new PrepareStandbyStorageAlert&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1300" y="180" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_replenish_spawn" value="&lt;b&gt;StorageNodeAdder.add_storage_node()&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;standby_reserved=True · same path as Phase 2&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1300" y="370" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <!-- ===== LOSS PATH ===== -->
+                <mxCell id="n_loss_detect" value="&lt;b&gt;Loss detection&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;telemetry timeout (absent windows)&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;or crash / network partition&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="660" y="710" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_loss_mark" value="&lt;b&gt;mark_storage_reserve_lost(mac)&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;slot → NONE · preserve pending activation&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="660" y="790" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_cleanup_reserve" value="&lt;b&gt;CleanupReserveAlert&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;priority 5 · best_effort_rs_remove&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;→ container teardown (no drain)&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1050" y="730" width="230" height="60" as="geometry"/>
+                </mxCell>
+                <!-- ===== EDGES ===== -->
+                <!-- Phase 1 → 2 -->
+                <mxCell id="e_slot_none" value="slot=NONE + PRIMARY visible" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_none" target="n_should_prepare" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_mark_prep" value="mark_storage_reserve_prepare_submitted(lan)" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_should_prepare" target="n_preparing" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_submit_prep" value="submit()" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=9;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_should_prepare" target="n_prepare_alert" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_enqueue_prep" value="enqueue (priority 4)" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=9;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_prepare_alert" target="n_spawn" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Phase 2 spawn -->
+                <mxCell id="e_spawn_docker" value="docker run" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_spawn" target="n_docker_run" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_spawn_net" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;dashed=1;" parent="1" source="n_docker_run" target="n_net_attach" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Sidecar self-join -->
+                <mxCell id="e_sidecar_join" value="self-join" style="endArrow=classic;html=1;strokeColor=#7d5300;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_sidecar" target="n_rs_icon" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Phase 2 → 3: rs_secondary_ready -->
+                <mxCell id="e_rs_ready_emit" value="emits" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_sidecar" target="n_rs_ready" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_mark_ready" value="mark READY_RESERVED" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_rs_ready" target="n_ready_reserved" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Phase 3 → 4: Activation -->
+                <mxCell id="e_activate" value="DataAlert or recovery-distress" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_ready_reserved" target="n_activate" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_vip_promote" value="VIP promotion" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_activate" target="n_vip_promote" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Phase 4 → 5: Replenish -->
+                <mxCell id="e_replenish" value="slot → NONE → replenish" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_vip_promote" target="n_replenish" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_replenish_spawn" value="submit PrepareStandbyStorageAlert" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=9;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_replenish" target="n_replenish_spawn" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Loop back from replenish to Phase 1 -->
+                <mxCell id="e_loop_back" value="same path as Phase 1→2" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="n_replenish_spawn" target="n_preparing" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="80" y="395"/>
+                            <mxPoint x="80" y="205"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <!-- Loss path edges -->
+                <mxCell id="e_loss_detect" value="absent windows ≥ threshold" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_ready_reserved" target="n_loss_detect" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_loss_mark" value="slot → NONE" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="n_loss_detect" target="n_loss_mark" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cleanup" value="submit CleanupReserveAlert" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=2;fontSize=9;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="n_loss_mark" target="n_cleanup_reserve" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Pending activation carry-forward note -->
+                <mxCell id="n_pending_note" value="&lt;b&gt;Pending activation&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;latch_storage_reserve_activation(lan, reason)&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;bounded by _STORAGE_RESERVE_PENDING_WINDOWS&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;carries forward across reserve replacement&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=10;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="940" y="370" width="280" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pending_from" value="if reserve not ready yet" style="endArrow=classic;html=1;strokeColor=#82b366;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_activate" target="n_pending_note" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Reserve floor note -->
+                <mxCell id="n_floor_note" value="&lt;b&gt;Scale-down gate&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;can_scale_down_storage(mac, lan)&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;→ False unless READY_RESERVED exists post-removal&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="1300" y="540" width="280" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_floor_from" value="guards ordinary scale-down" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="n_ready_reserved" target="n_floor_note" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="760" y="500"/>
+                            <mxPoint x="1440" y="500"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <!-- Legend -->
+                <mxCell id="legend_box" value="Legend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=11;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="860" width="1670" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_t2" value="Thread 2 — Observer (DynamicNodeRegistry)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="868" width="230" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_t3" value="Thread 3 — Elasticity Mgr (StorageNodeAdder)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="440" y="868" width="240" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_infra" value="Infra (Docker / OVS / Mongo RS / sidecar)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="690" y="868" width="255" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_loss" value="Loss path (timeout / crash)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="955" y="868" width="170" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_state" value="Reserve slot state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="1135" y="868" width="130" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_note" value="dashed = async/sidecar · solid = synchronous · feature gate: STORAGE_PERSISTENT_RESERVE_ENABLED=1" style="text;html=1;align=left;fontSize=9;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="1280" y="868" width="490" height="18" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

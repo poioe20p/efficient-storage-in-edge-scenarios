@@ -7,7 +7,7 @@ configuration has been tuned through six major iterations. The final gate
 is the **golden configuration stability pair** — the definitive reference
 point before new features are added.
 
-## Status Summary (2026-06-09)
+## Status Summary (2026-06-27)
 
 | Experiment | Status | Key result |
 |---|---|---|
@@ -22,7 +22,8 @@ point before new features are added.
 | [tier1_activation](tier1_activation/experiment_plan.md) | ✅ PASSED | DB-latency 84.5ms → 3.58ms. Clean drain both directions. |
 | **[golden_config_stability](golden_config_stability/experiment_plan.md)** | ⚠️ Executed — excessive variance (1.6%–11.8%) | 5 runs, 2/5 SIGSEGV. Two bugs fixed. Variance blocks gate. See [results.md](golden_config_stability/results.md). |
 | **[variance_reduction](variance_reduction/experiment_plan.md)** | ✅ **Fix verified — `SCALEDOWN_COMPUTE_COOLDOWN_S=180`** | 4 runs. Root cause: 120s cooldown too short for storage→compute phase transition. Fix: 180s cooldown. Compute phases now 0.04–0.63%. Overall 0.23%. See [results.md](variance_reduction/results.md). |
-| **[zombie_node_fix](zombie_node_fix/experiment_plan.md)** | 🔄 **Planned** | Verify `effective_mac`/`effective_ip` fallback fix. 15 min condensed workload + 6 min idle tail. Check: zero zombies after scale-down. |
+| [zombie_node_fix](zombie_node_fix/experiment_plan.md) | 🔄 **Planned** | Verify `effective_mac`/`effective_ip` fallback fix. |
+| **[mechanism_necessity](mechanism_necessity/experiment_plan.md)** | 📋 **Planned — 2026-06-27** | 4-run ablation (all/compute−/storage−/tier1−). Proves causal necessity of each mechanism. Fixed t10 threshold + simplified 8-phase workload. See [experiment_plan.md](mechanism_necessity/experiment_plan.md). |
 
 ## Experiment Family
 
@@ -53,6 +54,10 @@ deployed system. They do not need to be re-run unless the relevant code changes.
 ### Final Gate (run before any new feature or mechanism)
 
 - **[golden_config_stability/experiment_plan.md](golden_config_stability/experiment_plan.md)** — Definitive stability pair. All fixes + integrated config + canonical workload. Two runs (A/B). Marks the golden configuration values. **This is the only experiment that must pass before new development begins.**
+
+### Causal Necessity (proves each mechanism's value)
+
+- **[mechanism_necessity/experiment_plan.md](mechanism_necessity/experiment_plan.md)** — 4-run ablation study (all-enabled, no-compute, no-storage, no-tier1). Under a fixed workload and threshold bundle, each disabled mechanism must produce a measurable degradation in its target phase: elevated failures for compute, elevated latency/per-node load for storage, elevated cross-region DB latency for Tier 1. Runs against the simplified 8-phase `phases.json`.
 
 ## Quick Start — Running the Final Gate
 

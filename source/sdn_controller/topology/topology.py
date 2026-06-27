@@ -98,7 +98,7 @@ class TopologyMixin:
         }
 
         # Peer topology — written by on_topology_update() called from ZmqTelemetrySource
-        self.peer_hosts:       dict = {}   # mac -> {"mac", "dpid", "port_no"}
+        self.peer_hosts:       dict = {}   # mac -> {"mac", "dpid", "port_no", "ip"}
         self.peer_links:       list = []
         self.peer_switches:    list = []
         self._peer_network_id: str  = ""
@@ -199,9 +199,14 @@ class TopologyMixin:
     def resolve_peer_primary(self, peer_network_id: str) -> tuple[str, str] | None:
         """Return ``(rs_name, "ip:27018")`` for the primary of the peer LAN's RS.
 
-        Joins the peer topology snapshot's cached ``peer_hosts`` (MAC → IP)
-        with ``_peer_storage_roles`` (MAC → role) and the peer-LAN storage MAC
-        set. Returns ``None`` when no peer primary is known — e.g. the peer
+        Two-step resolution that accounts for the real-MAC / virtual-MAC split:
+        ``_peer_storage_roles`` is keyed by **real** Docker MACs (from the RS
+        member-state telemetry), while ``peer_hosts`` is keyed by **virtual**
+        MACs (from OVS topology discovery).  Neither map shares keys with the
+        other, so we confirm primary existence via roles and then resolve the
+        IP via the virtual MAC from ``_peer_storage_macs``.
+
+        Returns ``None`` when no peer primary is known — e.g. the peer
         controller hasn't published yet, an election is in progress, or the
         peer is a selective-sync-only LAN.
 
@@ -213,14 +218,44 @@ class TopologyMixin:
             int(n)  # validate
         except (ValueError, AttributeError):
             return None
+
+        # Step 1 — confirm a primary exists (real MACs in storage_roles).
+        has_primary = any(role == "primary" for role in self._peer_storage_roles.values())
+        if not has_primary:
+            if self._peer_storage_roles:
+                logger.warning(
+                    "[topology] no primary role in peer storage_roles for %s "
+                    "(roles present: %s)",
+                    peer_network_id,
+                    list(self._peer_storage_roles.items()),
+                )
+            return None
+
+        # Step 2 — resolve the IP through the virtual MAC (in peer_hosts).
+        # Every storage node has exactly one corresponding virtual MAC in
+        # _peer_storage_macs_n* and one entry in peer_hosts (OVS-discovered).
         peer_macs = (self._peer_storage_macs_n1
                      if n == "1" else self._peer_storage_macs_n2)
         for mac in peer_macs:
-            if self._peer_storage_roles.get(mac) == "primary":
-                host = self.peer_hosts.get(mac, {}) or {}
-                ip = host.get("ip")
-                if ip:
-                    return (f"rs_net{n}", f"{ip}:27018")
+            host = self.peer_hosts.get(mac, {}) or {}
+            ip = host.get("ip")
+            if ip:
+                logger.debug(
+                    "[topology] resolved peer primary for %s via virtual mac=%s ip=%s",
+                    peer_network_id, mac, ip,
+                )
+                return (f"rs_net{n}", f"{ip}:27018")
+            logger.debug(
+                "[topology] peer storage virtual mac=%s found in hosts but "
+                "no IP yet (peer_network=%s)",
+                mac, peer_network_id,
+            )
+
+        logger.warning(
+            "[topology] primary exists in peer storage_roles for %s but "
+            "no virtual storage MAC has an IP in peer_hosts",
+            peer_network_id,
+        )
         return None
 
     # ------------------------------------------------------------------
