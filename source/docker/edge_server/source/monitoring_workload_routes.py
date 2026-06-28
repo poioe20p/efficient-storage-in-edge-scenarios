@@ -18,6 +18,7 @@ from compute import (
 from edge_request_lifecycle import stage_local_request_event
 from platform_cache import cached_collection
 from vip_data_mongo_runtime import (
+    _get_write_client,
     log_db_failure,
     run_with_request_lease,
     snapshot_normal_vip_config,
@@ -25,6 +26,34 @@ from vip_data_mongo_runtime import (
 
 
 def register_monitoring_workload_routes(app: Flask, config, process_state) -> None:
+
+    @app.route("/device_update", methods=["POST"])
+    def device_update():
+        """Write a pressure-level update for a device to the primary MongoDB.
+
+        This endpoint bypasses the VIP-based read path and connects directly
+        to the replica-set primary via a dedicated MongoClient.  Writes
+        generate oplog traffic that stresses all replica-set members, making
+        storage scale-up measurable.
+        """
+        data = request.get_json(force=True)
+        device_id = data["device_id"]
+        pressure = data.get("pressure_level", 0)
+        lan = data.get("lan", "lan1")
+
+        client = _get_write_client(lan)
+        db = client[config.db_name]
+        result = db.sensor_reports.update_one(
+            {"_id": device_id},
+            {"$set": {"pressure_level": pressure, "last_updated": time.time()}},
+            upsert=True,
+        )
+        return jsonify({
+            "matched": result.matched_count,
+            "modified": result.modified_count,
+            "upserted_id": str(result.upserted_id) if result.upserted_id else None,
+        })
+
     @app.route("/device/<path:device_id>/latest", methods=["GET"])
     def device_latest(device_id: str):
         """Return the latest sensor report for a device."""

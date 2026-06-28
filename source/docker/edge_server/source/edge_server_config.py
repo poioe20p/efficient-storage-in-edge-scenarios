@@ -28,6 +28,8 @@ class EdgeServerConfig:
     mongo_retry_backoff_ms: int
     mongo_retry_max_attempts: int
     mongo_server_selection_timeout_ms: int
+    mongo_primary_lan1: str
+    mongo_primary_lan2: str
 
     @classmethod
     def from_env(cls) -> "EdgeServerConfig":
@@ -95,6 +97,12 @@ class EdgeServerConfig:
             ),
             mongo_server_selection_timeout_ms=int(
                 os.environ.get("MONGO_SERVER_SELECTION_TIMEOUT_MS", "3000")
+            ),
+            mongo_primary_lan1=os.environ.get(
+                "EDGE_MONGO_PRIMARY_LAN1", "mongodb://10.0.0.4:27018/"
+            ),
+            mongo_primary_lan2=os.environ.get(
+                "EDGE_MONGO_PRIMARY_LAN2", "mongodb://10.0.1.4:27018/"
             ),
         )
 

@@ -13,34 +13,23 @@
       }
     },
     {
-      "name": "local_moderate",
-      "duration_s": 60,
-      "rate_per_client": 3.0,
-      "cross_region_ratio": 0.0,
-      "client_fraction": 0.75,
-      "mix": {
-        "device_status": 0.55,
-        "dashboard": 0.30,
-        "service_pressure": 0.15
-      }
-    },
-    {
       "name": "storage_hotspot",
       "duration_s": 240,
-      "rate_per_client": 10.0,
+      "rate_per_client": 3.0,
       "cross_region_ratio": 0.90,
       "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.90,
-        "dashboard": 0.05,
-        "service_pressure": 0.05
+        "device_status": 0.25,
+        "dashboard": 0.50,
+        "service_pressure": 0.10,
+        "device_update": 0.15
       }
     },
     {
       "name": "tier1_hotspot_n1",
       "duration_s": 180,
-      "rate_per_client": 8.0,
+      "rate_per_client": 5.0,
       "cross_region_ratio": 0.95,
       "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 1.0,
@@ -52,10 +41,10 @@
     },
     {
       "name": "inter_hotspot_cooldown",
-      "duration_s": 60,
-      "rate_per_client": 2.0,
+      "duration_s": 300,
+      "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
-      "client_fraction": 0.5,
+      "client_fraction": 0.10,
       "mix": {
         "device_status": 0.60,
         "dashboard": 0.25,
@@ -65,7 +54,7 @@
     {
       "name": "tier1_hotspot_n2",
       "duration_s": 180,
-      "rate_per_client": 8.0,
+      "rate_per_client": 5.0,
       "cross_region_ratio": 0.95,
       "hotspot_direction": "lan1_to_lan2",
       "client_fraction": 1.0,
@@ -78,7 +67,7 @@
     {
       "name": "compute_spike",
       "duration_s": 180,
-      "rate_per_client": 7.0,
+      "rate_per_client": 4.0,
       "cross_region_ratio": 0.05,
       "client_fraction": 1.0,
       "mix": {
@@ -92,7 +81,7 @@
       "duration_s": 120,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
-      "client_fraction": 0.5,
+      "client_fraction": 0.10,
       "mix": {
         "device_status": 0.60,
         "dashboard": 0.25,

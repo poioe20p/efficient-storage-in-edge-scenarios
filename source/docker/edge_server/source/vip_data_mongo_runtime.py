@@ -19,6 +19,35 @@ from werkzeug.exceptions import BadRequest
 from edge_server_config import CONFIG
 from platform_cache import _owner_lan
 
+# ── Write client (direct to primary) ──────────────────────────────────────────
+# Each edge server maintains a small persistent connection pool to the
+# replica-set primary.  The primary URI is set by the controller via the
+# EDGE_MONGO_PRIMARY_LAN{1,2} environment variable at container spawn time.
+# Writes bypass the VIP data-plane path entirely — they go straight to the
+# primary container over the OVS bridge (directConnection=True, no DNAT).
+_write_clients: dict[str, MongoClient] = {}
+
+
+def _get_write_client(lan: str) -> MongoClient:
+    """Return a lazily-initialised direct-to-primary MongoClient for *lan*.
+
+    The connection uses ``directConnection=True`` so it never performs
+    replica-set discovery.  The URI comes from ``CONFIG.mongo_primary_lan*``
+    which is seeded from environment variables that the controller sets when
+    it spawns the edge-server container.
+    """
+    if lan not in _write_clients:
+        uri = CONFIG.mongo_primary_lan1 if lan == "lan1" else CONFIG.mongo_primary_lan2
+        _write_clients[lan] = MongoClient(
+            uri,
+            directConnection=True,
+            maxPoolSize=2,
+            serverSelectionTimeoutMS=3000,
+        )
+        log = logging.getLogger("vip_data_mongo_runtime")
+        log.info("write_client created for %s -> %s (pool=2)", lan, uri)
+    return _write_clients[lan]
+
 log = logging.getLogger(__name__)
 
 DB_NAME = CONFIG.db_name

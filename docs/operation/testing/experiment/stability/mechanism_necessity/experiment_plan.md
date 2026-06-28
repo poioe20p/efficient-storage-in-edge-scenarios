@@ -278,16 +278,16 @@ Expected later analysis outputs:
 - **Per-run**: standard `cli_simple_run` summaries (`simple_run.png` — latency, failure rate, node counts over time).
 - **Per-run**: `cli_cpu_drivers` load-balance diagnostics (`cpu_drivers.png` — old-vs-new node CPU per phase per role).
 - **Per-run**: `cli_phase_summary` per-phase latency percentiles and node-type breakdowns (`phase_summary.png`).
-- **Cross-run**: `cli_mechanism_compare` — the primary comparison output for this experiment. Produces `mechanism_compare.png` with 6 panels:
+- **Cross-run**: `cli_mechanism_compare` — the primary comparison output for this experiment. Produces `mechanism_compare.png` with 8 panels (4 rows × 2 columns):
 
-| Panel | Content | Data source |
-|-------|---------|-------------|
-| Avg latency by phase | Grouped bars per run | `client_requests.csv` |
-| Failure rate by phase | Grouped bars per run | `client_requests.csv` |
-| Avg compute CPU% by phase | Grouped bars per run | `per_node_stats.csv` (role=compute) |
-| Avg storage CPU% by phase | Grouped bars per run | `per_node_stats.csv` (role=storage) |
-| Avg compute RAM (MB) by phase | Grouped bars per run | `per_node_stats.csv` (role=compute) |
-| Avg storage RAM (MB) by phase | Grouped bars per run | `per_node_stats.csv` (role=storage) |
+| Row | Left | Right | Data source |
+|-----|------|-------|-------------|
+| 1 | Avg latency by phase | Failure rate by phase | `client_requests.csv` |
+| 2 | Avg compute CPU% by phase | Avg storage CPU% by phase | `per_node_stats.csv` |
+| 3 | Avg compute RAM (MB) by phase | Avg storage RAM (MB) by phase | `per_node_stats.csv` |
+| 4 | Owner-LAN avg_time_db_ms | Consumer-LAN avg_time_db_ms | `resource_stats.csv` |
+
+Owner/consumer LAN assignment follows `hotspot_direction` from `phases_snapshot.json`: `lan2_to_lan1` → owner=lan1, consumer=lan2. Non-hotspot phases average both LANs.
 
 **Usage**:
 ```bash

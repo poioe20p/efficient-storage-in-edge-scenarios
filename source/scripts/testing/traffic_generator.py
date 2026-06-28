@@ -136,6 +136,10 @@ def pick_target(client_lan: str, phase: PhaseConfig, snap: Snapshot, request_typ
     elif request_type == "service_pressure":
         return {"device_id": "", "node_id": "", "target_region": home}
 
+    elif request_type == "device_update":
+        device_id = random.choice(snap.devices_by_region[home])
+        return {"device_id": device_id, "node_id": "", "target_region": home}
+
     return {}
 
 
@@ -149,6 +153,8 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
         return f"{base}/dashboard/{target['node_id']}?limit=10"
     elif request_type == "service_pressure":
         return f"{base}/service_pressure?window_min=10&limit=10"
+    elif request_type == "device_update":
+        return f"{base}/device_update"
 
     return base
 
@@ -161,16 +167,22 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
 _curl_warn_shown = False
 
 
-async def exec_curl(ns: str, url: str, dry_run: bool = False) -> tuple:
-    """Execute curl inside a network namespace. Returns (http_status, latency_s)."""
+async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None = None) -> tuple:
+    """Execute curl inside a network namespace. Returns (http_status, latency_s).
+
+    When *body* is not None the request is sent as POST with
+    ``Content-Type: application/json``.
+    """
     global _curl_warn_shown
     cmd = [
         "ip", "netns", "exec", ns,
         "curl", "-s", "-o", "/dev/null",
         "-w", "\n%{http_code} %{time_total}",
         "--max-time", "10",
-        url,
     ]
+    if body is not None:
+        cmd += ["-X", "POST", "-H", "Content-Type: application/json", "-d", body]
+    cmd.append(url)
 
     if dry_run:
         print(f"[DRY-RUN] {' '.join(cmd)}")
@@ -234,7 +246,14 @@ async def client_loop(
         target = pick_target(client_lan, phase, snap, req_type)
         url = build_url(vip, req_type, target)
 
-        http_status, latency_s = await exec_curl(ns, url, dry_run)
+        body = None
+        if req_type == "device_update":
+            body = (
+                f'{{"device_id":"{target["device_id"]}",'
+                f'"pressure_level":{random.randint(0,100)},'
+                f'"lan":"{client_lan}"}}'
+            )
+        http_status, latency_s = await exec_curl(ns, url, dry_run, body)
         request_count += 1
 
         row = [

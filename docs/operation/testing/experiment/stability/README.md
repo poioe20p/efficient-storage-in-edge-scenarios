@@ -23,7 +23,8 @@ point before new features are added.
 | **[golden_config_stability](golden_config_stability/experiment_plan.md)** | ⚠️ Executed — excessive variance (1.6%–11.8%) | 5 runs, 2/5 SIGSEGV. Two bugs fixed. Variance blocks gate. See [results.md](golden_config_stability/results.md). |
 | **[variance_reduction](variance_reduction/experiment_plan.md)** | ✅ **Fix verified — `SCALEDOWN_COMPUTE_COOLDOWN_S=180`** | 4 runs. Root cause: 120s cooldown too short for storage→compute phase transition. Fix: 180s cooldown. Compute phases now 0.04–0.63%. Overall 0.23%. See [results.md](variance_reduction/results.md). |
 | [zombie_node_fix](zombie_node_fix/experiment_plan.md) | 🔄 **Planned** | Verify `effective_mac`/`effective_ip` fallback fix. |
-| **[mechanism_necessity](mechanism_necessity/experiment_plan.md)** | 📋 **Planned — 2026-06-27** | 4-run ablation (all/compute−/storage−/tier1−). Proves causal necessity of each mechanism. Fixed t10 threshold + simplified 8-phase workload. See [experiment_plan.md](mechanism_necessity/experiment_plan.md). |
+| **[mechanism_necessity](mechanism_necessity/experiment_plan.md)** | ✅ **Executed — 2026-06-27** | 4-run ablation. Compute necessity proven (5.4× latency, 3.1× CPU). Storage marginal (MongoDB not bottleneck at current scale). Tier 1 owner-LAN 1,279×. See [results.md](mechanism_necessity/results.md). |
+| **[mechanism_necessity v2](mechanism_necessity/experiment_plan_v2.md)** | 📋 **Planned — 2026-06-28** | 5-run v2. WAN=50ms + dashboard-heavy storage. Isolated WAN effect (Run E), isolated storage load effect (Run F), combined Tier 1 + storage ablations (Runs G/H/I). Reuses v1 env files. |
 
 ## Experiment Family
 

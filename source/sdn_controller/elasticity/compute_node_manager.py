@@ -215,6 +215,8 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "--name", name,
             "-e", f"LAN_ID=lan{lan}",
             "-e", f"CONTAINER_NAME={name}",
+            "-e", "EDGE_MONGO_PRIMARY_LAN1=mongodb://10.0.0.4:27018/",
+            "-e", "EDGE_MONGO_PRIMARY_LAN2=mongodb://10.0.1.4:27018/",
             # Dynamic nodes inherit HEARTBEAT_ENABLED=false (the image default).
             # Lifecycle is handled by scale-down (graceful) + telemetry-window
             # absence timeout (failure). See
