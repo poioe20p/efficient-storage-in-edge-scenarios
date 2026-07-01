@@ -191,7 +191,7 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
         "ip", "netns", "exec", ns,
         "curl", "-s", "-o", "/dev/null",
         "-w", "\n%{http_code} %{time_total}",
-        "--max-time", "10",
+        "--max-time", os.environ.get("CURL_MAX_TIME", "30"),
     ]
     if body is not None:
         cmd += ["-X", "POST", "-H", "Content-Type: application/json", "-d", body]

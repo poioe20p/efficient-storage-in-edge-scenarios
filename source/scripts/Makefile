@@ -127,6 +127,7 @@ cleanup_metrics:
 run_experiment:
 	OSKEN_ENV_FILE="$(strip $(OSKEN_ENV_FILE))" \
 	OSKEN_ENV_OVERRIDE_FILE="$(strip $(OSKEN_ENV_OVERRIDE_FILE))" \
+	CURL_MAX_TIME="$(CURL_MAX_TIME)" \
 	sudo -E bash testing/run_experiment.sh \
 	  $(if $(strip $(RUN_LABEL)),--run-label "$(strip $(RUN_LABEL))") \
 	  --clients-per-lan "$(strip $(CLIENTS))" \

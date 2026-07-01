@@ -33,17 +33,31 @@ The core concepts from the proposal that guide the framing:
 
 ---
 
-## Thesis Type (per Guidelines)
+## Thesis Type: Design Science Research Methodology (DSRM)
 
-**Applied + Experimental hybrid.**
+This thesis follows the **Design Science Research Methodology (DSRM)**
+(Peffers et al., 2007-8), grounded in the Design Science Research paradigm
+(Hevner et al., 2004). DSRM is a six-activity process that creates innovative
+artifacts and evaluates their utility.
 
-- **Applied**: A prototype was built (SDN controller, Docker edge servers,
-  MongoDB replica sets, telemetry pipeline) to demonstrate that three
-  orchestration dimensions can be tuned independently from a single
-  control point.
-- **Experimental**: Each dimension is varied one at a time while holding the
-  other two constant. The effect on dependent variables (reaction latency,
-  service quality, control overhead) is measured.
+**The artifact**: an SDN-orchestrated edge platform where monitoring, routing,
+and scaling are co-located in a single controller, with three independently
+tunable dimensions (telemetry freshness, backend selection policy, data
+locality strategy).
+
+**The evaluation**: a within-system experimental characterization of how each
+dimension independently affects service quality during demand shifts.
+
+The six DSRM activities (Peffers et al., 2007-8) map to the thesis:
+
+| DSR Activity | Thesis mapping |
+|---|---|
+| 1. Problem Identification | Coordination-gap observation; literature review identifies no platform isolates these three dimensions |
+| 2. Define Objectives | 6 proposal objectives + 3 research questions |
+| 3. Design and Development | SDN controller, Double-VIP model, telemetry pipeline, tiered data gravity, Docker infrastructure |
+| 4. Demonstration | 10-phase experimental workload, RQ1/RQ2/RQ3 runs, analysis toolchain |
+| 5. Evaluation | 5 measurements per RQ, statistical treatment (Mann-Whitney U), validity analysis |
+| 6. Communication | This dissertation |
 
 The contribution is **characterizing the trade-off surface** across three
 dimensions — not proving that the unified design is superior to separated
@@ -155,14 +169,17 @@ independently tunable dimensions of a unified orchestration design.
 
 **What to cover (1–2 pages):**
 
-- Project type: applied + experimental hybrid
+- Project type: Design Science Research Methodology (DSRM) (Peffers et al.,
+  2007-8), grounded in the Design Science Research paradigm (Hevner et al.,
+  2004). The artifact is the SDN-orchestrated edge platform; the evaluation
+  is the within-system experimental characterization.
 - Experimental design: within-system, single-variable manipulation. Vary one
   dimension while holding the other two constant. Same hardware, same workload,
   same infrastructure — only the variable under test changes.
 - Comparison strategy: baselines encode architectural properties of separated
   systems (polling at 30s, topology-only routing, remote-only data), not
   specific competing products.
-- Reference to Chapter 4 for full methodological detail.
+- Reference to Chapter~\ref{ch:methodology} for full methodological detail.
 
 ### 1.5. Contributions
 
@@ -461,10 +478,17 @@ industrial monitoring, smart cities, or any domain-specific framing.
 
 **What to cover:**
 
-- Project type (per guidelines): applied + experimental hybrid
+- Project type: **Design Science Research Methodology (DSRM)** (Peffers
+  et al., 2007-8), grounded in the Design Science Research paradigm
+  (Hevner et al., 2004). The artifact is the SDN-orchestrated
+  edge platform; the evaluation is the three-RQ experimental characterization.
+- The six DSRM activities mapped to thesis chapters.
+- DSR artifact types: constructs (VIP, WSM, degradation score), models
+  (three-thread architecture, three-pillar framework), methods (telemetry
+  pipeline, elasticity algorithm), instantiations (working prototype).
 - Overall aim: characterize how telemetry freshness, backend selection
   policy, and data locality each independently affect service quality
-  during demand shifts in a cross-layer SDN-orchestrated edge system
+  during demand shifts in a cross-layer SDN-orchestrated edge system.
 - Four objectives with methods mapped:
 
 | Objective | Method | Output |
@@ -879,7 +903,7 @@ Restate the 5 contributions from §1.5, now with evidence from results.
 
 | Guidelines requirement | Where covered |
 |---|---|
-| Project type stated | §1.4, §4.1 |
+| Project type stated (DSR) | §1.4, §4.1 |
 | Overall aim | §4.1 |
 | Objectives formulated as achievable sub-goals | §1.2 (6 objectives), §4.1 (methods mapped) |
 | Method identified per objective | §4.1 (table) |
