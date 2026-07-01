@@ -118,8 +118,8 @@ debug_row["consumed_at"] = coord_state_by_lan.get(...).get("consumed_at", "")
 ## Phase 4 — RQ1 Analysis CLIs
 
 > **Detailed plan:** `rq1_analysis_tooling_plan.md` § Phase 4a & 4b
-> The complementary plan covers: `cli_rq1_timings.py` (staleness + reaction
-> latency), `cli_rq1_overhead.py` (CPU/RAM overhead), code sketches,
+> The complementary plan covers: `cli/timings.py` (staleness + reaction
+> latency), `cli/overhead.py` (CPU/RAM overhead), code sketches,
 > integration points, and edge cases.
 
 **Goal:** Produce graphs and tables from run artifacts that answer RQ1.

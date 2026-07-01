@@ -1,10 +1,10 @@
-"""cli_rq1_overhead_compare — Cross-run CPU/RAM overhead comparison for RQ1.
+"""overhead_compare — Cross-run CPU/RAM overhead comparison for RQ1.
 
 Produces a grouped bar chart showing per-phase per-controller mean CPU %
 across all four telemetry delivery modes (Push, Poll-5s, Poll-12s, Poll-30s).
 
 Usage:
-    python -m source.scripts.testing.analysis.rq1.cli_rq1_overhead_compare \
+    python -m source.scripts.testing.analysis.rq1.cli.overhead_compare \
         --run-dirs <push_dir> <poll5_dir> <poll12_dir> <poll30_dir> \
         --output-dir <dir>
 """
@@ -86,9 +86,9 @@ def _plot_overhead_comparison(
         cpu_means = [comparison[p].get(label, {}).get("mean_cpu", 0) for p in phases]
         ram_means = [comparison[p].get(label, {}).get("mean_mem", 0) for p in phases]
         ax_cpu.bar(x + i * width, cpu_means, width, label=label, color=colors[i % len(colors)],
-                   edgecolor="white", linewidth=0.5)
+                   edgecolor="black", linewidth=0.8)
         ax_ram.bar(x + i * width, ram_means, width, label=label, color=colors[i % len(colors)],
-                   edgecolor="white", linewidth=0.5)
+                   edgecolor="black", linewidth=0.8)
 
     # Phase labels — strip _osken / _osken_2 suffix for readability
     short_phases = [p.replace("_osken_2", " (C2)").replace("_osken", " (C1)") for p in phases]
@@ -108,7 +108,7 @@ def _plot_overhead_comparison(
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
-    print(f"[cli_rq1_overhead_compare] wrote {out_path}")
+    print(f"[overhead_compare] wrote {out_path}")
 
 
 def main() -> None:
@@ -143,10 +143,10 @@ def main() -> None:
                 labels.append(name[-20:])  # fallback
 
     runs = dict(zip(labels, args.run_dirs))
-    print(f"[cli_rq1_overhead_compare] comparing {len(runs)} runs: {list(runs.keys())}")
+    print(f"[overhead_compare] comparing {len(runs)} runs: {list(runs.keys())}")
 
     comparison = _build_comparison(runs)
-    print(f"[cli_rq1_overhead_compare] {len(comparison)} phases with overhead data")
+    print(f"[overhead_compare] {len(comparison)} phases with overhead data")
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

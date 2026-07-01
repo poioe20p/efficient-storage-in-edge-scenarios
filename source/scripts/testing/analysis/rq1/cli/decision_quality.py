@@ -1,4 +1,4 @@
-"""cli_rq1_decision_quality — per-phase scaling outcome description.
+"""decision_quality — per-phase scaling outcome description.
 
 Compares breach-detector findings (degradation_score from telemetry) against
 what the controller actually did (elasticity events), aggregated by workload
@@ -8,12 +8,12 @@ For each phase: total telemetry windows, how many showed overload (score >=
 threshold), peak degradation score observed, and how many spawns the controller
 initiated and completed.
 
-Outputs <run_dir>/analysis/:
+Outputs <run_dir>/analysis/rq1/:
   rq1_decision_quality.csv   — per-phase descriptive table
   rq1_decision_quality.png   — rendered table
 
 Usage:
-    python -m source.scripts.testing.analysis.rq1.cli_rq1_decision_quality --run-dir <dir>
+    python -m source.scripts.testing.analysis.rq1.cli.decision_quality --run-dir <dir>
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
-from ..loader import load_run
+from ...loader import load_run
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +75,8 @@ def _build_phase_summary(
 
     No classification labels. No judgments. Just observable facts.
     """
-    from .breach_detector import detect_breaches
-    from ..phase_window import phase_for_ts
+    from ..lib.breach_detector import detect_breaches
+    from ...phase_window import phase_for_ts
 
     # Detect all breaches from telemetry
     breaches = detect_breaches(debug_rows, thresholds)
@@ -135,7 +135,7 @@ def _build_phase_summary(
 
 def _plot_phase_table(rows: list[dict], run_name: str, out_dir: Path) -> None:
     if not rows:
-        print("[cli_rq1_decision_quality] no phase data to plot")
+        print("[decision_quality] no phase data to plot")
         return
     import matplotlib
     matplotlib.use("Agg")
@@ -180,7 +180,7 @@ def _plot_phase_table(rows: list[dict], run_name: str, out_dir: Path) -> None:
     path = out_dir / "rq1_decision_quality.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"[cli_rq1_decision_quality] wrote {path}")
+    print(f"[decision_quality] wrote {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ def _write_phase_csv(rows: list[dict], out_dir: Path) -> None:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(rows)
-    print(f"[cli_rq1_decision_quality] wrote {path} ({len(rows)} phases)")
+    print(f"[decision_quality] wrote {path} ({len(rows)} phases)")
 
 
 # ---------------------------------------------------------------------------
@@ -205,22 +205,22 @@ def _write_phase_csv(rows: list[dict], out_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def run(run_dir: Path) -> None:
-    print(f"[cli_rq1_decision_quality] run_dir={run_dir}")
+    print(f"[decision_quality] run_dir={run_dir}")
     r = load_run(run_dir)
     out_dir = Path(run_dir) / "analysis" / "rq1"
     out_dir.mkdir(parents=True, exist_ok=True)
     t0 = r.t0
 
     if not r.debug_rows:
-        print("[cli_rq1_decision_quality] no debug_rows — cannot build summary")
+        print("[decision_quality] no debug_rows — cannot build summary")
         return
 
     if not r.phases:
-        print("[cli_rq1_decision_quality] no phases — cannot build summary")
+        print("[decision_quality] no phases — cannot build summary")
         return
 
     # Load thresholds from env snapshot
-    from .breach_detector import load_env_snapshot, load_thresholds
+    from ..lib.breach_detector import load_env_snapshot, load_thresholds
     env = load_env_snapshot(str(run_dir))
     thresholds = load_thresholds(env)
 
@@ -229,7 +229,7 @@ def run(run_dir: Path) -> None:
         r.debug_rows, r.container_event_rows, thresholds, r.phases, t0,
     )
     if not rows:
-        print("[cli_rq1_decision_quality] no phase data to output")
+        print("[decision_quality] no phase data to output")
         return
 
     # Output

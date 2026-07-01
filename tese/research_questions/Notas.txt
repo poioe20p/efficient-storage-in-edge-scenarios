@@ -1,0 +1,13 @@
+Compared with a static no-scale baseline, to what extent does metadata-driven orchestration reduce service degradation during cross-region demand shifts in an edge deployment?
+
+Under which cross-region demand regimes is Tier 1 selective synchronization sufficient, and when does Tier 2 replica expansion provide additional net benefit?
+
+What operational costs and failure modes accompany these gains, particularly in observability fidelity, lifecycle churn, and cleanup convergence?
+
+If you want, I would pair those with hypotheses rather than trying to force every mechanism into an RQ. For example:
+
+Tier 1 reduces hotspot degradation relative to no-scale operation under moderate cross-region demand.
+
+Tier 2 adds net benefit only under stronger or more persistent cross-region demand, and it does so at higher lifecycle cost.
+
+The validity of end-to-end performance claims depends on control-plane robustness, especially activation observability and scale-down convergence.

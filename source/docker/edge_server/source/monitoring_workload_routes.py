@@ -45,7 +45,11 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
         db = client[config.db_name]
         result = db.sensor_reports.update_one(
             {"_id": device_id},
-            {"$set": {"pressure_level": pressure, "last_updated": time.time()}},
+            {"$set": {
+                "pressure_level": pressure,
+                "last_updated": time.time(),
+                "extra": data.get("extra", ""),
+            }},
             upsert=True,
         )
         return jsonify({
@@ -53,6 +57,46 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
             "modified": result.modified_count,
             "upserted_id": str(result.upserted_id) if result.upserted_id else None,
         })
+
+    @app.route("/device_aggregate", methods=["POST"])
+    def device_aggregate():
+        """Run an aggregation pipeline on the MongoDB collection via VIP.
+
+        This endpoint uses the standard VIP-based read path.  The
+        aggregation performs a full-collection scan + grouping + sort,
+        which generates real MongoDB CPU work (not just quick point reads).
+        """
+        data = request.get_json(force=True)
+        lan = data.get("lan", "lan1")
+        pressure_threshold = data.get("pressure_threshold", 50)
+
+        pipeline = [
+            {"$match": {"pressure_level": {"$gt": pressure_threshold}}},
+            {"$group": {
+                "_id": "$device_type",
+                "avg_pressure": {"$avg": "$pressure_level"},
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"avg_pressure": -1}},
+        ]
+
+        try:
+            results = run_with_request_lease(
+                lan,
+                op_name="sensor_reports.aggregate",
+                replay_safe=False,
+                fn=lambda db: list(
+                    db["sensor_reports"].aggregate(pipeline)
+                ),
+            )
+            # Convert ObjectId and non-serialisable types
+            for doc in results:
+                if "_id" in doc:
+                    doc["_id"] = str(doc["_id"])
+            return jsonify({"results": results, "count": len(results)})
+        except PyMongoError as e:
+            log_db_failure("aggregate", e)
+            return jsonify({"error": "aggregation failed", "detail": str(e)}), 500
 
     @app.route("/device/<path:device_id>/latest", methods=["GET"])
     def device_latest(device_id: str):

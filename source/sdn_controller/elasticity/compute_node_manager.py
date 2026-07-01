@@ -209,8 +209,11 @@ class ComputeNodeAdder(_BaseNodeAdder):
         if state is not None:
             logger.info("[node_add] removing stale container %s (state=%s)", name, state)
             self._cleanup_container(name)
+        edge_cpus = os.environ.get("EDGE_CPUS", "0.30")
         cmd = [
             "docker", "run", "-dit",
+            "--cpus", edge_cpus,
+            "--memory", "256m",
             "--network", "none",
             "--name", name,
             "-e", f"LAN_ID=lan{lan}",

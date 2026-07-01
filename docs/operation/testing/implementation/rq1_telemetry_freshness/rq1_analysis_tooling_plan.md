@@ -18,11 +18,11 @@ post-run analysis tooling.
 
 | Measurement                 | What exists                                                                                                                                           | What's missing                                                                         |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Decision staleness          | Source data:`consumed_at`, `window_end` in `resource_stats_debug.csv`. Note: `consumed_at − window_end` ≈ 0s in all modes (push and poll) because `/latest_summary` returns freshest window. See §Post-Implementation Corrections. | `cli_rq1_timings.py` — compute & plot (staleness is now an informational metric; real polling cost is measured via reaction latency) |
-| Reaction latency            | Source data:`resource_stats_debug.csv` (domain metrics), `controller_env_snapshot.env` (thresholds), `elasticity_events.csv` (spawn timestamps) | `cli_rq1_timings.py` — breach detection from telemetry data using degradation_score |
+| Decision staleness          | Source data:`consumed_at`, `window_end` in `resource_stats_debug.csv`. Note: `consumed_at − window_end` ≈ 0s in all modes (push and poll) because `/latest_summary` returns freshest window. See §Post-Implementation Corrections. | `cli/timings.py` — compute & plot (staleness is now an informational metric; real polling cost is measured via reaction latency) |
+| Reaction latency            | Source data:`resource_stats_debug.csv` (domain metrics), `controller_env_snapshot.env` (thresholds), `elasticity_events.csv` (spawn timestamps) | `cli/timings.py` — breach detection from telemetry data using degradation_score |
 | Transient service quality   | `cli_simple_run`, `cli_overview`, `cli_phase_summary`                                                                                           | Nothing — fully covered                                                               |
-| Control-plane overhead      | Nothing                                                                                                                                               | `sample_controller_stats.py` → `controller_stats.csv` → `cli_rq1_overhead.py`  |
-| Scaling outcome description | `elasticity_events.csv`, `phases_snapshot.json`                                                                                                   | `cli_rq1_decision_quality.py` — 2×2 descriptive labels                             |
+| Control-plane overhead      | Nothing                                                                                                                                               | `sample_controller_stats.py` → `controller_stats.csv` → `cli/overhead.py`  |
+| Scaling outcome description | `elasticity_events.csv`, `phases_snapshot.json`                                                                                                   | `cli/decision_quality.py` — 2×2 descriptive labels                             |
 
 ---
 
@@ -30,9 +30,9 @@ post-run analysis tooling.
 
 ```
 Phase 5 (controller_stats.csv)
-  └─→ Phase 4b (cli_rq1_overhead.py) — needs controller_stats.csv
+  └─→ Phase 4b (cli/overhead.py) — needs controller_stats.csv
 
-Phase 4a (cli_rq1_timings.py) — independent; reads existing artifacts
+Phase 4a (cli/timings.py) — independent; reads existing artifacts
 Phase 6 (cli_rq1_decision_quality.py) — independent; reads existing artifacts
 ```
 

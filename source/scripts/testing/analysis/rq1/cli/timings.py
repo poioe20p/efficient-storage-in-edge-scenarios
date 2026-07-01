@@ -1,4 +1,4 @@
-"""cli_rq1_timings — RQ1 decision staleness and reaction latency plots.
+"""timings — RQ1 decision staleness and reaction latency plots.
 
 Produces <run_dir>/analysis/:
   rq1_staleness.png          — time-series of staleness per LAN
@@ -7,7 +7,7 @@ Produces <run_dir>/analysis/:
   rq1_reaction_latency.csv   — per-scaling-event latency breakdown
 
 Usage:
-    python -m source.scripts.testing.analysis.rq1.cli_rq1_timings --run-dir <dir>
+    python -m source.scripts.testing.analysis.rq1.cli.timings --run-dir <dir>
 """
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ import argparse
 import csv
 from pathlib import Path
 
-from ..loader import load_run
-from ..phase_window import phase_boundaries
-from ..plots import shade_phases
+from ...loader import load_run
+from ...phase_window import phase_boundaries
+from ...plots import shade_phases
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ def compute_reaction_latency(
     log alert events. Breach start is the first telemetry window_end
     where degradation_score ≥ threshold.
     """
-    from .breach_detector import detect_breaches
+    from ..lib.breach_detector import detect_breaches
 
     breaches = detect_breaches(debug_rows, thresholds)
 
@@ -168,7 +168,7 @@ def _plot_staleness(staleness_rows: list[dict], run_name: str,
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
-        print("[cli_rq1_timings] matplotlib not installed — skipping staleness plot")
+        print("[timings] matplotlib not installed — skipping staleness plot")
         return
 
     lans = sorted(set(r["network_id"] for r in staleness_rows))
@@ -193,7 +193,7 @@ def _plot_staleness(staleness_rows: list[dict], run_name: str,
     out_path = out_dir / "rq1_staleness.png"
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
-    print(f"[cli_rq1_timings] wrote {out_path}")
+    print(f"[timings] wrote {out_path}")
 
 
 def _plot_reaction_latency(reaction_rows: list[dict], run_name: str,
@@ -203,11 +203,11 @@ def _plot_reaction_latency(reaction_rows: list[dict], run_name: str,
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
-        print("[cli_rq1_timings] matplotlib not installed — skipping reaction plot")
+        print("[timings] matplotlib not installed — skipping reaction plot")
         return
 
     if not reaction_rows:
-        print("[cli_rq1_timings] no reaction latency events to plot")
+        print("[timings] no reaction latency events to plot")
         return
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -264,7 +264,7 @@ def _plot_reaction_latency(reaction_rows: list[dict], run_name: str,
     # Right: per-phase summary table
     ax = axes[1]
     ax.axis("off")
-    from ..phase_window import phase_for_ts
+    from ...phase_window import phase_for_ts
 
     phase_groups: dict[str, dict[str, list[float]]] = {}
     for r in reaction_rows:
@@ -295,7 +295,7 @@ def _plot_reaction_latency(reaction_rows: list[dict], run_name: str,
     out_path = out_dir / "rq1_reaction_latency.png"
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
-    print(f"[cli_rq1_timings] wrote {out_path}")
+    print(f"[timings] wrote {out_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ def _write_staleness_csv(staleness_rows: list[dict],
             "staleness_s", "t_s"])
         w.writeheader()
         w.writerows(staleness_rows)
-    print(f"[cli_rq1_timings] wrote {path}")
+    print(f"[timings] wrote {path}")
 
     # Per-phase aggregate CSV
     per_phase = _staleness_per_phase(staleness_rows, phases, t0)
@@ -331,7 +331,7 @@ def _write_staleness_csv(staleness_rows: list[dict],
                 "p95_s": f"{stats['p95']:.4f}",
                 "max_s": f"{stats['max']:.4f}",
             })
-    print(f"[cli_rq1_timings] wrote {phase_path}")
+    print(f"[timings] wrote {phase_path}")
 
 
 def _write_reaction_csv(reaction_rows: list[dict], out_dir: Path) -> None:
@@ -342,7 +342,7 @@ def _write_reaction_csv(reaction_rows: list[dict], out_dir: Path) -> None:
             "breach_detection_s", "provision_time_s", "total_reaction_s"])
         w.writeheader()
         w.writerows(reaction_rows)
-    print(f"[cli_rq1_timings] wrote {path}")
+    print(f"[timings] wrote {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +350,7 @@ def _write_reaction_csv(reaction_rows: list[dict], out_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def run(run_dir: Path) -> None:
-    print(f"[cli_rq1_timings] run_dir={run_dir}")
+    print(f"[timings] run_dir={run_dir}")
     r = load_run(run_dir)
     out_dir = Path(run_dir) / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -360,27 +360,27 @@ def run(run_dir: Path) -> None:
 
     # ── Staleness ────────────────────────────────────────────────────
     staleness_rows = compute_staleness(r.debug_rows, t0)
-    print(f"[cli_rq1_timings] {len(staleness_rows)} valid staleness rows")
+    print(f"[timings] {len(staleness_rows)} valid staleness rows")
     if staleness_rows:
         _plot_staleness(staleness_rows, run_dir.name, boundaries, t0, out_dir)
         _write_staleness_csv(staleness_rows, r.phases, t0, out_dir)
     else:
-        print("[cli_rq1_timings] no staleness rows — "
+        print("[timings] no staleness rows — "
               "check debug_csv has window_end/consumed_at")
 
     # ── Reaction latency ─────────────────────────────────────────────
-    from .breach_detector import load_env_snapshot, load_thresholds
+    from ..lib.breach_detector import load_env_snapshot, load_thresholds
     env = load_env_snapshot(str(run_dir))
     thresholds = load_thresholds(env)
     reaction_rows = compute_reaction_latency(
         r.debug_rows, r.events, thresholds)
-    print(f"[cli_rq1_timings] {len(reaction_rows)} reaction latency events "
+    print(f"[timings] {len(reaction_rows)} reaction latency events "
           f"(breach-detector based)")
     if reaction_rows:
         _plot_reaction_latency(reaction_rows, run_dir.name, r.phases, out_dir)
         _write_reaction_csv(reaction_rows, out_dir)
     else:
-        print("[cli_rq1_timings] no reaction latency events "
+        print("[timings] no reaction latency events "
               "(no breaches matched to spawn_done)")
 
 

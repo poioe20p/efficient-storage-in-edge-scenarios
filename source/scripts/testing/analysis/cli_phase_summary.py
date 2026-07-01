@@ -167,7 +167,7 @@ def run(run_dir: Path) -> None:
             else:  # p99
                 val = _percentile(lats, 99)
             values.append(val)
-        ax.bar(x + offset * bar_width, values, bar_width, color=color, label=label, alpha=0.85)
+        ax.bar(x + offset * bar_width, values, bar_width, color=color, label=label, alpha=0.85, edgecolor="black", linewidth=0.5)
 
     ax.set_ylabel("ms")
     ax.set_title("Request latency percentiles by phase")
@@ -184,7 +184,7 @@ def run(run_dir: Path) -> None:
         ("selective", "#1abf4a", 1.0),
     ]):
         values = [node_max_by_phase.get(p, {}).get(ntype, 0) for p in phases_present]
-        ax.bar(x + offset * bar_width, values, bar_width, color=color, label=ntype, alpha=0.85)
+        ax.bar(x + offset * bar_width, values, bar_width, color=color, label=ntype, alpha=0.85, edgecolor="black", linewidth=0.5)
 
     ax.set_ylabel("nodes")
     ax.set_title("Nodes by type per phase")
@@ -209,7 +209,7 @@ def run(run_dir: Path) -> None:
             val = _percentile(lats, 95)
             values.append(val)
         color = lan_colors.get(lan, "#888888")
-        ax.bar(x + lan_offsets[lan], values, bar_width, color=color, label=lan.upper(), alpha=0.85)
+        ax.bar(x + lan_offsets[lan], values, bar_width, color=color, label=lan.upper(), alpha=0.85, edgecolor="black", linewidth=0.5)
 
     ax.set_ylabel("p95 ms")
     ax.set_title("Per-LAN p95 latency by phase")

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Build mongod arguments from env vars.
-MONGOD_ARGS="--bind_ip_all"
+MONGOD_ARGS="--bind_ip_all --wiredTigerCacheSizeGB 0.25"
 if [ -n "${MONGO_REPLSET:-}" ]; then
     MONGOD_ARGS="$MONGOD_ARGS --replSet $MONGO_REPLSET"
 fi

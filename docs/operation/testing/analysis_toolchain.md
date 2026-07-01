@@ -68,10 +68,10 @@ a new controller-side publisher.
 | New | `source/scripts/testing/analysis/cli_tdb_drivers.py` | T_db decomposition regression |
 | New | `source/scripts/testing/analysis/requirements.txt` | `matplotlib` (no pandas / numpy) |
 | New | `source/scripts/testing/analysis/rq1/__init__.py` | RQ1 analysis package marker |
-| New | `source/scripts/testing/analysis/rq1/breach_detector.py` | Shared breach detection via degradation_score (used by cli_rq1_timings + cli_rq1_decision_quality) |
-| New | `source/scripts/testing/analysis/rq1/cli_rq1_timings.py` | RQ1 staleness and reaction-latency plots (`consumed_at` from `resource_stats_debug.csv`) |
-| New | `source/scripts/testing/analysis/rq1/cli_rq1_overhead.py` | RQ1 controller CPU/RAM overhead plots (`controller_stats.csv` from Phase 5 sampler) |
-| New | `source/scripts/testing/analysis/rq1/cli_rq1_decision_quality.py` | RQ1 scaling outcome description: per-phase descriptive table |
+| New | `source/scripts/testing/analysis/rq1/lib/breach_detector.py` | Shared breach detection via degradation_score (used by cli/timings + cli/decision_quality) |
+| New | `source/scripts/testing/analysis/rq1/cli/timings.py` | RQ1 staleness and reaction-latency plots (`consumed_at` from `resource_stats_debug.csv`) |
+| New | `source/scripts/testing/analysis/rq1/cli/overhead.py` | RQ1 controller CPU/RAM overhead plots (`controller_stats.csv` from Phase 5 sampler) |
+| New | `source/scripts/testing/analysis/rq1/cli/decision_quality.py` | RQ1 scaling outcome description: per-phase descriptive table |
 | New | `source/scripts/testing/sample_controller_stats.py` | Phase 5 background sampler: periodic `docker stats` on controller containers |
 
 ---

@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import time
 
@@ -229,8 +230,11 @@ class StorageNodeAdder(_BaseNodeAdder):
             self._cleanup_container(name)
         # else: container doesn't exist — nothing to clean up
         vol = f"{name}-data"
+        storage_cpus = os.environ.get("STORAGE_CPUS", "0.15")
         cmd = [
             "docker", "run", "-dit",
+            "--cpus", storage_cpus,
+            "--memory", "512m",
             "--network", "none",
             "--name", name,
             "-v", f"{vol}:/data/db",

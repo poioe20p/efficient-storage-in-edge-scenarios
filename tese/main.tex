@@ -15,30 +15,27 @@
 % =====================================================================
 
 % Title of the Dissertation
-\title{Title of a Great Dissertation}
+\title{Efficient Data Storage Using Programmable Containers in Edge Computing}
 
 % Author (Full Name)
-\author{Your Full Name}
+\author{Pedro Ojo Oriakhi}
 
 % Program (Name of Degree)
-\program{Master's in Using LaTeX}
+\program{Master's in Telecommunications and Computer Engineering}
 
 % Department(s)
-\department{Department of Typesetting}
+\department{Department of Information Science and Technology}
 
 % Supervisors 
 % ======================================================================
 \supervisor
-{Ph.D. Professor Alice, Assistant Professor}
+{Ph.D. Professor José Moura, Assistant Professor}
 {Iscte - Instituto Universitário de Lisboa}
 
 \supervisor
-{Ph.D. Professor Bob, Assistant Professor}
+{Ph.D. Professor Pedro Ramos, Assistant Professor}
 {Iscte - Instituto Universitário de Lisboa}
 
-\supervisor
-{Ph.D. Professor Mallory, Assistant Professor}
-{Iscte - Instituto Universitário de Lisboa}
 % ======================================================================
 
 % Submission Date (Month, Year)
@@ -61,12 +58,15 @@
 % You can reference an acronym as-is inline using e.g. \ac{TIAA}.
 % If you need to reference a pluralised acronym, instead use \acp.
 \acronyms{
-    \acro{DSR}{Design Science Research}
-    \acro{IS}{Information System}
-
-    % For "irregular" plurals, instead of \acp (which just appends an "s" at the end), you can define a custom plural using the \acroplural command. In this example, you wouldn't want QAYDs referring to "Question about your Dissertations"!
-    \acro{QAYD}{Question About Your Dissertation}
-    \acroplural{QAYD}[QAYDs]{Questions About Your Dissertation}
+    \acro{SDN}{Software-Defined Networking}
+    \acro{WSM}{Weighted Sum Model}
+    \acro{VIP}{Virtual IP}
+    \acro{OVS}{Open vSwitch}
+    \acro{HPA}{Horizontal Pod Autoscaler}
+    \acro{MEC}{Multi-Access Edge Computing}
+    \acro{ZMQ}{ZeroMQ}
+    \acro{RTT}{Round-Trip Time}
+    \acro{RSS}{Resident Set Size}
 }
 % =====================================================================
 
@@ -91,242 +91,191 @@
 }
 % =====================================================================
 
-
-
-
-
-
-
-
-
 % =====================================================================
 %                               MAIN BODY
 % =====================================================================
 \begin{document}
 
+
 % =====================================================================
 % If you get told that the Introduction and/or Conclusion should be un-numbered chapters, use \chapter* instead of \chapter (add an asterisk). The same can be done for sections with \section*, \subsection*, and \subsubsection*.
 % =====================================================================
 \chapter{Introduction}\label{ch:introduction}
-All chapters automatically begin on odd-numbered pages. If a chapter would start on an even-numbered page, a blank page is automatically added.
 
-\section{This is a Section}\label{sec:example_section}
-The first paragraph of a chapter or section is not indented, i.e. it is aligned with the title. All following paragraphs have an indentation of 0.7cm. This is done automatically.
+\section{Context and Motivation}\label{sec:context_motivation}
+% TODO: Edge computing + stateful web services framing (NO IoT).
+% - Edge computing: services closer to users, lower latency, reduced backbone traffic.
+% - Stateful services at the edge: compute + data co-location matters.
+% - Conventional approach: monitoring, routing, and auto-scaling handled by separate
+%   control loops, even within the same platform (Kubernetes HPA, kube-proxy,
+%   metrics-server; OpenStack Heat, Neutron, Ceilometer). Each loop has its own
+%   reconciliation interval and state view.
+% - Separation is deliberate: fault isolation, independent scalability, modularity,
+%   ecosystem maturity.
+% - This thesis does NOT argue separation is wrong or co-location is superior.
+%   It asks: if these functions are co-located in a single SDN controller, what
+%   properties emerge? How do three tunable dimensions (telemetry freshness,
+%   backend selection, data locality) each independently affect service quality
+%   during demand shifts?
+% - SDN as enabling technology: OpenFlow per-flow steering; OS-Ken/Ryu controller
+%   consumes telemetry, evaluates thresholds, spawns/drains containers, installs
+%   forwarding rules — all from the same process. The co-location is the
+%   experimental apparatus, not the hypothesis under test.
+% DO NOT mention: IoT, smart cities, sensors, devices, industrial monitoring.
+%
+% YOUR EXISTING DRAFT TEXT (needs deiotification):
+% The Internet of Things, IoT universe, has been ever expanding, with
+% expectations to bypass \textcite{TransformaInsights2023IoTConnectedDevices}
+% 20 billion IoT devices globally. ...
 
-We are currently in Chapter \ref{ch:introduction}. When referring to chapters or sections this way, it's customary to write ``Section'', ``Chapter'', and so on in uppercase, as opposed to ``section'' or ``chapter''.
+\section{Objectives}\label{sec:objectives}
+% TODO: The 6 objectives from the thesis proposal.
 
-\subsection{Subsection}
-You can have sub-sections within sections. Use these to better organise your content, if you feel like it's needed.
+\section{Research Questions}\label{sec:research_questions}
+% TODO: RQ1 (Telemetry Freshness), RQ2 (Backend Selection), RQ3 (Data Locality).
 
-\subsubsection{Sub-subsection}
-You can even have sub-subsections! These do not appear in the Table of Contents.
+\section{Methodology Overview}\label{sec:methodology_overview}
+% TODO: 1–2 page summary. Applied + experimental hybrid.
+% Reference to Chapter~\ref{ch:methodology} for full detail.
 
-\section{This is Another Section}
+\section{Contributions}\label{sec:contributions}
+% TODO: 5 contributions.
 
-This is another section. You can define as many as you want, and they are automatically numbered within their chapter.
-
-
-
-
-
-
-
+\section{Document Structure}\label{sec:document_structure}
+% TODO: Brief paragraph outlining the 7 chapters.
 
 
 
 \chapter{Literature Review}\label{ch:literature_review}
 
-References should be added to the references.bib file, in BibTeX format. They can then be cited in the text. Anything you cite in the text is automatically added to the list of References at the end of the document.
+\section{Review Method}\label{sec:review_method}
+% TODO: Databases, search terms, time range, inclusion/exclusion criteria.
 
-A paper by \textcite{Peffers2007} explores the usage of \ac{DSR} for research in \acp{IS}.
+\section{Edge Computing Architectures}\label{sec:lit_edge_architectures}
+% TODO: Edge vs. cloud vs. fog; containerization; stateful vs. stateless.
 
+\section{SDN and Programmable Infrastructure}\label{sec:lit_sdn}
+% TODO: SDN principles; controllers; traffic engineering; SDN at the edge.
 
+\section{Auto-Scaling and Elasticity Mechanisms}\label{sec:lit_autoscaling}
+% TODO: Taxonomy; industry systems; control-loop cadences; separation benefits.
 
+\section{Metadata-Driven Data Placement and Replication}\label{sec:lit_data_placement}
+% TODO: Spatio-temporal popularity; replica placement; data gravity; tiered storage.
 
+\section{Document-Oriented Databases for Edge Environments}\label{sec:lit_document_db}
+% TODO: NoSQL landscape; MongoDB — schema-less, replica set API, connection pooling.
 
-
-
-
-
-
-\chapter{Typesetting in \LaTeX}\label{ch:typesetting}
-
-\section{Text, Images, and Tables}\label{sec:text_images_tables}
-
-Your text can be written in \textit{italics} or \textbf{bold}. If you're feeling adventurous, you can even do \textit{\textbf{both}} at the same time! There's also \texttt{monospaced} and \textsc{capitalised} text.
-
-\noindent You can remove the indentation from a paragraph which isn't the first of its chapter or section. If you need to do some extra sophisticated formatting, you may wrap your text in some special environments. For example, you can horizontally center some content on the page:
-\begin{center}
-    Isn't that cool?
-\end{center}
-
-\noindent A lot of the time, you'll want to list things out:
-\begin{itemize}
-    \item This is a list with bullet points;
-    \item You can add as many as you like!
-\end{itemize}
-
-\noindent Your lists can also be numbered:
-\begin{enumerate}
-    \item This is the first item;
-    \item And so on...
-\end{enumerate}
-
-\noindent Sometimes, it might be useful to change what is used as a ``bullet point'' within a list. For example, you might want your research questions labelled ``RQ1'' and ``RQ2''. This one might be useful:
-
-\begin{center}
-    \verb|\begin{enumerate}[label=\textbf{RQ\arabic*}] ... \end{enumerate}|
-\end{center}
-
-\noindent Here's what that looks like:
-
-\begin{enumerate}[label=\textbf{RQ\arabic*}] 
-    \item Are LaTeX documents difficult to use?
-\end{enumerate}
-
-\noindent You can format tables using LaTeX, as seen in Table \ref{table:example}. There's a lot of customisation options, so it helps to use a website that creates them for you. Here's a good option: \url{https://www.tablesgenerator.com/}.
-
-\begin{table}[h]
-\caption{Table captions should always appear \textbf{above} the table.}
-\begin{tabular}{l|l|l}
-ID & Name  & Email           \\ \hline
-1  & Alice & alice@latex.com \\
-2  & Bob   & bob@latex.com  
-\end{tabular}
-\label{table:example}
-\end{table}
-
-Images can also be included, as you can see in Figure \ref{fig:example}. You can make them smaller or larger by changing their \texttt{width}. LaTeX usually places them wherever it decides they will fit best, but you can try modifying this behaviour using placement modifiers.\footnote{\url{https://www.overleaf.com/learn/latex/Positioning_images_and_tables}}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.3\linewidth]{images/ista.png}
-    \caption{Figure captions should always appear \textbf{below} the figure.}
-    \label{fig:example}
-\end{figure}
-
-\section{Mathematical Objects}
-
-LaTeX lets you typeset nice-looking mathematical formulae. For example, let $x = 5$ and $y = 3$. Then, $xy = 15$.
-
-Some equations are so important that you can number them. For example, the series expansion of the function $y = \exp{x}$ at $x=0$ is given by the infinite sum
-\begin{equation}
-    \sum_{n=0}^{\infty} \frac{x^n}{n!}.
-\end{equation}
-
-This definition is one of the ways that we can check that the derivative of an exponential is itself. Actually, we can prove this as a \textit{Theorem}.
-
-\begin{theorem}
-    Let $y = \exp{x}$. The derivative is given by $y' = \exp{x}$.
-\end{theorem}
-
-\begin{proof}
-\[
-\frac{d}{dx} \exp{x} = \frac{d}{dx} \sum_{n=0}^{\infty} \frac{x^n}{n!} = \sum_{n=1}^{\infty} \frac{d}{dx} \frac{x^n}{n!} = \sum_{n=1}^{\infty}  \frac{n x^{n-1}}{n!} = \sum_{n=1}^{\infty}  \frac{x^{n-1}}{(n-1)!} = \exp{x}
-\]
-\end{proof}
-
-\begin{corollary}
-    The function $y=\exp{x}$ is an eigenfunction of the derivative operator.
-\end{corollary}
-
-\noindent If you need to state a known, named theorem, you can also do that.
-
-\begin{theorem}[Fundamental Theorem of Calculus]
-For any continuous function $f$, we have
-    \[
-    \int_{a}^{b} f'(t) dt = f(b) - f(a).
-    \]
-\end{theorem}
-
-\noindent Besides Theorem, Corollary, and Proof, you can use the following environments:
-\begin{itemize}
-    \item Axiom
-    \item Case
-    \item Claim
-    \item Conclusion
-    \item Condition
-    \item Conjecture
-    \item Corollary
-    \item Criterion
-    \item Definition
-    \item Example
-    \item Exercise
-    \item Lemma
-    \item Notation
-    \item Problem
-    \item Proposition
-    \item Remark
-    \item Solution
-    \item Summary
-    \item Theorem
-\end{itemize}
-
-\section{Computer Code}
-
-You can typset code in your dissertation by using Listings\footnote{\url{https://www.overleaf.com/learn/latex/Code_listing}}, as in Figure \ref{code:listings}, the Minted\footnote{\url{https://www.overleaf.com/learn/latex/Code_Highlighting_with_minted}} syntax highlighting package, as in Figure \ref{code:minted}, or, if you need to write some pseudocode, the Algorithm environment, as in Algorithm \ref{alg:example}.
-
-\begin{figure}[h]
-\begin{lstlisting}[language=Java]
-public static void main(String[] args) {
-    System.out.println("Hello world!");
-}
-\end{lstlisting}
-\caption{Example of code formatting using listings.}\label{code:listings}
-\end{figure}
-
-\begin{figure}[h]
-\begin{minted}{java}
-public static void main(String[] args) {
-    System.out.println("Hello world!");
-}
-\end{minted}
-\caption{Example of code formatting using minted.}\label{code:minted}
-\end{figure}
-
-\begin{algorithm}
-    \caption{Algorithm for Multiplying Two Integers}
-    \begin{algorithmic}
-        \Require $x\in\mathbb{N}$
-        \Require $y\in\mathbb{N}$
-        \State $i \gets 0$
-        \State $z \gets 0$
-        \While{$i < x$}
-            \State $z \gets z + y$
-            \State $i \gets i + 1$
-        \EndWhile
-        \State \Return $z$
-    \end{algorithmic}
-    \label{alg:example}
-\end{algorithm}
+\section{Synthesis}\label{sec:lit_synthesis}
+% TODO: Each domain treats concerns separately. No platform isolates all three
+% dimensions. This thesis builds that platform and characterizes the trade-off surface.
 
 
 
+\chapter{System Architecture}\label{ch:system_architecture}
+
+\section{Design Principles}\label{sec:design_principles}
+% TODO: Cross-layer orchestration; shared data structures; tiered data gravity;
+% decoupled compute/data scaling; domain-agnostic observability.
+
+\section{Architecture Overview}\label{sec:architecture_overview}
+% TODO: Component diagram. Two edge networks + WAN. OVS, edge servers, storage servers.
+% SDN controller (3 greenthreads). Double-VIP model. Telemetry pipeline.
+
+\section{Telemetry Pipeline}\label{sec:telemetry_pipeline}
+% TODO: Per-request instrumentation → ZMQ → Aggregator → summaries → Controller.
+
+\section{Routing and Backend Selection}\label{sec:routing_backend_selection}
+% TODO: WSM cost functions; policy modes; per-flow OpenFlow; Double-VIP ARP + DNAT/SNAT.
+
+\section{Elasticity and Data Gravity Tiers}\label{sec:elasticity_tiers}
+% TODO: ElasticityManager; ComputeAlert vs. DataAlert; Tier 0 → Tier 2;
+% Tier 1 design (honest scope); scale-down; degradation score.
+
+\section{Experimental Workload}\label{sec:experimental_workload}
+% TODO: Multi-Region Content Discovery Platform (DO NOT mention IoT).
+% content_items + user_profiles collections; content_lookup, feed_ranking,
+% service_pressure endpoints; two-regime model; 10-phase schedule.
 
 
 
+\chapter{Methodology}\label{ch:methodology}
+
+\section{Research Approach}\label{sec:research_approach}
+% TODO: Applied + experimental hybrid. Aim → 4 objectives with methods mapped.
+
+\section{Experimental Design}\label{sec:experimental_design}
+% TODO: Within-system, single-variable manipulation. Comparison strategy.
+% Each RQ holds the other pillars constant.
+
+\section{Variables}\label{sec:variables}
+% TODO: Independent, dependent, and controlled variables.
+
+\section{Measurement Instrumentation}\label{sec:measurement_instrumentation}
+% TODO: Timing; analysis toolchain; independent breach detector; overhead sampler.
+
+\section{Experiment Procedure}\label{sec:experiment_procedure}
+% TODO: Pre-run → setup → run → post-run → copy-back → cross-run comparison.
+
+\section{Repetition and Statistical Treatment}\label{sec:statistical_treatment}
+% TODO: Runs per condition; Mann-Whitney U; Cliff's delta; handling variance.
+
+\section{Validity and Reliability}\label{sec:validity_reliability}
+% TODO: Internal validity, external validity, reliability.
 
 
 
+\chapter{Implementation}\label{ch:implementation}
 
-\chapter{Further Chapters}
+\section{SDN Controller}\label{sec:impl_controller}
+% TODO: OS-Ken/Ryu; 3 greenthreads; shared data structures; key algorithm pseudo-code.
 
-You can write anything you want! It's your dissertation; go wild. If you have any more \acp{QAYD} or need some help with \LaTeX, Overleaf has a great set of tutorials\footnote{\url{https://www.overleaf.com/learn/latex/Tutorials}}. Happy writing!
+\section{Edge Service and Storage}\label{sec:impl_edge_storage}
+% TODO: Flask edge server (content_lookup, feed_ranking, service_pressure);
+% MongoDB connection management; storage server lifecycle; Docker lifecycle.
+
+\section{Network Infrastructure}\label{sec:impl_network}
+% TODO: OVS topology; Double-VIP; conntrack routing; WAN emulation.
+
+\section{Analysis Toolchain}\label{sec:impl_toolchain}
+% TODO: Aggregator; collector; post-run pipeline; read-only design.
+
+\section{Implementation Validation}\label{sec:impl_validation}
+% TODO: Golden-config stability experiments (15+ runs); mechanism validation.
 
 
 
+\chapter{Results and Discussion}\label{ch:results}
+
+\section{RQ1 — Telemetry Freshness and Delivery Cadence}\label{sec:results_rq1}
+% TODO: Staleness, reaction latency, service quality, overhead, decision quality.
+
+\section{RQ2 — Metadata-Aware Backend Selection}\label{sec:results_rq2}
+% TODO: Compute-plane, data-plane, cross-layer benefit.
+
+\section{RQ3 — Data Locality Strategies}\label{sec:results_rq3}
+% TODO: Service quality, operating cost, trade-off characterization.
+
+\section{Cross-RQ Synthesis}\label{sec:cross_rq_synthesis}
+% TODO: Which dimension matters most? Sharpest trade-offs? Implications.
 
 
 
+\chapter{Conclusions and Future Work}\label{ch:conclusions}
 
+\section{Summary of Findings}\label{sec:summary_findings}
+% TODO: RQ1, RQ2, RQ3, cross-RQ findings.
 
+\section{Contributions Revisited}\label{sec:contributions_revisited}
+% TODO: Restate 5 contributions with evidence.
 
+\section{Limitations}\label{sec:limitations}
+% TODO: Controlled testbed; simulated workload; single window size;
+% Tier 1 partial; statistical power; MongoDB-specific; compound delay not tested.
 
-\chapter{Conclusions}
-
-\LaTeX\space is a high-quality typesetting system; it includes features designed for the production of technical and scientific documentation.
-
-This template conforms to ISTA's dissertation style guidelines\footnote{\url{https://www.iscte-iul.pt/conteudos/estudantes/informacao-academica/percurso-academico/area-mestrado/926/entrega-de-dissertacao-ou-trabalho-de-projeto}}, accessed on July 12\textsuperscript{th} 2024, and implements guidelines given to students by the school's staff.
+\section{Future Work}\label{sec:future_work}
+% TODO: Compound delay injection; window size variation; Tier 1 full implementation;
+% larger-scale deployment; real-world traces; ML-driven threshold adaptation.
 
 \end{document}
 % =====================================================================

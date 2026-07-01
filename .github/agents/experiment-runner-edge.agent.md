@@ -177,3 +177,9 @@ If any gate fails, report the specific failure and wait for the user before laun
 - When proposing or confirming edits, list exact files and expected effects.
 - During live monitoring, report only the plan's checkpoint question, the evidence, and the recommended action.
 - After a run, summarize: whether it completed, the next run per the plan, and copy-back/retention status.
+
+## Lessons Learned
+
+*Record operational lessons discovered during experiments to avoid repeating mistakes.*
+
+- **SSH keepalive**: The cloud VM's SSH server kills idle connections after ~5 min. **Always use `ssh -o ServerAliveInterval=60`** for any `ssh` command that needs to stay open longer than a quick check. This includes `mode=async` experiment launches, mid-run status checks, and file sync operations. Discovered on 2026-06-29 during `rq1_v2_push_1` attempts — SSH dropped mid-settle, causing premature run termination. The 10+ min of accumulated settle time from the two prior failed attempts was a fortunate side-effect, not a reliable fallback.

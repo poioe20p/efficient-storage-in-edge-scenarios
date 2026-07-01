@@ -140,6 +140,16 @@ def pick_target(client_lan: str, phase: PhaseConfig, snap: Snapshot, request_typ
         device_id = random.choice(snap.devices_by_region[home])
         return {"device_id": device_id, "node_id": "", "target_region": home}
 
+    elif request_type == "device_aggregate":
+        # Aggregation is a collection-level operation — no specific device needed.
+        # Target region is always local (aggregation runs on the client's own
+        # LAN's MongoDB; the aggregator doesn't cross regions).
+        return {
+            "device_id": "",
+            "node_id": "",
+            "target_region": client_lan,
+        }
+
     return {}
 
 
@@ -155,6 +165,9 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
         return f"{base}/service_pressure?window_min=10&limit=10"
     elif request_type == "device_update":
         return f"{base}/device_update"
+
+    elif request_type == "device_aggregate":
+        return f"{base}/device_aggregate"
 
     return base
 
@@ -248,10 +261,17 @@ async def client_loop(
 
         body = None
         if req_type == "device_update":
+            extra_payload = "x" * 1024  # 1KB of padding to inflate oplog entries
             body = (
                 f'{{"device_id":"{target["device_id"]}",'
                 f'"pressure_level":{random.randint(0,100)},'
-                f'"lan":"{client_lan}"}}'
+                f'"lan":"{client_lan}",'
+                f'"extra":"{extra_payload}"}}'
+            )
+        if req_type == "device_aggregate":
+            body = (
+                f'{{"lan":"{client_lan}",'
+                f'"pressure_threshold":{random.randint(30,70)}}}'
             )
         http_status, latency_s = await exec_curl(ns, url, dry_run, body)
         request_count += 1

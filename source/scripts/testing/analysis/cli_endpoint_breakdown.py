@@ -95,7 +95,7 @@ def run(run_dir: Path) -> None:
             values.append(val)
         offset = (i - (n_endpoints - 1) / 2.0) * bar_width
         color = endpoint_colors.get(ep, "#888888")
-        ax.bar(x + offset, values, bar_width, color=color, label=ep, alpha=0.85)
+        ax.bar(x + offset, values, bar_width, color=color, label=ep, alpha=0.85, edgecolor="black", linewidth=0.5)
 
     ax.set_ylabel("avg ms")
     ax.set_title("Average latency by endpoint per phase")
@@ -110,7 +110,7 @@ def run(run_dir: Path) -> None:
     for ep in endpoints_sorted:
         values = [data.get(p, {}).get(ep, {}).get("failures", 0) for p in phases_present]
         color = endpoint_colors.get(ep, "#888888")
-        ax.bar(x, values, bar_width * n_endpoints * 0.9, bottom=bottom, color=color, label=ep, alpha=0.85)
+        ax.bar(x, values, bar_width * n_endpoints * 0.9, bottom=bottom, color=color, label=ep, alpha=0.85, edgecolor="black", linewidth=0.5)
         bottom = [b + v for b, v in zip(bottom, values)]
 
     ax.set_ylabel("failures")

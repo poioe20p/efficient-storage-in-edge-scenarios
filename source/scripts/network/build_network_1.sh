@@ -4,6 +4,9 @@
 # -o pipefail: a pipeline fails if any command in it fails, not just the last
 set -euo pipefail
 
+# TEMPORARY — verify env propagation for v6 experiment (remove after v6-ST S1)
+echo "[v6] STORAGE_CPUS=${STORAGE_CPUS:-UNSET} EDGE_CPUS=${EDGE_CPUS:-UNSET}" >&2
+
 # ==============================
 # Helper: get_container_pid <container_name> [timeout_s]
 # Retries until the container has a non-zero PID or the timeout is reached.
@@ -98,6 +101,7 @@ echo "Launching application containers..."
 # --network none: prevents Docker from creating default network
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name edge_server_n1 --network none --restart=on-failure \
+  --cpus=${EDGE_CPUS:-0.30} --memory=${EDGE_MEMORY:-256m} \
   -e LAN_ID=lan1 \
   -e VIP_DATA_RECOVERY_N1_IP=10.0.0.252 \
   -e VIP_DATA_RECOVERY_N2_IP=10.0.1.252 \
@@ -109,6 +113,7 @@ docker run -dit --name edge_server_n1 --network none --restart=on-failure \
 
 echo "Starting edge_storage_server_n1 container..."
 docker run -dit --name edge_storage_server_n1 --network none \
+  --cpus=${STORAGE_CPUS:-0.15} --memory=${STORAGE_MEMORY:-512m} \
   --no-healthcheck \
   -e LAN_ID=lan1 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.0.5:5555 \

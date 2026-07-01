@@ -256,7 +256,7 @@ def _append_summary(summary_path: Path, result) -> None:
             return
         f.write(
             f"OLS regression: "
-            f"`T_db_write ≈ {result['intercept']:.1f} "
+            f"`T_db_write ~ {result['intercept']:.1f} "
             f"+ {result['b_storage_count']:.1f}·storage_count "
             f"+ {result['b_cross_region']:.1f}·cross_region_ratio  "
             f"(R²={result['r2']:.3f}, n={result['n']})`\n\n"

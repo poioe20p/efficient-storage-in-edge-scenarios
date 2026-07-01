@@ -101,7 +101,7 @@ This experiment is the **primary evidence** for the RQ1 evaluation chapter
 | -------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Phase file     | `testing/phases.json`          | 10-phase integrated workload (~25 min):`baseline` → `local_moderate` → `storage_stress` → `cross_region_hotspot` → `inter_hotspot_cooldown` → `reverse_hotspot` → `compute_ramp` → `compute_spike` → `sustained_plateau` → `demand_drop`. Exercises storage, Tier 1, and compute sequentially. Both hotspot directions present (`lan2_to_lan1` and `lan1_to_lan2`) so breaches occur on both LANs. `demand_drop` (300 s) exceeds the 180 s cooldown — scale-down fires within the run window. |
 | `WINDOW_S`   | 10                               | Default aggregation window. Held constant for all RQ1 conditions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Controller env | `current_state_integrated.env` | [Golden config](../../golden_config.md). Proven stable across the variance_reduction experiment (0.23% overall, compute phases 0.04–0.63%). Uses `SCALEDOWN_COMPUTE_COOLDOWN_S=180` (not 60) — scale-down fires during `demand_drop` (300 s > 180 s cooldown) without the premature node removal that 60 s caused in the verification runs.                                                                                                                                                                                       |
+| Controller env | `current_state_integrated.env` | [Golden config](../../golden_config.md). Proven stable across the variance_reduction experiment (0.23% overall, compute phases 0.04–0.63%). Uses `SCALEDOWN_COMPUTE_COOLDOWN_S=180` (not 60) — scale-down fires during `demand_drop` (300 s > 180 s cooldown) without the premature node removal that 60 s caused in the verification runs.                                                                                                                                                                                     |
 | `CLIENTS`    | 8                                | Standard                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `DEVICES`    | 600                              | Standard                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `NODES`      | 100                              | Standard                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -232,9 +232,9 @@ python3 source/scripts/tools/parse_elasticity_logs.py \
 sudo chown $(whoami) metrics/<ts>/controller_env_snapshot.env
 
 # 3. Run all analysis CLIs on the cloud VM
-python3 -m source.scripts.testing.analysis.rq1.cli_rq1_timings         --run-dir metrics/<ts>
-python3 -m source.scripts.testing.analysis.rq1.cli_rq1_overhead        --run-dir metrics/<ts>
-python3 -m source.scripts.testing.analysis.rq1.cli_rq1_decision_quality --run-dir metrics/<ts>
+python3 -m source.scripts.testing.analysis.rq1.cli.timings         --run-dir metrics/<ts>
+python3 -m source.scripts.testing.analysis.rq1.cli.overhead        --run-dir metrics/<ts>
+python3 -m source.scripts.testing.analysis.rq1.cli.decision_quality --run-dir metrics/<ts>
 python3 -m source.scripts.testing.analysis.cli_simple_run              --run-dir metrics/<ts>
 python3 -m source.scripts.testing.analysis.cli_overview                --run-dir metrics/<ts>
 python3 -m source.scripts.testing.analysis.cli_phase_summary           --run-dir metrics/<ts>
@@ -262,11 +262,11 @@ polling introduces. Measurement 1 confirms the HTTP cache works correctly.
 
 | # | Role                            | Measurement                                                          | Artifact                                                 | CLI                                             | Output                                                                   |
 | - | ------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
-| 1 | **Confirmation**          | Information age at consumption (`consumed_at − window_end`)       | `resource_stats_debug.csv`                             | `cli_rq1_timings.py`                          | `rq1_staleness.png`, `rq1_staleness.csv`                             |
-| 2 | **Core evidence**         | Reaction latency (`spawn_done_ts − breach_window_end`), segmented | `resource_stats_debug.csv` + `elasticity_events.csv` | `cli_rq1_timings.py`                          | `rq1_reaction_latency.png`, `rq1_reaction_latency.csv`               |
+| 1 | **Confirmation**          | Information age at consumption (`consumed_at − window_end`)       | `resource_stats_debug.csv`                             | `cli/timings.py`                            | `rq1_staleness.png`, `rq1_staleness.csv`                             |
+| 2 | **Core evidence**         | Reaction latency (`spawn_done_ts − breach_window_end`), segmented | `resource_stats_debug.csv` + `elasticity_events.csv` | `cli/timings.py`                            | `rq1_reaction_latency.png`, `rq1_reaction_latency.csv`               |
 | 3 | **User-visible impact**   | Transient service quality (p95/p99 latency, failure rate per phase)  | `client_requests.csv`                                  | `cli_simple_run.py`, `cli_phase_summary.py` | `simple_run.png`, `phase_summary.png`                                |
-| 4 | **Cost**                  | Control-plane overhead (CPU%, RSS MB per controller)                 | `controller_stats.csv`                                 | `cli_rq1_overhead.py`                         | `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` |
-| 5 | **Behavioral divergence** | Scaling outcome description (breached windows vs. spawns per phase)  | `resource_stats_debug.csv` + `container_events.csv`  | `cli_rq1_decision_quality.py`                 | `rq1_decision_quality.png`, `rq1_decision_quality.csv`               |
+| 4 | **Cost**                  | Control-plane overhead (CPU%, RSS MB per controller)                 | `controller_stats.csv`                                 | `cli/overhead.py`                           | `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` |
+| 5 | **Behavioral divergence** | Scaling outcome description (breached windows vs. spawns per phase)  | `resource_stats_debug.csv` + `container_events.csv`  | `cli/decision_quality.py`                   | `rq1_decision_quality.png`, `rq1_decision_quality.csv`               |
 
 **How measurements 1 and 2 connect to the thesis argument**:
 
@@ -415,10 +415,10 @@ After running the full analysis pipeline, each run folder adds under `analysis/`
 
 | Analysis Output                                                          | CLI                          |
 | ------------------------------------------------------------------------ | ---------------------------- |
-| `rq1_staleness.png`, `rq1_staleness.csv`                             | `cli_rq1_timings`          |
-| `rq1_reaction_latency.png`, `rq1_reaction_latency.csv`               | `cli_rq1_timings`          |
-| `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` | `cli_rq1_overhead`         |
-| `rq1_decision_quality.png`, `rq1_decision_quality.csv`               | `cli_rq1_decision_quality` |
+| `rq1_staleness.png`, `rq1_staleness.csv`                             | `cli/timings`            |
+| `rq1_reaction_latency.png`, `rq1_reaction_latency.csv`               | `cli/timings`            |
+| `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv` | `cli/overhead`           |
+| `rq1_decision_quality.png`, `rq1_decision_quality.csv`               | `cli/decision_quality`   |
 | `simple_run.png`                                                       | `cli_simple_run`           |
 | `overview.png`                                                         | `cli_overview`             |
 | `phase_summary.png`                                                    | `cli_phase_summary`        |

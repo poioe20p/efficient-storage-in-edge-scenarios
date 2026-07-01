@@ -26,6 +26,7 @@ from platform_cache import _owner_lan
 # Writes bypass the VIP data-plane path entirely — they go straight to the
 # primary container over the OVS bridge (directConnection=True, no DNAT).
 _write_clients: dict[str, MongoClient] = {}
+_write_clients_lock = threading.Lock()
 
 
 def _get_write_client(lan: str) -> MongoClient:
@@ -35,8 +36,16 @@ def _get_write_client(lan: str) -> MongoClient:
     replica-set discovery.  The URI comes from ``CONFIG.mongo_primary_lan*``
     which is seeded from environment variables that the controller sets when
     it spawns the edge-server container.
+
+    Double-checked locking protects the lazy-init path from TOCTOU races
+    when multiple Flask request threads first enter the write path
+    simultaneously (e.g. during ``storage_hotspot``).
     """
-    if lan not in _write_clients:
+    if lan in _write_clients:
+        return _write_clients[lan]
+    with _write_clients_lock:
+        if lan in _write_clients:
+            return _write_clients[lan]
         uri = CONFIG.mongo_primary_lan1 if lan == "lan1" else CONFIG.mongo_primary_lan2
         _write_clients[lan] = MongoClient(
             uri,
@@ -46,7 +55,7 @@ def _get_write_client(lan: str) -> MongoClient:
         )
         log = logging.getLogger("vip_data_mongo_runtime")
         log.info("write_client created for %s -> %s (pool=2)", lan, uri)
-    return _write_clients[lan]
+        return _write_clients[lan]
 
 log = logging.getLogger(__name__)
 

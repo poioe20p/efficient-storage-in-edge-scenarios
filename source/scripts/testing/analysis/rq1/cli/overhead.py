@@ -1,11 +1,12 @@
-"""cli_rq1_overhead — RQ1 controller CPU/RAM overhead plots.
+"""overhead — RQ1 controller CPU/RAM overhead plots.
 
-Produces <run_dir>/analysis/:
-  rq1_overhead.png   — two-panel: controller CPU% and RSS (MB) over time
-  rq1_overhead.csv   — per-phase mean/p95 CPU% and RSS MB
+Produces <run_dir>/analysis/rq1/:
+  rq1_overhead_cpu.png   — controller CPU% over time
+  rq1_overhead_ram.png   — controller RSS (MB) over time
+  rq1_overhead.csv       — per-phase mean/p95 CPU% and RSS MB
 
 Usage:
-    python -m source.scripts.testing.analysis.rq1.cli_rq1_overhead --run-dir <dir>
+    python -m source.scripts.testing.analysis.rq1.cli.overhead --run-dir <dir>
 
 Note: requires ``controller_stats.csv`` produced by
 ``sample_controller_stats.py`` (Phase 5).
@@ -18,15 +19,15 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
-from ..loader import load_run
-from ..phase_window import phase_boundaries, phase_for_ts
-from ..plots import shade_phases
+from ...loader import load_run
+from ...phase_window import phase_boundaries, phase_for_ts
+from ...plots import shade_phases
 
 
 def _read_controller_stats(path: Path) -> list[dict]:
     """Read controller_stats.csv, parse numeric fields."""
     if not path.exists():
-        print(f"[cli_rq1_overhead] controller_stats.csv not found: {path}")
+        print(f"[overhead] controller_stats.csv not found: {path}")
         return []
     rows: list[dict] = []
     with path.open(newline="") as f:
@@ -98,7 +99,7 @@ def _plot_overhead_cpu(
     out_dir: Path,
 ) -> None:
     if not points:
-        print("[cli_rq1_overhead] no overhead data to plot")
+        print("[overhead] no overhead data to plot")
         return
     import matplotlib
     matplotlib.use("Agg")
@@ -129,7 +130,7 @@ def _plot_overhead_cpu(
     fig.tight_layout()
     fig.savefig(out_dir / "rq1_overhead_cpu.png", dpi=150)
     plt.close(fig)
-    print(f"[cli_rq1_overhead] wrote {out_dir / 'rq1_overhead_cpu.png'}")
+    print(f"[overhead] wrote {out_dir / 'rq1_overhead_cpu.png'}")
 
 
 def _plot_overhead_ram(
@@ -169,7 +170,7 @@ def _plot_overhead_ram(
     fig.tight_layout()
     fig.savefig(out_dir / "rq1_overhead_ram.png", dpi=150)
     plt.close(fig)
-    print(f"[cli_rq1_overhead] wrote {out_dir / 'rq1_overhead_ram.png'}")
+    print(f"[overhead] wrote {out_dir / 'rq1_overhead_ram.png'}")
 
 
 def _write_overhead_csv(per_phase: list[dict], out_dir: Path) -> None:
@@ -179,11 +180,11 @@ def _write_overhead_csv(per_phase: list[dict], out_dir: Path) -> None:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(per_phase)
-    print(f"[cli_rq1_overhead] wrote {path}")
+    print(f"[overhead] wrote {path}")
 
 
 def run(run_dir: Path) -> None:
-    print(f"[cli_rq1_overhead] run_dir={run_dir}")
+    print(f"[overhead] run_dir={run_dir}")
     r = load_run(run_dir)
     out_dir = Path(run_dir) / "analysis" / "rq1"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -191,7 +192,7 @@ def run(run_dir: Path) -> None:
     controller_stats_path = Path(run_dir) / "controller_stats.csv"
     raw = _read_controller_stats(controller_stats_path)
     if not raw:
-        print("[cli_rq1_overhead] no controller_stats.csv — overhead charts skipped")
+        print("[overhead] no controller_stats.csv — overhead charts skipped")
         print("  (Requires Phase 5: sample_controller_stats.py)")
         return
 

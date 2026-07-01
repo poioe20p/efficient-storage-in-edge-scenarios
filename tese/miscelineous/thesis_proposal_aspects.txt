@@ -1,0 +1,63 @@
+Enquadramento (tema, área científica, projecto, etc.; limitar a descrição a 1000 caracteres)
+The rise of Edge Computing and Inernet of Things (IoT) has introduced increasing demands for scalable and efficient
+data management. Ubiquitous access to modern services requires lightweight, portable execution environments that
+allow service deployment closer to data sources, enabling dynamic resource allocation and rapid scaling. In parallel,
+flexible data storage systems capable of handling both structured and unstructured metadata, such as, access
+frequency or spatio-temporal usage patterns, have become critical. However, coordinating the auto-scaling of
+services based on such meta-information remains a complex and unresolved challenge. This research aims to
+investigate programmable resource management strategies that adapt to data popularity trends, with the goal of
+optimizing service placement and data access in edge environments. The expected outcomes include contributions
+to real-time analytics, improved efficiency on resource usage, and enhanced decision-making across distributed
+computing environments.
+Objectivos (limitar a descrição a 800 caracteres)
+The generic objective of this MSc thesis is to investigate and develop an efficient approach for managing
+containerized resources in edge computing environments by leveraging programmable control and metadata-driven
+decision-making. The specific goals are:
+1. To analyze the state of the art in edge computing, resource orchestration, and metadata-aware data management,
+identifying key challenges and research opportunities.
+2. To design a programmable system architecture that supports dynamic scaling and efficient resource allocation
+based on spatio-temporal data popularity and other relevant metadata.
+3. To implement a functional prototype that integrates containerized services with adaptive, metadata-informed
+resource management at the network edge.
+4. To define and execute experimental scenarios that simulate realistic edge workloads and data usage patterns,
+supporting the complete evaluation of the proposed system.
+5. To evaluate the system's performance using relevant metrics such as latency, scalability, and resource efficiency,
+and compare it against existing approaches or baselines.
+6. To analyze and interpret the obtained results, discussing the strengths, limitations, and potential directions for
+future research or system optimization.
+Descrição das actividades a desenvolver (limitar a descrição a 1000 caracteres):
+The research will be conducted in the following phases:
+1. Literature Review
+1.1 Conduct a comprehensive review of the state-of-the-art in resource management for edge computing, with a
+focus on SDN, auto-scaling, containerization, and data popularity models.
+1.2 Identify key concepts, frameworks, and research gaps relevant to programmable infrastructure and metadata-
+aware scaling.
+1.3 Synthesize the findings to establish a strong theoretical foundation for the proposed approach.
+2. Solution Design and Implementation
+2.1 Design a system architecture that integrates programmable control, dynamic scaling, and container-based
+resource abstraction.
+2.2 Specify system components, interaction flows, and decision-making algorithms, especially for handling spatio-
+temporal metadata.
+2.3 Implement a prototype system using appropriate development tools, emphasizing modularity and alignment
+with edge computing constraints.
+3. Experimental Evaluation
+3.1 Define evaluation objectives and formulate research hypotheses related to scalability, responsiveness, and data
+accessibility.
+3.2 Design and configure experimental scenarios, including representative workloads, edge network topologies, and
+varying data popularity trends.
+3.3 Use a document-oriented database to manage and query data with associated meta-information, supporting
+realistic edge data use cases.
+3.4 Execute experiments and collect metrics such as response time, resource utilization, and data replication
+effectiveness.
+4. Results Analysis and Validation
+4.1 Analyze experimental data to assess the system’s performance against defined hypotheses.
+4.2 Interpret results in the context of the research objectives, highlighting the impact of metadata-aware scaling.
+4.3 Compare outcomes with existing approaches or baselines to demonstrate improvements or trade-offs.
+4.4 Discuss limitations and challenges encountered, proposing directions for refinement and future research.
+Requisitos (e.g. média, disciplinas concluídas):
+The student should have a solid background on programming, database management, and networked systems.
+Resultado esperado (protótipo, algoritmo, software, demonstração, …):
+Dissertation outcomes:
+Full functional prototype
+Master Dissertation
+Scientific article, with enough quality to be published in a Conference or Journal.

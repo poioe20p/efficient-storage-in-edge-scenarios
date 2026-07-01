@@ -94,7 +94,7 @@ def _plot_overall_summary(plt, summaries: list[dict], out_path: Path) -> None:
                 values.append(summary[key])
             else:
                 values.append(summary["overall"][key])
-        ax.bar(x, values, color=colour, alpha=0.85)
+        ax.bar(x, values, color=colour, alpha=0.85, edgecolor="black", linewidth=0.8)
         ax.set_title(title)
         ax.set_ylabel(ylabel)
         ax.set_xticks(x, names, rotation=20, ha="right")
@@ -120,8 +120,8 @@ def _plot_phase_summary(plt, summaries: list[dict], phase_names: list[str], out_
         avg_values = [summary["phase"].get(phase, {}).get("avg_latency_ms", 0.0) for phase in phase_names]
         fail_values = [summary["phase"].get(phase, {}).get("failure_rate_pct", 0.0) for phase in phase_names]
         xpos = [value + offset for value in x]
-        axes[0].bar(xpos, avg_values, width=width, label=summary["name"], alpha=0.85)
-        axes[1].bar(xpos, fail_values, width=width, label=summary["name"], alpha=0.85)
+        axes[0].bar(xpos, avg_values, width=width, label=summary["name"], alpha=0.85, edgecolor="black", linewidth=0.8)
+        axes[1].bar(xpos, fail_values, width=width, label=summary["name"], alpha=0.85, edgecolor="black", linewidth=0.8)
 
     axes[0].set_title("Average latency by phase")
     axes[0].set_ylabel("ms")

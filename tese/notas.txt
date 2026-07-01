@@ -1,0 +1,53 @@
+1.
+Arahunashi2018ImplementationServerLoadBalancingTechniques (reference)
+- They do very similar work, like implement load balancing from user to multiple web servers servers,
+using round-robin and least bandwith (collected every 14 seconds). Much better for bandwith based.
+- They also introduced the OpenLoad tool for measuring response times.
+
+2.
+Linn2019ServerLoadBalancingSDN
+- Did something similiar using weighted round robin.
+
+3.
+(Increasing SDN Network Performance using Load
+Balancing Scheme on Web Server)
+- Demonstrates, that algorithms based on Least Loaded server outperform in terms of resource usage, Least Connection and Round Robin 
+for dynamic load balancing where sessions need to be mantained (web servers) but for content delivery networks Round Robin is better.
+- IP Hash for being able to recover a session/connection in case it fals.
+- GNU Wget to measure response time
+
+4.
+(Using SDN to Enhance Load Balancing in Cloud
+Computing: An Overview and Future Directions)
+- Advantages of SDN for LB
+    - Dynamic Traffic Engineering
+    - Centralized Global Decision Making
+    - Application and Network Aware LB Decision Making
+
+5.
+(SDN-Based Load Balancing Service for 
+Cloud Servers)
+- Separating the controller logic into 3 modules:
+    - Service Classification
+    - Dynamic Load Balancing Module
+    - Monitoring Module
+
+6.
+ver que stats the mongodb server
+e ver como é que usar o mongodb pode ser util como fonte de verdade para obter stats the servidores que periodicamente enviam para lá 
+buscar stast do proprio mongodb
+
+7.
+Pergunta Principal
+- Aplicabilidade de SDN em Edge Networks
+    - SDN puro apenas tem capacidade de obter dados estatisticos da rede
+    - MongoDB pode servir de banco de dados estatisticos dos servidores
+    - MongoDB pode servir como trigger para aumentar ou diminuir numero de servidores dinamicamente, de acordo com tipo 
+
+8.
+YCSBWorkload:https://github.com/brianfrankcooper/YCSB, para gerar workloads de forma flexivel.
+
+9.
+Transforma Insights, Number of Internet of Things (IoT) Connected Devices Worldwide from 2019 to 2021, with Forecasts
+from 2022 to 2030 (in Billions). Statista. Available online: 
+https://www.statista.com/statistics/1183457/iot-connected-devicesworldwide/ (accessed on 14 June 2023) -> diz que o numero de dispositivos conectados está projetado para ultrapassar 20 bilions em 2026.

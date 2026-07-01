@@ -616,3 +616,108 @@ At WAN=10, storage reserve provides no measurable benefit. At WAN=50, both confi
 1. **Investigate Tier 1 overhead at WAN=50 + dashboard mix**: The counterintuitive J-vs-I result should be reproduced and root-caused before drawing final conclusions about Tier 1's net benefit.
 2. **Storage threshold calibration**: At WAN=10, storage reserve does not improve outcomes. Consider raising the storage trigger threshold or testing at higher scale (more devices/clients).
 3. **WAN=50 as standard test condition**: The WAN latency amplification successfully revealed effects invisible at WAN=10. All future mechanism ablation experiments should use WAN=50.
+
+
+---
+
+# Results — v5 Resource-Constrained Mechanism Necessity
+
+**Date**: 2026-06-29
+**Experiment plans**: [experiment_plan_v4.md](./experiment_plan_v4.md) → [experiment_plan_v5_calibration.md](./experiment_plan_v5_calibration.md)
+**Depends on**: v4 results (results_v4.md)
+**Full narrative**: [results_v5.md](./results_v5.md)
+
+---
+
+## v5 Run Timeline
+
+| Run | Date | Status | Total Req | Success | Verdict |
+|-----|------|--------|-----------|---------|---------|
+| A (`mechanism_v5_all`) | 2026-06-29 12:02 | ✅ | 27,567 | 95.6% | All mechanisms active. Storage CPU 20.9%, Edge CPU 29.2%. |
+| B (`mechanism_v5_notier1`) | 2026-06-29 12:34 | ✅ | 26,482 | 96.3% | Tier 1 impact modest (−3.9% throughput) at WAN=160ms. |
+| C (`mechanism_v5_nostorage`) | 2026-06-29 13:04 | ✅ | 27,166 | 95.8% | Single MongoDB handles load. Storage CPU 27.3% concentrated. |
+| D (`mechanism_v5_nocompute`) | 2026-06-29 13:35 | ⚠️ | **18,331** | 94.9% | **Massive 33.5% throughput collapse.** Edge CPU saturated at 50.7%. |
+
+**Configuration**: WAN=160ms | Storage `--cpus=0.15 --memory=512m` | Edge `--cpus=0.30 --memory=256m` | WiredTiger cache=0.25GB | maxPoolSize=1
+
+---
+
+## Cross-Run Mechanism Verdict (v5)
+
+| Mechanism | Ablation | Throughput Δ | Key Data | v5 Verdict | v4 Verdict |
+|-----------|----------|-------------|----------|------------|------------|
+| **Compute** | D vs A | **−33.5%** | Edge CPU 50.7% vs 29.2%, SpikeLat 8505ms vs 2443ms | ✅ **NECESSARY** | ⚠️ Marginal |
+| **Tier 1** | B vs A | −3.9% | Tier1Lat 2326ms vs 2257ms (+3%) — within noise floor | ⚠️ **INCONCLUSIVE** | ✅ Dominant |
+| **Storage** | C vs A | −1.5% | StorCPU 27.3% vs 20.9% — single node comfortable, target is 60%+ | ❌ **NOT PROVEN** | ❌ Not needed |
+
+### Corrections from Architecture Review
+
+| Claim | Status | Evidence |
+|-------|--------|----------|
+| "Tier 1 overhead degrades non-tier1 phases" | ❌ **WITHDRAWN** | `sel_sync_*` containers have NO `--cpus`/`--memory` limits (unlike edge_server/storage). They do NOT compete for constrained CPU. The latency differences are likely random variance from single-replicate. |
+| "Storage write latency improves 54% without replication" | ⚠️ **Directional only** | Single-replicate experiment — the direction is plausible (writes faster without replication) but cannot be confirmed as a robust effect. |
+| "Compute is dominant" | ✅ **CONFIRMED** | 34% throughput collapse, 3.5× latency, +22pp CPU — unambiguous even in single replicate. |
+| "Storage CPU 21% is meaningful" | ⚠️ **Insufficient** | User's target is 60%+ pre-scale CPU. At 21%, MongoDB is comfortable — the 6.4pp concentration effect is real but too small to prove necessity. |
+
+### Complete Reversal from v4
+
+| Aspect | v4 (WAN=300ms, unlimited) | v5 (WAN=160ms, constrained) |
+|--------|---------------------------|----------------------------|
+| Dominant constraint | WAN RTT at maxPoolSize=1 | **Edge CPU at --cpus=0.30** |
+| Tier 1 benefit | 18% throughput | 4% throughput |
+| Storage CPU | 0.7% (invisible) | **20.9%** |
+| Compute benefit | 2% throughput | **34% throughput** |
+| Success rate | 57% | **96%** |
+
+**The resource constraints achieved their design goal**: Shifting the bottleneck from WAN to compute CPU made compute elasticity the dominant mechanism, producing a 34% throughput benefit — the strongest mechanism necessity signal across all experiment generations.
+
+---
+
+**Full per-run analysis, per-phase CPU tables, and detailed discussion**: see [results_v5.md](./results_v5.md).
+
+
+---
+
+# Results — v6 Tier 1 WAN Curve & Storage Calibration
+
+**Date**: 2026-06-29 to 2026-06-30
+**Full analysis**: [results_v6.md](./results_v6.md)
+
+## Summary
+
+v6 had two objectives: (1) find the WAN latency level where Tier 1 provides measurable benefit, and (2) calibrate storage CPU limits where elasticity is proven necessary.
+
+### Tier 1 WAN Curve — Key Result
+
+**Tier 1 reduces cross-region latency by 39% at 260ms WAN** (with 60s VIP timeout to avoid censorship):
+
+| Metric | Tier 1 ON | Tier 1 OFF | Delta |
+|--------|----------|-----------|-------|
+| tier1_hotspot median | 3,633ms | 5,922ms | **−39%** |
+| tier1_hotspot failure rate | 10.0% | 32.8% | **−22.8pp** |
+
+**Critical finding**: The 30s VIP timeout censors OFF-run data at WAN ≥260ms (42–52% of requests killed before completing). This masked Tier 1's benefit in earlier experiments. The 60s timeout variant (T9/T10) reveals the true effect.
+
+At 200ms WAN, Tier 1 provides negligible benefit — the edge server, not cross-region MongoDB, is the bottleneck.
+
+### Storage CPU Calibration — Key Result
+
+**Storage elasticity reduces cluster-wide CPU by 38–45%** at CLIENTS=48, DEVICES=6000:
+
+| Configuration | ON CPU | OFF CPU | Penalty |
+|--------------|--------|---------|---------|
+| 0.12 CPUs, 6K | 14.8% | 23.9% | +61% |
+| 0.10 CPUs, 6K | 16.9% | 30.5% | +81% |
+| 0.12 CPUs, 12K | 14.6% | 26.4% | +81% |
+
+Tighter CPU limits and larger data volumes both amplify the penalty. Storage elasticity is now **proven necessary at scale** — earlier experiments at CLIENTS=8/DEVICES=600 couldn't demonstrate it.
+
+### Run Inventory
+
+| Tier 1 (10 runs) | Storage (6 runs) |
+|------------------|-------------------|
+| 200/230/260/300ms WAN, ON vs OFF, 30s timeout (T1–T8) | 0.10/0.12 CPUs, 6K/12K devices, ON vs OFF (S1–S3 pairs) |
+| 260ms WAN, ON vs OFF, 60s timeout (T9–T10) | WAN=160ms, CLIENTS=48, NODES=100 |
+
+**Full per-run tables, per-phase breakdowns, controller-log evidence, and cross-version comparison**: see [results_v6.md](./results_v6.md).
+

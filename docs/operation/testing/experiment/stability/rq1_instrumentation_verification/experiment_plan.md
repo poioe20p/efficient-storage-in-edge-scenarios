@@ -35,12 +35,12 @@ must not start until this experiment passes.
 
 6. **All three RQ1 CLIs complete without Python tracebacks** on every run.
 7. **CLI outputs are non-empty and well-formed:**
-   - `cli_rq1_timings` → 5 files: `rq1_staleness.{csv,png}`,
+   - `cli/timings` → 5 files: `rq1_staleness.{csv,png}`,
      `rq1_staleness_per_phase.csv`, `rq1_reaction_latency.{csv,png}`
-   - `cli_rq1_overhead` → 3 files: `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv`
-   - `cli_rq1_decision_quality` → 2 files: `rq1_decision_quality.{csv,png}` (per-phase descriptive table)
+   - `cli/overhead` → 3 files: `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, `rq1_overhead.csv`
+   - `cli/decision_quality` → 2 files: `rq1_decision_quality.{csv,png}` (per-phase descriptive table)
 8. **Breach detection is internally consistent across CLIs:**
-   - `cli_rq1_timings` and `cli_rq1_decision_quality` detect the **same number
+   - `cli/timings` and `cli/decision_quality` detect the **same number
      of breaches** for the same run (they share `breach_detector.py`).
    - Every breach's `score` and `threshold` in the CSV output match what
      `breach_detector.detect_breaches()` computes.
@@ -53,13 +53,13 @@ must not start until this experiment passes.
     `peak_score`, `spawns_initiated`, `spawns_completed`. No classification
     labels — the gap between breached-windows and completed-spawns is the
     observable fact.
-11. **`cli_rq1_overhead` handles `controller_stats.csv` correctly:**
+11. **`cli/overhead` handles `controller_stats.csv` correctly:**
     - Both `osken` and `osken_2` appear in the CPU and RAM time-series graphs.
     - Mean CPU% and RSS values are physically plausible (0–100% CPU, > 0 MB RSS).
 12. **Edge cases handled gracefully:**
     - Run D (poll-30s) may have fewer/no breaches — CLIs must not crash,
       must produce empty CSVs or note "no events" in output.
-    - If `controller_stats.csv` is missing, `cli_rq1_overhead` exits cleanly
+    - If `controller_stats.csv` is missing, `cli/overhead` exits cleanly
       with a message, no traceback.
     - If `controller_env_snapshot.env` is missing, `load_thresholds()` falls
       back to defaults — breach detection may return 0 events (acceptable,
@@ -204,7 +204,7 @@ instrumentation.
 | CSV files are non-empty | `wc -l analysis/rq1/*.csv` — header + ≥ 1 data row |
 | Breach count consistent between CLIs | Both share `breach_detector.py`. `rq1_decision_quality.csv` is per-phase (N rows = N phases); `rq1_reaction_latency.csv` is per-breach. Counts differ by design. Verify both CLIs use same `detect_breaches()` output. |
 | Decision quality CSV has descriptive columns | `head -1 analysis/rq1/rq1_decision_quality.csv` — columns: `phase,phase_load,total_windows,breached_windows,peak_score,spawns_initiated,spawns_completed` |
-| Controller overhead produces CPU + RAM graphs | `cli_rq1_overhead` writes `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, and `rq1_overhead.csv` with both controllers |
+| Controller overhead produces CPU + RAM graphs | `cli/overhead` writes `rq1_overhead_cpu.png`, `rq1_overhead_ram.png`, and `rq1_overhead.csv` with both controllers |
 | Existing CLIs still work | `cli_simple_run`, `cli_overview`, `cli_phase_summary` all exit 0 |
 
 **Secondary — quick sanity on values:**
@@ -227,7 +227,7 @@ Same checks as Tier 1 applied to all four runs, plus:
 | Poll-5s mean staleness 0–10 s | Run C: `mean_s` between 0–10 s |
 | Poll-30s mean staleness 15–35 s | Run D: `mean_s` between 15–35 s |
 | `controller_env_snapshot.env` captured in all runs | File present, contains `SCALEUP_CPU_FLOOR=3` |
-| CLI handles sparse-breach runs (D) | `cli_rq1_timings` and `cli_rq1_decision_quality` exit 0 even if 0 breaches |
+| CLI handles sparse-breach runs (D) | `cli/timings` and `cli/decision_quality` exit 0 even if 0 breaches |
 
 ### Primary — timing artifact (`resource_stats_debug.csv`)
 
@@ -277,8 +277,8 @@ Run these commands on Run A's folder **before** launching Tier 2:
 RUN_DIR=<path/to/run_A_folder>
 
 # 1. Run all three RQ1 CLIs
-python3 -m source.scripts.testing.analysis.rq1.cli_rq1_timings --run-dir "$RUN_DIR"
-python3 -m source.scripts.testing.analysis.rq1.cli_rq1_overhead --run-dir "$RUN_DIR"
+python3 -m source.scripts.testing.analysis.rq1.cli.timings --run-dir "$RUN_DIR"
+python3 -m source.scripts.testing.analysis.rq1.cli.overhead --run-dir "$RUN_DIR"
 python3 -m source.scripts.testing.analysis.rq1.cli_rq1_decision_quality --run-dir "$RUN_DIR"
 
 # 2. Verify all expected output files exist

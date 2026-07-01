@@ -301,3 +301,17 @@ python -m source.scripts.testing.analysis.cli_mechanism_compare \
 
 - **Cross-run**: `cli_simple_compare` for overall latency/failure/node-count comparison (`simple_compare_overall.png`, `simple_compare_phase.png`).
 - A mechanism-necessity verdict per factor: **met** (clear degradation when disabled), **marginal** (degradation present but small), or **missed** (no visible degradation).
+
+
+---
+
+## Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-06-27 | Initial v1: Runs A–D at CLIENTS=8, DEVICES=600, WAN=10ms | Baseline mechanism necessity per [experiment_plan.md](./experiment_plan.md) |
+| 2026-06-28 | v2: Runs E–K, WAN=50, storage-heavy mix, combined conditions | WAN amplification and dashboard mix per results.md §v2 |
+| 2026-06-29 | v5: Resource-constrained runs A–D at WAN=160ms, --cpus limits | Edge CPU became bottleneck; compute necessity proven at 34% throughput benefit |
+| 2026-06-29 | v6 Tier 1: 10-run WAN curve extension (200–300ms), discovered 30s timeout censorship | VIP_HARD_TIMEOUT=30 censors OFF runs at ≥260ms; created 60s vip60 variants; Tier 1 provides 39% latency reduction at 260ms WAN |
+| 2026-06-30 | v6 Storage: 6-run CPU calibration (ON vs OFF at 0.10/0.12 CPUs, 6K/12K devices) | Storage elasticity reduces cluster CPU by 38–45%; benefit amplified by tighter CPUs (+80%) and more data (+81%). Proven necessary at scale. |
+

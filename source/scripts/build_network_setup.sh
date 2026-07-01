@@ -472,6 +472,10 @@ docker run -dit --name osken --network host --restart=on-failure \
     -e COORDINATOR_STATE_PUB_PORT=5561 \
     -e SERVER_MACS="00:00:00:00:00:02" \
     -e ROUTER_MAC="00:00:00:00:00:AA" \
+    -e STORAGE_CPUS="${STORAGE_CPUS:-0.15}" \
+    -e EDGE_CPUS="${EDGE_CPUS:-0.30}" \
+    -e TELEMETRY_SOURCE="${TELEMETRY_SOURCE:-zmq}" \
+    -e POLL_INTERVAL_S="${POLL_INTERVAL_S:-10}" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n1
@@ -487,6 +491,10 @@ docker run -dit --name osken_2 --network host --restart=on-failure \
     -e COORDINATOR_STATE_PUB_PORT=5562 \
     -e SERVER_MACS="00:00:00:00:00:05" \
     -e ROUTER_MAC="00:00:00:00:00:CC" \
+    -e STORAGE_CPUS="${STORAGE_CPUS:-0.15}" \
+    -e EDGE_CPUS="${EDGE_CPUS:-0.30}" \
+    -e TELEMETRY_SOURCE="${TELEMETRY_SOURCE:-zmq}" \
+    -e POLL_INTERVAL_S="${POLL_INTERVAL_S:-10}" \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n2

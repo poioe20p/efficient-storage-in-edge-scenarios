@@ -121,8 +121,8 @@ def run(run_dir: Path) -> None:
         new_vals = [row["new_cpu_median"] for row in role_rows]
         xs = list(range(len(ph_names)))
         width = 0.35
-        ax.bar([x - width / 2 for x in xs], old_vals, width, label="oldest node", color="#1a7abf")
-        ax.bar([x + width / 2 for x in xs], new_vals, width, label="new nodes", color="#bf5a1a", alpha=0.8)
+        ax.bar([x - width / 2 for x in xs], old_vals, width, label="oldest node", color="#1a7abf", edgecolor="black", linewidth=0.8)
+        ax.bar([x + width / 2 for x in xs], new_vals, width, label="new nodes", color="#bf5a1a", alpha=0.8, edgecolor="black", linewidth=0.8)
         ax.set_xticks(xs)
         ax.set_xticklabels(ph_names, rotation=30, ha="right", fontsize=8)
         ax.set_ylabel("CPU % (median)")

@@ -1,6 +1,6 @@
 # System-to-Thesis RQ Map v2 — Cross-Layer SDN Orchestration
 
-> **Status:** Reframed based on discussions (2026-06-06). This supersedes the original `system_to_thesis_map_rq_advanced.md` with a three-pillar framing: Information Acquisition, Decision Quality, and Infrastructure Adaptation — unified by an SDN cross-layer control plane.
+> **Status:** Reframed based on discussions (2026-06-06). This supersedes the original `system_to_thesis_map_rq_advanced.md` with a three-pillar framing: Telemetry Freshness, Backend Selection, and Data Locality — unified by an SDN cross-layer control plane.
 
 The main purpose of this note is to answer five practical questions:
 
@@ -14,25 +14,52 @@ The main purpose of this note is to answer five practical questions:
 
 ## 1. Thesis Framing
 
+### Thesis Type & Contribution
+
+This thesis is an **experimental examination** of cross-layer orchestration
+for stateful edge services, conducted through a centralized SDN control plane
+deployed over a controlled two-network edge topology. The SDN controller
+collapses three traditionally separated concerns — telemetry collection, traffic
+steering, and infrastructure scaling — into a single process with shared data
+structures. This unification is not the hypothesis under test; it is the
+**experimental apparatus** that makes the examination possible. By holding the
+controller constant, each orchestration dimension can be varied independently
+while the others are locked, isolating cause and effect within a single
+infrastructure.
+
+The contribution is **characterizing the trade-off surface** across three
+dimensions of cross-layer orchestration — telemetry freshness, backend
+selection policy, and data-locality strategy — and measuring how each
+independently affects service quality during demand shifts. The thesis does
+not claim that unifying these concerns is superior to separated architectures;
+it accepts the latency reduction from collapsing handoffs as a given property
+of the design and focuses instead on what can be learned by examining each
+dimension through a cross-layer control point.
+
 ### Central Claim
 
-> This thesis investigates how an SDN-based cross-layer control plane performs **information acquisition**, **backend selection**, and **infrastructure adaptation** for stateful edge services — and whether collapsing these three traditionally separated concerns into a single controller process eliminates coordination gaps that degrade service quality during demand shifts.
+> This thesis experimentally examines three dimensions of cross-layer SDN
+> orchestration — **telemetry freshness**, **backend selection**, and
+> **data locality** — characterizing how each independently affects service
+> quality during demand shifts in stateful edge services. The SDN control
+> plane serves as the experimental platform that enables isolated variation
+> of each dimension, not as the object of comparison itself.
 
 ### The Three Pillars
 
-| Pillar                              | RQ  | Core Question                                                                                   |
-| ----------------------------------- | --- | ----------------------------------------------------------------------------------------------- |
-| **Information Acquisition**   | RQ1 | How does telemetry delivery cadence affect control quality during demand shifts?                 |
-| **Decision Quality**          | RQ2 | How does cross-layer metadata improve backend selection beyond L4 and L4+ baselines?            |
-| **Infrastructure Adaptation** | RQ3 | How do data-locality readiness strategies trade off service benefit against operating cost?     |
+| Pillar                        | RQ       | Core Question                                                                               |
+| ----------------------------- | -------- | ------------------------------------------------------------------------------------------- |
+| **Telemetry Freshness** | RQ1      | How does telemetry delivery cadence affect control quality during demand shifts?            |
+| **Backend Selection**   | **RQ2** | **How does cross-layer metadata improve backend selection beyond L4 and L4+ baselines?**   |
+| **Data Locality**       | RQ3      | How do data-locality readiness strategies trade off service benefit against operating cost? |
 
 ### Why SDN Is the Unifying Substrate
 
-In conventional architectures, the three pillars are handled by separate components:
+In conventional architectures, these three concerns are handled by separate components:
 
-- **Information acquisition** — a monitoring system (Prometheus, CloudWatch)
-- **Decision quality** — a load balancer or traffic manager (HAProxy, NGINX, ELB, kube-proxy)
-- **Infrastructure adaptation** — an auto-scaler (K8s HPA, AWS ASG, OpenStack Heat)
+- **Telemetry collection** — a monitoring system (Prometheus, CloudWatch)
+- **Load balancing** — a traffic manager (HAProxy, NGINX, ELB, kube-proxy)
+- **Auto-scaling** — an infrastructure scaler (K8s HPA, AWS ASG, OpenStack Heat)
 
 Each handoff between these components introduces a **coordination gap**: the monitoring system scrapes on a fixed interval, the alarm system evaluates thresholds, the auto-scaler provisions infrastructure, and the load balancer eventually discovers the new backend — all through independent control loops with no shared state.
 
@@ -50,7 +77,7 @@ In the proposed architecture, the SDN controller (OS-Ken/Ryu) consumes telemetry
 
 ### Relationship to the Thesis Proposal
 
-While the initial proposal emphasized metadata-driven scaling as the central contribution, architecture development revealed that information acquisition and backend selection are equally critical dimensions of cross-layer orchestration. The three-pillar investigation presented here **operationalizes** the proposal's high-level goals ("coordinate auto-scaling based on meta-information") by decomposing the problem into evaluable, independently testable dimensions. The proposal's emphasis on spatio-temporal data popularity is preserved in RQ2 (topology/metadata-aware selection) and RQ3 (data-locality readiness strategies).
+While the initial proposal emphasized metadata-driven scaling as the central contribution, architecture development revealed that telemetry freshness and backend selection are equally critical dimensions of cross-layer orchestration. The three-pillar investigation presented here **operationalizes** the proposal's high-level goals ("coordinate auto-scaling based on meta-information") by decomposing the problem into evaluable, independently testable dimensions. The proposal's emphasis on spatio-temporal data popularity is preserved in RQ2 (cross-layer backend selection) and RQ3 (data-locality readiness strategies).
 
 ---
 
@@ -67,7 +94,7 @@ The chosen RQs should satisfy all of the following conditions:
 
 For this reason, the recommended RQ set below separates:
 
-- **information freshness** from **delivery mechanism** (RQ1)
+- **telemetry freshness** from **delivery mechanism** (RQ1)
 - **single-layer** from **cross-layer backend selection** (RQ2)
 - **cold-start capacity** from **reserved or pre-synchronized capacity** (RQ3)
 
@@ -104,13 +131,13 @@ Unified (SDN controller):
 
 ### 3.2 What SDN Specifically Enables
 
-| Architectural Property                               | Why SDN Is Necessary                                                                                                                                                                                                                                                                                                            | What It Enables for the RQs                                                                                                                                                                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Double-VIP model**                           | MongoDB drivers discover replica-set topology and connect to all members directly. The controller must prevent this for tiered data placement — the driver must see a single stable address (`VIP_DATA_N1`) regardless of which physical node serves it. ARP interception + per-flow OpenFlow DNAT/SNAT achieves this at L3. | RQ2: backend selection policy is enforced at the network layer, not in application code. RQ3: tier transitions are transparent to the edge server — it never knows which physical node backs the VIP.                                                                  |
-| **Per-flow routing with cross-layer metadata** | Traditional L4 LBs (HAProxy, NGINX stream) cannot consume replica-state telemetry (replication lag, member state). OpenFlow enables per-TCP-connection steering based on WSM cost functions that incorporate host load AND replica state AND topology.                                                                          | RQ2: the `topology_host_replica` policy mode has no equivalent in separated architectures — this is the experimental condition that tests whether cross-layer metadata produces measurable improvement beyond the `topology_only` and `topology_host` baselines. |
-| **Same-process routing and scaling**           | Thread 1 (routing) and Thread 3 (scaling) share the VIP pool data structure. When Thread 3 adds or drains a backend, Thread 1 sees the change immediately — no API call, no eventual consistency, no propagation delay.                                                                                                        | RQ1 & RQ3: the reaction latency measurement reflects only telemetry freshness and infrastructure provisioning time — not an additional control-plane propagation gap.                                                                                                  |
-| **L3 traffic-plane separation**                | `VIP_SERVER` (compute) and `VIP_DATA_N*` (data) are separate virtual IPs with separate WSM cost functions and separate backend pools. This separation is enforced by OpenFlow rules at the network layer, not by application configuration that can be misconfigured.                                                       | RQ2: compute-plane and data-plane selection policies can be evaluated independently under the same infrastructure.                                                                                                                                                      |
-| **Topology as a first-class input**            | The controller builds the network topology during setup (which MAC is in which LAN, hop distances). This feeds directly into routing cost functions and placement decisions — the controller knows*where* every resource is, not just its health status.                                                                     | RQ2:`topology_only` and `topology_host` policies use topology as the baseline layer. RQ3: cross-LAN placement decisions depend on topology awareness.                                                                                                               |
+| Architectural Property                               | Why SDN Is Necessary                                                                                                                                                                                                                                                                                                            | What It Enables for the RQs                                                                                                                                                                                                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Double-VIP model**                           | MongoDB drivers discover replica-set topology and connect to all members directly. The controller must prevent this for tiered data placement — the driver must see a single stable address (`VIP_DATA_N1`) regardless of which physical node serves it. ARP interception + per-flow OpenFlow DNAT/SNAT achieves this at L3. | RQ2: backend selection policy is enforced at the network layer, not in application code. RQ3: tier transitions are transparent to the edge server — it never knows which physical node backs the VIP.                                                                 |
+| **Per-flow routing with cross-layer metadata** | Traditional L4 LBs (HAProxy, NGINX stream) cannot consume replica-state telemetry (replication lag, member state). OpenFlow enables per-TCP-connection steering based on WSM cost functions that incorporate host load AND replica state AND topology.                                                                          | RQ2: the`topology_host_replica` policy mode has no equivalent in separated architectures — this is the experimental condition that tests whether cross-layer metadata produces measurable improvement beyond the `topology_only` and `topology_host` baselines. |
+| **Same-process routing and scaling**           | Thread 1 (routing) and Thread 3 (scaling) share the VIP pool data structure. When Thread 3 adds or drains a backend, Thread 1 sees the change immediately — no API call, no eventual consistency, no propagation delay.                                                                                                        | RQ1 & RQ3: the reaction latency measurement reflects only telemetry freshness and infrastructure provisioning time — not an additional control-plane propagation gap.                                                                                                 |
+| **L3 traffic-plane separation**                | `VIP_SERVER` (compute) and `VIP_DATA_N*` (data) are separate virtual IPs with separate WSM cost functions and separate backend pools. This separation is enforced by OpenFlow rules at the network layer, not by application configuration that can be misconfigured.                                                       | RQ2: compute-plane and data-plane selection policies can be evaluated independently under the same infrastructure.                                                                                                                                                     |
+| **Topology as a first-class input**            | The controller builds the network topology during setup (which MAC is in which LAN, hop distances). This feeds directly into routing cost functions and placement decisions — the controller knows*where* every resource is, not just its health status.                                                                     | RQ2:`topology_only` and `topology_host` policies use topology as the baseline layer. RQ3: cross-LAN placement decisions depend on topology awareness.                                                                                                              |
 
 ### 3.3 Honest Scope
 
@@ -123,9 +150,9 @@ What this thesis does **not** claim:
 
 What it **does** claim:
 
-- That the coordination gap is a measurable architectural property
-- That collapsing three concerns into one SDN process changes the trade-off surface
-- That characterizing this surface — even with negative or nuanced results — is a valid contribution
+- That telemetry freshness, metadata awareness, and data locality each independently affect service quality during demand shifts
+- That SDN provides a unified substrate for varying each dimension while holding the others constant, enabling controlled within-system comparison
+- That characterizing the trade-off surface for each dimension — even with negative or nuanced results — is a valid contribution
 
 ---
 
@@ -139,7 +166,7 @@ Instead, each RQ's baselines encode the **architectural property** that separate
 
 | RQ            | Baseline Condition                            | Separated-System Property It Encodes                                                                                                |
 | ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **RQ1** | Polling at 12 s / 30 s intervals                 | Stale monitoring → delayed decisions (Prometheus scrape interval → AlertManager → HPA; CloudWatch metric period → Alarm → ASG) |
+| **RQ1** | Polling at 12 s / 30 s intervals              | Stale monitoring → delayed decisions (Prometheus scrape interval → AlertManager → HPA; CloudWatch metric period → Alarm → ASG) |
 | **RQ2** | `topology_only` / `topology_host`         | Single-layer visibility: L4 LB (haproxy leastconn) or L4+ LB with host health checks — no replica-state awareness                  |
 | **RQ3** | Remote serving only / cold-start full replica | No data locality (naïve edge deployment) or reactive-only elasticity (ASG-style cold-start, pay full sync cost on every trigger)   |
 
@@ -150,9 +177,9 @@ Instead, each RQ's baselines encode the **architectural property** that separate
 - **The baselines are real operating modes of the system**, not simulated strawmen — the system genuinely runs in polling mode, topology-only mode, and remote-only mode
 - **Isolation of causation** — a system-vs-system comparison (e.g., "my controller vs. Kubernetes") would confound dozens of variables (language runtime, container runtime, network stack, tuning). Varying one architectural property within the same system isolates the effect
 
-### 4.3 Optional: Compound Coordination Delay Injection
+### 4.3 Future Work: Compound Coordination Delay Injection
 
-If time permits after completing the three RQs, a cross-cutting synthesis experiment could inject configurable delay at both handoff points simultaneously (telemetry→routing and alert→action), characterizing the *compounded* cost of full separation. This is **not required** — the individual RQ baselines already test each dimension independently.
+A cross-cutting synthesis experiment beyond the scope of the current evaluation could inject configurable delay at both handoff points simultaneously (telemetry→routing and alert→action), characterizing the *compounded* cost of full separation. This would directly test whether the coordination gap — the architectural property that motivated the unified design — produces measurable degradation beyond what any single-dimension delay produces. This experiment is deferred to future work because it requires emulating a separated control plane within the unified codebase, which is a non-trivial instrumentation task. The three RQs in this thesis test each dimension independently; the compound interaction remains an open question.
 
 ---
 
@@ -248,28 +275,25 @@ Not required:
    breach-detection segment of reaction latency (measurement 2) captures
    this blind-spot penalty: the controller cannot act on a breach window
    it has not yet received.
-
 2. **Reaction latency** — the **output** that matters for the thesis
    `spawn_done_ts − breach_window_end`. The breach window is identified by
    independently computing `degradation_score` from telemetry data (same
    formula and thresholds the controller uses). The endpoint is
    `spawn_done` (container online, VIP wired) — not `spawn_start` (spawn
    initiated but not yet routing traffic). Segmented into:
+
    - Breach detection: `spawn_start_ts − breach_window_end`
    - Provisioning: `spawn_done_ts − spawn_start_ts`
-
 3. **Transient service quality**
    p95/p99 latency, failure rate, and completed requests compared across
    workload phases (baseline, compute_spike, demand_drop, etc.). Per-phase
    aggregates from the existing analysis toolchain (`cli_simple_run`,
    `cli_phase_summary`) capture how service quality changes when the
    workload transitions between phases.
-
 4. **Control-plane overhead**
    Controller CPU% and RSS (MB) sampled every 5 s via `docker stats` on
    both `osken` and `osken_2` containers. Polling traffic volume estimated
    from `POLL_INTERVAL_S` and summary size (~2–10 KB per poll).
-
 5. **Scaling outcome description**
    A per-phase descriptive table comparing what was visible in telemetry
    against what the controller did. For each workload phase: total telemetry
@@ -287,12 +311,12 @@ Not required:
 All conditions use a 10 s aggregation window. Delivery cadence is the
 independent variable:
 
-| Condition | Delivery | Blind spot | What it tests |
-|---|---|---|---|
-| **Push** | ZMQ at window close | None — sees every window | Baseline: no coordination gap |
-| **Poll-5s** | HTTP every 5 s | None — catches every window (dedup filters ~50% of polls) | Faster than window: exercises dedup, no blind spot |
-| **Poll-12s** | HTTP every 12 s | ~1 of 6 windows missed (desync headroom) | Fair comparison: polls just after window close, minor blind spot |
-| **Poll-30s** | HTTP every 30 s | ~2 of 3 windows missed | Blind monitoring: controller sees 1 of 3 telemetry snapshots. Encodes the CloudWatch/Prometheus property |
+| Condition          | Delivery            | Blind spot                                                 | What it tests                                                                                            |
+| ------------------ | ------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Push**     | ZMQ at window close | None — sees every window                                  | Baseline: no coordination gap                                                                            |
+| **Poll-5s**  | HTTP every 5 s      | None — catches every window (dedup filters ~50% of polls) | Faster than window: exercises dedup, no blind spot                                                       |
+| **Poll-12s** | HTTP every 12 s     | ~1 of 6 windows missed (desync headroom)                   | Fair comparison: polls just after window close, minor blind spot                                         |
+| **Poll-30s** | HTTP every 30 s     | ~2 of 3 windows missed                                     | Blind monitoring: controller sees 1 of 3 telemetry snapshots. Encodes the CloudWatch/Prometheus property |
 
 **Why Poll-12s.** The aggregator and controller are independent processes
 with independent clocks. At exactly 10 s polling, a poll could land just
@@ -322,7 +346,7 @@ Vary only:
 
 ### Why RQ2 Is a Strong RQ
 
-This is a strong RQ because it asks about **decision quality**, not about elasticity or infrastructure size. It tests whether adding richer state to the selection logic improves outcomes beyond simpler policies.
+This is a strong RQ because it asks about **backend selection**, not about elasticity or infrastructure size. It tests whether adding richer state to the selection logic improves outcomes beyond simpler policies.
 
 It is also strong because it can be evaluated while holding the underlying substrate constant:
 
@@ -589,11 +613,11 @@ This fallback is weaker, but still defensible.
 
 ## 6. Cross-RQ Measurement Matrix
 
-| RQ            | Main Independent Variable                                                                         | Main Dependent Variables                                                                                           | Required Development                                                                  | Existing Support Level |
-| ------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | ---------------------- |
-| **RQ1** | Delivery cadence (push vs. polling interval)                                                           | Decision staleness, reaction latency, transient p95/p99, control overhead, scaling outcome description            | Polling telemetry source, summary persistence, timing instrumentation, overhead sampler | High                  |
-| **RQ2** | Backend-selection policy mode (`topology_only` / `topology_host` / `topology_host_replica`) | Latency, fairness, failure rate, bad-choice frequency, spillover behavior, compute-plane vs. data-plane separation | Explicit policy modes, per-policy traceability                                        | Medium                 |
-| **RQ3** | Locality / readiness strategy (remote / selective / cold full / warm standby)                     | Latency recovery, activation cost, sync tax, reservation tax, cleanup debt                                         | Consumer-LAN full replica, reserved standby, timing and lifecycle instrumentation     | Low to Medium          |
+| RQ            | Main Independent Variable                                                                         | Main Dependent Variables                                                                                           | Required Development                                                                    | Existing Support Level |
+| ------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ---------------------- |
+| **RQ1** | Delivery cadence (push vs. polling interval)                                                      | Decision staleness, reaction latency, transient p95/p99, control overhead, scaling outcome description             | Polling telemetry source, summary persistence, timing instrumentation, overhead sampler | High                   |
+| **RQ2** | Backend-selection policy mode (`topology_only` / `topology_host` / `topology_host_replica`) | Latency, fairness, failure rate, bad-choice frequency, spillover behavior, compute-plane vs. data-plane separation | Explicit policy modes, per-policy traceability                                          | Medium                 |
+| **RQ3** | Locality / readiness strategy (remote / selective / cold full / warm standby)                     | Latency recovery, activation cost, sync tax, reservation tax, cleanup debt                                         | Consumer-LAN full replica, reserved standby, timing and lifecycle instrumentation       | Low to Medium          |
 
 ---
 
@@ -618,13 +642,13 @@ If the thesis follows this RQ set, the implementation priorities should be:
 
 ## 8. Thesis Chapter Mapping (Proposed)
 
-| Chapter                   | Content                                                                                                                                                   | Feeds Into                       |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| 1. Introduction           | Problem statement, three-pillar framing, SDN-as-unifier motivation, industry contrast, proposal alignment                                                 | —                               |
-| 2. Literature Review      | Edge orchestration, SDN control planes, telemetry acquisition models, multi-layer load balancing, data locality & elasticity, coordination gap literature | —                               |
-| 3. System Architecture    | Three-thread controller, Double-VIP model, telemetry fabric, elasticity manager, data gravity tiers, selective sync                                       | Methodology basis for all RQs    |
-| 4. Methodology            | RQ formulation, evaluation design, measurement definitions, baseline rationale, held-constant sets                                                        | All RQs                          |
-| 5. RQ1 Evaluation         | Telemetry freshness and delivery cadence results                                                                                                          | Information Acquisition pillar   |
-| 6. RQ2 Evaluation         | Metadata-aware backend selection results                                                                                                                  | Decision Quality pillar          |
-| 7. RQ3 Evaluation         | Data-locality readiness strategy results                                                                                                                  | Infrastructure Adaptation pillar |
-| 8. Synthesis & Conclusion | Cross-pillar findings, what SDN unification enables, limitations, future work                                                                             | Thesis defense                   |
+| Chapter                   | Content                                                                                                                                                   | Feeds Into                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| 1. Introduction           | Problem statement, three-pillar framing, SDN-as-unifier motivation, industry contrast, proposal alignment                                                 | —                            |
+| 2. Literature Review      | Edge orchestration, SDN control planes, telemetry acquisition models, multi-layer load balancing, data locality & elasticity, coordination gap literature | —                            |
+| 3. System Architecture    | Three-thread controller, Double-VIP model, telemetry fabric, elasticity manager, data gravity tiers, selective sync                                       | Methodology basis for all RQs |
+| 4. Methodology            | RQ formulation, evaluation design, measurement definitions, baseline rationale, held-constant sets                                                        | All RQs                       |
+| 5. RQ1 Evaluation         | Telemetry freshness and delivery cadence results                                                                                                          | Telemetry Freshness pillar    |
+| 6. RQ2 Evaluation         | Metadata-aware backend selection results                                                                                                                  | Backend Selection pillar      |
+| 7. RQ3 Evaluation         | Data-locality readiness strategy results                                                                                                                  | Data Locality pillar          |
+| 8. Synthesis & Conclusion | Cross-pillar findings, what SDN unification enables, limitations, future work                                                                             | Thesis defense                |
