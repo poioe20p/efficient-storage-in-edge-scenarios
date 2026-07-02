@@ -7,8 +7,8 @@
       "cross_region_ratio": 0.0,
       "client_fraction": 0.5,
       "mix": {
-        "device_status": 0.60,
-        "dashboard": 0.25,
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
         "service_pressure": 0.15
       }
     },
@@ -20,8 +20,8 @@
       "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.90,
-        "dashboard": 0.05,
+        "content_lookup": 0.90,
+        "feed_ranking": 0.05,
         "service_pressure": 0.05
       }
     }

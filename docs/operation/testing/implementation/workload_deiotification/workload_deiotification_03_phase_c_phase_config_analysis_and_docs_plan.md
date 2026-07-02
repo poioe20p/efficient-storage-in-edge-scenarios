@@ -8,14 +8,11 @@
 
 ## Objective
 
-Phase C migrates the remaining configuration and operator surfaces after the
-runtime path is already using the new names. At the end of this phase, helper
-scripts regenerate the new request names and active workload docs no longer
-describe the workload as IoT-based.
+Phase C migrates the remaining configuration and operator surfaces after the runtime path is already using the new names. At the end of this phase, helper scripts regenerate the new request names and active workload docs no longer describe the workload as IoT-based. Phase C also resolves the remaining canonical-profile ambiguity: `source/scripts/testing/phases.json` remains the sole canonical active workload profile, while active docs and helper scripts must describe or regenerate that file consistently.
 
 ## Files and Required Changes
 
-### 1. Phase JSONs and phase helpers
+### 1. Phase JSONs, canonical topology, and phase helpers
 
 Files:
 
@@ -23,13 +20,17 @@ Files:
 - `source/scripts/testing/phases_override/phases_tier1_smoke.json`
 - `source/scripts/testing/phases_override/phases_rq1_verify.json`
 - `source/scripts/testing/phases_override/phases_mini.json`
-- `source/scripts/testing/_fix_phases.py`
 - `source/scripts/testing/setup/fix_phases.py`
 
 Required changes:
 
+- `source/scripts/testing/phases.json` is the only canonical active workload profile for Phase C.
+- `source/scripts/testing/phases_override/*.json` files are non-canonical validation or diagnostic overrides. Phase C may rename their request-type keys, but it must not describe them as co-canonical workload definitions.
+- `docs/operation/testing/golden_config.md` must describe the topology that is actually encoded in `source/scripts/testing/phases.json`; the doc records the canonical file, it does not replace it.
+- `source/scripts/testing/setup/fix_phases.py` must either regenerate the canonical `source/scripts/testing/phases.json` profile exactly or be retired from active helper scope in the docs. Phase C must not leave a helper that advertises a different active workload topology.
 - Rename all request-type keys inside `mix` dictionaries.
-- Update helper-script prose so it no longer says mixed IoT workload, devices, or dashboards.
+- Update the real helper-script prose so it no longer says mixed IoT workload, devices, or dashboards.
+- Do not assume a top-level `source/scripts/testing/_fix_phases.py` exists. Phase C should only edit helper scripts that are actually present in the tree unless a separate plan explicitly creates a new helper.
 - Keep the phase names themselves unchanged unless a separate experiment-design change is approved.
 
 ### 2. Analysis labels
@@ -55,10 +56,7 @@ Mandatory active-doc scope:
 - `docs/operation/testing/trace_request.md`
 - `docs/operation/testing/edge_server_compute_load.md`
 - `docs/operation/testing/golden_config.md`
-
-Conditional active-doc scope:
-
-- `docs/operation/testing/experiment_campaign_brief.md` if it is still used as a live runbook for current campaigns
+- `docs/operation/testing/experiment_campaign_brief.md`
 
 Required changes:
 
@@ -66,6 +64,11 @@ Required changes:
 - Replace old endpoint examples, collection names, and request labels.
 - Update launch examples so the primary names are content/user terminology.
 - Remove old workload-facing compatibility wording from the active docs instead of carrying it forward as a transitional note.
+- Treat `experiment_campaign_brief.md` as a mandatory operator surface while `testing_overview.md` still points operators at it. If a later phase wants to make the brief optional, it must first deprecate that operator-workflow pointer explicitly.
+- Where active docs currently reference phase-profile files that do not exist in `source/scripts/testing/`, rewrite those references to one of the following explicit outcomes:
+  - point `phases_experiment_tier1_hotspot_bidirectional.json` references at `source/scripts/testing/phases_override/phases_tier1_smoke.json`, which is the actual current focused Tier 1 hotspot companion profile in the tree, or
+  - remove stale references to `phases_experiment_integrated_baseline.json` and `phases_experiment_storage_trigger.json` unless a real file is added in a later approved phase. When removing them, rewrite the prose to describe the current long-cycle profile or the current storage-focused override in generic terms instead of naming a nonexistent JSON file.
+- Phase C does not create new `phases_experiment_*.json` files unless a separate implementation phase or approved experiment-design change adds them deliberately.
 
 ### 4. `docs/operation/testing/testing_workloads.md` — full rewrite
 
@@ -74,20 +77,13 @@ canonical workload narrative.
 
 Required changes:
 
-- Replace the headline scenario "Multi-Region IoT Edge Monitoring Platform"
-	with the approved content-discovery framing.
-- Rewrite the collections section around `content_items`, `user_profiles`, and
-	edge-local support state.
-- Replace all request descriptions with the new content/feed routes and the
-	new request-type names.
-- Rewrite the data examples so they show content items and user profiles,
-	not devices and monitoring nodes.
-- Rewrite the compute-regime and storage-regime explanations so they describe
-	content lookups and feed ranking instead of device status and dashboards.
-- Rewrite the MongoDB justification using heterogeneous content records,
-	topic-tag filtering, nested metadata, and read-locality pressure.
-- Keep the workload claims, measurements, and experiment logic intact unless
-	a separate experiment-design change is approved.
+- Replace the headline scenario "Multi-Region IoT Edge Monitoring Platform" with the approved content-discovery framing.
+- Rewrite the collections section around `content_items`, `user_profiles`, and edge-local support state.
+- Replace all request descriptions with the new content/feed routes and the new request-type names.
+- Rewrite the data examples so they show content items and user profiles, not devices and monitoring nodes.
+- Rewrite the compute-regime and storage-regime explanations so they describe content lookups and feed ranking instead of device status and dashboards.
+- Rewrite the MongoDB justification using heterogeneous content records, topic-tag filtering, nested metadata, and read-locality pressure.
+- Keep the workload claims, measurements, and experiment logic intact unless a separate experiment-design change is approved.
 
 Sections that should be treated as rewrite targets, not spot edits:
 
@@ -107,24 +103,24 @@ This file should stay an overview, but several sections need explicit updates.
 Required section updates:
 
 - **Architecture: Experiment Data Flow**
-	- replace seeder names, snapshot file names, and workload labels in the
-		diagram and surrounding prose.
+  - replace seeder names, snapshot file names, and workload labels in the diagram and surrounding prose.
 - **Golden Configuration**
-	- update launch examples so the primary exposed variables and examples use
-		the new content/user terminology.
+  - update launch examples so the primary exposed variables and examples use the new content/user terminology.
 - **Client-Facing Workload Requests**
-	- rewrite the request table and shorthand bullets around `content_lookup`,
-		`feed_ranking`, and `service_pressure`.
+  - rewrite the request table and shorthand bullets around `content_lookup`, `feed_ranking`, and `service_pressure`.
 - **Components**
-	- update the summaries for `testing_workloads.md`, `traffic_generator.md`,
-		`edge_server_compute_load.md`, and `trace_request.md` so they reflect the
-		new content/feed framing.
+  - update the summaries for `testing_workloads.md`, `traffic_generator.md`, `edge_server_compute_load.md`, and `trace_request.md` so they reflect the new content/feed framing.
 - **Execution Order**
-	- replace seeder commands, endpoint examples, and route examples with the
-		new names.
+  - replace seeder commands, endpoint examples, and route examples with the new names.
 - **What the Experiments Prove**
-	- keep the claims intact, but rewrite the examples and mechanism references
-		so they no longer rely on the old device/dashboard terminology.
+  - keep the claims intact, but rewrite the examples and mechanism references so they no longer rely on the old device/dashboard terminology.
+
+Additional explicit policy for this file:
+
+- If `testing_overview.md` references `phases_experiment_integrated_baseline.json`, `phases_experiment_storage_trigger.json`, or `phases_experiment_tier1_hotspot_bidirectional.json`, those references must be resolved as follows:
+  - redirect `phases_experiment_tier1_hotspot_bidirectional.json` to `source/scripts/testing/phases_override/phases_tier1_smoke.json`
+  - remove or genericize `phases_experiment_integrated_baseline.json` and `phases_experiment_storage_trigger.json` until real files with those names exist
+  - Phase C should not leave dead file references in the overview.
 
 The rest of the file can remain structurally the same if the wording no longer
 describes the workload as IoT-based.
@@ -142,8 +138,7 @@ Active docs and primary help text should not expose:
 - `device_status`
 - `/device/`
 - `dashboard` when it still refers to the old route or workload role
-- `DEVICES=` and `NODES=` when they are still presented as the primary
-	workload-facing launch vocabulary in active operator docs
+- `DEVICES=` and `NODES=` when they are still presented as the primary workload-facing launch vocabulary in active operator docs
 - `--seed-devices`
 - `--seed-nodes`
 - `IoT`
@@ -158,13 +153,13 @@ Active docs and primary help text should not expose:
 Phase C is complete only when all of the following hold:
 
 - Phase helper scripts regenerate mixes with the new request names.
+- `source/scripts/testing/phases.json` remains the only canonical active workload profile, `golden_config.md` describes that file accurately, and no active helper or active doc presents a different phase topology as co-canonical.
 - `cli_endpoint_breakdown.py` works with the renamed endpoint labels.
-- `testing_workloads.md` is fully rewritten around the content-discovery
-	workload rather than patched term-by-term.
-- `testing_overview.md` has its data-flow, request-table, components, and
-	execution-order sections updated to the new naming.
+- `testing_workloads.md` is fully rewritten around the content-discovery workload rather than patched term-by-term.
+- `testing_overview.md` has its data-flow, request-table, components, and execution-order sections updated to the new naming.
+- `testing_overview.md`, `traffic_generator.md`, and `trace_request.md` contain live-interface-reconciled examples covering at least one seeding command, one experiment launch command, and one implemented Phase B endpoint example, each matching the current interfaces exposed by the Makefile, `run_experiment.sh`, and the renamed monitoring workload routes.
 - The mandatory active-doc set no longer describes the workload as IoT-based.
-- If `experiment_campaign_brief.md` remains active, it no longer points operators at the old seeding scripts or old workload names.
+- `experiment_campaign_brief.md` no longer points operators at old seeding scripts, old workload names, or nonexistent phase-profile files.
 
 ## Out of Scope for Phase C
 

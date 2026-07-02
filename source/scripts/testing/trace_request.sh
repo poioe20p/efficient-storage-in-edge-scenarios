@@ -165,7 +165,7 @@ EDGE_LOGS=$(collect_logs "$EDGE_SERVER")
 
 # --- Section 1: VIP_SERVER routing ---
 VIP_SERVER_LINES=$(echo "$CTRL_LOGS" | filter_or_fallback \
-    "select_server:|vip_server: client=${CLIENT_IP}|dnat/snat installed:.*10\.0\.0\.100" \
+    "select_server:|vip_server: client=${CLIENT_IP}|dnat/snat installed:.*10\.0\.0\.253" \
     "(no VIP_SERVER routing — DNAT flow may already be installed)")
 
 # --- Section 2: Edge server processing ---

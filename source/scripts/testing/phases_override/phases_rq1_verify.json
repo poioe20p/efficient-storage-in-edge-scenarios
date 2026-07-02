@@ -7,8 +7,8 @@
       "cross_region_ratio": 0.0,
       "client_fraction": 0.5,
       "mix": {
-        "device_status": 0.60,
-        "dashboard": 0.25,
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
         "service_pressure": 0.15
       }
     },
@@ -20,8 +20,8 @@
       "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.90,
-        "dashboard": 0.05,
+        "content_lookup": 0.90,
+        "feed_ranking": 0.05,
         "service_pressure": 0.05
       }
     },
@@ -33,8 +33,8 @@
       "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.92,
-        "dashboard": 0.05,
+        "content_lookup": 0.92,
+        "feed_ranking": 0.05,
         "service_pressure": 0.03
       }
     },
@@ -46,8 +46,8 @@
       "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 0.75,
       "mix": {
-        "device_status": 0.30,
-        "dashboard": 0.55,
+        "content_lookup": 0.30,
+        "feed_ranking": 0.55,
         "service_pressure": 0.15
       }
     },
@@ -59,8 +59,8 @@
       "hotspot_direction": "lan2_to_lan1",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.20,
-        "dashboard": 0.65,
+        "content_lookup": 0.20,
+        "feed_ranking": 0.65,
         "service_pressure": 0.15
       }
     },
@@ -71,8 +71,8 @@
       "cross_region_ratio": 0.0,
       "client_fraction": 0.5,
       "mix": {
-        "device_status": 0.70,
-        "dashboard": 0.20,
+        "content_lookup": 0.70,
+        "feed_ranking": 0.20,
         "service_pressure": 0.10
       }
     }

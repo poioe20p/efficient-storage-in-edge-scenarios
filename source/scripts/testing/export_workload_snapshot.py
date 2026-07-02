@@ -26,6 +26,21 @@ REGIONS = {
 
 def export(uri_lan1: str, uri_lan2: str, output_dir: str):
     os.makedirs(output_dir, exist_ok=True)
+
+    # Phase D cleanup: keep the live snapshot directory on the renamed
+    # content/user surface only.
+    allowed_snapshot_files = {"content_items.json", "user_profiles.json"}
+    for snapshot_name in os.listdir(output_dir):
+        snapshot_path = os.path.join(output_dir, snapshot_name)
+        if not os.path.isfile(snapshot_path):
+            continue
+        if not snapshot_name.endswith(".json"):
+            continue
+        if snapshot_name in allowed_snapshot_files:
+            continue
+        os.remove(snapshot_path)
+        print(f"Removed stale snapshot -> {snapshot_path}")
+
     uris = {"lan1": uri_lan1, "lan2": uri_lan2}
 
     all_content_items = []
@@ -41,6 +56,8 @@ def export(uri_lan1: str, uri_lan2: str, output_dir: str):
         print(f"  [{region}] {len(docs)} content items")
 
     out_content_items = os.path.join(output_dir, "content_items.json")
+    if os.path.exists(out_content_items):
+        os.remove(out_content_items)
     with open(out_content_items, "w") as f:
         json.dump(all_content_items, f, indent=2, default=str)
     print(f"Exported {len(all_content_items)} content items -> {out_content_items}")
@@ -65,6 +82,8 @@ def export(uri_lan1: str, uri_lan2: str, output_dir: str):
         print(f"  [{region}] {len(docs)} user profiles")
 
     out_user_profiles = os.path.join(output_dir, "user_profiles.json")
+    if os.path.exists(out_user_profiles):
+        os.remove(out_user_profiles)
     with open(out_user_profiles, "w") as f:
         json.dump(all_user_profiles, f, indent=2, default=str)
     print(f"Exported {len(all_user_profiles)} user profiles -> {out_user_profiles}")

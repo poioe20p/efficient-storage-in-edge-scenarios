@@ -190,11 +190,13 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
     ``Content-Type: application/json``.
     """
     global _curl_warn_shown
+    curl_max_time = os.environ.get("CURL_MAX_TIME") or "30"
+
     cmd = [
         "ip", "netns", "exec", ns,
         "curl", "-s", "-o", "/dev/null",
         "-w", "\n%{http_code} %{time_total}",
-        "--max-time", os.environ.get("CURL_MAX_TIME", "30"),
+        "--max-time", curl_max_time,
     ]
     if body is not None:
         cmd += ["-X", "POST", "-H", "Content-Type: application/json", "-d", body]
@@ -249,6 +251,52 @@ async def client_loop(
     dry_run: bool,
 ):
     """One async task per client namespace for a single phase."""
+    if dry_run:
+        # Bounded preview mode: emit each active request type once so validation
+        # can confirm the renamed surface without replaying full phase timing.
+        for req_type, weight in phase.mix.items():
+            if weight <= 0:
+                continue
+
+            target = pick_target(client_lan, phase, snap, req_type)
+            url = build_url(vip, req_type, target)
+
+            body = None
+            if req_type == "content_update":
+                update_padding = "x" * 1024  # 1KB of padding to inflate oplog entries
+                body = (
+                    f'{{"content_id":"{target["content_id"]}",'
+                    f'"engagement":{random.randint(0,100)},'
+                    f'"lan":"{client_lan}",'
+                    f'"update_padding":"{update_padding}"}}'
+                )
+            if req_type == "content_aggregate":
+                body = (
+                    f'{{"lan":"{client_lan}",'
+                    f'"engagement_threshold":{random.randint(30,70)}}}'
+                )
+
+            http_status, latency_s = await exec_curl(ns, url, dry_run, body)
+
+            row = [
+                datetime.now(timezone.utc).isoformat(),
+                phase.name,
+                ns,
+                client_lan,
+                req_type,
+                target.get("content_id", ""),
+                target.get("user_id", ""),
+                target.get("target_region", ""),
+                http_status,
+                round(latency_s, 4),
+            ]
+            async with csv_lock:
+                for csv_writer, csv_file in csv_targets:
+                    csv_writer.writerow(row)
+                for _, csv_file in csv_targets:
+                    csv_file.flush()
+        return
+
     phase_end = time.monotonic() + phase.duration_s
     interval = 1.0 / phase.rate_per_client
     request_count = 0
@@ -305,11 +353,8 @@ async def client_loop(
             last_log = now
 
         elapsed = time.monotonic() - t0
-        if dry_run:
-            await asyncio.sleep(0)
-        else:
-            sleep_time = max(0.0, interval - elapsed + random.uniform(-0.05, 0.05))
-            await asyncio.sleep(sleep_time)
+        sleep_time = max(0.0, interval - elapsed + random.uniform(-0.05, 0.05))
+        await asyncio.sleep(sleep_time)
 
 
 # ---------------------------------------------------------------------------

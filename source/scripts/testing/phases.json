@@ -7,8 +7,8 @@
       "cross_region_ratio": 0.0,
       "client_fraction": 0.5,
       "mix": {
-        "device_status": 0.60,
-        "dashboard": 0.25,
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
         "service_pressure": 0.15
       }
     },
@@ -20,11 +20,11 @@
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.35,
-        "dashboard": 0.10,
+        "content_lookup": 0.35,
+        "feed_ranking": 0.10,
         "service_pressure": 0.05,
-        "device_update": 0.30,
-        "device_aggregate": 0.20
+        "content_update": 0.30,
+        "content_aggregate": 0.20
       }
     },
     {
@@ -35,11 +35,11 @@
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.80,
-        "dashboard": 0.05,
+        "content_lookup": 0.80,
+        "feed_ranking": 0.05,
         "service_pressure": 0.05,
-        "device_update": 0.05,
-        "device_aggregate": 0.05
+        "content_update": 0.05,
+        "content_aggregate": 0.05
       }
     },
     {
@@ -49,8 +49,8 @@
       "cross_region_ratio": 0.0,
       "client_fraction": 0.10,
       "mix": {
-        "device_status": 0.60,
-        "dashboard": 0.25,
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
         "service_pressure": 0.15
       }
     },
@@ -62,8 +62,8 @@
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
-        "device_status": 0.20,
-        "dashboard": 0.65,
+        "content_lookup": 0.20,
+        "feed_ranking": 0.65,
         "service_pressure": 0.15
       }
     },
@@ -74,8 +74,8 @@
       "cross_region_ratio": 0.0,
       "client_fraction": 0.10,
       "mix": {
-        "device_status": 0.60,
-        "dashboard": 0.25,
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
         "service_pressure": 0.15
       }
     }

@@ -4,8 +4,8 @@ Produces <run_dir>/analysis/endpoint_breakdown.png with two panels:
   - average latency by endpoint per phase (grouped bars)
   - failure count by endpoint per phase (stacked bars)
 
-Endpoints: device_status (data-plane heavy), dashboard (compute-plane heavy),
-service_pressure (mixed). This shows which plane carried pressure in each phase.
+Endpoints: content_lookup (data-plane heavy), feed_ranking (compute-plane heavy),
+service_pressure (mixed).
 
 Usage:
     python -m source.scripts.testing.analysis.cli_endpoint_breakdown --run-dir <dir>
@@ -77,8 +77,8 @@ def run(run_dir: Path) -> None:
     fig.suptitle(f"Endpoint breakdown — {run_dir.name}", fontsize=13)
 
     endpoint_colors = {
-        "device_status": "#1a7abf",
-        "dashboard": "#bf5a1a",
+        "content_lookup": "#1a7abf",
+        "feed_ranking": "#bf5a1a",
         "service_pressure": "#1abf4a",
     }
     x = np.arange(len(phases_present))

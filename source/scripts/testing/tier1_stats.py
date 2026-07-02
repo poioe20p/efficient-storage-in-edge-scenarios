@@ -82,7 +82,7 @@ def max_per_owner_coll_xratio(servers: dict) -> float:
     ``_SS_PROMOTION_CROSS_REGION_THRESHOLD``), so it is the correct
     diagnostic for whether the gate would pass. The aggregate
     ``cross_region_ratio`` column is diluted by same-region collections
-    (e.g. ``device_registry``) and underestimates the real signal. Returns
+    (e.g. ``user_profiles``) and underestimates the real signal. Returns
     0.0 when no access entry has been reported.
     """
     best = 0.0

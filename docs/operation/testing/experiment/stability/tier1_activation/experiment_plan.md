@@ -2,7 +2,7 @@
 
 ## Intent
 
-This experiment evaluates the current Tier 1 selective-sync path as a required part of architecture readiness. It answers one operational question: when the workload is deliberately shaped to create a sustained hot cross-region read set, does Tier 1 reach `ACTIVE`, improve the consumer-LAN DB-latency signal, and drain cleanly without destabilizing the run? The plan is grounded in the selective-sync lifecycle in [selective_sync_overview.md](../../../selective_sync/selective_sync_overview.md), the Tier 1 hotspot workload described in [testing_overview.md](../../../testing_overview.md), the concrete phase file [phases_experiment_tier1_hotspot_bidirectional.json](../../../../../../source/scripts/testing/phases_experiment_tier1_hotspot_bidirectional.json), the current traffic-generator schema in [traffic_generator.py](../../../../../../source/scripts/testing/traffic_generator.py), the selective-sync thresholds in [scaling_config.py](../../../../../../source/sdn_controller/scaling_config.py), and the existing runner contract in [run_experiment.sh](../../../../../../source/scripts/testing/run_experiment.sh).
+This experiment evaluates the current Tier 1 selective-sync path as a required part of architecture readiness. It answers one operational question: when the workload is deliberately shaped to create a sustained hot cross-region read set, does Tier 1 reach `ACTIVE`, improve the consumer-LAN DB-latency signal, and begin draining cleanly without destabilizing the run? The plan is grounded in the selective-sync lifecycle in [selective_sync_overview.md](../../../selective_sync/selective_sync_overview.md), the Tier 1 hotspot workload described in [testing_overview.md](../../../testing_overview.md), the current focused companion phase file [phases_tier1_smoke.json](../../../../../../source/scripts/testing/phases_override/phases_tier1_smoke.json), the current traffic-generator schema in [traffic_generator.py](../../../../../../source/scripts/testing/traffic_generator.py), the selective-sync thresholds in [scaling_config.py](../../../../../../source/sdn_controller/scaling_config.py), and the existing runner contract in [run_experiment.sh](../../../../../../source/scripts/testing/run_experiment.sh).
 
 ## Hypothesis / Expected Outcome
 
@@ -10,8 +10,8 @@ With `SS_ENABLED=1`, a Tier 1-targeting hotspot workload should emit `SelectiveS
 
 ## Prerequisites
 
-- Use [phases_experiment_tier1_hotspot_bidirectional.json](../../../../../../source/scripts/testing/phases_experiment_tier1_hotspot_bidirectional.json) unchanged for both runs.
-- Current-capability approach: the current traffic generator randomly selects among devices in the target LAN, so this plan uses a deliberately small seeded working set (`DEVICES=30`) to make the hot set bounded without changing driver code. That keeps the run grounded in current capabilities instead of inventing a new schema.
+- Use [phases_tier1_smoke.json](../../../../../../source/scripts/testing/phases_override/phases_tier1_smoke.json) unchanged for both runs.
+- Current-capability approach: the current traffic generator randomly selects among content items in the target LAN, so this plan uses a deliberately small seeded working set (`CONTENT_ITEMS=30`) to make the hot set bounded without changing driver code. That keeps the run grounded in current capabilities instead of inventing a new schema.
 - If this Tier 1 validation is being chained after storage-reserve work, first pass [storage_reserve_validation/experiment_plan.md](../storage_reserve_validation/experiment_plan.md). Do not continue to Tier 1 if the reserve-liveness gate fails.
 
 ## Independent Variable & Held-Constant Set
@@ -20,39 +20,39 @@ With `SS_ENABLED=1`, a Tier 1-targeting hotspot workload should emit `SelectiveS
 - Held constant: same Tier 1 hotspot workload, same code and images, same WAN profile, same client/node/device counts, same runner path, and no `--fault-plan`.
 - Held constant controller knobs besides the independent variable: use the fixed controller overrides [tier1_hotspot_control.env](../../../../../../source/scripts/testing/controller_env_overrides/tier1_hotspot_control.env) and [tier1_hotspot_enabled.env](../../../../../../source/scripts/testing/controller_env_overrides/tier1_hotspot_enabled.env). They pin `MAX_DYNAMIC_STORAGE=0`, `MAX_DYNAMIC_COMPUTE=0`, and `STORAGE_PERSISTENT_RESERVE_ENABLED=0` so Tier 1 is isolated from Tier 2 reserve and compute-elasticity churn without editing [osken-controller.env](../../../../../../source/scripts/osken-controller.env) in place.
 - Held constant selective-sync thresholds: use the current defaults in [scaling_config.py](../../../../../../source/sdn_controller/scaling_config.py): `SS_MIN_READS_PER_WINDOW=14`, `SS_PROMOTION_CROSS_REGION_THRESHOLD=0.4`, `SS_BREACH_WINDOWS_M=2`, `SS_BREACH_WINDOWS_N=5`, `SS_SCALEDOWN_THRESHOLD=5`, and `SS_SCALEDOWN_WINDOW=8`.
-- Held constant workload intent: read-only GET mix, hotspot concentrated on a bounded seeded device set (`DEVICES=30`), and both cross-region directions exercised within the same scenario file.
+- Held constant workload intent: read-only GET mix, hotspot concentrated on a bounded seeded content set (`CONTENT_ITEMS=30`), and both cross-region directions exercised within the same scenario file.
 
 ## Run Matrix
 
 | Run label | What changes | Phase file |
 | --- | --- | --- |
-| `tier1_hotspot_control` | Same hotspot workload with Tier 1 disabled (`SS_ENABLED=0`) | [phases_experiment_tier1_hotspot_bidirectional.json](../../../../../../source/scripts/testing/phases_experiment_tier1_hotspot_bidirectional.json) |
-| `tier1_hotspot_enabled` | Same hotspot workload with Tier 1 enabled (`SS_ENABLED=1`) | [phases_experiment_tier1_hotspot_bidirectional.json](../../../../../../source/scripts/testing/phases_experiment_tier1_hotspot_bidirectional.json) |
+| `tier1_hotspot_control` | Same hotspot workload with Tier 1 disabled (`SS_ENABLED=0`) | [phases_tier1_smoke.json](../../../../../../source/scripts/testing/phases_override/phases_tier1_smoke.json) |
+| `tier1_hotspot_enabled` | Same hotspot workload with Tier 1 enabled (`SS_ENABLED=1`) | [phases_tier1_smoke.json](../../../../../../source/scripts/testing/phases_override/phases_tier1_smoke.json) |
 
 Run order is fixed: run the control first, then the enabled run on the same code and image state.
 
 ## Run Configuration
 
 - Launch path: verified non-interactive `make` workflow from [Makefile](../../../../../../source/scripts/Makefile).
-- `--phases-config`: `testing/phases_experiment_tier1_hotspot_bidirectional.json`.
+- `--phases-config`: `testing/phases_override/phases_tier1_smoke.json`.
 - `--run-label`: `tier1_hotspot_control` and `tier1_hotspot_enabled`.
 - `--batch-dir`: omitted in the default `make` path.
 - `--clients-per-lan`: `6` via `CLIENTS=6`.
-- `--seed-devices`: `30` via `DEVICES=30` so the existing random device picker still concentrates cross-region demand on a bounded hot set.
-- `--seed-nodes`: `40` via `NODES=40`.
+- `--seed-content-items`: `30` via `CONTENT_ITEMS=30` so the existing random content picker still concentrates cross-region demand on a bounded hot set.
+- `--seed-users`: `40` via `USERS=40`.
 - Skip flags: `SKIP_CLIENTS=1`, `SKIP_SEED=1`, and `SKIP_SNAPSHOT=1` inside `run_experiment`, because the same `make` call already runs `setup_network`, `create_clients`, and `setup_test_data` before `run_experiment`.
 - `--fault-plan`: omitted explicitly.
 - Controller override: `OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/tier1_hotspot_control.env` for the control run and `OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/tier1_hotspot_enabled.env` for the enabled run.
 
 Phase profile used by this experiment:
 
-- `warmup`: `45 s`, `rate_per_client=2.0`, `cross_region_ratio=0.0`, mix `device_status=0.70`, `dashboard=0.15`, `service_pressure=0.15`.
-- `tier1_hotspot_n1`: `240 s`, `rate_per_client=8.0`, `cross_region_ratio=0.95`, `hotspot_direction=lan2_to_lan1`, mix `device_status=0.95`, `dashboard=0.03`, `service_pressure=0.02`.
-- `cooldown_n1`: `120 s`, `rate_per_client=0.5`, `cross_region_ratio=0.0`, mix `device_status=0.70`, `dashboard=0.20`, `service_pressure=0.10`.
-- `tier1_hotspot_n2`: `240 s`, `rate_per_client=8.0`, `cross_region_ratio=0.95`, `hotspot_direction=lan1_to_lan2`, mix `device_status=0.95`, `dashboard=0.03`, `service_pressure=0.02`.
-- `cooldown_n2`: `120 s`, `rate_per_client=0.5`, `cross_region_ratio=0.0`, mix `device_status=0.70`, `dashboard=0.20`, `service_pressure=0.10`.
+- `baseline`: `60 s`, `rate_per_client=1.0`, `cross_region_ratio=0.0`, mix `content_lookup=0.60`, `feed_ranking=0.25`, `service_pressure=0.15`.
+- `hotspot_lan2_to_lan1`: `180 s`, `rate_per_client=6.0`, `cross_region_ratio=0.95`, `hotspot_direction=lan2_to_lan1`, mix `content_lookup=0.92`, `feed_ranking=0.05`, `service_pressure=0.03`.
+- `cooldown`: `60 s`, `rate_per_client=2.0`, `cross_region_ratio=0.0`, mix `content_lookup=0.60`, `feed_ranking=0.25`, `service_pressure=0.15`.
+- `hotspot_lan1_to_lan2`: `180 s`, `rate_per_client=6.0`, `cross_region_ratio=0.95`, `hotspot_direction=lan1_to_lan2`, mix `content_lookup=0.92`, `feed_ranking=0.05`, `service_pressure=0.03`.
+- `idle`: `60 s`, `rate_per_client=1.0`, `cross_region_ratio=0.0`, mix `content_lookup=0.60`, `feed_ranking=0.25`, `service_pressure=0.15`.
 
-These timings are chosen against the current selective-sync thresholds: activation needs 2 breached windows inside a 5-window ring, while drain needs 8 consecutive cold windows. With the current 10-second telemetry windows, `240 s` hotspot phases and `120 s` cooldown phases leave margin for both activation and drain observation.
+These timings are chosen against the current selective-sync thresholds: activation needs 2 breached windows inside a 5-window ring, while drain needs 8 consecutive cold windows. The current smoke profile is strong enough for activation and early drain observation, but its `60 s` low-load windows are shorter than a full drain-stability proof after each direction. Final cleanup should therefore be judged at end-of-run, with intermediate cooldowns treated as drain-transition checkpoints.
 
 Concrete commands:
 
@@ -60,15 +60,15 @@ Concrete commands:
 sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
    OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/tier1_hotspot_control.env \
   RUN_LABEL=tier1_hotspot_control \
-  PHASES_CONFIG=testing/phases_experiment_tier1_hotspot_bidirectional.json \
-  CLIENTS=6 DEVICES=30 NODES=40 \
+   PHASES_CONFIG=testing/phases_override/phases_tier1_smoke.json \
+   CLIENTS=6 CONTENT_ITEMS=30 USERS=40 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 
 sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
    OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/tier1_hotspot_enabled.env \
   RUN_LABEL=tier1_hotspot_enabled \
-  PHASES_CONFIG=testing/phases_experiment_tier1_hotspot_bidirectional.json \
-  CLIENTS=6 DEVICES=30 NODES=40 \
+   PHASES_CONFIG=testing/phases_override/phases_tier1_smoke.json \
+   CLIENTS=6 CONTENT_ITEMS=30 USERS=40 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 ```
 
@@ -105,7 +105,7 @@ The Tier 1 path passes only if the enabled run and the control run together sati
 4. Stability during activation.
    Tier 1 activation must not introduce controller tracebacks, repeated selective-storage restart loops, or phase-local failure spikes above `1.0%` in `client_requests.csv`.
 5. Teardown correctness.
-   After each cooldown phase, the enabled run must show manifest revocation, `ScaleDownSelectiveAlert`, and final cleanup with no residual `sel_sync_*` containers by final idle.
+   The enabled run must show manifest revocation and drain markers during the low-load windows, and it must finish with no residual `sel_sync_*` containers by final idle.
 6. Control comparison.
    The control run must complete without Tier 1 activation. If `SS_ENABLED=0` still appears to activate Tier 1, treat that as a correctness failure rather than a stability issue.
 
@@ -113,13 +113,13 @@ The Tier 1 path passes only if the enabled run and the control run together sati
 
 | Trigger | Question | Evidence | Runner action |
 | --- | --- | --- | --- |
-| Mid `tier1_hotspot_n1` | Did the first direction submit `SelectiveSyncAlert` and start the selective container? | Controller logs, `container_events.csv` | Report only |
+| Mid `hotspot_lan2_to_lan1` | Did the first direction submit `SelectiveSyncAlert` and start the selective container? | Controller logs, `container_events.csv` | Report only |
 | First window after `ACTIVE` | Did consumer-side `T_db` p95 begin to drop once Tier 1 reached service? | `resource_stats.csv`, controller logs | Report only |
-| End `cooldown_n1` / `cooldown_n2` | Did manifest revoke and did selective cleanup complete? | Controller logs, `container_events.csv`, `service_logs/` | Report only |
+| End `cooldown` / `idle` | Did manifest revoke and did selective cleanup progress or complete? | Controller logs, `container_events.csv`, `service_logs/` | Report only |
 
 ## Validity Threats & Limitations
 
-- The current driver does not pin exact hot-device IDs. Using `DEVICES=30` is an operational approximation that stays within current tooling, but it is still weaker than a future explicit pinned-subset phase schema.
+- The current driver does not pin exact hot-content IDs. Using `CONTENT_ITEMS=30` is an operational approximation that stays within current tooling, but it is still weaker than a future explicit pinned-subset phase schema.
 - The plan intentionally uses no injected failures, so it does not validate hard-failure recovery or failed-backend avoidance.
 - If the same hotspot profile also triggers Tier 2 strongly, interpretation becomes harder. The Tier 1 hotspot must therefore stay focused on selective-sync activation rather than full-replica forcing.
 
