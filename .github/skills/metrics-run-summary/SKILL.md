@@ -18,9 +18,11 @@ By default, use this skill once for each newly completed experiment run folder
 under `source/scripts/testing/metrics/`, unless the user explicitly says to
 defer the summary or keep the folder untouched.
 
-After the summary is written and checked, clean the target run folder by deleting
-only transient controller log files: `controller_lan[0-9].log`. Before deleting
-controller logs, parse and retain `elasticity_events.csv` and
+After the summary is written and checked, **archive graphs to the experiment
+folder** (see Step G) — graphs belong alongside the experiment plan and results,
+not only in the transient run artifacts folder. Then clean the target run folder
+by deleting only transient controller log files: `controller_lan[0-9].log`.
+Before deleting controller logs, parse and retain `elasticity_events.csv` and
 `node_lifecycle_timings.csv`. Leave every other file in the run folder intact.
 
 **Analysis location rule**: the full analysis (all graph CLIs + log parsing)
@@ -114,7 +116,9 @@ python -m source.scripts.testing.analysis.cli_cpu_drivers --run-dir "<run_dir>"
 python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir "<run_dir>"
 ```
 
-These commands create files under `<run_dir>/analysis/`, including:
+These commands create files under `<run_dir>/analysis/` (staging location).
+After all CLIs complete, copy the PNGs to the experiment folder per Step G.
+The table below lists each CLI's output:
 
 | CLI | Output | What it shows |
 |-----|--------|---------------|
@@ -188,23 +192,43 @@ python -m source.scripts.testing.analysis.cli_cpu_drivers --run-dir "<run_dir>"
 python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir "<run_dir>"
 ```
 
+### Step G — Archive graphs to experiment folder (always)
+
+After all analysis CLIs have completed, copy the generated PNG graphs from
+`<run_dir>/analysis/` to the experiment folder so they live alongside the plan
+and results — not buried in the transient run artifacts:
+
+```powershell
+# Resolve the experiment folder from the run label or phases snapshot
+$experiment_dir = "docs/operation/testing/experiment/<category>/<experiment_name>"
+$graph_dir = "$experiment_dir/graphs/<run_timestamp>"
+New-Item -ItemType Directory -Force -Path "$graph_dir"
+Copy-Item "<run_dir>/analysis/*.png" -Destination "$graph_dir/"
+```
+
+The experiment folder is resolved by matching the run's `phases_snapshot.json`
+workload shape or the RUN_LABEL prefix to the experiment plan in
+`docs/operation/testing/experiment/`. If the experiment folder cannot be
+determined unambiguously, leave the graphs in `<run_dir>/analysis/` and note
+the ambiguity in `run_summary.md`.
+
 ### Minimum output expected after full analysis
 
-| File | Always? | What it shows |
-|------|---------|---------------|
-| `latency_summary.csv` | ✅ | Request latency statistics |
-| `resource_summary.csv` | ✅ | Resource statistics |
-| `elasticity_events.csv` | If logs exist | Parsed controller events |
-| `node_lifecycle_timings.csv` | If logs exist | Node add/remove timing |
-| `analysis/overview.png` | ✅ | Request rate, CPU, T_proc, T_db, node counts |
-| `analysis/simple_run.png` | ✅ | Avg/p95/p99 latency, failure rate, nodes by type |
-| `analysis/phase_summary.png` | ✅ | Latency %iles, max nodes by type, per-LAN p95 |
-| `analysis/endpoint_breakdown.png` | ✅ | Per-endpoint latency & failures by phase |
-| `analysis/lifecycle_gantt.png` | ✅ | Container lifecycle Gantt |
-| `analysis/scale_down.png` | ✅ | Scale-down predicate timeline |
-| `analysis/cpu_drivers.png` | If per_node_stats.csv | Per-node CPU load balance |
-| `analysis/tdb_drivers.png` | If per_node_stats.csv | T_db_write vs storage_count |
-| `run_summary.md` | ✅ | Narrative summary |
+| File | Always? | Location | What it shows |
+|------|---------|----------|---------------|
+| `latency_summary.csv` | ✅ | `<run_dir>/` | Request latency statistics |
+| `resource_summary.csv` | ✅ | `<run_dir>/` | Resource statistics |
+| `elasticity_events.csv` | If logs exist | `<run_dir>/` | Parsed controller events |
+| `node_lifecycle_timings.csv` | If logs exist | `<run_dir>/` | Node add/remove timing |
+| `overview.png` | ✅ | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Request rate, CPU, T_proc, T_db, node counts |
+| `simple_run.png` | ✅ | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Avg/p95/p99 latency, failure rate, nodes by type |
+| `phase_summary.png` | ✅ | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Latency %iles, max nodes by type, per-LAN p95 |
+| `endpoint_breakdown.png` | ✅ | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Per-endpoint latency & failures by phase |
+| `lifecycle_gantt.png` | ✅ | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Container lifecycle Gantt |
+| `scale_down.png` | ✅ | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Scale-down predicate timeline |
+| `cpu_drivers.png` | If per_node_stats.csv | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Per-node CPU load balance |
+| `tdb_drivers.png` | If per_node_stats.csv | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | T_db_write vs storage_count |
+| `run_summary.md` | ✅ | `<run_dir>/` | Narrative summary |
 
 ## Analysis Procedure
 
@@ -269,6 +293,12 @@ python -m source.scripts.testing.analysis.cli_tdb_drivers --run-dir "<run_dir>"
    - If the user names reference runs, compare the same phases and metrics.
    - If no reference is named, compare only when nearby run summaries or summary
      CSVs make the comparison obvious and relevant.
+
+8. Archive graphs to the experiment folder.
+   - After all analysis CLIs complete, copy `*.png` from `<run_dir>/analysis/`
+     to `docs/operation/testing/experiment/<category>/<experiment_name>/graphs/<run_timestamp>/`.
+   - Resolve the experiment folder from the run's workload shape or RUN_LABEL prefix.
+   - Do this before controller log cleanup — graphs are evidence, not transient artifacts.
 
 ## `run_summary.md` Structure
 

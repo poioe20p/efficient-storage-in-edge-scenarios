@@ -36,6 +36,7 @@ Optimize token usage by searching smart instead of wide:
 - Base every conclusion on concrete artifacts (`resource_stats.csv`, `per_node_stats.csv`, `container_events.csv`, `phases_snapshot.json`, controller logs, generated summaries) and the analysis CLIs under `source/scripts/testing/analysis/` — never on assumption.
 - You may write or update `run_summary.md`, produce retained CSV evidence, remove transient request CSVs and controller logs after analysis, copy reduced run folders back from the cloud host, verify the local copy, and delete the remote copy when that workflow is allowed.
 - When an experiment is rerun (multiple iterations with different configurations under the same `experiment_plan.md`), you maintain the `results.md` timeline in the experiment folder and keep the `experiment_plan.md` changelog in sync.
+- **Graph archival**: After generating analysis graphs via the CLIs, always copy them from `<run_dir>/analysis/` to `docs/operation/testing/experiment/<category>/<experiment_name>/graphs/<run_timestamp>/`. Graphs are part of the experiment's evidence record and belong alongside the plan and results — not only in the transient run artifact folder. Resolve the experiment folder by matching the run's workload shape or RUN_LABEL prefix to the experiment plan.
 
 ## Multi-Run Timeline & Results Management
 
@@ -118,6 +119,7 @@ Keep the changelog entry concise — the full reasoning lives in results.md. Do 
 7. When comparing runs, use the same phases and metrics across runs and call out differences in available artifacts.
 8. If cleanup or cloud copy-back is requested, do it only after the summary and retained evidence have been produced and verified.
 9. **Rerun detection and results.md management**. After completing the standard single-run analysis, determine whether this is a rerun (see Multi-Run Timeline & Results Management above). If it is a rerun, append the timeline entry to `results.md` and sync the `experiment_plan.md` changelog before finalising cleanup or copy-back. Do not overwrite existing `results.md` content — always append or insert into the existing document.
+10. **Graph archival**. After all analysis CLIs have run, copy the generated PNGs from `<run_dir>/analysis/` to `docs/operation/testing/experiment/<category>/<experiment_name>/graphs/<run_timestamp>/`. Resolve the experiment folder by matching the run's workload shape or RUN_LABEL prefix. Do this before cleanup or copy-back — graphs are evidence, not transient artifacts.
 
 ## Constraints
 
@@ -126,6 +128,7 @@ Keep the changelog entry concise — the full reasoning lives in results.md. Do 
 - Do not delete retained artifacts such as `resource_stats.csv`, `per_node_stats.csv`, `container_events.csv`, generated summaries, or analysis outputs.
 - Do not remove remote run folders before verifying the copied local run folder when copy-back is part of the task.
 - Do not overwrite existing `results.md` content. When a rerun is detected, always append the new timeline entry or insert the timeline table without removing prior narrative sections. Preserve the full history.
+- **Graphs live in the experiment folder**: Always archive analysis graphs to `docs/operation/testing/experiment/<category>/<experiment_name>/graphs/<run_timestamp>/`. Never treat `<run_dir>/analysis/` as the canonical graph location — it is a staging area. Graphs must be copied to the experiment folder before the run folder is considered fully analyzed.
 
 ## Output Format
 

@@ -1,6 +1,6 @@
 # Experiment Plan v2-Lite — RQ1 at Reduced WAN Latency
 
-**Status**: 🔵 Designed · **Date**: 2026-07-01
+**Status**: ✅ Executed · **Date**: 2026-07-01 – 2026-07-02
 **Parent plan**: [`experiment_plan_v2.md`](./experiment_plan_v2.md) — all structural details there
 **Motivation**: [`results_v2.md`](./results_v2.md) §2, Criterion 5
 
@@ -345,3 +345,11 @@ Same as v2 §Artifact Contract. Run folders at:
 - `source/scripts/testing/metrics/<timestamp>_rq1_v2lite_poll30_t30/`
 
 Results will be documented in `results_v2_lite.md` in this folder.
+
+## Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-07-01 | Plan created — two-pass design: Pass 1 (curl=10s), Pass 2 (curl=30s), 8 runs total | Complement v2 at WAN=200ms + test client-timeout sensitivity; see `results_v2.md` §2 Criterion 5 |
+| 2026-07-02 | Campaign executed — 8/8 runs completed, `results_v2_lite.md` written | All criteria assessed; key findings: curl=30s reduces failure by 7–13 pp except Poll-30s; blind-spot monotonicity confirmed |
+| 2026-07-02 | `CURL_MAX_TIME` passthrough fix applied mid-campaign (Makefile + default 10→30 in traffic_generator.py) | First push_t30 attempt failed (MongoDB); env var was not propagating through `sudo -E make` chain; fix verified before Pass 2 restarted |

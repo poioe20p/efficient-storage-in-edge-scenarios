@@ -20,8 +20,8 @@ different structures), serves both data-locality (content lookups dominate)
 and compute-analytics (feed ranking dominates) workloads, and experiences
 demand shifts across regions.
 
-The proposal title: *"Efficient Data Storage Using Programmable Containers
-in Edge Computing."*
+The thesis title: *"A Cross-Layer SDN Orchestration Architecture for Stateful
+Edge Services: Design and Experimental Characterization."*
 
 The core concepts from the proposal that guide the framing:
 
