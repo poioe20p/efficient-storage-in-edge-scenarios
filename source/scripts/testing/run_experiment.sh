@@ -18,7 +18,7 @@
 #   sudo ./run_experiment.sh [--batch-dir batch4] [--run-label c0] [--skip-clients] [--skip-seed] [--skip-snapshot]
 #   sudo ./run_experiment.sh --phases-config phases_custom.json --fault-plan fault_plan.json
 #   sudo ./run_experiment.sh --clients-per-lan 6 --seed-content-items 600 --seed-users 100 \
-#       --phases-config phases_experiment_storage_trigger.json --run-label storage_trigger
+#       --phases-config testing/phases_override/phases_tier1_smoke.json --run-label tier1_smoke
 #
 # Flags (all optional):
 #   --batch-dir DIR     Place the run folder under metrics/DIR/ (example: metrics/batch4/20260501_153012_c0)

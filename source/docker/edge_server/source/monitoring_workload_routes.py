@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import time
 
 from flask import Flask, jsonify, request
@@ -42,7 +43,7 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
         lan = data.get("lan", "lan1")
         update_fields = {
             "payload.engagement": engagement,
-            "last_updated": time.time(),
+            "last_updated": datetime.now(timezone.utc),
         }
         if "update_padding" in data:
             update_fields["update_padding"] = data["update_padding"]

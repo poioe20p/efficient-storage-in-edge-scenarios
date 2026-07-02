@@ -94,13 +94,14 @@ Each phase object supports:
 | `duration_s` | int | Phase length in seconds |
 | `rate_per_client` | float | Requests per second for each active client namespace |
 | `cross_region_ratio` | float | Fraction of `content_lookup` requests that target the foreign LAN |
-| `hotspot_direction` | string | Which LAN emits those cross-region `content_lookup` requests |
+| `hotspot_direction` | string | Optional source-LAN pin for cross-region `content_lookup`; blank or omitted means both LANs may emit the cross-region share |
 | `mix` | dict | Weighted request distribution across the supported request kinds |
 | `client_fraction` | float | Fraction of all clients that are active during the phase |
 
 Important behavior:
 
 - `cross_region_ratio` applies only to `content_lookup`.
+- Blank or omitted `hotspot_direction` means bidirectional cross-region load, which is the canonical behavior in `source/scripts/testing/phases.json`. Directional values such as `lan2_to_lan1` and `lan1_to_lan2` are for focused override profiles under `source/scripts/testing/phases_override/`.
 - `feed_ranking` always targets the requester's home LAN but may read content
   candidates from all LANs.
 - `content_update` writes to the requester's home LAN primary.
@@ -188,6 +189,9 @@ Interpretation:
 
 - `storage_storm` and `tier1_hotspot` are the storage-heavy phases.
 - `compute_spike` is the compute-heavy phase.
+- The canonical profile keeps cross-region hotspot pressure bidirectional; use
+  `phases_override/phases_tier1_smoke.json` when a single source-LAN hotspot is
+  required for targeted validation.
 - `inter_hotspot_cooldown` and `cooldown` provide recovery and scale-in
   observation windows.
 

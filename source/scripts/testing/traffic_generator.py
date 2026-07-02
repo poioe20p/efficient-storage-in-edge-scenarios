@@ -87,12 +87,17 @@ class PhaseConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "PhaseConfig":
+        hotspot_direction = d.get("hotspot_direction") or "bidirectional"
+        if hotspot_direction not in {"bidirectional", "lan2_to_lan1", "lan1_to_lan2"}:
+            raise ValueError(
+                "hotspot_direction must be bidirectional, lan2_to_lan1, lan1_to_lan2, or blank"
+            )
         return cls(
             name=d["name"],
             duration_s=d["duration_s"],
             rate_per_client=d["rate_per_client"],
             cross_region_ratio=d.get("cross_region_ratio", 0.0),
-            hotspot_direction=d.get("hotspot_direction", "lan2_to_lan1"),
+            hotspot_direction=hotspot_direction,
             mix=d["mix"],
             client_fraction=d.get("client_fraction", 1.0),
         )
@@ -122,7 +127,10 @@ def pick_target(client_lan: str, phase: PhaseConfig, snap: Snapshot, request_typ
     if request_type == "content_lookup":
         is_cross = random.random() < phase.cross_region_ratio
 
-        # Only the source region defined in hotspot_direction sends cross-region requests
+        # The canonical integrated profile leaves hotspot_direction blank, which
+        # means both LANs may emit cross-region lookups subject to the shared
+        # cross_region_ratio. Directional override profiles can pin one source
+        # LAN explicitly for focused hotspot validation.
         if phase.hotspot_direction == "lan2_to_lan1" and home == "lan1":
             is_cross = False
         elif phase.hotspot_direction == "lan1_to_lan2" and home == "lan2":
