@@ -16,7 +16,10 @@
 #
 # Examples:
 #   sudo bash trace_request.sh --ns lan1_client_1 \
-#     -- curl -s "http://10.0.0.253:5000/device/lan1::device::001/latest?node_id=lan1::node::001"
+#     -- curl -s "http://10.0.0.253:5000/content/lan1::content::001?requester=lan1::user::001"
+#
+#   sudo bash trace_request.sh --ns lan1_client_1 \
+#     -- curl -s "http://10.0.0.253:5000/feed/lan1::user::001?limit=10"
 #
 #   sudo bash trace_request.sh --ns lan1_client_1 \
 #     -- curl -s http://10.0.0.253:5000/health
@@ -54,7 +57,7 @@ Options:
 
 Example:
   sudo $SCRIPT_NAME --ns lan1_client_1 \\
-    -- curl -s "http://10.0.0.253:5000/device/lan1::device::001/latest?node_id=lan1::node::001"
+    -- curl -s "http://10.0.0.253:5000/content/lan1::content::001?requester=lan1::user::001"
 EOF
     exit 1
 }

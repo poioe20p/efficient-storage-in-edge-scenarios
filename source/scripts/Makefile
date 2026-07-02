@@ -6,15 +6,15 @@
 #   make create_clients                 # Create test clients on both LANs
 #   make teardown_clients               # Remove test clients and stop containers
 #   make setup_test_data                # Run all test data seeding steps
-#   make setup_test_data DEVICES=200    # Override defaults
+#   make setup_test_data CONTENT_ITEMS=200 USERS=60  # Override defaults
 #   make cleanup_metrics                # Remove metrics run folders
 # ============================================================================
 
 PYTHON       ?= python3
 MONGO_LAN1   ?= mongodb://10.0.0.4:27018/
 MONGO_LAN2   ?= mongodb://10.0.1.4:27018/
-DEVICES      ?= 100
-NODES        ?= 45
+CONTENT_ITEMS ?= 100
+USERS         ?= 45
 CLIENTS      ?= 3
 SNAPSHOT_DIR ?= testing/data/workload_snapshot
 SKIP_CLIENTS  ?= 1
@@ -32,7 +32,7 @@ PROBE_CAPTURE_ROOT    ?=
 
 .PHONY: setup_network \
         create_clients teardown_clients \
-        setup_test_data seed_sensor_reports seed_device_registry create_indexes export_snapshot \
+	setup_test_data seed_content_items seed_user_profiles create_indexes export_snapshot \
 	run_experiment cleanup_metrics probe_capture_preflight probe_capture_launch \
 	install_commit_msg_hook uninstall_commit_msg_hook preview_commit_msg
 
@@ -64,22 +64,22 @@ teardown_clients:
 # ── Test data ─────────────────────────────────────────────────────────────────
 
 ## Run all seeding steps in order
-setup_test_data: seed_sensor_reports seed_device_registry create_indexes export_snapshot
+setup_test_data: seed_content_items seed_user_profiles create_indexes export_snapshot
 
-## 1 — Seed sensor_reports collection on both LANs
-seed_sensor_reports:
-	$(PYTHON) testing/sensor_reports.py \
+## 1 — Seed content_items collection on both LANs
+seed_content_items:
+	$(PYTHON) testing/seed_content_items.py \
 	  --mongo-lan1 $(MONGO_LAN1) \
 	  --mongo-lan2 $(MONGO_LAN2) \
-	  --devices $(DEVICES)
+	  --content-items $(CONTENT_ITEMS)
 
-## 2 — Seed device_registry collection on both LANs
-seed_device_registry:
-	$(PYTHON) testing/device_registry.py \
+## 2 — Seed user_profiles collection on both LANs
+seed_user_profiles:
+	$(PYTHON) testing/seed_user_profiles.py \
 	  --mongo-lan1 $(MONGO_LAN1) \
 	  --mongo-lan2 $(MONGO_LAN2) \
-	  --devices $(DEVICES) \
-	  --nodes $(NODES)
+	  --content-items $(CONTENT_ITEMS) \
+	  --users $(USERS)
 
 ## 3 — Create indexes on both replica-set primaries
 create_indexes:
@@ -120,7 +120,7 @@ cleanup_metrics:
 ##   make run_experiment SKIP_SNAPSHOT=1  # snapshot already exported
 ##   make run_experiment DRY_RUN=1        # no real HTTP requests
 ##   make run_experiment RUN_LABEL=c0     # metrics folder becomes <timestamp>_c0
-##   make run_experiment CLIENTS=6 DEVICES=600 NODES=100
+##   make run_experiment CLIENTS=6 CONTENT_ITEMS=600 USERS=100
 ##   make run_experiment PHASES_CONFIG=testing/phases_custom.json
 ##   make run_experiment FAULT_PLAN=testing/fault_plan.json
 ##   make run_experiment OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/example.env
@@ -131,8 +131,8 @@ run_experiment:
 	sudo -E bash testing/run_experiment.sh \
 	  $(if $(strip $(RUN_LABEL)),--run-label "$(strip $(RUN_LABEL))") \
 	  --clients-per-lan "$(strip $(CLIENTS))" \
-	  --seed-devices "$(strip $(DEVICES))" \
-	  --seed-nodes "$(strip $(NODES))" \
+	  --seed-content-items "$(strip $(CONTENT_ITEMS))" \
+	  --seed-users "$(strip $(USERS))" \
 	  --snapshot-dir $(abspath $(SNAPSHOT_DIR)) \
 	  $(if $(strip $(PHASES_CONFIG)),--phases-config "$(strip $(PHASES_CONFIG))") \
 	  $(if $(strip $(FAULT_PLAN)),--fault-plan "$(strip $(FAULT_PLAN))") \

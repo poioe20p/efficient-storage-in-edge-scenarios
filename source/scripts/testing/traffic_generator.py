@@ -37,37 +37,41 @@ from datetime import datetime, timezone
 
 @dataclass
 class Snapshot:
-    """Pre-loaded device/node data from exported JSON."""
+    """Pre-loaded content/user data from exported JSON."""
 
-    devices_by_region: dict = field(default_factory=dict)
-    nodes_by_region: dict = field(default_factory=dict)
+    content_ids_by_region: dict = field(default_factory=dict)
+    user_ids_by_region: dict = field(default_factory=dict)
 
     @classmethod
     def load(cls, snapshot_dir: str) -> "Snapshot":
-        with open(os.path.join(snapshot_dir, "sensor_devices.json")) as f:
-            devices = json.load(f)
-        with open(os.path.join(snapshot_dir, "device_registry.json")) as f:
-            nodes = json.load(f)
+        with open(os.path.join(snapshot_dir, "content_items.json")) as f:
+            content_items = json.load(f)
+        with open(os.path.join(snapshot_dir, "user_profiles.json")) as f:
+            user_profiles = json.load(f)
 
         snap = cls()
 
-        for d in devices:
-            region = d["region_origin"]
-            snap.devices_by_region.setdefault(region, []).append(d["_id"])
+        for item in content_items:
+            region = item["region_origin"]
+            snap.content_ids_by_region.setdefault(region, []).append(item["_id"])
 
-        for n in nodes:
-            region = n["home_region"]
-            snap.nodes_by_region.setdefault(region, []).append(n["_id"])
+        for profile in user_profiles:
+            region = profile["home_region"]
+            snap.user_ids_by_region.setdefault(region, []).append(profile["_id"])
 
         return snap
 
     @classmethod
-    def mock(cls, n_devices: int = 50, n_nodes: int = 20) -> "Snapshot":
+    def mock(cls, n_content_items: int = 50, n_users: int = 20) -> "Snapshot":
         """Return synthetic snapshot data for dry-run testing without real files."""
         snap = cls()
         for region in ("lan1", "lan2"):
-            snap.devices_by_region[region] = [f"dev_{region}_{i}" for i in range(n_devices)]
-            snap.nodes_by_region[region] = [f"node_{region}_{i}" for i in range(n_nodes)]
+            snap.content_ids_by_region[region] = [
+                f"{region}::content::{i:03d}" for i in range(1, n_content_items + 1)
+            ]
+            snap.user_ids_by_region[region] = [
+                f"{region}::user::{i:03d}" for i in range(1, n_users + 1)
+            ]
         return snap
 
 
@@ -111,11 +115,11 @@ def pick_request_type(mix: dict) -> str:
 
 
 def pick_target(client_lan: str, phase: PhaseConfig, snap: Snapshot, request_type: str) -> dict:
-    """Select device_id, node_id, and target_region for one request."""
+    """Select content_id, user_id, and target_region for one request."""
     home = client_lan
     foreign = "lan2" if home == "lan1" else "lan1"
 
-    if request_type == "device_status":
+    if request_type == "content_lookup":
         is_cross = random.random() < phase.cross_region_ratio
 
         # Only the source region defined in hotspot_direction sends cross-region requests
@@ -125,51 +129,50 @@ def pick_target(client_lan: str, phase: PhaseConfig, snap: Snapshot, request_typ
             is_cross = False
 
         target_lan = foreign if is_cross else home
-        device_id = random.choice(snap.devices_by_region[target_lan])
-        node_id = random.choice(snap.nodes_by_region[home])
-        return {"device_id": device_id, "node_id": node_id, "target_region": target_lan}
+        content_id = random.choice(snap.content_ids_by_region[target_lan])
+        user_id = random.choice(snap.user_ids_by_region[home])
+        return {"content_id": content_id, "user_id": user_id, "target_region": target_lan}
 
-    elif request_type == "dashboard":
-        node_id = random.choice(snap.nodes_by_region[home])
-        return {"device_id": "", "node_id": node_id, "target_region": home}
+    if request_type == "feed_ranking":
+        user_id = random.choice(snap.user_ids_by_region[home])
+        return {"content_id": "", "user_id": user_id, "target_region": home}
 
-    elif request_type == "service_pressure":
-        return {"device_id": "", "node_id": "", "target_region": home}
+    if request_type == "service_pressure":
+        return {"content_id": "", "user_id": "", "target_region": home}
 
-    elif request_type == "device_update":
-        device_id = random.choice(snap.devices_by_region[home])
-        return {"device_id": device_id, "node_id": "", "target_region": home}
+    if request_type == "content_update":
+        content_id = random.choice(snap.content_ids_by_region[home])
+        return {"content_id": content_id, "user_id": "", "target_region": home}
 
-    elif request_type == "device_aggregate":
-        # Aggregation is a collection-level operation — no specific device needed.
+    if request_type == "content_aggregate":
+        # Aggregation is a collection-level operation — no specific content item needed.
         # Target region is always local (aggregation runs on the client's own
         # LAN's MongoDB; the aggregator doesn't cross regions).
         return {
-            "device_id": "",
-            "node_id": "",
+            "content_id": "",
+            "user_id": "",
             "target_region": client_lan,
         }
 
-    return {}
+    raise ValueError(f"Unsupported request type: {request_type}")
 
 
 def build_url(vip: str, request_type: str, target: dict) -> str:
     """Build the full URL for a request."""
     base = f"http://{vip}"
 
-    if request_type == "device_status":
-        return f"{base}/device/{target['device_id']}/latest?node_id={target['node_id']}"
-    elif request_type == "dashboard":
-        return f"{base}/dashboard/{target['node_id']}?limit=10"
-    elif request_type == "service_pressure":
+    if request_type == "content_lookup":
+        return f"{base}/content/{target['content_id']}?requester={target['user_id']}"
+    if request_type == "feed_ranking":
+        return f"{base}/feed/{target['user_id']}?limit=10"
+    if request_type == "service_pressure":
         return f"{base}/service_pressure?window_min=10&limit=10"
-    elif request_type == "device_update":
-        return f"{base}/device_update"
+    if request_type == "content_update":
+        return f"{base}/content"
+    if request_type == "content_aggregate":
+        return f"{base}/content/aggregate"
 
-    elif request_type == "device_aggregate":
-        return f"{base}/device_aggregate"
-
-    return base
+    raise ValueError(f"Unsupported request type: {request_type}")
 
 
 # ---------------------------------------------------------------------------
@@ -260,18 +263,18 @@ async def client_loop(
         url = build_url(vip, req_type, target)
 
         body = None
-        if req_type == "device_update":
-            extra_payload = "x" * 1024  # 1KB of padding to inflate oplog entries
+        if req_type == "content_update":
+            update_padding = "x" * 1024  # 1KB of padding to inflate oplog entries
             body = (
-                f'{{"device_id":"{target["device_id"]}",'
-                f'"pressure_level":{random.randint(0,100)},'
+                f'{{"content_id":"{target["content_id"]}",'
+                f'"engagement":{random.randint(0,100)},'
                 f'"lan":"{client_lan}",'
-                f'"extra":"{extra_payload}"}}'
+                f'"update_padding":"{update_padding}"}}'
             )
-        if req_type == "device_aggregate":
+        if req_type == "content_aggregate":
             body = (
                 f'{{"lan":"{client_lan}",'
-                f'"pressure_threshold":{random.randint(30,70)}}}'
+                f'"engagement_threshold":{random.randint(30,70)}}}'
             )
         http_status, latency_s = await exec_curl(ns, url, dry_run, body)
         request_count += 1
@@ -282,8 +285,8 @@ async def client_loop(
             ns,
             client_lan,
             req_type,
-            target.get("device_id", ""),
-            target.get("node_id", ""),
+            target.get("content_id", ""),
+            target.get("user_id", ""),
             target.get("target_region", ""),
             http_status,
             round(latency_s, 4),
@@ -327,9 +330,9 @@ async def run(args):
             print("[DRY-RUN] Snapshot files not found — using synthetic data")
     else:
         snap = Snapshot.load(args.snapshot_dir)
-    n_devices = sum(len(v) for v in snap.devices_by_region.values())
-    n_nodes = sum(len(v) for v in snap.nodes_by_region.values())
-    print(f"Snapshot: {n_devices} devices, {n_nodes} nodes")
+    n_content_items = sum(len(v) for v in snap.content_ids_by_region.values())
+    n_users = sum(len(v) for v in snap.user_ids_by_region.values())
+    print(f"Snapshot: {n_content_items} content items, {n_users} user profiles")
 
     lan1_clients = [c for c in args.clients_lan1.split(",") if c] if args.clients_lan1 else []
     lan2_clients = [c for c in args.clients_lan2.split(",") if c] if args.clients_lan2 else []
@@ -355,7 +358,7 @@ async def run(args):
     phase_state_file = os.path.join(output_dir, "current_phase.txt") if output_dir else "current_phase.txt"
     header = [
         "timestamp", "phase", "client_ns", "client_lan", "endpoint",
-        "device_id", "node_id", "target_region", "http_status", "latency_s",
+        "content_id", "user_id", "target_region", "http_status", "latency_s",
     ]
 
     aggregate_file = open(args.output, "w", newline="")
@@ -406,7 +409,7 @@ async def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Traffic generator for the edge IoT workload experiment"
+        description="Traffic generator for the edge content-discovery workload experiment"
     )
     parser.add_argument("--config", required=True, help="Path to phases.json")
     parser.add_argument(

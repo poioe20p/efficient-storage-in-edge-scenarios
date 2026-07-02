@@ -2,11 +2,11 @@
 
 These functions implement generic edge analytics patterns — per-request data
 enrichment, temporal trend detection, local service-pressure summarization,
-and multi-factor composite ranking — instantiated with IoT monitoring
+and multi-factor composite ranking — instantiated with content-discovery
 semantics for the experimental workload.
 
 All functions are pure compute — no I/O, no DB calls. They operate on
-data already retrieved by the monitoring workload route module.
+data already retrieved by the workload route module.
 """
 
 import hashlib
@@ -19,87 +19,88 @@ from datetime import datetime, timezone
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Severity thresholds (fraction of alert_threshold)
-SEVERITY_LEVELS = {
-    "critical": 1.0,    # value >= 100% of threshold
-    "warning":  0.85,   # value >= 85% of threshold
-    "elevated": 0.70,   # value >= 70% of threshold
-    "normal":   0.0,    # below 70%
+# Relevance thresholds (fraction of relevance_baseline)
+RELEVANCE_LEVELS = {
+    "hot": 1.0,
+    "trending": 0.85,
+    "steady": 0.70,
+    "quiet": 0.0,
 }
 
-# Tag-based priority multipliers for dashboard urgency scoring
+# Tag-based priority multipliers for feed ranking.
 TAG_PRIORITY = {
-    "high-priority": 2.0,
-    "critical-zone": 1.8,
-    "industrial":    1.3,
-    "environmental": 1.0,
-    "mechanical":    1.1,
-    "thermal":       1.2,
+    "premium": 2.0,
+    "trending": 1.8,
+    "news": 1.3,
+    "sports": 1.2,
+    "technology": 1.1,
+    "finance": 1.1,
+    "health": 1.0,
+    "education": 1.0,
+    "science": 1.0,
+    "entertainment": 0.9,
+    "featured": 0.8,
+    "archived": 0.5,
 }
 
 # How many recent local request events to use for trend analysis
 TREND_WINDOW_SIZE = 20
 
-# Staleness decay half-life in seconds (for dashboard ranking)
+# Staleness decay half-life in seconds (for feed ranking)
 STALENESS_HALF_LIFE_S = 300.0
 
 
 # ---------------------------------------------------------------------------
-# Function 1: Per-device severity scoring
+# Function 1: Per-content relevance scoring
 # ---------------------------------------------------------------------------
 
-def score_device_severity(
-    value: float | None,
-    threshold: float | None,
-    device_type: str,
-    device_id: str,
+def score_content_relevance(
+    engagement: float | None,
+    baseline: float | None,
+    content_type: str,
+    content_id: str,
 ) -> dict:
-    """Compute a multi-level severity classification for a device reading.
+    """Compute a multi-level relevance classification for a content item.
 
     Returns:
         {
-            "severity": "critical" | "warning" | "elevated" | "normal",
-            "anomaly_score": float,  # 0.0 = perfectly normal, >1.0 = above threshold
-            "calibration_hash": float,  # device-specific jitter factor
-            "alert": bool,  # backward-compatible boolean
+            "relevance": "hot" | "trending" | "steady" | "quiet",
+            "relevance_score": float,  # 0.0 = perfectly quiet, >1.0 = above baseline
+            "calibration_hash": float,  # content-specific jitter factor
+            "above_baseline": bool,
         }
     """
-    if value is None or threshold is None or threshold == 0:
+    if engagement is None or baseline is None or baseline == 0:
         return {
-            "severity": "normal",
-            "anomaly_score": 0.0,
+            "relevance": "quiet",
+            "relevance_score": 0.0,
             "calibration_hash": 0.0,
-            "alert": False,
+            "above_baseline": False,
         }
 
-    # Normalized anomaly score with exponential weighting by device type
-    raw_ratio = value / threshold
+    raw_ratio = engagement / baseline
 
-    # Device-specific calibration offset derived from hashing the device ID.
-    # Simulates per-device sensor calibration correction that a real edge
-    # system would compute before evaluating thresholds.
-    h = hashlib.sha256(device_id.encode()).hexdigest()
+    # Content-specific calibration offset derived from hashing the content ID.
+    h = hashlib.sha256(content_id.encode()).hexdigest()
     calibration_hash = (int(h[:8], 16) % 1000) / 10000.0  # 0.0000 – 0.0999
     calibrated_ratio = raw_ratio + calibration_hash
 
-    # Exponential weighting: different device types have different sensitivity
-    # curves (e.g. temperature sensors have sharper urgency near threshold).
-    type_seed = sum(ord(c) for c in device_type) % 10
+    # Preserve the existing per-type sensitivity curve.
+    type_seed = sum(ord(c) for c in content_type) % 10
     exponent = 1.0 + type_seed * 0.1  # range 1.0 – 1.9
-    anomaly_score = calibrated_ratio ** exponent
+    relevance_score = calibrated_ratio ** exponent
 
-    # Classification
-    severity = "normal"
-    for level, cutoff in SEVERITY_LEVELS.items():
+    relevance = "quiet"
+    for level, cutoff in RELEVANCE_LEVELS.items():
         if calibrated_ratio >= cutoff:
-            severity = level
+            relevance = level
             break
 
     return {
-        "severity": severity,
-        "anomaly_score": round(anomaly_score, 4),
+        "relevance": relevance,
+        "relevance_score": round(relevance_score, 4),
         "calibration_hash": round(calibration_hash, 6),
-        "alert": calibrated_ratio >= 1.0,
+        "above_baseline": calibrated_ratio >= 1.0,
     }
 
 
@@ -108,7 +109,7 @@ def score_device_severity(
 # ---------------------------------------------------------------------------
 
 def compute_trend(request_events: list[dict]) -> dict:
-    """Compute a linear-regression trend over recent request events for a device.
+    """Compute a linear-regression trend over recent request events for a content item.
 
     Each event is expected to have 'latency_ms' and 'timestamp' fields.
 
@@ -197,7 +198,7 @@ def compute_service_pressure(
 ) -> dict:
     """Summarize recent local request activity for the serving edge server.
 
-    Returns a summary plus the top devices and tags contributing to recent
+    Returns a summary plus the top content items and tags contributing to recent
     service pressure on this edge.
     """
     request_count = len(events)
@@ -206,19 +207,19 @@ def compute_service_pressure(
             "region_served": region,
             "summary": {
                 "request_count": 0,
-                "unique_device_count": 0,
+                "unique_content_count": 0,
                 "request_rate_rps": 0.0,
                 "latency_mean_ms": 0.0,
                 "latency_p95_ms": 0.0,
                 "tier1_hit_ratio": 0.0,
                 "tier1_eligible_read_count": 0,
                 "tier1_observed_request_count": 0,
-                "top_device_share": 0.0,
+                "top_content_share": 0.0,
                 "pressure_score": 0.0,
                 "pressure_label": "low",
             },
             "request_kind_counts": {},
-            "top_devices": [],
+            "top_content": [],
             "top_tags": [],
         }
 
@@ -228,7 +229,7 @@ def compute_service_pressure(
     tier1_eligible_read_count = 0
     tier1_observed_request_count = 0
 
-    devices: dict[str, dict] = {}
+    content_items: dict[str, dict] = {}
     tags: dict[str, dict] = {}
     request_kind_counts: dict[str, int] = {}
 
@@ -247,10 +248,10 @@ def compute_service_pressure(
                 )
             )
 
-        device_id = ev.get("device_id")
+        content_id = ev.get("content_id")
         latency = float(ev.get("latency_ms", 0.0))
         timestamp = float(ev.get("timestamp", 0.0))
-        severity = ev.get("severity", "normal")
+        relevance = ev.get("relevance", "quiet")
         status = ev.get("status", "unknown")
         event_tags = tuple(ev.get("tags") or ())
 
@@ -260,54 +261,54 @@ def compute_service_pressure(
                 {
                     "tag": tag,
                     "request_count": 0,
-                    "device_ids": set(),
+                    "content_ids": set(),
                     "latencies": [],
                 },
             )
             tag_stats["request_count"] += 1
-            if device_id:
-                tag_stats["device_ids"].add(device_id)
+            if content_id:
+                tag_stats["content_ids"].add(content_id)
             tag_stats["latencies"].append(latency)
 
-        if not device_id:
+        if not content_id:
             continue
 
-        device_stats = devices.setdefault(
-            device_id,
+        content_stats = content_items.setdefault(
+            content_id,
             {
-                "device_id": device_id,
+                "content_id": content_id,
                 "request_count": 0,
                 "latencies": [],
                 "last_seen_epoch": 0.0,
-                "last_severity": "normal",
+                "last_relevance": "quiet",
                 "last_status": "unknown",
                 "tags": (),
             },
         )
-        device_stats["request_count"] += 1
-        device_stats["latencies"].append(latency)
-        if timestamp >= device_stats["last_seen_epoch"]:
-            device_stats["last_seen_epoch"] = timestamp
-            device_stats["last_severity"] = severity
-            device_stats["last_status"] = status
-            device_stats["tags"] = event_tags
+        content_stats["request_count"] += 1
+        content_stats["latencies"].append(latency)
+        if timestamp >= content_stats["last_seen_epoch"]:
+            content_stats["last_seen_epoch"] = timestamp
+            content_stats["last_relevance"] = relevance
+            content_stats["last_status"] = status
+            content_stats["tags"] = event_tags
 
-    top_devices = []
-    for device_stats in devices.values():
-        device_latencies = device_stats.pop("latencies")
-        top_devices.append(
+    top_content = []
+    for content_stats in content_items.values():
+        content_latencies = content_stats.pop("latencies")
+        top_content.append(
             {
-                "device_id": device_stats["device_id"],
-                "request_count": device_stats["request_count"],
-                "avg_latency_ms": round(statistics.mean(device_latencies), 2),
-                "last_seen_epoch": round(device_stats["last_seen_epoch"], 3),
-                "last_severity": device_stats["last_severity"],
-                "last_status": device_stats["last_status"],
-                "tags": list(device_stats["tags"]),
+                "content_id": content_stats["content_id"],
+                "request_count": content_stats["request_count"],
+                "avg_latency_ms": round(statistics.mean(content_latencies), 2),
+                "last_seen_epoch": round(content_stats["last_seen_epoch"], 3),
+                "last_relevance": content_stats["last_relevance"],
+                "last_status": content_stats["last_status"],
+                "tags": list(content_stats["tags"]),
             }
         )
-    top_devices.sort(key=lambda d: (d["request_count"], d["avg_latency_ms"]), reverse=True)
-    top_devices = top_devices[:limit]
+    top_content.sort(key=lambda d: (d["request_count"], d["avg_latency_ms"]), reverse=True)
+    top_content = top_content[:limit]
 
     top_tags = []
     for tag_stats in tags.values():
@@ -316,7 +317,7 @@ def compute_service_pressure(
             {
                 "tag": tag_stats["tag"],
                 "request_count": tag_stats["request_count"],
-                "unique_device_count": len(tag_stats["device_ids"]),
+                "unique_content_count": len(tag_stats["content_ids"]),
                 "avg_latency_ms": round(statistics.mean(tag_latencies), 2),
             }
         )
@@ -331,11 +332,11 @@ def compute_service_pressure(
         if tier1_eligible_read_count > 0
         else 0.0
     )
-    top_device_share = (top_devices[0]["request_count"] / request_count) if top_devices else 0.0
+    top_content_share = (top_content[0]["request_count"] / request_count) if top_content else 0.0
 
     rate_component = _normalize(request_rate_rps, 10.0)
     latency_component = _normalize(latency_p95_ms, 150.0)
-    concentration_component = _normalize(top_device_share, 0.5)
+    concentration_component = _normalize(top_content_share, 0.5)
     tier1_miss_component = 1.0 - tier1_hit_ratio if tier1_eligible_read_count > 0 else 0.0
 
     pressure_score = (
@@ -355,21 +356,21 @@ def compute_service_pressure(
         "region_served": region,
         "summary": {
             "request_count": request_count,
-            "unique_device_count": len(devices),
+            "unique_content_count": len(content_items),
             "request_rate_rps": round(request_rate_rps, 2),
             "latency_mean_ms": round(latency_mean_ms, 2),
             "latency_p95_ms": round(latency_p95_ms, 2),
             "tier1_hit_ratio": round(tier1_hit_ratio, 4),
             "tier1_eligible_read_count": tier1_eligible_read_count,
             "tier1_observed_request_count": tier1_observed_request_count,
-            "top_device_share": round(top_device_share, 4),
+            "top_content_share": round(top_content_share, 4),
             "pressure_score": round(pressure_score, 4),
             "pressure_label": pressure_label,
         },
         "request_kind_counts": dict(
             sorted(request_kind_counts.items(), key=lambda item: item[1], reverse=True)
         ),
-        "top_devices": top_devices,
+        "top_content": top_content,
         "top_tags": top_tags,
     }
 
@@ -398,55 +399,53 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Function 4: Multi-factor dashboard urgency scoring
+# Function 4: Multi-factor feed relevance scoring
 # ---------------------------------------------------------------------------
 
-def score_dashboard_urgency(devices: list[dict], now: datetime | None = None) -> list[dict]:
-    """Compute multi-factor urgency scores for dashboard devices.
+def score_feed_relevance(content_items: list[dict], now: datetime | None = None) -> list[dict]:
+    """Compute multi-factor relevance scores for feed content candidates.
 
-    For each device, urgency combines:
-      - Threshold proximity: value / alert_threshold (exponential near 1.0)
-      - Tag priority: sum of TAG_PRIORITY weights for the device's tags
-      - Status severity: numeric mapping of payload.status
+    For each content item, relevance combines:
+      - Baseline proximity: engagement / relevance_baseline (exponential near 1.0)
+      - Tag priority: sum of TAG_PRIORITY weights for the content item's tags
+      - Status weight: numeric mapping of payload.status
       - Staleness penalty: exponential decay based on last_updated age
 
-    Each device dict is enriched with 'urgency_score' and 'urgency_breakdown'.
+    Each content item dict is enriched with 'urgency_score' and 'urgency_breakdown'.
     The list is re-sorted by urgency_score descending.
     """
     if now is None:
         now = datetime.now(timezone.utc)
 
     STATUS_WEIGHT = {
-        "critical": 3.0,
-        "warning":  2.0,
-        "elevated": 1.5,
-        "normal":   1.0,
+        "hot": 3.0,
+        "trending": 2.0,
+        "quiet": 1.0,
         "unknown":  0.5,
     }
 
-    for d in devices:
-        # --- Factor 1: Threshold proximity (exponential near 1.0) ---
-        value = d.get("payload", {}).get("value")
-        threshold = d.get("metadata", {}).get("alert_threshold")
-        if value is not None and threshold:
-            proximity = value / threshold
-            # Exponential scaling: urgency rises sharply as value approaches threshold
+    for item in content_items:
+        # --- Factor 1: Baseline proximity (exponential near 1.0) ---
+        engagement = item.get("payload", {}).get("engagement")
+        baseline = item.get("metadata", {}).get("relevance_baseline")
+        if engagement is not None and baseline:
+            proximity = engagement / baseline
             proximity_score = proximity ** 3
         else:
             proximity_score = 0.0
 
         # --- Factor 2: Tag priority ---
-        tags = d.get("tags", [])
+        tags = item.get("tags", [])
         tag_score = sum(TAG_PRIORITY.get(t, 0.5) for t in tags)
-        # Normalize: divide by number of tags to avoid bias toward many-tag devices
+        # Normalize: divide by number of tags to avoid bias toward many-tag items
         tag_score = tag_score / max(len(tags), 1)
 
-        # --- Factor 3: Status severity ---
-        status = d.get("payload", {}).get("status", "unknown")
+        # --- Factor 3: Status weight ---
+        status = item.get("payload", {}).get("status", "unknown")
         status_score = STATUS_WEIGHT.get(status, 0.5)
 
         # --- Factor 4: Staleness decay ---
-        last_updated = d.get("last_updated")
+        last_updated = item.get("last_updated")
         if isinstance(last_updated, datetime):
             if last_updated.tzinfo is None:
                 last_updated = last_updated.replace(tzinfo=timezone.utc)
@@ -464,46 +463,46 @@ def score_dashboard_urgency(devices: list[dict], now: datetime | None = None) ->
             + 0.15 * decay
         )
 
-        d["urgency_score"] = round(urgency, 4)
-        d["urgency_breakdown"] = {
+        item["urgency_score"] = round(urgency, 4)
+        item["urgency_breakdown"] = {
             "proximity": round(proximity_score, 4),
             "tag_priority": round(tag_score, 4),
-            "status_severity": round(status_score, 4),
+            "status_weight": round(status_score, 4),
             "freshness_decay": round(decay, 4),
         }
 
-    devices.sort(key=lambda d: d.get("urgency_score", 0), reverse=True)
-    return devices
+    content_items.sort(key=lambda item: item.get("urgency_score", 0), reverse=True)
+    return content_items
 
 
 # ---------------------------------------------------------------------------
-# Function 5: Dashboard fleet summary statistics
+# Function 5: Feed summary statistics
 # ---------------------------------------------------------------------------
 
-def compute_dashboard_summary(devices: list[dict]) -> dict:
-    """Compute summary statistics across all dashboard devices.
+def compute_feed_summary(content_items: list[dict]) -> dict:
+    """Compute summary statistics across all feed content items.
 
     Returns aggregate metrics: mean/std/min/max of urgency scores and
-    value-to-threshold ratios, plus counts per status category.
+    engagement-to-baseline ratios, plus counts per status category.
     """
-    if not devices:
-        return {"device_count": 0}
+    if not content_items:
+        return {"content_count": 0}
 
-    urgency_scores = [d.get("urgency_score", 0) for d in devices]
+    urgency_scores = [item.get("urgency_score", 0) for item in content_items]
     ratios = []
     status_counts: dict[str, int] = {}
 
-    for d in devices:
-        value = d.get("payload", {}).get("value")
-        threshold = d.get("metadata", {}).get("alert_threshold")
-        if value is not None and threshold:
-            ratios.append(value / threshold)
+    for item in content_items:
+        engagement = item.get("payload", {}).get("engagement")
+        baseline = item.get("metadata", {}).get("relevance_baseline")
+        if engagement is not None and baseline:
+            ratios.append(engagement / baseline)
 
-        status = d.get("payload", {}).get("status", "unknown")
+        status = item.get("payload", {}).get("status", "unknown")
         status_counts[status] = status_counts.get(status, 0) + 1
 
     summary = {
-        "device_count": len(devices),
+        "content_count": len(content_items),
         "urgency_mean": round(statistics.mean(urgency_scores), 4),
         "urgency_std": round(statistics.pstdev(urgency_scores), 4) if len(urgency_scores) > 1 else 0.0,
         "urgency_max": round(max(urgency_scores), 4),
@@ -519,25 +518,25 @@ def compute_dashboard_summary(devices: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Function 6: Fleet integrity verification (cryptographic CPU work)
+# Function 6: Feed integrity verification (cryptographic CPU work)
 # ---------------------------------------------------------------------------
 
-def verify_fleet_integrity(devices: list[dict], work_factor: int = 200) -> None:
-    """Per-device cryptographic integrity check.
+def verify_feed_integrity(content_items: list[dict], work_factor: int = 200) -> None:
+    """Per-content cryptographic integrity check.
 
-    Simulates edge-side data integrity verification — each device's payload
+    Simulates edge-side data integrity verification — each content item's payload
     is hashed iteratively to produce a short integrity fingerprint. The
     *work_factor* controls CPU time linearly. Pure compute, no I/O.
 
-    Each device dict is enriched with ``integrity_hash`` (first 16 hex chars
-    of the final SHA-256 digest). The hash is deterministic: same device
+    Each content item dict is enriched with ``integrity_hash`` (first 16 hex chars
+    of the final SHA-256 digest). The hash is deterministic: same content item
     + same payload always produces the same fingerprint.
     """
-    for d in devices:
-        payload = json.dumps(d.get("payload", {}), sort_keys=True)
-        device_id = str(d.get("_id", ""))
-        data = f"{device_id}:{payload}".encode()
+    for item in content_items:
+        payload = json.dumps(item.get("payload", {}), sort_keys=True, default=str)
+        content_id = str(item.get("_id", ""))
+        data = f"{content_id}:{payload}".encode()
         h: bytes = data
-        for _ in range(work_factor): #work_factor controls how much CPU time to spend here
+        for _ in range(work_factor):
             h = hashlib.sha256(h).digest()
-        d["integrity_hash"] = h.hex()[:16]
+        item["integrity_hash"] = h.hex()[:16]

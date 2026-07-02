@@ -37,7 +37,7 @@ class EdgeServerProcessState:
     def __post_init__(self) -> None:
         self.local_request_state = LocalRequestState(
             max_events=self.config.local_request_buffer_max_events,
-            per_device_window=self.config.local_request_per_device_window,
+            per_content_window=self.config.local_request_per_content_window,
         )
 
     def get_drain_state(self) -> str:
@@ -109,26 +109,26 @@ class EdgeServerProcessState:
         *,
         timestamp_epoch: float,
         request_kind: str,
-        device_id: str | None,
-        node_id: str,
+        content_id: str | None,
+        user_id: str,
         latency_ms: float,
         served_from_tier: int,
         tier1_hit_ratio: float,
         tier1_eligible_reads: int,
-        severity: str,
+        relevance: str,
         status: str,
         tags: tuple[str, ...],
     ) -> LocalRequestEvent:
         return LocalRequestEvent(
             timestamp_epoch=timestamp_epoch,
             request_kind=request_kind,
-            device_id=device_id,
-            node_id=node_id,
+            content_id=content_id,
+            user_id=user_id,
             latency_ms=latency_ms,
             served_from_tier=served_from_tier,
             tier1_hit_ratio=tier1_hit_ratio,
             tier1_eligible_reads=tier1_eligible_reads,
-            severity=severity,
+            relevance=relevance,
             status=status,
             tags=tags,
         )

@@ -21,9 +21,9 @@ log = logging.getLogger(__name__)
 def stage_local_request_event(
     *,
     request_kind: str,
-    device_id: str | None,
-    node_id: str,
-    severity: str,
+    content_id: str | None,
+    user_id: str,
+    relevance: str,
     status: str,
     tags: tuple[str, ...] | list[str],
 ) -> None:
@@ -31,9 +31,9 @@ def stage_local_request_event(
     # invent their own request-local telemetry structure.
     g.local_request_event = {
         "request_kind": request_kind,
-        "device_id": device_id,
-        "node_id": node_id,
-        "severity": severity,
+        "content_id": content_id,
+        "user_id": user_id,
+        "relevance": relevance,
         "status": status,
         "tags": tuple(tags),
     }
@@ -123,13 +123,13 @@ def register_post_telemetry_request_hooks(app: Flask, process_state) -> None:
             process_state.build_local_request_event(
                 timestamp_epoch=time.time(),
                 request_kind=staged["request_kind"],
-                device_id=staged["device_id"],
-                node_id=staged["node_id"],
+                content_id=staged["content_id"],
+                user_id=staged["user_id"],
                 latency_ms=_current_request_latency_ms(),
                 served_from_tier=served_from_tier,
                 tier1_hit_ratio=tier1_hit_ratio,
                 tier1_eligible_reads=tier1_eligible_reads,
-                severity=staged["severity"],
+                relevance=staged["relevance"],
                 status=staged["status"],
                 tags=staged["tags"],
             )

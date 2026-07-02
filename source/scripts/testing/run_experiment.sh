@@ -3,11 +3,11 @@
 # ============================================================================
 # run_experiment.sh
 #
-# Full experiment orchestration for the phased edge IoT workload.
+# Full experiment orchestration for the phased edge content-discovery workload.
 # Runs in order:
 #   1. Create test client namespaces (LAN 1 + LAN 2)
-#   2. Seed MongoDB: sensor_reports → device_registry → create_indexes
-#   3. Export workload snapshot (devices + nodes → JSON)
+#   2. Seed MongoDB: content_items → user_profiles → create_indexes
+#   3. Export workload snapshot (content items + user profiles → JSON)
 #   4. Start resource stats collector (ZMQ subscriber → CSV)
 #   5. Run traffic generator (phased HTTP load from namespaces)
 #   6. Stop resource stats collector
@@ -17,7 +17,7 @@
 # Usage:
 #   sudo ./run_experiment.sh [--batch-dir batch4] [--run-label c0] [--skip-clients] [--skip-seed] [--skip-snapshot]
 #   sudo ./run_experiment.sh --phases-config phases_custom.json --fault-plan fault_plan.json
-#   sudo ./run_experiment.sh --clients-per-lan 6 --seed-devices 600 --seed-nodes 100 \
+#   sudo ./run_experiment.sh --clients-per-lan 6 --seed-content-items 600 --seed-users 100 \
 #       --phases-config phases_experiment_storage_trigger.json --run-label storage_trigger
 #
 # Flags (all optional):
@@ -27,8 +27,8 @@
 #   --skip-seed          Skip step 2 (data already seeded)
 #   --skip-snapshot      Skip step 3 (snapshot already exported)
 #   --clients-per-lan N  Override the number of client namespaces created per LAN
-#   --seed-devices N     Override the number of devices seeded per LAN
-#   --seed-nodes N       Override the number of nodes seeded per LAN
+#   --seed-content-items N Override the number of content items seeded per LAN
+#   --seed-users N       Override the number of user profiles seeded per LAN
 #   --snapshot-dir DIR   Override snapshot directory (default: REPO_ROOT/data/workload_snapshot)
 #   --phases-config FILE Override the traffic-generator phases file
 #   --fault-plan FILE    Optional fault-injection plan consumed by fault_injector.py
@@ -57,9 +57,9 @@ CLIENTS_PER_LAN="${CLIENTS_PER_LAN:-3}"
 PREFIX_LAN1="lan1_client_"
 PREFIX_LAN2="lan2_client_"
 
-# Number of devices and nodes to seed per region
-SEED_DEVICES="${SEED_DEVICES:-100}"
-SEED_NODES="${SEED_NODES:-40}"
+# Number of content items and user profiles to seed per region
+SEED_CONTENT_ITEMS="${SEED_CONTENT_ITEMS:-100}"
+SEED_USERS="${SEED_USERS:-40}"
 
 # MongoDB URIs for each region's primary
 MONGO_LAN1="mongodb://10.0.0.4:27018/"
@@ -127,10 +127,10 @@ while [[ $# -gt 0 ]]; do
         --skip-snapshot)  SKIP_SNAPSHOT=true ;;
         --clients-per-lan) shift; CLIENTS_PER_LAN="$1" ;;
         --clients-per-lan=*) CLIENTS_PER_LAN="${1#*=}" ;;
-        --seed-devices)   shift; SEED_DEVICES="$1" ;;
-        --seed-devices=*) SEED_DEVICES="${1#*=}" ;;
-        --seed-nodes)     shift; SEED_NODES="$1" ;;
-        --seed-nodes=*)   SEED_NODES="${1#*=}" ;;
+        --seed-content-items)   shift; SEED_CONTENT_ITEMS="$1" ;;
+        --seed-content-items=*) SEED_CONTENT_ITEMS="${1#*=}" ;;
+        --seed-users)     shift; SEED_USERS="$1" ;;
+        --seed-users=*)   SEED_USERS="${1#*=}" ;;
         --dry-run)        DRY_RUN=true       ;;
         --snapshot-dir)   shift; SNAPSHOT_DIR="$1" ;;
         --snapshot-dir=*) SNAPSHOT_DIR="${1#*=}" ;;
@@ -171,8 +171,8 @@ require_positive_int() {
 }
 
 require_positive_int "--clients-per-lan" "$CLIENTS_PER_LAN"
-require_positive_int "--seed-devices" "$SEED_DEVICES"
-require_positive_int "--seed-nodes" "$SEED_NODES"
+require_positive_int "--seed-content-items" "$SEED_CONTENT_ITEMS"
+require_positive_int "--seed-users" "$SEED_USERS"
 
 resolve_path_from_scripts_dir() {
     local path="$1"
@@ -348,15 +348,15 @@ run_create_clients() {
 run_seed() {
     step "Seeding MongoDB"
 
-    echo "  sensor_reports (${SEED_DEVICES} devices/region)"
-    python3 "${SCRIPT_DIR}/sensor_reports.py" \
+    echo "  content_items (${SEED_CONTENT_ITEMS} content items/region)"
+    python3 "${SCRIPT_DIR}/seed_content_items.py" \
         --mongo-lan1 "$MONGO_LAN1" --mongo-lan2 "$MONGO_LAN2" \
-        --devices "$SEED_DEVICES"
+        --content-items "$SEED_CONTENT_ITEMS"
 
-    echo "  device_registry (${SEED_NODES} nodes/region, ${SEED_DEVICES} device IDs)"
-    python3 "${SCRIPT_DIR}/device_registry.py" \
+    echo "  user_profiles (${SEED_USERS} users/region, ${SEED_CONTENT_ITEMS} content IDs)"
+    python3 "${SCRIPT_DIR}/seed_user_profiles.py" \
         --mongo-lan1 "$MONGO_LAN1" --mongo-lan2 "$MONGO_LAN2" \
-        --nodes "$SEED_NODES" --devices "$SEED_DEVICES"
+        --users "$SEED_USERS" --content-items "$SEED_CONTENT_ITEMS"
 
     echo "  create_indexes"
     python3 "${SCRIPT_DIR}/create_indexes.py" \
@@ -606,12 +606,12 @@ generate_policy_state() {
 build_client_lists
 
 echo "======================================================"
-echo " Edge IoT Experiment — Full Run"
+echo " Edge Content Discovery Experiment — Full Run"
 echo "======================================================"
 echo " Batch dir   : ${BATCH_DIR:-<none>}"
 echo " Clients/LAN : ${CLIENTS_PER_LAN}  (${CLIENTS_LAN1} | ${CLIENTS_LAN2})"
-echo " Devices/LAN : ${SEED_DEVICES}"
-echo " Nodes/LAN   : ${SEED_NODES}"
+echo " Content/LAN : ${SEED_CONTENT_ITEMS}"
+echo " Users/LAN   : ${SEED_USERS}"
 echo " Snapshot    : ${SNAPSHOT_DIR}"
 echo " Output      : ${METRICS_OUTPUT}"
 echo " Resource    : ${RESOURCE_STATS_OUTPUT}"

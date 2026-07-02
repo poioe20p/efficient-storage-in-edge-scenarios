@@ -8,12 +8,12 @@ from werkzeug.exceptions import BadRequest
 
 from compute import (
     TREND_WINDOW_SIZE,
-    compute_dashboard_summary,
+    compute_feed_summary,
     compute_service_pressure,
     compute_trend,
-    score_dashboard_urgency,
-    score_device_severity,
-    verify_fleet_integrity,
+    score_content_relevance,
+    score_feed_relevance,
+    verify_feed_integrity,
 )
 from edge_request_lifecycle import stage_local_request_event
 from platform_cache import cached_collection
@@ -27,9 +27,9 @@ from vip_data_mongo_runtime import (
 
 def register_monitoring_workload_routes(app: Flask, config, process_state) -> None:
 
-    @app.route("/device_update", methods=["POST"])
-    def device_update():
-        """Write a pressure-level update for a device to the primary MongoDB.
+    @app.route("/content", methods=["POST"])
+    def content_update():
+        """Write an engagement update for a content item to the primary MongoDB.
 
         This endpoint bypasses the VIP-based read path and connects directly
         to the replica-set primary via a dedicated MongoClient.  Writes
@@ -37,19 +37,21 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
         storage scale-up measurable.
         """
         data = request.get_json(force=True)
-        device_id = data["device_id"]
-        pressure = data.get("pressure_level", 0)
+        content_id = data["content_id"]
+        engagement = data.get("engagement", 0)
         lan = data.get("lan", "lan1")
+        update_fields = {
+            "payload.engagement": engagement,
+            "last_updated": time.time(),
+        }
+        if "update_padding" in data:
+            update_fields["update_padding"] = data["update_padding"]
 
         client = _get_write_client(lan)
         db = client[config.db_name]
-        result = db.sensor_reports.update_one(
-            {"_id": device_id},
-            {"$set": {
-                "pressure_level": pressure,
-                "last_updated": time.time(),
-                "extra": data.get("extra", ""),
-            }},
+        result = db.content_items.update_one(
+            {"_id": content_id},
+            {"$set": update_fields},
             upsert=True,
         )
         return jsonify({
@@ -58,8 +60,8 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
             "upserted_id": str(result.upserted_id) if result.upserted_id else None,
         })
 
-    @app.route("/device_aggregate", methods=["POST"])
-    def device_aggregate():
+    @app.route("/content/aggregate", methods=["POST"])
+    def content_aggregate():
         """Run an aggregation pipeline on the MongoDB collection via VIP.
 
         This endpoint uses the standard VIP-based read path.  The
@@ -68,25 +70,25 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
         """
         data = request.get_json(force=True)
         lan = data.get("lan", "lan1")
-        pressure_threshold = data.get("pressure_threshold", 50)
+        engagement_threshold = data.get("engagement_threshold", 50)
 
         pipeline = [
-            {"$match": {"pressure_level": {"$gt": pressure_threshold}}},
+            {"$match": {"payload.engagement": {"$gt": engagement_threshold}}},
             {"$group": {
-                "_id": "$device_type",
-                "avg_pressure": {"$avg": "$pressure_level"},
+                "_id": "$content_type",
+                "avg_engagement": {"$avg": "$payload.engagement"},
                 "count": {"$sum": 1},
             }},
-            {"$sort": {"avg_pressure": -1}},
+            {"$sort": {"avg_engagement": -1}},
         ]
 
         try:
             results = run_with_request_lease(
                 lan,
-                op_name="sensor_reports.aggregate",
+                op_name="content_items.aggregate",
                 replay_safe=False,
                 fn=lambda db: list(
-                    db["sensor_reports"].aggregate(pipeline)
+                    db["content_items"].aggregate(pipeline)
                 ),
             )
             # Convert ObjectId and non-serialisable types
@@ -94,80 +96,80 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
                 if "_id" in doc:
                     doc["_id"] = str(doc["_id"])
             return jsonify({"results": results, "count": len(results)})
-        except PyMongoError as e:
-            log_db_failure("aggregate", e)
-            return jsonify({"error": "aggregation failed", "detail": str(e)}), 500
+        except PyMongoError as exc:
+            log_db_failure("content_aggregate", exc)
+            return jsonify({"error": "aggregation failed", "detail": str(exc)}), 500
 
-    @app.route("/device/<path:device_id>/latest", methods=["GET"])
-    def device_latest(device_id: str):
-        """Return the latest sensor report for a device."""
+    @app.route("/content/<path:content_id>", methods=["GET"])
+    def content_lookup(content_id: str):
+        """Return the latest content item for a requester."""
 
-        node_id = request.args.get("node_id", "unknown")
-        device_lan = device_id.split("::")[0]
+        requester = request.args.get("requester", "unknown")
+        content_lan = content_id.split("::")[0]
 
         try:
             doc = run_with_request_lease(
-                device_lan,
-                op_name="sensor_reports.find_one",
+                content_lan,
+                op_name="content_items.find_one",
                 replay_safe=True,
-                fn=lambda db: cached_collection(db, "sensor_reports").find_one({"_id": device_id}),
+                fn=lambda db: cached_collection(db, "content_items").find_one({"_id": content_id}),
             )
 
             if doc is None:
-                return jsonify({"error": "device not found", "device_id": device_id}), 404
+                return jsonify({"error": "content not found", "content_id": content_id}), 404
 
             threshold_override = None
-            if node_id != "unknown":
-                node_lan = node_id.split("::")[0]
+            if requester != "unknown":
+                requester_lan = requester.split("::")[0]
                 registry = run_with_request_lease(
-                    node_lan,
-                    op_name="device_registry.find_one",
+                    requester_lan,
+                    op_name="user_profiles.find_one",
                     replay_safe=True,
-                    fn=lambda db: cached_collection(db, "device_registry").find_one(
-                        {"_id": node_id},
-                        {"alert_config.threshold_override": 1},
+                    fn=lambda db: cached_collection(db, "user_profiles").find_one(
+                        {"_id": requester},
+                        {"profile_config.relevance_override": 1},
                     ),
                 )
                 if registry:
-                    dev_type = doc.get("device_type", "")
+                    content_type = doc.get("content_type", "")
                     threshold_override = (
-                        registry.get("alert_config", {})
-                        .get("threshold_override", {})
-                        .get(dev_type)
+                        registry.get("profile_config", {})
+                        .get("relevance_override", {})
+                        .get(content_type)
                     )
 
-            value = doc.get("payload", {}).get("value")
-            threshold = threshold_override or doc.get("metadata", {}).get("alert_threshold")
-            severity_result = score_device_severity(
-                value,
-                threshold,
-                doc.get("device_type", ""),
-                device_id,
+            engagement = doc.get("payload", {}).get("engagement")
+            baseline = threshold_override or doc.get("metadata", {}).get("relevance_baseline")
+            relevance_result = score_content_relevance(
+                engagement,
+                baseline,
+                doc.get("content_type", ""),
+                content_id,
             )
 
-            recent_events = process_state.local_request_state.recent_for_device(
-                device_id,
+            recent_events = process_state.local_request_state.recent_for_content(
+                content_id,
                 TREND_WINDOW_SIZE,
             )
             trend_result = compute_trend(recent_events)
 
             stage_local_request_event(
-                request_kind="device_status",
-                device_id=device_id,
-                node_id=node_id,
-                severity=severity_result["severity"],
+                request_kind="content_lookup",
+                content_id=content_id,
+                user_id=requester,
+                relevance=relevance_result["relevance"],
                 status=doc.get("payload", {}).get("status", "unknown"),
                 tags=tuple(doc.get("tags") or ()),
             )
 
             doc["_id"] = str(doc["_id"])
-            doc["alert"] = severity_result["alert"]
-            doc["severity"] = severity_result
+            doc["above_baseline"] = relevance_result["above_baseline"]
+            doc["relevance"] = relevance_result
             doc["trend"] = trend_result
             return jsonify(doc), 200
 
         except PyMongoError as exc:
-            log_db_failure("device_latest", exc)
+            log_db_failure("content_lookup", exc)
             return jsonify({"error": "database error"}), 503
 
     @app.route("/service_pressure", methods=["GET"])
@@ -219,77 +221,77 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
         response["buffer_capacity_events"] = config.local_request_buffer_max_events
         return jsonify(response), 200
 
-    @app.route("/dashboard/<node_id>", methods=["GET"])
-    def dashboard(node_id: str):
-        """Return the most urgent devices for a monitoring node."""
+    @app.route("/feed/<user_id>", methods=["GET"])
+    def feed_ranking(user_id: str):
+        """Return the most relevant content for a user profile."""
 
         limit = int(request.args.get("limit", "10"))
-        node_lan = node_id.split("::")[0]
+        user_lan = user_id.split("::")[0]
 
         try:
             registry = run_with_request_lease(
-                node_lan,
-                op_name="device_registry.find_one",
+                user_lan,
+                op_name="user_profiles.find_one",
                 replay_safe=True,
-                fn=lambda db: cached_collection(db, "device_registry").find_one({"_id": node_id}),
+                fn=lambda db: cached_collection(db, "user_profiles").find_one({"_id": user_id}),
             )
 
             if registry is None:
-                return jsonify({"error": "node not found", "node_id": node_id}), 404
+                return jsonify({"error": "user not found", "user_id": user_id}), 404
 
             subscribed_tags = registry.get("subscribed_tags", [])
 
-            devices: list[dict] = []
+            content_items: list[dict] = []
             for lan in snapshot_normal_vip_config():
-                devices.extend(
+                content_items.extend(
                     run_with_request_lease(
                         lan,
-                        op_name="sensor_reports.find.dashboard",
+                        op_name="content_items.find.feed",
                         replay_safe=True,
                         fn=lambda db, subscribed_tags=subscribed_tags: list(
-                            cached_collection(db, "sensor_reports").find(
+                            cached_collection(db, "content_items").find(
                                 {"tags": {"$in": subscribed_tags}},
                                 {
                                     "_id": 1,
-                                    "device_type": 1,
+                                    "content_type": 1,
                                     "tags": 1,
                                     "payload": 1,
                                     "metadata": 1,
                                     "region_origin": 1,
                                     "last_updated": 1,
                                 },
-                                batch_size=config.dashboard_candidate_limit,
-                            ).sort("last_updated", -1).limit(config.dashboard_candidate_limit)
+                                batch_size=config.feed_candidate_limit,
+                            ).sort("last_updated", -1).limit(config.feed_candidate_limit)
                         ),
                     )
                 )
 
-            devices = score_dashboard_urgency(devices)
-            devices = devices[:limit]
-            verify_fleet_integrity(devices, config.dashboard_integrity_work_factor)
-            summary = compute_dashboard_summary(devices)
+            content_items = score_feed_relevance(content_items)
+            content_items = content_items[:limit]
+            verify_feed_integrity(content_items, config.feed_integrity_work_factor)
+            summary = compute_feed_summary(content_items)
 
             stage_local_request_event(
-                request_kind="dashboard",
-                device_id=None,
-                node_id=node_id,
-                severity="normal",
-                status="dashboard",
+                request_kind="feed_ranking",
+                content_id=None,
+                user_id=user_id,
+                relevance="quiet",
+                status="feed_ranking",
                 tags=tuple(subscribed_tags),
             )
 
-            for device in devices:
-                device["_id"] = str(device["_id"])
+            for content_item in content_items:
+                content_item["_id"] = str(content_item["_id"])
 
             return jsonify(
                 {
-                    "node_id": node_id,
+                    "user_id": user_id,
                     "subscribed_tags": subscribed_tags,
-                    "devices": devices,
+                    "content_items": content_items,
                     "summary": summary,
                 }
             ), 200
 
         except PyMongoError as exc:
-            log_db_failure("dashboard", exc)
+            log_db_failure("feed_ranking", exc)
             return jsonify({"error": "database error"}), 503

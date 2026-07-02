@@ -16,15 +16,13 @@ def setup(uri: str, label: str):
     client = MongoClient(uri)
     db = client["edge_platform"]
 
-    # sensor_reports
-    db.sensor_reports.create_index([("region_origin", ASCENDING)])
-    db.sensor_reports.create_index([("tags", ASCENDING)])
-    db.sensor_reports.create_index([("tags", ASCENDING), ("last_updated", DESCENDING)])
-    db.sensor_reports.create_index([("device_type", ASCENDING), ("payload.status", ASCENDING)])
+    db.content_items.create_index([("region_origin", ASCENDING)])
+    db.content_items.create_index([("tags", ASCENDING)])
+    db.content_items.create_index([("tags", ASCENDING), ("last_updated", DESCENDING)])
+    db.content_items.create_index([("content_type", ASCENDING), ("payload.status", ASCENDING)])
 
-    # device_registry
-    db.device_registry.create_index([("home_region", ASCENDING)])
-    db.device_registry.create_index([("subscribed_tags", ASCENDING)])
+    db.user_profiles.create_index([("home_region", ASCENDING)])
+    db.user_profiles.create_index([("subscribed_tags", ASCENDING)])
 
     print(f"[{label}] Indexes created.")
     client.close()

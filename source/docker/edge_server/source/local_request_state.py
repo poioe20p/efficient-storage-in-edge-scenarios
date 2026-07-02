@@ -12,13 +12,13 @@ from typing import Any
 class LocalRequestEvent:
     timestamp_epoch: float
     request_kind: str
-    device_id: str | None
-    node_id: str
+    content_id: str | None
+    user_id: str
     latency_ms: float
     served_from_tier: int
     tier1_hit_ratio: float
     tier1_eligible_reads: int
-    severity: str
+    relevance: str
     status: str
     tags: tuple[str, ...]
 
@@ -26,16 +26,16 @@ class LocalRequestEvent:
 class LocalRequestState:
     """Thread-safe bounded request activity store for local support analytics."""
 
-    def __init__(self, max_events: int, per_device_window: int) -> None:
+    def __init__(self, max_events: int, per_content_window: int) -> None:
         if max_events < 1:
             raise ValueError("max_events must be >= 1")
-        if per_device_window < 1:
-            raise ValueError("per_device_window must be >= 1")
+        if per_content_window < 1:
+            raise ValueError("per_content_window must be >= 1")
 
         self._max_events = max_events
         self._events: deque[LocalRequestEvent] = deque()
-        self._by_device: defaultdict[str, deque[LocalRequestEvent]] = defaultdict(
-            lambda: deque(maxlen=per_device_window)
+        self._by_content: defaultdict[str, deque[LocalRequestEvent]] = defaultdict(
+            lambda: deque(maxlen=per_content_window)
         )
         self._lock = threading.Lock()
 
@@ -43,22 +43,22 @@ class LocalRequestState:
         with self._lock:
             if len(self._events) == self._max_events:
                 oldest = self._events.popleft()
-                if oldest.device_id:
-                    per_device = self._by_device.get(oldest.device_id)
-                    if per_device and per_device[0] is oldest:
-                        per_device.popleft()
-                        if not per_device:
-                            del self._by_device[oldest.device_id]
+                if oldest.content_id:
+                    per_content = self._by_content.get(oldest.content_id)
+                    if per_content and per_content[0] is oldest:
+                        per_content.popleft()
+                        if not per_content:
+                            del self._by_content[oldest.content_id]
 
             self._events.append(event)
-            if event.device_id:
-                self._by_device[event.device_id].append(event)
+            if event.content_id:
+                self._by_content[event.content_id].append(event)
 
-    def recent_for_device(self, device_id: str, limit: int) -> list[dict[str, Any]]:
+    def recent_for_content(self, content_id: str, limit: int) -> list[dict[str, Any]]:
         if limit < 1:
             return []
         with self._lock:
-            snapshot = list(self._by_device.get(device_id, ()))
+            snapshot = list(self._by_content.get(content_id, ()))
         return [self._snapshot(event) for event in snapshot[-limit:]]
 
     def events_since(self, cutoff_epoch: float) -> list[dict[str, Any]]:
@@ -79,13 +79,13 @@ class LocalRequestState:
         return {
             "timestamp": event.timestamp_epoch,
             "request_kind": event.request_kind,
-            "device_id": event.device_id,
-            "node_id": event.node_id,
+            "content_id": event.content_id,
+            "user_id": event.user_id,
             "latency_ms": event.latency_ms,
             "served_from_tier": event.served_from_tier,
             "tier1_hit_ratio": event.tier1_hit_ratio,
             "tier1_eligible_reads": event.tier1_eligible_reads,
-            "severity": event.severity,
+            "relevance": event.relevance,
             "status": event.status,
             "tags": list(event.tags),
         }

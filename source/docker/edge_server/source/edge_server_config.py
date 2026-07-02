@@ -20,11 +20,11 @@ class EdgeServerConfig:
     service_pressure_default_window_min: float
     local_request_buffer_target_rps: float
     local_request_buffer_max_events: int
-    local_request_per_device_window: int
+    local_request_per_content_window: int
     service_pressure_default_limit: int
     mongo_client_retire_grace_s: float
-    dashboard_candidate_limit: int
-    dashboard_integrity_work_factor: int
+    feed_candidate_limit: int
+    feed_integrity_work_factor: int
     mongo_retry_backoff_ms: int
     mongo_retry_max_attempts: int
     mongo_server_selection_timeout_ms: int
@@ -71,9 +71,9 @@ class EdgeServerConfig:
                     ),
                 )
             ),
-            local_request_per_device_window=int(
+            local_request_per_content_window=int(
                 os.environ.get(
-                    "LOCAL_REQUEST_PER_DEVICE_WINDOW",
+                    "LOCAL_REQUEST_PER_CONTENT_WINDOW",
                     str(max(TREND_WINDOW_SIZE * 4, 50)),
                 )
             ),
@@ -83,11 +83,11 @@ class EdgeServerConfig:
             mongo_client_retire_grace_s=float(
                 os.environ.get("MONGO_CLIENT_RETIRE_GRACE_S", "30")
             ),
-            dashboard_candidate_limit=int(
-                os.environ.get("DASHBOARD_CANDIDATE_LIMIT", "500")
+            feed_candidate_limit=int(
+                os.environ.get("FEED_CANDIDATE_LIMIT", "500")
             ),
-            dashboard_integrity_work_factor=int(
-                os.environ.get("DASHBOARD_INTEGRITY_WORK_FACTOR", "200")
+            feed_integrity_work_factor=int(
+                os.environ.get("FEED_INTEGRITY_WORK_FACTOR", "200")
             ),
             mongo_retry_backoff_ms=int(
                 os.environ.get("MONGO_RETRY_BACKOFF_MS", "100")
