@@ -212,6 +212,48 @@ workload shape or the RUN_LABEL prefix to the experiment plan in
 determined unambiguously, leave the graphs in `<run_dir>/analysis/` and note
 the ambiguity in `run_summary.md`.
 
+### RQ1-Specific Scope
+
+When the experiment is an **RQ1 thesis experiment** (run labels matching
+`rq1_*` or experiment plans under `docs/operation/testing/experiment/rq1_*/`),
+the default full analysis is narrower. RQ1 answers telemetry-mode trade-off
+questions — per-run generic system graphs add noise without signal.
+
+**Always run for each RQ1 run:**
+
+```powershell
+# Statistics (always)
+python source/scripts/tools/metrics_stats.py "<run_dir>" --by-phase --by-lan --by-endpoint
+python source/scripts/tools/metrics_stats.py -r "<run_dir>/resource_stats.csv" --by-phase --by-network
+
+# Controller log parsing (when logs exist)
+python source/scripts/tools/parse_elasticity_logs.py "<run_dir>/controller_lan1.log" "<run_dir>/controller_lan2.log" -o "<run_dir>/elasticity_events.csv" --timings-output "<run_dir>/node_lifecycle_timings.csv"
+
+# RQ1-specific CLIs (produce rq1_*.csv per run)
+python -m source.scripts.testing.analysis.rq1.cli.timings --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.rq1.cli.decision_quality --run-dir "<run_dir>"
+python -m source.scripts.testing.analysis.rq1.cli.overhead --run-dir "<run_dir>"
+```
+
+**Skipped by default for RQ1** (only run when explicitly asked):
+`cli_overview`, `cli_simple_run`, `cli_phase_summary`, `cli_endpoint_breakdown`,
+`cli_scale_down`, `cli_lifecycle_gantt`, `cli_cpu_drivers`, `cli_tdb_drivers`.
+
+**After ALL runs in the RQ1 campaign are analyzed**, regenerate the
+cross-mode comparison graphs as a mandatory final step:
+
+```powershell
+python -m source.scripts.testing.analysis.rq1.scripts.generate_comparison_graphs \
+    --run-dirs-push <push_run1> <push_run2> <push_run3> \
+    --run-dirs-poll5 <poll5_run1> <poll5_run2> <poll5_run3> \
+    --run-dirs-poll12 <poll12_run1> <poll12_run2> <poll12_run3> \
+    --run-dirs-poll30 <poll30_run1> <poll30_run2> <poll30_run3> \
+    --output-dir <comparison_output_dir>
+```
+
+Then archive the comparison PNGs to
+`docs/operation/testing/experiment/<category>/<experiment_name>/graphs/comparison/`.
+
 ### Minimum output expected after full analysis
 
 | File | Always? | Location | What it shows |
@@ -228,6 +270,10 @@ the ambiguity in `run_summary.md`.
 | `scale_down.png` | ✅ | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Scale-down predicate timeline |
 | `cpu_drivers.png` | If per_node_stats.csv | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | Per-node CPU load balance |
 | `tdb_drivers.png` | If per_node_stats.csv | `<run_dir>/analysis/` → experiment `graphs/<ts>/` | T_db_write vs storage_count |
+| `rq1_reaction_latency.csv` | If RQ1 experiment | `<run_dir>/analysis/` | Reaction latency events |
+| `rq1_staleness.csv` | If RQ1 experiment | `<run_dir>/analysis/` | Information age samples |
+| `rq1_decision_quality.csv` | If RQ1 experiment | `<run_dir>/analysis/rq1/` | Per-phase breach & spawn counts |
+| `rq1_overhead.csv` | If RQ1 experiment | `<run_dir>/analysis/` | Controller CPU/RAM stats |
 | `run_summary.md` | ✅ | `<run_dir>/` | Narrative summary |
 
 ## Analysis Procedure
@@ -400,7 +446,11 @@ Use this procedure when the analyzed run folder is on `cloud-vm`.
 - Analysis PNGs exist: `overview.png`, `simple_run.png`, `phase_summary.png`,
   `endpoint_breakdown.png` at minimum. `lifecycle_gantt.png`, `scale_down.png`,
   `cpu_drivers.png`, `tdb_drivers.png` when the optional artifacts they depend
-  on are available.
+  on are available. **For RQ1 experiments**, these generic per-run PNGs are
+  optional; the mandatory outputs are the RQ1-specific CSVs
+  (`rq1_reaction_latency.csv`, `rq1_staleness.csv`, `rq1_decision_quality.csv`,
+  `rq1_overhead.csv`) and, after the full campaign, the cross-mode comparison
+  graphs under `graphs/comparison/`.
 - `analysis/summary.md` exists when the corresponding analysis CLIs were runnable.
 - The transient client request CSV and controller log files have been removed
   from the run folder after the summary was produced.

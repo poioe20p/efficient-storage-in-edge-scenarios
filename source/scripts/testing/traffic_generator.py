@@ -284,11 +284,14 @@ async def client_loop(
                     f'"engagement_threshold":{random.randint(30,70)}}}'
                 )
 
+            sent_at = datetime.now(timezone.utc).isoformat()
+            phase_name = phase.name
+
             http_status, latency_s = await exec_curl(ns, url, dry_run, body)
 
             row = [
-                datetime.now(timezone.utc).isoformat(),
-                phase.name,
+                sent_at,
+                phase_name,
                 ns,
                 client_lan,
                 req_type,
@@ -297,6 +300,7 @@ async def client_loop(
                 target.get("target_region", ""),
                 http_status,
                 round(latency_s, 4),
+                datetime.now(timezone.utc).isoformat(),
             ]
             async with csv_lock:
                 for csv_writer, csv_file in csv_targets:
@@ -332,12 +336,14 @@ async def client_loop(
                 f'{{"lan":"{client_lan}",'
                 f'"engagement_threshold":{random.randint(30,70)}}}'
             )
+        sent_at = datetime.now(timezone.utc).isoformat()
+        phase_name = phase.name
         http_status, latency_s = await exec_curl(ns, url, dry_run, body)
         request_count += 1
 
         row = [
-            datetime.now(timezone.utc).isoformat(),
-            phase.name,
+            sent_at,
+            phase_name,
             ns,
             client_lan,
             req_type,
@@ -346,6 +352,7 @@ async def client_loop(
             target.get("target_region", ""),
             http_status,
             round(latency_s, 4),
+            datetime.now(timezone.utc).isoformat(),
         ]
         async with csv_lock:
             for csv_writer, csv_file in csv_targets:
@@ -371,6 +378,11 @@ async def client_loop(
 
 
 async def run(args):
+    # Fix random seed before any workload decisions for reproducible runs
+    if args.random_seed is not None:
+        random.seed(args.random_seed)
+        print(f"Random seed fixed: {args.random_seed}")
+
     with open(args.config) as f:
         raw = json.load(f)
     phases = [PhaseConfig.from_dict(p) for p in raw["phases"]]
@@ -410,8 +422,9 @@ async def run(args):
     # Phase file: signals the current phase to sibling processes (e.g. resource stats collector)
     phase_state_file = os.path.join(output_dir, "current_phase.txt") if output_dir else "current_phase.txt"
     header = [
-        "timestamp", "phase", "client_ns", "client_lan", "endpoint",
+        "sent_at", "phase", "client_ns", "client_lan", "endpoint",
         "content_id", "user_id", "target_region", "http_status", "latency_s",
+        "completed_at",
     ]
 
     aggregate_file = open(args.output, "w", newline="")
@@ -482,6 +495,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Print curl commands without executing them"
+    )
+    parser.add_argument(
+        "--random-seed", type=int, default=None,
+        help="Fixed random seed for reproducible request sequences (default: system random)"
     )
 
     args = parser.parse_args()

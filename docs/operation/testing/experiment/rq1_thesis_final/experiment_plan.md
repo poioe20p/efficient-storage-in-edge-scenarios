@@ -1,6 +1,6 @@
 # Experiment Plan — RQ1 Thesis Final
 
-**Status**: 🔵 Designed · **Date**: 2026-07-02
+**Status**: ✅ Executed · **Date**: 2026-07-02 – 2026-07-03
 **Parent plan**: [`../rq1_evaluation/experiment_plan_v2.md`](../rq1_evaluation/experiment_plan_v2.md) — structural reference
 **Predecessors**: [`../rq1_evaluation/experiment_plan_v2_lite.md`](../rq1_evaluation/experiment_plan_v2_lite.md) — WAN=200ms calibration + curl=30s validation
 
@@ -48,7 +48,7 @@ Same as v2 §Hypothesis, validated at WAN=200ms with uncensored latency:
 | `STORAGE_CPUS` | 0.10 | Golden config |
 | `SS_ENABLED` | 1 | Selective sync enabled |
 | `STORAGE_PERSISTENT_RESERVE_ENABLED` | 1 | Reserve activation |
-| Workload | 7-phase mixed | Same phases.json as v2/v2-lite |
+| Workload | 7-phase mixed | Canonical `source/scripts/testing/phases.json` (see §Phases File below) — 7 phases, request types: content_lookup/feed_ranking/content_update/content_aggregate/service_pressure |
 | Reboot between runs | Yes | Eliminate memory accumulation |
 | Replicates per mode | 3 | Thesis-quality variance estimation |
 
@@ -76,7 +76,7 @@ Same as v2 §Hypothesis, validated at WAN=200ms with uncensored latency:
 
 All v2-lite prerequisites already applied and verified:
 
-- ✅ 7-phase `phases.json` in `source/scripts/testing/`
+- ✅ `source/scripts/testing/phases.json` — canonical 7-phase file (see §Phases File)
 - ✅ `VIP_HARD_TIMEOUT=60` in `current_state_integrated.env`
 - ✅ TELEMETRY passthrough in `build_network_setup.sh`
 - ✅ `CURL_MAX_TIME` passthrough in `source/scripts/Makefile`
@@ -85,6 +85,30 @@ All v2-lite prerequisites already applied and verified:
 
 **No new prerequisites.** If the cloud VM was rebooted since v2-lite, verify
 `sudo -n echo OK` before launching.
+
+### Phases File
+
+**Canonical file**: `source/scripts/testing/phases.json`
+
+This experiment uses a **7-phase mixed workload** (1440 s total):
+
+| # | Phase | Duration | Key characteristic |
+|---|-------|----------|--------------------|
+| 1 | `baseline` | 60s | Low-rate, local-only, content_lookup heavy |
+| 2 | `storage_storm` | 240s | High-rate, 90% cross-region, write-heavy (content_update + content_aggregate) |
+| 3 | `tier1_hotspot` | 180s | Max-rate, 95% cross-region, lookup-heavy (triggers Tier 1 selective sync) |
+| 4 | `inter_hotspot_cooldown` | 300s | Low-rate, local-only, cooldown/recovery window |
+| 5 | `reverse_hotspot` | 180s | Max-rate, 95% cross-region, lookup-heavy (second wave — tests cumulative effect) |
+| 6 | `compute_spike` | 180s | High-rate, 5% cross-region, feed_ranking heavy (triggers compute scale-up) |
+| 7 | `demand_drop` | 300s | Low-rate, local-only, long scale-down observation window |
+
+**Request types**: `content_lookup`, `feed_ranking`, `content_update`, `content_aggregate`, `service_pressure`.
+
+> **Runner note**: Always verify the canonical file has 7 phases before launching:
+> ```bash
+> python3 -c "import json; d=json.load(open('source/scripts/testing/phases.json')); print(len(d['phases']), 'phases')"
+> ```
+> Expected output: `7 phases`.
 
 ## Run Configuration
 
@@ -198,3 +222,5 @@ Results will be documented in `results_v2final.md` in this folder.
 | Date | Change | Rationale |
 |------|--------|-----------|
 | 2026-07-02 | Plan created | Thesis-final RQ1 dataset: n=3, curl=30s, WAN=200ms, reboot between runs |
+| 2026-07-03 | Added §Phases File specification; updated request type names (device_status→content_lookup, dashboard→feed_ranking, device_update→content_update, device_aggregate→content_aggregate) | Workload schema renamed request types; canonical file was 6-phase, restored to 7-phase from `phases_override/phases_rq1_7phase.json` |
+| 2026-07-03 | Campaign executed — 12/12 runs, 0 tracebacks; `results_v2final.md` written | See `results_v2final.md` for full per-criterion assessment. Key finding: extreme within-mode failure variance (bimodal healthy/degraded regimes) obscures between-mode trend; latency still censored at ~10.5s despite curl=30s |

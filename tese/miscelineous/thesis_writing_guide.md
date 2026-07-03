@@ -269,20 +269,7 @@ Brief paragraph outlining the 7 chapters.
   of the load balancer), modularity (components are replaceable), and
   specialization (each component is optimized for its specific function).
 
-### 2.5. Metadata-Driven Data Placement and Replication
-
-**What to cover:**
-
-- Spatio-temporal data popularity models: how access patterns change over
-  time and across locations
-- Replica placement strategies: static, dynamic, popularity-aware
-- Data gravity: the concept that data attracts computation — relevant for
-  stateful edge services
-- Tiered storage: hot/warm/cold data classification, tier transitions
-- Existing approaches: consistent hashing, geographically distributed
-  replication, cache hierarchies
-
-### 2.6. Document-Oriented Databases for Edge Environments
+### 2.5. Document-Oriented Databases for Edge Environments
 
 **What to cover:**
 
@@ -301,7 +288,7 @@ Brief paragraph outlining the 7 chapters.
   horizontal scaling, operational simplicity
 - Existing work on MongoDB at the edge
 
-### 2.7. Synthesis
+### 2.6. Synthesis
 
 **What to cover:**
 

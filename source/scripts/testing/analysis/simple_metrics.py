@@ -51,7 +51,7 @@ def infer_origin_ts(run) -> float:
             candidates.append(ts)
 
     for row in getattr(run, "all_client_rows", []):
-        ts = parse_iso_ts(row.get("timestamp"))
+        ts = parse_iso_ts(row.get("sent_at"))
         if ts > 0:
             candidates.append(ts)
 
@@ -76,7 +76,7 @@ def infer_end_s(run, origin_ts: float) -> float:
             candidates.append(max(0.0, safe_float(row.get("monotonic_s"), 0.0)))
 
     for row in getattr(run, "all_client_rows", []):
-        ts = parse_iso_ts(row.get("timestamp"))
+        ts = parse_iso_ts(row.get("sent_at"))
         if ts > 0:
             candidates.append(max(0.0, ts - origin_ts))
 

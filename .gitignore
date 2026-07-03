@@ -235,3 +235,5 @@ source/scripts/testing/metrics/*
 source/scripts/testing/data/workload_snapshot/sensor_devices.json
 source/scripts/testing/data/workload_snapshot/device_registry.json
 source/scripts/testing/phases.json
+docs/operation/testing/experiment/rq1_thesis_final/graphs/2026*
+docs/operation/testing/experiment/stability/workload_deiotification_golden_validation/graphs

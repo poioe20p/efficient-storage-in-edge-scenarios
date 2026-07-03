@@ -124,6 +124,7 @@ cleanup_metrics:
 ##   make run_experiment PHASES_CONFIG=testing/phases_custom.json
 ##   make run_experiment FAULT_PLAN=testing/fault_plan.json
 ##   make run_experiment OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/example.env
+##   make run_experiment RANDOM_SEED=42     # fixed seed for reproducible traffic
 run_experiment:
 	OSKEN_ENV_FILE="$(strip $(OSKEN_ENV_FILE))" \
 	OSKEN_ENV_OVERRIDE_FILE="$(strip $(OSKEN_ENV_OVERRIDE_FILE))" \

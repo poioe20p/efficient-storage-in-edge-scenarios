@@ -68,6 +68,9 @@ MONGO_LAN2="mongodb://10.0.1.4:27018/"
 # Snapshot output directory
 SNAPSHOT_DIR="${SCRIPT_DIR}/data/workload_snapshot"
 
+# Random seed for reproducible traffic patterns (empty = system random)
+RANDOM_SEED="${RANDOM_SEED:-}"
+
 # VIP_SERVER address
 VIP="10.0.0.253:5000"
 
@@ -549,6 +552,7 @@ run_traffic() {
 
     local extra_flags=()
     "$DRY_RUN" && extra_flags+=("--dry-run")
+    [[ -n "$RANDOM_SEED" ]] && extra_flags+=("--random-seed" "$RANDOM_SEED")
 
     python3 "${SCRIPT_DIR}/traffic_generator.py" \
         --config        "$PHASES_CONFIG" \

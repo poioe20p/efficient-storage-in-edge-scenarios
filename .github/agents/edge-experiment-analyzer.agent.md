@@ -37,6 +37,7 @@ Optimize token usage by searching smart instead of wide:
 - You may write or update `run_summary.md`, produce retained CSV evidence, remove transient request CSVs and controller logs after analysis, copy reduced run folders back from the cloud host, verify the local copy, and delete the remote copy when that workflow is allowed.
 - When an experiment is rerun (multiple iterations with different configurations under the same `experiment_plan.md`), you maintain the `results.md` timeline in the experiment folder and keep the `experiment_plan.md` changelog in sync.
 - **Graph archival**: After generating analysis graphs via the CLIs, always copy them from `<run_dir>/analysis/` to `docs/operation/testing/experiment/<category>/<experiment_name>/graphs/<run_timestamp>/`. Graphs are part of the experiment's evidence record and belong alongside the plan and results — not only in the transient run artifact folder. Resolve the experiment folder by matching the run's workload shape or RUN_LABEL prefix to the experiment plan.
+- **RQ1 scope**: For RQ1 thesis experiments (`rq1_*` run labels), the default per-run analysis is narrow (see `.github/skills/metrics-run-summary/SKILL.md` §RQ1-Specific Scope). Skip generic per-run graphs (`cli_overview`, `cli_simple_run`, `cli_phase_summary`, `cli_endpoint_breakdown`, `cli_scale_down`, `cli_lifecycle_gantt`, `cli_cpu_drivers`, `cli_tdb_drivers`) unless explicitly asked. Always regenerate cross-mode comparison graphs via `generate_comparison_graphs.py` after the last run of an RQ1 campaign is analyzed — this is mandatory, not optional. Archive comparison graphs to `graphs/comparison/`.
 
 ## Multi-Run Timeline & Results Management
 
@@ -139,3 +140,9 @@ Keep the changelog entry concise — the full reasoning lives in results.md. Do 
 - When cleanup or copy-back runs, state what was removed, what was retained, and whether the remote folder was kept or deleted.
 - When this is a rerun, also report the resolved `results.md` path, the timeline entry appended, and whether the `experiment_plan.md` changelog was synced.
 - When updating the timeline table at the top of `results.md`, report which rows were added or modified.
+
+## Lessons Learned
+
+*Record operational lessons discovered during experiments to avoid repeating mistakes.*
+
+- **CRLF line endings from Windows `scp`**: `scp` from Windows preserves CRLF line endings which break bash scripts on the cloud VM. When copying run artifacts or scripts back from the cloud VM for local analysis, be aware that Windows tools may add CRLF if files are later re-synced. Always verify shell scripts have Unix line endings before re-deploying. Discovered on 2026-07-03 during `rq1_v2final_push_1` launch — `build_network_setup.sh` synced with CRLF caused immediate make failure. Fix: `sed -i 's/\r$//'` on the cloud VM, or use `dos2unix` if available.

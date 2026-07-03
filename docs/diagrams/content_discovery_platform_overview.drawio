@@ -1,0 +1,279 @@
+<mxfile host="65bd71144e">
+    <diagram id="content-discovery-platform" name="Content Discovery Platform Overview">
+        <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="950" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+
+                <!-- ===== TITLE ===== -->
+                <mxCell id="title" value="Content Discovery Platform — SDN-Orchestrated Edge Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="15" width="1100" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="Users access regionally hosted content via auto-scaled edge servers. Hot content is selectively cached close to consumers; cold content is served cross-region." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=12;fontStyle=2;fontColor=#555555;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="50" width="1400" height="22" as="geometry"/>
+                </mxCell>
+
+                <!-- ===== REGION A (left) ===== -->
+                <mxCell id="region_a" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;opacity=20;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="90" width="480" height="830" as="geometry"/>
+                </mxCell>
+                <mxCell id="region_a_label" value="Region A  ·  10.0.0.0/24" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#2d5a2d;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="95" width="250" height="24" as="geometry"/>
+                </mxCell>
+
+                <!-- Users A -->
+                <mxCell id="users_a" value="&lt;b&gt;Users / Clients&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;HTTP requests for content&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="140" width="300" height="55" as="geometry"/>
+                </mxCell>
+                <!-- OVS A -->
+                <mxCell id="ovs_a" value="" style="shape=mxgraph.cisco19.l2_switch;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="235" y="230" width="70" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ovs_a_lbl" value="&lt;b&gt;OVS Switch&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;VIP_SERVER · VIP_DATA_N1&lt;/span&gt;" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="180" y="285" width="180" height="30" as="geometry"/>
+                </mxCell>
+                <!-- Edge Servers A -->
+                <mxCell id="edge_a" value="&lt;b&gt;Edge Servers&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Flask containers · auto-scaled&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;serve content · report telemetry&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="350" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <!-- Aggregator A -->
+                <mxCell id="agg_a" value="&lt;b&gt;Aggregator&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;ZMQ telemetry windowing&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="190" y="450" width="160" height="45" as="geometry"/>
+                </mxCell>
+                <!-- Storage A -->
+                <mxCell id="storage_a" value="&lt;b&gt;MongoDB Replica Set A&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Primary + dynamic secondaries&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;authoritative store for Region A content&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="700" width="360" height="100" as="geometry"/>
+                </mxCell>
+
+                <!-- ===== REGION B (right) ===== -->
+                <mxCell id="region_b" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;opacity=20;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1290" y="90" width="480" height="830" as="geometry"/>
+                </mxCell>
+                <mxCell id="region_b_label" value="Region B  ·  10.0.1.0/24" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#7d5300;" parent="1" vertex="1">
+                    <mxGeometry x="1310" y="95" width="250" height="24" as="geometry"/>
+                </mxCell>
+
+                <!-- Users B -->
+                <mxCell id="users_b" value="&lt;b&gt;Users / Clients&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;HTTP requests for content&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="1380" y="140" width="300" height="55" as="geometry"/>
+                </mxCell>
+                <!-- OVS B -->
+                <mxCell id="ovs_b" value="" style="shape=mxgraph.cisco19.l2_switch;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1495" y="230" width="70" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ovs_b_lbl" value="&lt;b&gt;OVS Switch&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;VIP_SERVER · VIP_DATA_N2&lt;/span&gt;" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1440" y="285" width="180" height="30" as="geometry"/>
+                </mxCell>
+                <!-- Edge Servers B -->
+                <mxCell id="edge_b" value="&lt;b&gt;Edge Servers&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Flask containers · auto-scaled&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;serve content · report telemetry&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="1380" y="350" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <!-- Aggregator B -->
+                <mxCell id="agg_b" value="&lt;b&gt;Aggregator&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;ZMQ telemetry windowing&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1450" y="450" width="160" height="45" as="geometry"/>
+                </mxCell>
+                <!-- Storage B -->
+                <mxCell id="storage_b" value="&lt;b&gt;MongoDB Replica Set B&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Primary + dynamic secondaries&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px;color:#888&quot;&gt;authoritative store for Region B content&lt;/span&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1350" y="700" width="360" height="100" as="geometry"/>
+                </mxCell>
+
+                <!-- ===== SDN CONTROLLER (center top) ===== -->
+                <mxCell id="controller_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f7ff;strokeColor=#6c8ebf;strokeWidth=2;verticalAlign=top;align=center;spacingTop=8;" parent="1" vertex="1">
+                    <mxGeometry x="550" y="90" width="700" height="165" as="geometry"/>
+                </mxCell>
+                <mxCell id="controller_label" value="&lt;b style=&quot;font-size:14px;&quot;&gt;SDN Controller  (OS-Ken / OpenFlow)&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="600" y="95" width="600" height="28" as="geometry"/>
+                </mxCell>
+
+                <!-- Thread 1 -->
+                <mxCell id="t1" value="&lt;b&gt;Thread 1 — Fast Path&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;VIP interception · WSM backend selection&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;DNAT/SNAT flow rules · Packet-Out&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="575" y="135" width="310" height="70" as="geometry"/>
+                </mxCell>
+                <!-- Thread 2 -->
+                <mxCell id="t2" value="&lt;b&gt;Thread 2 — Observer&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;ZMQ telemetry consumption&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;degradation scoring · alert submission&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="905" y="135" width="320" height="70" as="geometry"/>
+                </mxCell>
+                <!-- Thread 3 -->
+                <mxCell id="t3" value="&lt;b&gt;Thread 3 — Elasticity Mgr&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;priority queue · compute + storage lifecycle&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;container spawn/teardown · VIP pool update&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="220" width="400" height="25" as="geometry"/>
+                </mxCell>
+
+                <!-- Controller internal edges -->
+                <mxCell id="e_t2t3" value="alerts" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="t2" target="t3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_t3t1" value="VIP pool updates" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="t3" target="t1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="550" y="233"/>
+                            <mxPoint x="550" y="210"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_t2t1" value="live telemetry" style="endArrow=classic;html=1;strokeColor=#333333;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="t2" target="t1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+
+                <!-- ===== INTER-LAN ROUTER ===== -->
+                <mxCell id="router" value="" style="shape=mxgraph.cisco19.router;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;verticalLabelPosition=bottom;verticalAlign=top;align=center;outlineConnect=0;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="855" y="560" width="90" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="router_lbl" value="&lt;b&gt;Inter-LAN Router&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;cross-region traffic&lt;/span&gt;" style="text;html=1;align=center;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="635" width="160" height="30" as="geometry"/>
+                </mxCell>
+
+                <!-- ===== TIER 1 SELECTIVE SYNC ===== -->
+                <mxCell id="tier1_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e6;strokeColor=#d79b00;strokeWidth=2;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="550" y="690" width="700" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="tier1_label" value="&lt;b&gt;Tier 1 — Selective Sync&lt;/b&gt;  &lt;span style=&quot;font-size:10px;color:#888&quot;&gt;(hot-content cache)&lt;/span&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="695" width="400" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="tier1_desc" value="&lt;span style=&quot;font-size:10px&quot;&gt;Standalone mongod in the consumer LAN, seeded with only the hot subset of documents&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;being read cross-region. One Change Stream per hot collection keeps the node current.&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;Edge servers short-circuit eligible point reads to the local Tier 1 node;&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:10px&quot;&gt;cold reads and all writes fall through to VIP_DATA as normal.&lt;/span&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=10;fontColor=#555555;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="720" width="660" height="80" as="geometry"/>
+                </mxCell>
+
+                <!-- ===== RESERVE NOTE ===== -->
+                <mxCell id="reserve_note" value="&lt;b&gt;Storage Reserve&lt;/b&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;Pre-warmed standby secondaries&lt;/span&gt;&lt;br/&gt;&lt;span style=&quot;font-size:9px&quot;&gt;ready for instant activation&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="830" width="180" height="55" as="geometry"/>
+                </mxCell>
+
+                <!-- ===== EDGES: Data Flows ===== -->
+
+                <!-- Users → OVS -->
+                <mxCell id="e_ua_ovs" value="HTTP requests" style="endArrow=classic;html=1;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="users_a" target="ovs_a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ub_ovs" value="HTTP requests" style="endArrow=classic;html=1;strokeColor=#666666;strokeWidth=2;fontSize=10;fontStyle=2;labelBackgroundColor=#ffffff;" parent="1" source="users_b" target="ovs_b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+
+                <!-- OVS → Edge Servers -->
+                <mxCell id="e_ovs_edge_a" value="VIP_SERVER" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="ovs_a" target="edge_a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ovs_edge_b" value="VIP_SERVER" style="endArrow=classic;html=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="ovs_b" target="edge_b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+
+                <!-- Edge Servers → Storage (VIP_DATA, local) -->
+                <mxCell id="e_edge_stor_a" value="VIP_DATA_N1&#xa;(local reads)" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=9;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="edge_a" target="storage_a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_edge_stor_b" value="VIP_DATA_N2&#xa;(local reads)" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=9;fontStyle=1;labelBackgroundColor=#ffffff;" parent="1" source="edge_b" target="storage_b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+
+                <!-- Edge Servers → Tier 1 (hot content shortcut) -->
+                <mxCell id="e_edge_tier1" value="local hot-data&#xa;shortcut (port 27018)" style="endArrow=classic;html=1;strokeColor=#d79b00;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="edge_b" target="tier1_box" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="520" y="385"/>
+                            <mxPoint x="520" y="750"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+
+                <!-- Owner RS → Tier 1 (Change Streams) -->
+                <mxCell id="e_stor_tier1" value="Change Streams&#xa;(hot collections)" style="endArrow=classic;html=1;strokeColor=#d79b00;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="storage_a" target="tier1_box" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="510" y="750"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+
+                <!-- Cross-region: Edge B → Storage A via router (Tier 0) -->
+                <mxCell id="e_cross" value="VIP_DATA cross-region&#xa;(Tier 0 — cold reads)" style="endArrow=classic;html=1;strokeColor=#d6b656;strokeWidth=2;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;" parent="1" source="edge_b" target="storage_a" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="500" y="385"/>
+                            <mxPoint x="500" y="730"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+
+                <!-- OVS ↔ Controller (OpenFlow) -->
+                <mxCell id="e_of_a" value="Packet-In / FlowMod" style="endArrow=classic;html=1;startArrow=classic;startFill=1;strokeColor=#6c8ebf;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="ovs_a" target="t1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_of_b" value="Packet-In / FlowMod" style="endArrow=classic;html=1;startArrow=classic;startFill=1;strokeColor=#6c8ebf;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="ovs_b" target="t1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+
+                <!-- Telemetry: Edge Servers → Aggregators -->
+                <mxCell id="e_telem_a" value="ZMQ PUSH" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="edge_a" target="agg_a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_telem_b" value="ZMQ PUSH" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="edge_b" target="agg_b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Telemetry: Storage → Aggregators -->
+                <mxCell id="e_telem_sa" value="ZMQ PUSH" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="storage_a" target="agg_a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_telem_sb" value="ZMQ PUSH" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="storage_b" target="agg_b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <!-- Telemetry: Aggregators → Controller T2 -->
+                <mxCell id="e_zmq_a" value="ZMQ PUB (windowed)" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="agg_a" target="t2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_zmq_b" value="ZMQ PUB (windowed)" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;" parent="1" source="agg_b" target="t2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+
+                <!-- Elasticity: T3 → containers -->
+                <mxCell id="e_t3_edge" value="spawn / drain" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="t3" target="edge_a" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="180" y="233"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_t3_stor" value="spawn / remove" style="endArrow=classic;html=1;strokeColor=#9673a6;strokeWidth=1;fontSize=9;fontStyle=2;labelBackgroundColor=#ffffff;dashed=1;exitX=0.3;exitY=1;exitDx=0;exitDy=0;" parent="1" source="t3" target="storage_a" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="820" y="270"/>
+                            <mxPoint x="60" y="270"/>
+                            <mxPoint x="60" y="750"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+
+                <!-- ===== LEGEND ===== -->
+                <mxCell id="legend_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="905" width="1680" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_title" value="Legend:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="75" y="910" width="60" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_compute" value="Compute (edge servers)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="140" y="913" width="140" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_storage" value="Storage (MongoDB RS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="913" width="140" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_tier1" value="Tier 1 Selective Sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e6;strokeColor=#d79b00;fontSize=9;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="440" y="913" width="140" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_reserve" value="Storage Reserve" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="913" width="120" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_sdn" value="SDN Controller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f7ff;strokeColor=#6c8ebf;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="913" width="110" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_solid" value="— data path" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=9;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="860" y="913" width="80" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_dash" value="- - - control / telemetry" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=9;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="950" y="913" width="140" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg_vip" value="VIP_SERVER / VIP_DATA = virtual IP traffic steering" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=9;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="1100" y="913" width="300" height="20" as="geometry"/>
+                </mxCell>
+
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
