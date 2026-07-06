@@ -214,6 +214,7 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "docker", "run", "-dit",
             "--cpus", edge_cpus,
             "--memory", "256m",
+            "--sysctl", "net.core.somaxconn=1024",
             "--network", "none",
             "--name", name,
             "-e", f"LAN_ID=lan{lan}",

@@ -15,7 +15,8 @@ Usage:
       --clients-lan2 test_client_4,test_client_5,test_client_6 \
       --snapshot-dir data/workload_snapshot \
       --output metrics/client_requests.csv \
-      [--vip 10.0.0.253:5000] \
+      [--vip-lan1 10.0.0.253:5000] \
+      [--vip-lan2 10.0.1.253:5000] \
       [--dry-run]
 """
 
@@ -456,8 +457,9 @@ async def run(args):
 
             tasks = [
                 asyncio.create_task(
-                    client_loop(ns, lan, phase, snap, args.vip, csv_targets,
-                                csv_lock, args.dry_run)
+                    client_loop(ns, lan, phase, snap,
+                                args.vip_lan1 if lan == "lan1" else args.vip_lan2,
+                                csv_targets, csv_lock, args.dry_run)
                 )
                 for ns, lan in phase_clients
             ]
@@ -489,8 +491,12 @@ if __name__ == "__main__":
     parser.add_argument("--snapshot-dir", default="data/workload_snapshot", metavar="DIR")
     parser.add_argument("--output", default="metrics/client_requests.csv", metavar="FILE")
     parser.add_argument(
-        "--vip", default="10.0.0.253:5000",
-        help="VIP_SERVER address:port (default: 10.0.0.253:5000)"
+        "--vip-lan1", default="10.0.0.253:5000",
+        help="VIP_SERVER_N1 address:port for LAN1 clients (default: 10.0.0.253:5000)"
+    )
+    parser.add_argument(
+        "--vip-lan2", default="10.0.1.253:5000",
+        help="VIP_SERVER_N2 address:port for LAN2 clients (default: 10.0.1.253:5000)"
     )
     parser.add_argument(
         "--dry-run", action="store_true",

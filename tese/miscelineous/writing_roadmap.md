@@ -6,13 +6,13 @@
 
 | # | Chapter | Status | Source docs |
 |---|---|---|---|
-| 1 | **Ch 3 — System Architecture** | ⬜ Start here | `docs/operation/` |
-| 2 | **Ch 4 — Methodology** | ⬜ In parallel | `experiment_plan.md`, `rq1.md`, `analysis_toolchain.md` |
-| 3 | **Ch 5 — Implementation** | ⬜ After Ch 3 | `source/sdn_controller/`, `source/docker/` |
-| 4 | **Ch 6 — Results** | ⬜ RQ1 data ready | `metrics/rq1_*`, `results.md` |
-| 5 | **Ch 2 — Literature Review** | ⬜ Chip away throughout | `references.bib` |
+| 1 | **Ch 3 — Architecture and Design** | ⬜ Start here | `docs/operation/` |
+| 2 | **Ch 4 — Implementation** | ⬜ After Ch 3 | `source/sdn_controller/`, `source/docker/` |
+| 3 | **Ch 5 — Evaluation Methodology** | ⬜ In parallel | `experiment_plan.md`, `rq1.md`, `analysis_toolchain.md` |
+| 4 | **Ch 6 — Experimental Results** | ⬜ RQ1 data ready | `metrics/rq1_*`, `results.md` |
+| 5 | **Ch 2 — Background and Related Work** | ⬜ Chip away throughout | `references.bib` |
 | 6 | **Ch 1 — Introduction** | ⬜ Write LAST | — |
-| 7 | **Ch 7 — Conclusions** | ⬜ Write LAST | — |
+| 7 | **Ch 7 — Conclusions and Future Work** | ⬜ Write LAST | — |
 
 ## Quick checks
 

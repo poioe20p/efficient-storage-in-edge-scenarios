@@ -100,6 +100,7 @@ echo "Launching application containers..."
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name edge_server_n2 --network none --restart=on-failure \
   --cpus=${EDGE_CPUS:-0.30} --memory=${EDGE_MEMORY:-256m} \
+  --sysctl net.core.somaxconn=1024 \
   -e LAN_ID=lan2 \
   -e VIP_DATA_RECOVERY_N1_IP=10.0.0.252 \
   -e VIP_DATA_RECOVERY_N2_IP=10.0.1.252 \

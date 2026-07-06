@@ -219,8 +219,8 @@ class IpAllocator:
     Suffixes 56–105 are reserved for test clients (namespace-based).
     Suffixes 252–254 are reserved for VIPs:
         .252 recovery VIP_DATA for the LAN
-        .253 VIP_SERVER
-        .254 VIP_DATA
+        .253 VIP_SERVER_N1 (LAN1) / VIP_SERVER_N2 (LAN2)
+        .254 VIP_DATA_N1 (LAN1) / VIP_DATA_N2 (LAN2)
 
     Dynamic nodes start at suffix 6 to avoid IP collisions.
 

@@ -22,6 +22,25 @@ its `_on_datapath_connected` override is the cooperative hook reached by the
 topology reconnect path after stale flows are flushed and the table-miss rule
 is reinstalled.
 
+### Per-LAN VIP_SERVER
+
+VIP_SERVER is now per-LAN, mirroring the per-domain VIP_DATA model:
+
+- **VIP_SERVER_N1** — `10.0.0.253` (MAC `aa:bb:cc:dd:ee:01`) — routes LAN1 client HTTP traffic
+- **VIP_SERVER_N2** — `10.0.1.253` (MAC `aa:bb:cc:dd:ee:04`) — routes LAN2 client HTTP traffic
+
+Both VIPs select backends from the shared `vip_server_pool` (populated from
+`_local_server_macs | _peer_server_macs` via topology sync). Each controller
+independently exercises the configured `BACKEND_SELECTION_POLICY` for its own
+LAN's traffic. Cross-LAN backend selection remains possible through the shared
+pool.
+
+The N2 VIP dispatch is handled by `_handle_vip_server()` in
+`_vip_routing/ingress.py`, which resolves the correct VIP IP/MAC for DNAT/SNAT
+flow rules based on the destination IP of the incoming packet. The
+`_iter_vip_bindings()` function enumerates both VIPs so that ARP punt rules
+and IP punt rules are installed on both controller bridges automatically.
+
 ### Internal Implementation Split
 
 The public `VipRoutingMixin` in `source/sdn_controller/vip_routing.py` is now a
@@ -82,7 +101,7 @@ differs.
 | Topic | Document |
 | ----- | -------- |
 | VIP interception, ARP handling, punt rules, DNAT/SNAT installation, and flow priorities | [VIP Interception and Flow Rules](vip_routing_interception_and_flow_rules.md) |
-| Backend selection (WSM scoring), warm leases, and controller lifecycle hooks | [Backend Selection and Warm Leases](vip_routing_backend_selection_and_warm_leases.md) |
+| Backend selection (WSM scoring), warm leases, policy modes (RQ2), slowstart ramp, and controller lifecycle hooks | [Backend Selection and Warm Leases](vip_routing_backend_selection_and_warm_leases.md) |
 | Cross-network forwarding, backend IP/MAC resolution, and router-MAC return path | [Cross-Network Forwarding and Backend Resolution](vip_routing_cross_network_forwarding_and_backend_resolution.md) |
 | Edge-side VIP_DATA epochs, recovery rotation, circuit breaker, and housekeeping | [VIP_DATA Edge Epoch and Recovery](vip_data_edge_epoch_and_recovery.md) |
 

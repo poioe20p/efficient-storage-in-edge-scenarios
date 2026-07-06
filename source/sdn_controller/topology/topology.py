@@ -22,9 +22,11 @@ class TopologyMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Global VIPs — identical on both controllers
+        # VIP_SERVER — one per LAN. N1 (LAN1) uses vip_server_*; N2 (LAN2) uses vip_server_n2_*.
         self.vip_server_ip  = os.environ.get("VIP_SERVER_IP",  "10.0.0.253")
         self.vip_server_mac = os.environ.get("VIP_SERVER_MAC", "aa:bb:cc:dd:ee:01")
+        self.vip_server_n2_ip  = os.environ.get("VIP_SERVER_N2_IP",  "10.0.1.253")
+        self.vip_server_n2_mac = os.environ.get("VIP_SERVER_N2_MAC", "aa:bb:cc:dd:ee:04")
 
         # Per-domain VIP_DATA
         self.vip_data_n1_ip  = os.environ.get("VIP_DATA_N1_IP",  "10.0.0.254")

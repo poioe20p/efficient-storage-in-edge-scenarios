@@ -71,8 +71,9 @@ SNAPSHOT_DIR="${SCRIPT_DIR}/data/workload_snapshot"
 # Random seed for reproducible traffic patterns (empty = system random)
 RANDOM_SEED="${RANDOM_SEED:-}"
 
-# VIP_SERVER address
-VIP="10.0.0.253:5000"
+# Per-LAN VIP_SERVER addresses
+VIP_LAN1="10.0.0.253:5000"
+VIP_LAN2="10.0.1.253:5000"
 
 # Resource stats collector — ZMQ PUB addresses of the two aggregators
 LAN1_PUB="tcp://10.0.0.5:5556"
@@ -560,7 +561,8 @@ run_traffic() {
         --clients-lan2  "$CLIENTS_LAN2" \
         --snapshot-dir  "$SNAPSHOT_DIR" \
         --output        "$METRICS_OUTPUT" \
-        --vip           "$VIP" \
+        --vip-lan1      "$VIP_LAN1" \
+        --vip-lan2      "$VIP_LAN2" \
         "${extra_flags[@]}"
 }
 
@@ -620,7 +622,8 @@ echo " Snapshot    : ${SNAPSHOT_DIR}"
 echo " Output      : ${METRICS_OUTPUT}"
 echo " Resource    : ${RESOURCE_STATS_OUTPUT}"
 echo " Phase file  : ${PHASE_FILE}"
-echo " VIP         : ${VIP}"
+echo " VIP LAN1    : ${VIP_LAN1}"
+echo " VIP LAN2    : ${VIP_LAN2}"
 echo " Phases cfg  : ${PHASES_CONFIG}"
 echo " Fault plan  : ${FAULT_PLAN:-<none>}"
 echo " Dry-run     : ${DRY_RUN}"

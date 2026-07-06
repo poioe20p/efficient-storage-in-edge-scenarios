@@ -78,6 +78,7 @@ class VipRoutingMixin:
 
     Depends on TopologyMixin attributes (set at __init__ time):
         vip_server_ip, vip_server_mac,
+        vip_server_n2_ip, vip_server_n2_mac,
         vip_data_n1_ip, vip_data_n1_mac, vip_data_n2_ip, vip_data_n2_mac,
         vip_server_pool, vip_storage_pool_n1, vip_storage_pool_n2,
         hop_cache, _hop_cache_max, host_attachment

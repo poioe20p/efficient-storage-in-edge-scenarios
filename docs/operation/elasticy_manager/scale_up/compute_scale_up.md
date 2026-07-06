@@ -39,7 +39,8 @@ _loop() pops alert → _handle_compute()    [Thread 3]
     │   ├─ docker run edge_server
     │   └─ add_network_node.sh
     └─ TopologyMixin.register_new_server_backend()
-        └─ VIP web pool + warm lease
+        └─ VIP web pool + warm lease (created unconditionally;
+           consumed only when BACKEND_SELECTION_POLICY=topology_lifecycle)
 ```
 
 The mediator (`main_n*.py`) also checks: if a `ComputeAlert` was submitted

@@ -16,6 +16,11 @@ class WarmLease:
     started_ts: float
     expires_ts: float
 
+# --- Backend-selection policy mode (RQ2) ---
+_BACKEND_SELECTION_POLICY = os.environ.get(
+    "BACKEND_SELECTION_POLICY", "topology_lifecycle"
+)
+# Valid: topology_host | topology_slowstart | topology_lifecycle
 
 # --- Server (compute) WSM weights ---
 _W_CPU      = float(os.environ.get("W_CPU",      "0.2"))

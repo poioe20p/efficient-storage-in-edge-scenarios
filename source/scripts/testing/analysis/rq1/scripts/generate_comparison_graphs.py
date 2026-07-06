@@ -143,7 +143,7 @@ def _plot_decision_quality_table(
     Columns: Phase | Push Br% | Push Spwn | Poll-5s Br% | Poll-5s Spwn |
              Poll-12s Br% | Poll-12s Spwn | Poll-30s Br% | Poll-30s Spwn
 
-    Footnote explains Br% and Spwn formulas.
+    Legend is placed directly below the table.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -168,10 +168,16 @@ def _plot_decision_quality_table(
         cell_text.append(row)
 
     n_phases = len(DQ_PHASE_ORDER)
-    fig, ax = plt.subplots(figsize=(18, max(3.5, n_phases * 0.6 + 2.5)))
+    n_cols = len(col_labels)
+    n_rows = n_phases + 1  # +1 for header
+
+    # Larger figure: each row gets ~0.7" height, each col gets ~1.8" width
+    fig_w = n_cols * 1.55
+    fig_h = n_rows * 0.72 + 1.6  # extra 1.6" for title + legend
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
-    fig.suptitle("RQ1 v2 — Decision Quality: Breached Windows & Spawns by Phase / Mode",
-                 fontsize=13, fontweight="bold")
+    fig.suptitle("RQ1 v3 — Decision Quality: Breached Windows & Spawns by Phase / Mode",
+                 fontsize=14, fontweight="bold", y=0.96)
 
     table = ax.table(
         cellText=cell_text,
@@ -180,8 +186,18 @@ def _plot_decision_quality_table(
         cellLoc="center",
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(8.5)
-    table.auto_set_column_width(list(range(len(col_labels))))
+    table.set_fontsize(10.5)
+
+    # Scale cells: make them large enough for text
+    table.scale(1.0, 2.0)  # double row height for readability
+
+    # Set equal column widths for data columns, wider for phase column
+    col_widths = [0.18] + [0.10] * (n_cols - 1)
+    for i in range(n_cols):
+        for j in range(n_rows):
+            cell = table[j, i]
+            cell.set_width(col_widths[i])
+            cell.set_height(0.08)
 
     # Highlight phases with any breach activity
     for i, ph in enumerate(DQ_PHASE_ORDER):
@@ -194,17 +210,21 @@ def _plot_decision_quality_table(
                 cell = table[i + 1, j]
                 cell.set_facecolor("#fff3e0")
 
-    # Footnote with formula explanation
-    footnote = (
-        "Br% = mean(breached_windows / total_windows × 100) across replicates  |  "
-        "Spwn = mean(spawns_initiated) across replicates  |  "
-        "Orange rows = at least one mode recorded breached windows in that phase"
-    )
-    fig.text(0.5, 0.02, footnote, ha="center", fontsize=8, style="italic", color="#555555")
+    # Legend placed directly below the table
+    legend_lines = [
+        "Br% = mean(breached_windows / total_windows × 100) across 3 replicates",
+        "Spwn = mean(spawns_initiated) across 3 replicates",
+        "Orange rows = at least one mode recorded breached windows in that phase",
+        "Note: compute nodes spawned in ALL 12 runs; Spwn=0 means spawns occurred in other phases",
+    ]
+    legend_text = "\n".join(legend_lines)
+    fig.text(0.5, 0.03, legend_text, ha="center", fontsize=9,
+             style="italic", color="#333333",
+             bbox=dict(boxstyle="round,pad=0.4", facecolor="#f5f5f5", edgecolor="#cccccc", alpha=0.8))
 
-    fig.tight_layout(rect=[0, 0.06, 1, 0.95])
+    fig.tight_layout(rect=[0.02, 0.10, 0.98, 0.93])
     path = output_dir / "rq1_v2_decision_quality.png"
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=200)
     plt.close(fig)
     print(f"Wrote {path}")
 
@@ -427,10 +447,6 @@ def generate_graphs(
     ax.bar(x, [d["timeout_mean"] for d in data], color=MODE_COLORS,
            edgecolor="black", alpha=BAR_ALPHA)
     _add_bar_labels(ax, x, data, "timeout_mean", "{:.1f}%", 2)
-    # Add reference line for healthy baseline
-    ax.axhline(y=2.0, color="green", linestyle="--", alpha=0.4,
-               label="~2% healthy baseline")
-    ax.legend(fontsize=TICK_SIZE - 1)
     plt.tight_layout()
     fig.savefig(output_dir / "rq1_v2_avg_failure_rate.png", dpi=150)
     plt.close(fig)

@@ -272,3 +272,4 @@ Standard run-folder layout per [`testing_overview.md`](../../testing_overview.md
 | Date | Change |
 |------|--------|
 | 2026-07-03 | Plan created. Changes from v2final: `sent_at` column, `RANDOM_SEED=42`, `cleanup.sh -r` between runs, per-run graphs removed (only comparison graphs produced), comparison graphs deferred to post-completion manual step. |
+| 2026-07-04 | Campaign completed (12/12 runs). Full analysis in [`results_v3.md`](results_v3.md). Bimodality persists despite measurement fixes — confirmed as genuine system non-determinism. All 7 criteria assessed; C1, C2, C3, C5, C6, C7 met; C4 partially met (2/12 individual runs missed compute scale-up). Comparison graphs archived to `graphs/comparison/`. |

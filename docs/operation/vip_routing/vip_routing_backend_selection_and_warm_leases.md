@@ -153,12 +153,20 @@ candidate exists.
 
 ## 7. Unknown Telemetry and Tie-Breaking
 
-### Unknown Telemetry -- Worst-Case Assignment
+### Unknown Telemetry -- Policy-Dependent Assignment
 
 Backends without telemetry stats (e.g., peer backends not yet measured, newly
-added nodes) are assigned a normalized score of **1.0** across all resource
-dimensions. This prevents unmeasured nodes from being accidentally preferred
-over measured local backends that show actual load.
+added nodes) are assigned a default normalized score that depends on the active
+backend-selection policy mode (`BACKEND_SELECTION_POLICY`):
+
+| Policy Mode | Unknown-Stats Default | Rationale |
+|---|---|---|
+| `topology_host` | **0.0** (best-case) | Cold-start thundering herd — new backends win every WSM competition immediately, encoding HAProxy leastconn with no slow-start. |
+| `topology_slowstart` | **0.0** (neutral) | The slowstart penalty (Section 11) handles all deterrence; unknown stats are neutral so the penalty is the sole gate. |
+| `topology_lifecycle` | **1.0** (worst-case) | Default/current behavior — prevents unmeasured peers from being preferred over measured local backends. Warm leases short-circuit the WSM for new backends, so unknown stats only affect existing unmeasured backends. |
+
+In all modes, `hop_norm` is never overridden — topology is always computed from
+real hop-cache data or the fallback estimation table below.
 
 ### Hop Fallback Estimation
 
@@ -192,6 +200,16 @@ traffic evenly:
 Newly admitted compute backends and newly promoted storage secondaries receive
 bounded warm leases. A warm lease is a monotonic expiry timestamp only -- it
 carries no additional state.
+
+**Policy-mode gating (RQ2)**: Warm leases are always **created** by the
+elasticity manager (Thread 3) and telemetry pipeline (Thread 2) regardless of
+policy mode — the creation path is unchanged. However, warm leases are only
+**consumed** by the WSM selection functions when
+`BACKEND_SELECTION_POLICY=topology_lifecycle`. In `topology_host` and
+`topology_slowstart` modes, `_claim_warm_backend()` is gated off — unclaimed
+leases expire after their TTL with an info-level log line. This is harmless and
+keeps the code change minimal (no modification to `main_n*.py` or
+`elasticity/`).
 
 ### Lease Data Structure
 
@@ -274,7 +292,72 @@ given domain and removes those whose remembered MAC equals the removed backend.
 - Peer disappearance is safe because `_filter_previous_normal_backend()` falls
   back when the remembered backend is absent from the pool.
 
-## 10. Controller Lifecycle Hooks
+## 10. Backend-Selection Policy Modes (RQ2)
+
+The controller supports three backend-selection policy modes, controlled by the
+`BACKEND_SELECTION_POLICY` env var (default: `topology_lifecycle`).
+
+### Policy Mode Table
+
+| Mode | Warm Lease | Unknown Stats | Slowstart Penalty | Encodes |
+|---|---|---|---|---|
+| `topology_host` | Not consumed | 0.0 (best-case) | None | HAProxy leastconn, no slow-start — cold-start thundering herd |
+| `topology_slowstart` | Not consumed | 0.0 (neutral) | 1.0→0.0 over TTL from discovery | Separated LB slow-start — coordination gap between spawn and discovery |
+| `topology_lifecycle` | Consumed (default) | 1.0 (worst-case) | None | Unified controller — spawn-time warm lease, zero discovery gap |
+
+All other parameters (WSM weights, host-load dimensions, pool structure,
+telemetry delivery) are identical across modes.
+
+### Design Rationale
+
+The three modes form a spectrum of routing-plane awareness timing relative to
+backend spawn, directly parallel to RQ1's telemetry-delivery cadence
+comparison (push vs. poll). RQ1 tests the coordination gap in monitoring;
+RQ2 tests the same phenomenon in routing.
+
+## 11. Slowstart Penalty Ramp (topology_slowstart)
+
+When `BACKEND_SELECTION_POLICY=topology_slowstart`, the WSM cost function adds
+a graduated penalty to each backend's cost after it is first discovered in
+telemetry. The penalty simulates a separated LB's slow-start mechanism
+(HAProxy slow-start, NGINX initial weight).
+
+### Mechanism
+
+- **Before discovery**: penalty = 1.0 (flat). The backend is effectively
+  invisible — it will only win traffic via round-robin tie-breaking if all
+  other backends are equally penalised.
+- **At discovery** (first telemetry window containing the backend): penalty
+  begins decaying linearly from 1.0 to 0.0 over the warm-lease TTL period
+  (`VIP_WARM_SERVER_SECONDS` = 45 s for compute, `VIP_WARM_STORAGE_SECONDS`
+  = 30 s for storage).
+- **After ramp**: penalty = 0.0 — backend competes on real WSM cost only.
+
+### Discovery Tracking
+
+Discovery time is recorded when a backend first appears in telemetry
+(`_backend_discovery_ts[mac]`), set by `update_server_stats()` and
+`update_storage_stats()` in `state.py`. The discovery timestamp is cleaned up
+on `unregister_server_backend()` and `unregister_storage_backend()`.
+
+### Design Note — Penalty Magnitude
+
+The unweighted penalty (range 0–1) exceeds the maximum weighted WSM cost sum
+(0.88 for compute, 0.90 for storage). This means the penalty is architecturally
+dominant — a backend under slowstart cannot win against any backend with real
+stats until the penalty has decayed substantially. This is intentional: the
+ramp IS the mechanism, not a subtle bias.
+
+### Design Note — TTL Reuse
+
+The penalty decay period reuses `_VIP_WARM_SERVER_SECONDS` and
+`_VIP_WARM_STORAGE_SECONDS` — the same TTLs used for warm-lease priority
+windows. These are semantically distinct (warm-lease priority vs.
+discovery-time ramp), but using the same TTL makes the comparison between
+`topology_slowstart` and `topology_lifecycle` cleaner: both have the same
+duration, differing only in when that window starts (discovery vs. spawn).
+
+## 12. Controller Lifecycle Hooks
 
 These methods are the public API that Thread 2 (telemetry) and Thread 3
 (elasticity) call to keep VIP state synchronized when backends are promoted,
@@ -300,7 +383,7 @@ admitted, removed, or retracted.
 All warm-lease mutations are protected by `_warm_lock` (a `threading.Lock`)
 because Thread 3 is a native thread while Thread 1 is an eventlet greenthread.
 
-## 11. Current Weight and Lease Knobs
+## 13. Current Weight and Lease Knobs
 
 ### WSM Weights (set via environment variables)
 

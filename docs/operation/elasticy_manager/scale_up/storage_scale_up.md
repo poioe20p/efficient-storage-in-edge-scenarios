@@ -306,6 +306,13 @@ At promotion time, a short storage warm lease is marked. This prevents routing
 traffic to a node that hasn't finished its initial sync while still giving the
 promoted node a brief preference on the next fresh eligible selection.
 
+The warm lease is always created during promotion regardless of policy mode.
+Whether it is consumed by the WSM selection functions depends on
+`BACKEND_SELECTION_POLICY` — only `topology_lifecycle` (the default) consumes
+warm leases. See
+[Backend Selection and Warm Leases](../../vip_routing/vip_routing_backend_selection_and_warm_leases.md)
+for the full policy-mode specification.
+
 ---
 
 ---

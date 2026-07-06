@@ -58,6 +58,10 @@ def init_vip_routing_state(controller) -> None:
         "n2": {},
     }  # domain -> (mac -> lease)
 
+    # Per-backend discovery timestamps for slow-start ramp (RQ2).
+    # Keyed by MAC; populated when a backend first appears in telemetry.
+    controller._backend_discovery_ts: dict[str, float] = {}  # mac -> first_telemetry_ts
+
     from .config import (
         _W_CPU, _W_RAM, _W_REQUESTS, _W_HOPS,
         _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
@@ -146,11 +150,13 @@ def register_new_server_backend(controller, mac: str, ip: str) -> None:
 def unregister_server_backend(controller, mac: str) -> None:
     controller.remove_server_mac(mac)
     clear_server_backend_warm(controller, mac)
+    controller._backend_discovery_ts.pop(mac, None)
 
 
 def unregister_storage_backend(controller, mac: str, domain: str) -> None:
     controller.remove_storage_mac(mac, domain)
     clear_storage_backend_warm(controller, mac, domain)
+    controller._backend_discovery_ts.pop(mac, None)
 
     # Delete the forward rule so new connections get a fresh backend.
     # The reply rule is NOT deleted — it's shared and handles all
@@ -178,6 +184,8 @@ def update_server_stats(controller, servers: dict) -> None:
     """
     for mac, summary in servers.items():
         controller._server_stats[mac] = summary
+        if mac not in controller._backend_discovery_ts:
+            controller._backend_discovery_ts[mac] = time.monotonic()
         logger.debug(
             "server stats updated: mac=%s cpu=%.1f%% ram=%.1fMB req=%d",
             mac, summary.avg_cpu_percent,
@@ -194,6 +202,8 @@ def update_storage_stats(controller, storage_servers: dict) -> None:
     """
     for mac, summary in storage_servers.items():
         controller._storage_stats[mac] = summary
+        if mac not in controller._backend_discovery_ts:
+            controller._backend_discovery_ts[mac] = time.monotonic()
         logger.debug(
             "storage stats updated: mac=%s cpu=%.1f%% ram=%.1fMB conn=%.1f lag=%s",
             mac, summary.avg_cpu_percent,

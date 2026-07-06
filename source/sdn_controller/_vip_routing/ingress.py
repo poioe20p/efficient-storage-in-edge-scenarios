@@ -12,6 +12,7 @@ from . import flows, selection
 
 def _iter_vip_bindings(controller):
     yield (controller.vip_server_ip, controller.vip_server_mac, "server")
+    yield (controller.vip_server_n2_ip, controller.vip_server_n2_mac, "server_n2")
     yield (controller.vip_data_n1_ip, controller.vip_data_n1_mac, "n1")
     yield (controller.vip_data_n2_ip, controller.vip_data_n2_mac, "n2")
 
@@ -71,6 +72,9 @@ def handle_vip_packet_in(controller, datapath, in_port, pkt, eth) -> bool:
 
     if dst_ip == controller.vip_server_ip:
         logger.debug("vip server packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
+        return _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto)
+    if dst_ip == controller.vip_server_n2_ip:
+        logger.debug("vip server n2 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
         return _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto)
     if dst_ip == controller.vip_data_n1_ip:
         logger.debug("vip data n1 packet-in: dpid=%s in_port=%s ip=%s", datapath.id, in_port, ip_pkt)
@@ -135,6 +139,14 @@ def _reply_vip_arp(controller, datapath, in_port, arp_req) -> bool:
 # ------------------------------------------------------------------
 
 def _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto) -> bool:
+    # Determine which VIP was hit — resolves the correct VIP IP/MAC for DNAT/SNAT
+    ip_pkt = pkt.get_protocol(ipv4.ipv4)
+    dst_ip = ip_pkt.dst
+    if dst_ip == controller.vip_server_n2_ip:
+        vip_ip, vip_mac = controller.vip_server_n2_ip, controller.vip_server_n2_mac
+    else:
+        vip_ip, vip_mac = controller.vip_server_ip, controller.vip_server_mac
+
     server = selection.select_server(controller, src_mac)
     if server is None:
         logger.warning("vip_server: pool empty, packet dropped")
@@ -156,15 +168,15 @@ def _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_p
         client_mac=src_mac,
         client_ip=src_ip,
         ip_proto=ip_proto,
-        vip_ip=controller.vip_server_ip,
-        vip_mac=controller.vip_server_mac,
+        vip_ip=vip_ip,
+        vip_mac=vip_mac,
         real_backend_ip=server_ip,
         real_backend_mac=server_mac,
     )
 
     logger.info(
         "vip_server: client=%s -> vip=%s -> real=%s",
-        src_ip, controller.vip_server_ip, server_ip,
+        src_ip, vip_ip, server_ip,
     )
 
     return True

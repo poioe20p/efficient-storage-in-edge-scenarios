@@ -50,7 +50,7 @@ dimension through a cross-layer control point.
 | Pillar                        | RQ       | Core Question                                                                               |
 | ----------------------------- | -------- | ------------------------------------------------------------------------------------------- |
 | **Telemetry Freshness** | RQ1      | How does telemetry delivery cadence affect control quality during demand shifts?            |
-| **Backend Selection**   | **RQ2** | **How does cross-layer metadata improve backend selection beyond L4 and L4+ baselines?**   |
+| **Backend Selection**   | **RQ2** | **How does routing-plane awareness timing affect load redistribution quality during scale-up?**   |
 | **Data Locality**       | RQ3      | How do data-locality readiness strategies trade off service benefit against operating cost? |
 
 ### Why SDN Is the Unifying Substrate
@@ -77,7 +77,7 @@ In the proposed architecture, the SDN controller (OS-Ken/Ryu) consumes telemetry
 
 ### Relationship to the Thesis Proposal
 
-While the initial proposal emphasized metadata-driven scaling as the central contribution, architecture development revealed that telemetry freshness and backend selection are equally critical dimensions of cross-layer orchestration. The three-pillar investigation presented here **operationalizes** the proposal's high-level goals ("coordinate auto-scaling based on meta-information") by decomposing the problem into evaluable, independently testable dimensions. The proposal's emphasis on spatio-temporal data popularity is preserved in RQ2 (cross-layer backend selection) and RQ3 (data-locality readiness strategies).
+While the initial proposal emphasized metadata-driven scaling as the central contribution, architecture development revealed that telemetry freshness and backend selection are equally critical dimensions of cross-layer orchestration. The three-pillar investigation presented here **operationalizes** the proposal's high-level goals ("coordinate auto-scaling based on meta-information") by decomposing the problem into evaluable, independently testable dimensions. The proposal's emphasis on spatio-temporal data popularity is preserved in RQ2 (backend selection, where spawn-time vs. discovery-time routing awareness characterizes the coordination gap) and RQ3 (data-locality readiness strategies).
 
 ---
 
@@ -95,7 +95,7 @@ The chosen RQs should satisfy all of the following conditions:
 For this reason, the recommended RQ set below separates:
 
 - **telemetry freshness** from **delivery mechanism** (RQ1)
-- **single-layer** from **cross-layer backend selection** (RQ2)
+- **discovery-time** from **spawn-time routing awareness** (RQ2)
 - **cold-start capacity** from **reserved or pre-synchronized capacity** (RQ3)
 
 ---
@@ -134,10 +134,10 @@ Unified (SDN controller):
 | Architectural Property                               | Why SDN Is Necessary                                                                                                                                                                                                                                                                                                            | What It Enables for the RQs                                                                                                                                                                                                                                            |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Double-VIP model**                           | MongoDB drivers discover replica-set topology and connect to all members directly. The controller must prevent this for tiered data placement — the driver must see a single stable address (`VIP_DATA_N1`) regardless of which physical node serves it. ARP interception + per-flow OpenFlow DNAT/SNAT achieves this at L3. | RQ2: backend selection policy is enforced at the network layer, not in application code. RQ3: tier transitions are transparent to the edge server — it never knows which physical node backs the VIP.                                                                 |
-| **Per-flow routing with cross-layer metadata** | Traditional L4 LBs (HAProxy, NGINX stream) cannot consume replica-state telemetry (replication lag, member state). OpenFlow enables per-TCP-connection steering based on WSM cost functions that incorporate host load AND replica state AND topology.                                                                          | RQ2: the`topology_host_replica` policy mode has no equivalent in separated architectures — this is the experimental condition that tests whether cross-layer metadata produces measurable improvement beyond the `topology_only` and `topology_host` baselines. |
+| **Per-flow routing with cross-layer metadata** | Traditional L4 LBs (HAProxy, NGINX stream) can consume host-level metrics (CPU, RAM, connections) but cannot consume scaling-lifecycle state (warm leases, drain flags) without custom inter-component integration. OpenFlow enables per-TCP-connection steering based on WSM cost functions that incorporate host load AND scaling lifecycle AND topology — all from shared in-process state. | RQ2: the `topology_lifecycle` policy mode adds spawn-time warm leases — testing whether in-process lifecycle state produces measurable improvement in load redistribution beyond what a standard LB can achieve without custom scaler integration. |
 | **Same-process routing and scaling**           | Thread 1 (routing) and Thread 3 (scaling) share the VIP pool data structure. When Thread 3 adds or drains a backend, Thread 1 sees the change immediately — no API call, no eventual consistency, no propagation delay.                                                                                                        | RQ1 & RQ3: the reaction latency measurement reflects only telemetry freshness and infrastructure provisioning time — not an additional control-plane propagation gap.                                                                                                 |
 | **L3 traffic-plane separation**                | `VIP_SERVER` (compute) and `VIP_DATA_N*` (data) are separate virtual IPs with separate WSM cost functions and separate backend pools. This separation is enforced by OpenFlow rules at the network layer, not by application configuration that can be misconfigured.                                                       | RQ2: compute-plane and data-plane selection policies can be evaluated independently under the same infrastructure.                                                                                                                                                     |
-| **Topology as a first-class input**            | The controller builds the network topology during setup (which MAC is in which LAN, hop distances). This feeds directly into routing cost functions and placement decisions — the controller knows*where* every resource is, not just its health status.                                                                     | RQ2:`topology_only` and `topology_host` policies use topology as the baseline layer. RQ3: cross-LAN placement decisions depend on topology awareness.                                                                                                              |
+| **Topology as a first-class input**            | The controller builds the network topology during setup (which MAC is in which LAN, hop distances). This feeds directly into routing cost functions and placement decisions — the controller knows*where* every resource is, not just its health status.                                                                     | RQ2: both `topology_host` and `topology_lifecycle` modes use topology as a cost dimension. RQ3: cross-LAN placement decisions depend on topology awareness.                                                                                                              |
 
 ### 3.3 Honest Scope
 
@@ -167,7 +167,7 @@ Instead, each RQ's baselines encode the **architectural property** that separate
 | RQ            | Baseline Condition                            | Separated-System Property It Encodes                                                                                                |
 | ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **RQ1** | Polling at 12 s / 30 s intervals              | Stale monitoring → delayed decisions (Prometheus scrape interval → AlertManager → HPA; CloudWatch metric period → Alarm → ASG) |
-| **RQ2** | `topology_only` / `topology_host`         | Single-layer visibility: L4 LB (haproxy leastconn) or L4+ LB with host health checks — no replica-state awareness                  |
+| **RQ2** | `topology_slowstart` (invisible until discovery, then graduated ramp) | Discovery-time backend awareness — separated LB doesn't know backend exists until health checks pass; coordination delay between spawn and routing-plane awareness |
 | **RQ3** | Remote serving only / cold-start full replica | No data locality (naïve edge deployment) or reactive-only elasticity (ASG-style cold-start, pay full sync cost on every trigger)   |
 
 ### 4.2 Why This Is Methodologically Valid
@@ -340,129 +340,96 @@ Vary only:
 
 ---
 
-## RQ2. Metadata-Aware Backend Selection
+## RQ2. Routing-Awareness Timing and the Coordination Gap
 
-> **RQ2.** To what extent does metadata-aware backend selection improve load distribution and request handling compared with topology-only and topology-plus-host-load selection in a stateful edge system?
+> **RQ2.** How does the timing of routing-plane awareness relative to backend spawn — at spawn time (warm lease, in-process) versus at discovery time (slow-start ramp, simulating a separated LB) versus no ramp-up — affect load redistribution quality during scale-up events in a stateful edge system?
 
 ### Why RQ2 Is a Strong RQ
 
-This is a strong RQ because it asks about **backend selection**, not about elasticity or infrastructure size. It tests whether adding richer state to the selection logic improves outcomes beyond simpler policies.
+This RQ tests the **coordination gap in the routing plane** — the same
+phenomenon RQ1 tests for monitoring (push vs poll). When the scaler spawns
+a new backend, a separated LB discovers it via health checks (discovery-time
+awareness). The unified controller knows about it at spawn time because
+routing and scaling share the same process. Three modes characterize the
+spectrum from no ramp-up to spawn-time awareness.
 
-It is also strong because it can be evaluated while holding the underlying substrate constant:
-
-- same controllers
-- same VIP model
-- same traffic generator
-- same infrastructure
-- different selection policies only
+This parallels RQ1 methodologically: both ask whether co-location eliminates
+a measurable delay. Neither claims superiority; both report what was measured.
 
 ### Concepts Involved in RQ2
 
-- topology-aware routing
-- host-load-aware routing
-- replica-state-aware routing
-- cross-layer optimization
-- compute plane versus data plane
-- leading indicators for steering
-- stateful backend admissibility and freshness
+- routing-plane awareness timing (spawn-time vs. discovery-time)
+- coordination gap in backend discovery
+- warm lease (spawn-time atomic, bounded priority window)
+- slow-start ramp (discovery-time graduated weight increase)
+- load redistribution time (spawn → equilibrium)
 
-### Architectural Framing: What Each Policy Mode Represents
+### Architectural Framing: What Each Mode Represents
 
-The policy modes are not arbitrary — they form a spectrum from single-layer to cross-layer visibility, each corresponding to what a different class of real-world load balancer can achieve:
+| Mode | Awareness timing | Ramp-up | Encodes |
+|---|---|---|---|
+| `topology_host` | Immediate (pool entry), unknown stats → best-case (0.0) | None — cold-start WSM (leastconn-style) | No ramp-up, cold-start thundering herd. Fastest redistribution, least controlled. |
+| `topology_slowstart` | Discovery-time (first telemetry, 0–10 s after spawn, avg ~5 s). Until then: worst-case (1.0, effectively invisible). | Graduated weight ramp starting at discovery | Backend invisible until discovery (separated LB doesn't know it exists), then graduated ramp. The discovery gap is the coordination delay. |
+| `topology_lifecycle` | Spawn-time (atomic with pool registration) | Warm lease (bounded priority window) | Unified controller. Balanced: fast start, controlled transition, zero discovery gap. |
 
-| Policy Mode               | Allowed Metadata                             | Equivalent Real-World System                                               | Limitation                                                                                     |
-| ------------------------- | -------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `topology_only`         | Hop distance only                            | DNS geo-routing, anycast, simple L4 LB with no health checks               | No load awareness — routes to nearest regardless of congestion                                |
-| `topology_host`         | Hops + CPU, RAM, request count / connections | HAProxy/NGINX with least-connections + custom host health checks           | Host-aware but no replica-state visibility — cannot avoid routing reads to lagged secondaries |
-| `topology_host_replica` | All above + replication lag, member state    | **Your cross-layer WSM** — no equivalent in separated architectures | Requires SDN to consume and act on replica-state telemetry at per-flow granularity             |
+All other parameters (WSM weights, host-load dimensions, pool structure,
+telemetry delivery) are identical across modes.
 
 ### Why RQ2 Matches the Current Architecture
 
-The current routing layer already uses a weighted cost model in:
-
-- [`../../source/sdn_controller/vip_routing.py`](../../source/sdn_controller/vip_routing.py)
-
-The key point, however, is that a rigorous RQ2 cannot be answered by merely changing numeric weights. It needs **explicit policy modes** that define which metadata each policy is allowed to use.
-
-This question should be evaluated separately on the two current traffic planes:
-
-1. **Compute plane**: `VIP_SERVER`
-2. **Data plane**: `VIP_DATA_N*`
+The warm-lease mechanism already exists in `_vip_routing/selection.py`
+(`_claim_warm_backend`, `mark_server_backend_warm`, `mark_storage_backend_warm`).
+The cold-start WSM behavior (worst-case when stats unknown) is also already
+implemented. What's needed is a policy-mode gate to disable warm leases and,
+for `topology_slowstart`, a graduated slow-start ramp in the WSM.
 
 ### Development Required for RQ2
 
-Required for rigorous comparison:
+1. Add `BACKEND_SELECTION_POLICY` env var to `_vip_routing/config.py`.
+2. In `select_server` and `select_storage`:
+   - `topology_host`: skip `_claim_warm_backend()`. Unknown stats → 0.0
+     (best-case). Backend wins every WSM competition immediately —
+     cold-start thundering herd (leastconn-style).
+   - `topology_slowstart`: skip `_claim_warm_backend()`. Unknown stats → 1.0
+     (worst-case). Backend is invisible until first telemetry (0–10 s,
+     avg ~5 s). At discovery: start a graduated cost penalty decaying
+     linearly from 1.0 to 0.0 over the warm-lease TTL — simulating
+     discovery-time slow-start ramp.
+   - `topology_lifecycle`: unchanged (current behavior).
+3. Create env overrides for `topology_host` and `topology_slowstart`.
 
-1. Add explicit backend-selection policy modes.
-2. Hold all non-policy behavior constant.
-3. Define clearly which metadata each mode may use.
-4. Evaluate compute and data planes separately, even if the thesis keeps a unified RQ.
-
-Recommended policy family:
-
-1. `topology_only`
-   - allowed inputs: hop distance only
-2. `topology_host`
-   - allowed inputs: hops, CPU, RAM, request count / connections
-3. `topology_host_replica`
-   - allowed inputs: hops, host load, and replica-state metadata such as replication lag
-
-Instrumentation that would help:
-
-- structured trace logging of candidate scores and exclusion reasons
-- per-policy request assignment counts
-- explicit tagging of compute-plane versus data-plane decisions in analysis
+Estimated: ~40 lines across `selection.py` and `config.py`.
 
 ### Measurements Required for RQ2
 
-Compute-plane measurements:
-
-1. p95/p99 request latency
-2. failure rate
-3. request distribution across servers
-4. Jain's fairness index over compute CPU usage
-5. spillover frequency to peer-LAN backends
-
-Data-plane measurements:
-
-1. p95/p99 DB-side latency contribution
-2. failure rate under data stress
-3. fraction of reads routed to lagged or stressed backends
-4. hop count and cross-LAN routing frequency
-5. storage CPU balance and connection balance across eligible nodes
-
-Shared measurements:
-
-1. routing churn or instability
-2. number of policy-induced bad choices under constructed stress cases
-3. per-phase latency and fairness rather than only whole-run averages
+1. **Load redistribution time** — `spawn_done_ts` → equilibrium load share
+   (±10% of per-backend mean). Core evidence.
+2. **Transition-window service quality** — p95/p99 latency and failure rate
+   in the `compute_spike` phase after scale-up events.
+3. **Per-mode redistribution profile** — request share over time for the new
+   backend, showing ramp shape.
 
 ### Evaluation Design for RQ2
 
-Hold constant:
+Three runs, one per mode:
 
-- telemetry acquisition mode
-- scaling behavior
-- workload
-- flow timeouts
+| Run | Mode | Ramp-up |
+|---|---|---|
+| **R2-TH** | `topology_host` | None |
+| **R2-SS** | `topology_slowstart` | Graduated ramp at discovery |
+| **R2-TL** | `topology_lifecycle` | Warm lease at spawn time |
 
-Vary only:
+Hold constant: push-mode telemetry, golden config thresholds, canonical
+workload, WSM weights, Double-VIP pool structure.
 
-- policy mode
-
-Important methodological note:
-
-RQ2 should not be answered with a single aggregate statement such as "cross-layer is better." It should show **where** the richer policy helps:
-
-- under compute-heavy imbalance
-- under storage lag or replica-state asymmetry
-- under cross-LAN spillover opportunities
+Vary only: `BACKEND_SELECTION_POLICY`.
 
 ### Main Validity Threats for RQ2
 
-- weight tuning can masquerade as algorithmic improvement if policy modes are not explicit
-- low backend diversity can make differences too small to interpret
-- mixing compute and data-plane effects in one aggregate metric can hide the actual cause
+- **Cold-start thundering herd may make `topology_host` redistribute fastest with no latency penalty.** The new backend wins every competition immediately — if the cold backend handles the load fine, ramp-up mechanisms add control but not speed. This is not a threat — it's a potential finding characterizing the speed-vs-control trade-off.
+- **The discovery gap (0–10 s, avg ~5 s) may dominate `topology_slowstart`.** The backend is invisible for one telemetry window — capacity sits idle. This is the coordination delay. The thesis honestly reports whether it matters.
+- Replica lag is empirically zero at this workload — the thesis acknowledges
+  this and focuses on dimensions that actually vary.
 
 ---
 
@@ -616,7 +583,7 @@ This fallback is weaker, but still defensible.
 | RQ            | Main Independent Variable                                                                         | Main Dependent Variables                                                                                           | Required Development                                                                    | Existing Support Level |
 | ------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ---------------------- |
 | **RQ1** | Delivery cadence (push vs. polling interval)                                                      | Decision staleness, reaction latency, transient p95/p99, control overhead, scaling outcome description             | Polling telemetry source, summary persistence, timing instrumentation, overhead sampler | High                   |
-| **RQ2** | Backend-selection policy mode (`topology_only` / `topology_host` / `topology_host_replica`) | Latency, fairness, failure rate, bad-choice frequency, spillover behavior, compute-plane vs. data-plane separation | Explicit policy modes, per-policy traceability                                          | Medium                 |
+| **RQ2** | Routing awareness timing (cold-start herd / discovery-time slow-start / spawn-time warm lease) | Load redistribution time, transition-window service quality, per-mode redistribution profile (speed vs. control trade-off) | Policy-mode gating + slow-start ramp in WSM cost functions | High |
 | **RQ3** | Locality / readiness strategy (remote / selective / cold full / warm standby)                     | Latency recovery, activation cost, sync tax, reservation tax, cleanup debt                                         | Consumer-LAN full replica, reserved standby, timing and lifecycle instrumentation       | Low to Medium          |
 
 ---
@@ -631,8 +598,8 @@ If the thesis follows this RQ set, the implementation priorities should be:
    - required for RQ1 (`consumed_at` pairing, breach detection from telemetry) — COMPLETED
 3. **Controller overhead sampler + analysis CLIs**
    - required for RQ1 (control-plane overhead, scaling outcome description) — COMPLETED
-4. **Explicit routing policy modes**
-   - required for RQ2 (`topology_only`, `topology_host`, `topology_host_replica`)
+4. **Explicit routing policy-mode gating + slow-start ramp + per-mode unknown-stats treatment**
+   - required for RQ2 (`topology_host`: best-case herd, `topology_slowstart`: worst-case invisible → ramp, `topology_lifecycle`: spawn-time warm lease)
 5. **Consumer-LAN full replica placement**
    - required for the stronger RQ3 (cross-region locality)
 6. **Reserved-standby first-scale promotion path**
@@ -649,6 +616,6 @@ If the thesis follows this RQ set, the implementation priorities should be:
 | 3. System Architecture    | Three-thread controller, Double-VIP model, telemetry fabric, elasticity manager, data gravity tiers, selective sync                                       | Methodology basis for all RQs |
 | 4. Methodology            | RQ formulation, evaluation design, measurement definitions, baseline rationale, held-constant sets                                                        | All RQs                       |
 | 5. RQ1 Evaluation         | Telemetry freshness and delivery cadence results                                                                                                          | Telemetry Freshness pillar    |
-| 6. RQ2 Evaluation         | Metadata-aware backend selection results                                                                                                                  | Backend Selection pillar      |
+| 6. RQ2 Evaluation         | Routing-awareness timing results (coordination gap in backend discovery)                                                                                                                  | Backend Selection pillar      |
 | 7. RQ3 Evaluation         | Data-locality readiness strategy results                                                                                                                  | Data Locality pillar          |
 | 8. Synthesis & Conclusion | Cross-pillar findings, what SDN unification enables, limitations, future work                                                                             | Thesis defense                |

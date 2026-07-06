@@ -102,31 +102,10 @@
 % =====================================================================
 \chapter{Introduction}\label{ch:introduction}
 
-\section{Context and Motivation}\label{sec:context_motivation}
-% TODO: Edge computing + stateful web services framing (NO IoT).
-% - Edge computing: services closer to users, lower latency, reduced backbone traffic.
-% - Stateful services at the edge: compute + data co-location matters.
-% - Conventional approach: monitoring, routing, and auto-scaling handled by separate
-%   control loops, even within the same platform (Kubernetes HPA, kube-proxy,
-%   metrics-server; OpenStack Heat, Neutron, Ceilometer). Each loop has its own
-%   reconciliation interval and state view.
-% - Separation is deliberate: fault isolation, independent scalability, modularity,
-%   ecosystem maturity.
-% - This thesis does NOT argue separation is wrong or co-location is superior.
-%   It asks: if these functions are co-located in a single SDN controller, what
-%   properties emerge? How do three tunable dimensions (telemetry freshness,
-%   backend selection, data locality) each independently affect service quality
-%   during demand shifts?
-% - SDN as enabling technology: OpenFlow per-flow steering; OS-Ken/Ryu controller
-%   consumes telemetry, evaluates thresholds, spawns/drains containers, installs
-%   forwarding rules — all from the same process. The co-location is the
-%   experimental apparatus, not the hypothesis under test.
-% DO NOT mention: IoT, smart cities, sensors, devices, industrial monitoring.
-%
-% YOUR EXISTING DRAFT TEXT (needs deiotification):
-% The Internet of Things, IoT universe, has been ever expanding, with
-% expectations to bypass \textcite{TransformaInsights2023IoTConnectedDevices}
-% 20 billion IoT devices globally. ...
+\section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
+% TODO: Edge computing + stateful web services. Multi-Region Content Discovery
+% Platform as experimental workload. Coordination-gap observation as motivation.
+% DO NOT mention IoT.
 
 \section{Objectives}\label{sec:objectives}
 % TODO: The 6 objectives from the thesis proposal.
@@ -134,154 +113,180 @@
 \section{Research Questions}\label{sec:research_questions}
 % TODO: RQ1 (Telemetry Freshness), RQ2 (Backend Selection), RQ3 (Data Locality).
 
-\section{Methodology Overview}\label{sec:methodology_overview}
-% TODO: 1–2 page summary. Design Science Research Methodology (DSRM)
-% (Peffers et al., 2007-8), grounded in the DSR paradigm (Hevner et al., 2004).
-% The artifact is the SDN-orchestrated edge platform; the evaluation is the
-% within-system experimental characterization of three orchestration dimensions.
-% Reference to Chapter~\ref{ch:methodology} for full detail.
+\section{Research Methodology}\label{sec:research_methodology}
+% TODO: Design Science Research Methodology (DSRM) — Peffers et al. (2007-8),
+% DSR paradigm — Hevner et al. (2004). Reference to Chapter~5 for full detail.
 
-\section{Contributions}\label{sec:contributions}
+\section{Main Contributions of this Dissertation}\label{sec:contributions}
 % TODO: 5 contributions.
 
-\section{Document Structure}\label{sec:document_structure}
+\section{Dissertation Structure}\label{sec:document_structure}
 % TODO: Brief paragraph outlining the 7 chapters.
 
 
 
-\chapter{Literature Review}\label{ch:literature_review}
+\chapter{Background and Related Work}\label{ch:literature_review}
 
-\section{Review Method}\label{sec:review_method}
+\section{Review Methodology}\label{sec:review_method}
 % TODO: Databases, search terms, time range, inclusion/exclusion criteria.
 
 \section{Edge Computing Architectures}\label{sec:lit_edge_architectures}
-% TODO: Edge vs. cloud vs. fog; containerization; stateful vs. stateless.
+% TODO: Edge vs. cloud vs. fog; containerization; stateful vs. stateless services.
 
-\section{SDN and Programmable Infrastructure}\label{sec:lit_sdn}
-% TODO: SDN principles; controllers; traffic engineering; SDN at the edge.
+\section{Resource Allocation in Edge Computing}\label{sec:lit_resource_allocation}
+% TODO: Compute and data resource allocation strategies; metadata-driven approaches.
 
-\section{Auto-Scaling and Elasticity Mechanisms}\label{sec:lit_autoscaling}
-% TODO: Taxonomy; industry systems; control-loop cadences; separation benefits.
+\section{Elasticity and Auto-Scaling Mechanisms}\label{sec:lit_autoscaling}
+% TODO: Taxonomy; industry systems (K8s HPA, AWS ASG); control-loop cadences;
+% separation benefits.
 
-\section{Document-Oriented Databases for Edge Environments}\label{sec:lit_document_db}
-% TODO: NoSQL landscape; MongoDB — schema-less, replica set API, connection pooling.
+\section{Service Placement and Orchestration}\label{sec:lit_service_placement}
+% TODO: Service placement algorithms; orchestration frameworks; data gravity concepts;
+% tiered storage at the edge.
 
-\section{Synthesis}\label{sec:lit_synthesis}
-% TODO: Each domain treats concerns separately. No platform isolates all three
-% dimensions. This thesis builds that platform and characterizes the trade-off surface.
+\section{Software-Defined Networking for Edge Systems}\label{sec:lit_sdn}
+% TODO: SDN principles; controllers (Ryu/OS-Ken); traffic engineering;
+% SDN at the edge; Double-VIP concepts.
+
+\section{Summary and Research Gaps}\label{sec:lit_synthesis}
+% TODO: Each domain treats concerns separately. No platform isolates monitoring,
+% routing, and data placement as independently tunable dimensions.
 
 
 
-\chapter{System Architecture}\label{ch:system_architecture}
-
-\section{Design Principles}\label{sec:design_principles}
-% TODO: Cross-layer orchestration; shared data structures; tiered data gravity;
+\chapter{Architecture and Design of Proposed Solution for Edge Services}\label{ch:system_architecture}
+This chapter presents the design of the proposed cross layer sdn orchestration arquitecture for edge services. It stems from
+the research gaps explored in the ~\ref{ch:literature_review} and brings to the fold the need for an architecture that allows for each mentioned
+component to be independently managed and tested.
+\section{Design Requirements}\label{sec:design_requirements}
+% TODO: Cross-layer orchestration; single control point; tiered data gravity;
 % decoupled compute/data scaling; domain-agnostic observability.
-The proposed architecture is implemented on an sdn network, where all the decision making and monitoring done for each
-network is made by the controller who owns and controlls the network.
 
-\section{Architecture Overview}\label{sec:architecture_overview}
+\section{Architecture}\label{sec:architecture_overview}
 % TODO: Component diagram. Two edge networks + WAN. OVS, edge servers, storage servers.
 % SDN controller (3 greenthreads). Double-VIP model. Telemetry pipeline.
 
-\section{Telemetry Pipeline}\label{sec:telemetry_pipeline}
-% TODO: Per-request instrumentation → ZMQ → Aggregator → summaries → Controller.
+\section{Distributed Elastic Allocation of Resources}\label{sec:elastic_allocation}
 
-\section{Routing and Backend Selection}\label{sec:routing_backend_selection}
-% TODO: WSM cost functions; policy modes; per-flow OpenFlow; Double-VIP ARP + DNAT/SNAT.
+\subsection{Services}\label{sec:elastic_compute}
+% TODO: Compute scaling — T_proc threshold; edge server containers;
+% VIP_SERVER pool registration.
 
-\section{Elasticity and Data Gravity Tiers}\label{sec:elasticity_tiers}
-% TODO: ElasticityManager; ComputeAlert vs. DataAlert; Tier 0 → Tier 2;
-% Tier 1 design (honest scope); scale-down; degradation score.
+\subsection{Data}\label{sec:elastic_data}
+% TODO: Data scaling — T_dados threshold; Tier 0 → Tier 2 transitions;
+% MongoDB rs.add()/rs.remove(); Tier 1 Selective Sync (design, honest scope).
 
-\section{Experimental Workload}\label{sec:experimental_workload}
-% TODO: Multi-Region Content Discovery Platform (DO NOT mention IoT).
-% content_items + user_profiles collections; content_lookup, feed_ranking,
-% service_pressure endpoints; two-regime model; 10-phase schedule.
+\section{Monitoring and Decision Engine}\label{sec:monitoring_decision}
+% TODO: Telemetry pipeline (ZMQ PUSH → Aggregator → summaries → Controller);
+% push (ZMQ) and poll (HTTP) delivery; degradation score; threshold evaluation;
+% sliding window; alert submission.
 
-
-
-\chapter{Methodology}\label{ch:methodology}
-
-\section{Research Approach}\label{sec:research_approach}
-% TODO: Design Science Research Methodology (DSRM) (Peffers et al., 2007-8),
-% grounded in the DSR paradigm (Hevner et al., 2004).
-% Six DSRM activities mapped to thesis chapters.
-% DSR artifact types: constructs (VIP, WSM, degradation score), models
-% (three-thread architecture, three-pillar framework), methods (telemetry
-% pipeline, elasticity algorithm), instantiations (working prototype).
-% Overall aim → 4 objectives with methods mapped.
-
-\section{Experimental Design}\label{sec:experimental_design}
-% TODO: Within-system, single-variable manipulation. Comparison strategy.
-% Each RQ holds the other pillars constant.
-
-\section{Variables}\label{sec:variables}
-% TODO: Independent, dependent, and controlled variables.
-
-\section{Measurement Instrumentation}\label{sec:measurement_instrumentation}
-% TODO: Timing; analysis toolchain; independent breach detector; overhead sampler.
-
-\section{Experiment Procedure}\label{sec:experiment_procedure}
-% TODO: Pre-run → setup → run → post-run → copy-back → cross-run comparison.
-
-\section{Repetition and Statistical Treatment}\label{sec:statistical_treatment}
-% TODO: Runs per condition; Mann-Whitney U; Cliff's delta; handling variance.
-
-\section{Validity and Reliability}\label{sec:validity_reliability}
-% TODO: Internal validity, external validity, reliability.
+\section{Control Workflow}\label{sec:control_workflow}
+% TODO: End-to-end control flow: telemetry arrival → evaluation → alert →
+% spawn/drain → VIP registration → OpenFlow rule update. Three-thread model.
 
 
 
-\chapter{Implementation}\label{ch:implementation}
+\chapter{Implementation of Proposed Solution}\label{ch:implementation}
 
-\section{SDN Controller}\label{sec:impl_controller}
-% TODO: OS-Ken/Ryu; 3 greenthreads; shared data structures; key algorithm pseudo-code.
+\section{Experimental Infrastructure}\label{sec:impl_infrastructure}
+% TODO: Docker containers; OVS topology (two LANs + WAN bridge, tc-netem);
+% WAN emulation profiles; cloud VM host.
 
-\section{Edge Service and Storage}\label{sec:impl_edge_storage}
-% TODO: Flask edge server (content_lookup, feed_ranking, service_pressure);
-% MongoDB connection management; storage server lifecycle; Docker lifecycle.
+\section{Distributed Elastic Allocation of Resources}\label{sec:impl_elastic}
 
-\section{Network Infrastructure}\label{sec:impl_network}
-% TODO: OVS topology; Double-VIP; conntrack routing; WAN emulation.
+\subsection{Services}\label{sec:impl_compute}
+% TODO: Edge server (Python/Flask); container lifecycle (build, start, health check,
+% OVS wiring, drain, removal); VIP_SERVER registration.
 
-\section{Analysis Toolchain}\label{sec:impl_toolchain}
-% TODO: Aggregator; collector; post-run pipeline; read-only design.
+\subsection{Data}\label{sec:impl_data}
+% TODO: MongoDB replica sets; programmatic rs.add()/rs.remove(); VIP_DATA routing;
+% epoch recovery; retryReads; connection pooling; storage container lifecycle.
+% Conntrack-based routing for VIP_DATA.
+
+\section{Monitoring and Decision Engine}\label{sec:impl_monitoring}
+% TODO: Aggregator (ZMQ PUB/SUB + HTTP cache); collect_resource_stats.py
+% (domain + debug + per-node CSVs); telemetry source abstraction
+% (ZmqTelemetrySource, PollingTelemetrySource); ElasticityManager.
+
+\section{Control Workflow}\label{sec:impl_control}
+% TODO: OS-Ken/Ryu controller; 3 greenthreads; shared data structures;
+% key algorithm pseudo-code (degradation score → threshold → sliding window →
+% alert → spawn); Double-VIP ARP interception + DNAT/SNAT.
 
 \section{Implementation Validation}\label{sec:impl_validation}
-% TODO: Golden-config stability experiments (15+ runs); mechanism validation.
+% TODO: Golden-config stability experiments (15+ runs, variance ≤0.23%);
+% mechanism validation (Tier 2, Tier 1, compute, conntrack);
+% algorithm correctness via stable behavior, not code inspection.
 
 
 
-\chapter{Results and Discussion}\label{ch:results}
+\chapter{Evaluation Methodology}\label{ch:methodology}
 
-\section{RQ1 — Telemetry Freshness and Delivery Cadence}\label{sec:results_rq1}
-% TODO: Staleness, reaction latency, service quality, overhead, decision quality.
+\section{Experimental Objectives}\label{sec:experimental_objectives}
+% TODO: Overall aim — characterize how telemetry freshness, backend selection,
+% and data locality each independently affect service quality during demand shifts.
+% DSRM framing (Peffers et al., 2007-8; Hevner et al., 2004).
 
-\section{RQ2 — Metadata-Aware Backend Selection}\label{sec:results_rq2}
-% TODO: Compute-plane, data-plane, cross-layer benefit.
+\section{Evaluation Scenarios}\label{sec:evaluation_scenarios}
+% TODO: Within-system, single-variable manipulation. Comparison strategy:
+% baselines encode architectural properties, not competing products.
+% Each RQ holds the other pillars constant. 10-phase workload.
 
-\section{RQ3 — Data Locality Strategies}\label{sec:results_rq3}
-% TODO: Service quality, operating cost, trade-off characterization.
+\section{Performance Metrics}\label{sec:performance_metrics}
+% TODO: Reaction latency (spawn_done − breach_window_end, segmented);
+% service quality (p95/p99 latency, failure rate); control overhead (CPU%, RSS);
+% load distribution; operating cost. Independent breach detector.
 
-\section{Cross-RQ Synthesis}\label{sec:cross_rq_synthesis}
-% TODO: Which dimension matters most? Sharpest trade-offs? Implications.
+\section{Experimental Procedure with Results Statistical Analysis}\label{sec:experiment_procedure}
+% TODO: Pre-run → setup → run → post-run → copy-back → cross-run comparison.
+% Runs per condition. Mann-Whitney U; Cliff's delta. Per-phase aggregation.
+% Validity and reliability (internal, external, repeatability).
+
+
+
+\chapter{Experimental Results}\label{ch:results}
+
+\section{Resource Allocation Efficiency}\label{sec:results_allocation}
+% TODO: Does the system deploy resources only when justified?
+% Storage and compute node counts across phases.
+
+\section{Elastic Scaling Performance}\label{sec:results_scaling}
+% TODO: RQ1 — Reaction latency across delivery cadences (Push, Poll-5s,
+% Poll-12s, Poll-30s). Breach-detection segment vs. provisioning segment.
+
+\section{Service Placement Effectiveness}\label{sec:results_placement}
+% TODO: RQ2 — Load distribution and latency per backend selection policy
+% (topology_only, topology_host, topology_host_replica).
+% RQ3 — Service quality vs. operating cost per locality strategy.
+
+\section{Network Performance}\label{sec:results_network}
+% TODO: Control-plane overhead (CPU%, RSS); cross-LAN latency;
+% WAN emulation effects; telemetry delivery overhead.
+
+\section{Scalability Analysis}\label{sec:results_scalability}
+% TODO: Behavior under increasing load; scaling outcome description
+% (breached windows vs. spawns completed); mechanism activation patterns.
+
+\section{Discussion}\label{sec:discussion}
+% TODO: Cross-RQ synthesis. Which dimension matters most?
+% Sharpest trade-offs? What's negligible? Implications for edge system designers.
 
 
 
 \chapter{Conclusions and Future Work}\label{ch:conclusions}
 
-\section{Summary of Findings}\label{sec:summary_findings}
-% TODO: RQ1, RQ2, RQ3, cross-RQ findings.
+\section{Conclusions}\label{sec:conclusions}
+% TODO: Summary of findings across RQ1, RQ2, RQ3.
 
-\section{Contributions Revisited}\label{sec:contributions_revisited}
-% TODO: Restate 5 contributions with evidence.
+\section{Research Contributions}\label{sec:contributions_revisited}
+% TODO: Restate 5 contributions with evidence from results.
 
 \section{Limitations}\label{sec:limitations}
 % TODO: Controlled testbed; simulated workload; single window size;
 % Tier 1 partial; statistical power; MongoDB-specific; compound delay not tested.
 
-\section{Future Work}\label{sec:future_work}
+\section{Future Research Directions}\label{sec:future_work}
 % TODO: Compound delay injection; window size variation; Tier 1 full implementation;
 % larger-scale deployment; real-world traces; ML-driven threshold adaptation.
 
