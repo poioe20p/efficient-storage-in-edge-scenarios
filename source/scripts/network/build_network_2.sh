@@ -114,7 +114,7 @@ docker run -dit --name edge_server_n2 --network none --restart=on-failure \
 # Load MongoDB env-file if present (to reuse init creds)
 echo "Starting MongoDB shard member container edge_storage_server_n2..."
 docker run -dit --name edge_storage_server_n2 --network none \
-  --cpus=${STORAGE_CPUS:-0.15} --memory=${STORAGE_MEMORY:-512m} \
+  --cpus=0.25 --memory=${STORAGE_MEMORY:-512m} \
   --no-healthcheck \
   -e LAN_ID=lan2 \
   -e AGGREGATOR_PULL_ADDR=tcp://10.0.1.5:5555 \

@@ -1,0 +1,54 @@
+{
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_s": 120,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.5,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "cross_region_pressure",
+      "duration_s": 360,
+      "rate_per_client": 4.0,
+      "cross_region_ratio": 0.95,
+      "hotspot_direction": "lan2_to_lan1",
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.92,
+        "feed_ranking": 0.05,
+        "service_pressure": 0.03
+      }
+    },
+    {
+      "name": "sustained_pressure",
+      "duration_s": 180,
+      "rate_per_client": 4.0,
+      "cross_region_ratio": 0.90,
+      "hotspot_direction": "lan2_to_lan1",
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.80,
+        "feed_ranking": 0.10,
+        "service_pressure": 0.10
+      }
+    },
+    {
+      "name": "cooldown",
+      "duration_s": 300,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.10,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    }
+  ]
+}

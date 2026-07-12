@@ -65,10 +65,12 @@ Integrates with RQ3: RQ3 provisions backends (scale-up decisions); RQ2 determine
 | Parameter | Value | Rationale |
 |---|---|---|
 | Workload | `phases_override/phases_rq2.json` | Two-cycle scale-up workout, all-local, rate=4.0 |
-| `CLIENTS` | 48 | Canonical sizing per [`golden_config.md`](../../golden_config.md) (v6 calibration); 48 clients per LAN = **96 total**; ensures scale-ups trigger |
+| `CLIENTS` | **32** | Calibrated 2026-07-06 via [`calibration_plan.md`](./calibration_plan.md); 32 clients per LAN = **64 total**. topology_host fails at 48 (34% LAN2 herd-overload failure). At 32 all three modes survive ≥97.5%, herd behavior is measurable but not catastrophic. |
 | `CONTENT_ITEMS` | 6000 | Canonical dataset cardinality |
 | `USERS` | 100 | Canonical |
-| `STORAGE_CPUS` | 0.10 | Canonical storage calibration |
+| `RANDOM_SEED` | **42** | Fixed seed for comparable replicates — identical request sequence across all 9 runs. Without this, run A might randomly draw more writes than run B, confounding mode comparison. |
+| `STORAGE_CPUS` | 0.10 | Canonical storage calibration; sets `--cpus` on storage containers via `build_network_1.sh:117` |
+| `EDGE_CPUS` | **0.30** (default) | Golden config; sets `--cpus` on edge server containers via `build_network_1.sh` / `build_network_2.sh`. Not passed explicitly — the default `${EDGE_CPUS:-0.30}` matches the golden config. |
 | `WAN_RTT_MS` | 50 | Background inter-LAN communication; no client-traffic latency noise |
 | `VIP_HARD_TIMEOUT` | 60 s | Golden config |
 | Scaling thresholds & cooldowns | `current_state_integrated.env` values (unchanged) | Golden config bundle |
@@ -95,7 +97,7 @@ Integrates with RQ3: RQ3 provisions backends (scale-up decisions); RQ2 determine
 | 8 | `rq2_tl_2` | `rq2_topology_lifecycle.env` | topology_lifecycle |
 | 9 | `rq2_tl_3` | `rq2_topology_lifecycle.env` | topology_lifecycle |
 
-**Total: 9 runs** (3 modes × 3 replicates). **~29 min/run** + **~5 min between-run overhead** (cleanup + reboot + verification) → **~34 min/run cycle** → **~5 h campaign** (plus initial setup).
+**Total: 9 runs** (3 modes × 3 replicates). **~29 min/run** + **~5 min between-run overhead** (cleanup + reboot + verification) → **~34 min/run cycle** → **~5 h campaign** (plus initial setup). `RANDOM_SEED=42` ensures identical request sequence across all 9 runs for comparable replicates.
 
 **Run order**: Group by mode — all TH reps, then all SS reps, then all TL reps — so the operator changes the env override file once per mode, not per run. Within a mode, order doesn't matter.
 
@@ -114,7 +116,7 @@ sudo -n make -C source/scripts setup_network create_clients setup_test_data run_
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/rq2_topology_host.env \
   RUN_LABEL=rq2_th_1 \
   PHASES_CONFIG=testing/phases_override/phases_rq2.json \
-  WAN_RTT_MS=50 CLIENTS=48 CONTENT_ITEMS=6000 USERS=100 STORAGE_CPUS=0.10 \
+  WAN_RTT_MS=50 CLIENTS=32 CONTENT_ITEMS=6000 USERS=100 STORAGE_CPUS=0.10 RANDOM_SEED=42 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 
 # Repeat with RUN_LABEL=rq2_th_2, rq2_th_3
@@ -127,7 +129,7 @@ sudo -n make -C source/scripts setup_network create_clients setup_test_data run_
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/rq2_topology_slowstart.env \
   RUN_LABEL=rq2_ss_1 \
   PHASES_CONFIG=testing/phases_override/phases_rq2.json \
-  WAN_RTT_MS=50 CLIENTS=48 CONTENT_ITEMS=6000 USERS=100 STORAGE_CPUS=0.10 \
+  WAN_RTT_MS=50 CLIENTS=32 CONTENT_ITEMS=6000 USERS=100 STORAGE_CPUS=0.10 RANDOM_SEED=42 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 
 # Repeat with RUN_LABEL=rq2_ss_2, rq2_ss_3
@@ -140,18 +142,18 @@ sudo -n make -C source/scripts setup_network create_clients setup_test_data run_
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/rq2_topology_lifecycle.env \
   RUN_LABEL=rq2_tl_1 \
   PHASES_CONFIG=testing/phases_override/phases_rq2.json \
-  WAN_RTT_MS=50 CLIENTS=48 CONTENT_ITEMS=6000 USERS=100 STORAGE_CPUS=0.10 \
+  WAN_RTT_MS=50 CLIENTS=32 CONTENT_ITEMS=6000 USERS=100 STORAGE_CPUS=0.10 RANDOM_SEED=42 \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
 
 # Repeat with RUN_LABEL=rq2_tl_2, rq2_tl_3
 ```
 
-- `--phases-config`: `testing/phases_override/phases_rq2.json` — 9-phase, two-cycle scale-up workout, all-local, rate=6.0 (see phase table below).
+- `--phases-config`: `testing/phases_override/phases_rq2.json` — 9-phase, two-cycle scale-up workout, all-local, rate=4.0 (see phase table below).
 - `--fault-plan`: **omitted** — no synthetic failure injection.
-- `--clients-per-lan`: 48 (passed straight through from `CLIENTS=48`; the Makefile does NOT halve it — 48 clients per LAN = **96 total**).
+- `--clients-per-lan`: 32 (passed straight through from `CLIENTS=32`; the Makefile does NOT halve it — 32 clients per LAN = **64 total**).
 - Controller env: the per-mode override file (e.g. `rq2_topology_host.env`) contains **both** the golden-config scaling values from [`current_state_integrated.env`](../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env) and the RQ2-specific overrides (`BACKEND_SELECTION_POLICY`, `SS_ENABLED=0`). See the env override files for the full variable list. No separate `OSKEN_ENV_FILE` base is needed — the override is self-contained.
 - Images: no rebuild required. Policy gating and warm-lease mechanisms are already deployed in the controller volume mount.
-- **`WAN_RTT_MS` and `STORAGE_CPUS`** are shell environment variables consumed by `wan.env` / `inject_wan_latency.sh` and `build_network_setup.sh` respectively. They are NOT Makefile variables — they must be set on the `make` command line (where `make` passes them through to the shell) or exported in the shell environment before invoking `make`. The values in the launch commands below rely on command-line passthrough.
+- **`WAN_RTT_MS`, `STORAGE_CPUS`, and `RANDOM_SEED`** are shell environment variables. `WAN_RTT_MS` is consumed by `wan.env` / `inject_wan_latency.sh`. `STORAGE_CPUS` sets `--cpus` on storage containers via `build_network_1.sh:117` and `build_network_2.sh:117`. `RANDOM_SEED` is passed through to `traffic_generator.py` for reproducible request sequences. They are NOT Makefile variables — they must be set on the `make` command line (where `make` passes them through to the shell) or exported in the shell environment before invoking `make`. The values in the launch commands below rely on command-line passthrough.
 - **`SKIP_CLIENTS=1`, `SKIP_SEED=1`, `SKIP_SNAPSHOT=1`** only suppress the corresponding steps **inside `run_experiment.sh`**. The Makefile targets `create_clients` and `setup_test_data` (invoked in the same command) always execute regardless of these flags. This is correct — clients and seed data must be recreated after each reboot.
 
 ### RQ2 Phase Table
@@ -259,7 +261,7 @@ Compute per-mode using all events across the 3 replicates. Report median ± IQR.
 
 | # | Trigger | Question | Action |
 |---|---|---|---|
-| **CP0** | **Before full campaign — after first run (`rq2_th_1`)** | **Did ≥ 8 scale-up events fire? Is the workload generating enough events?** | **Gate: if < 8 events, do NOT proceed to remaining 8 runs. Check controller log for threshold scores. If thresholds not met: increase `rate_per_client` from 6.0 to 8.0 in phases file, or lower `SCALEUP_COMPUTE_BASE_THRESHOLD` from 0.20 to 0.15. Re-run rq2_th_1 and re-check. Repeat until ≥ 8 events confirmed. This smoke test saves ~4 h of wasted runs.** |
+| **CP0** | **Before full campaign — after first run (`rq2_th_1`)** | **Did ≥ 8 unique scale-up decisions fire?** Count distinct `spawn_done` events in `elasticity_events.csv` (not `grep -c` log lines — a single scale-up produces dozens of log lines). Calibration C3 at CLIENTS=32 already confirmed ≥8 unique decisions with 998 scale-up log lines. | **Gate: if < 8 unique spawn_done events, do NOT proceed to remaining 8 runs. Check `controller_env_snapshot.env` for correct `SCALEUP_COMPUTE_BASE_THRESHOLD` (should be 0.20). If thresholds not met: lower to 0.15, or increase `rate_per_client` from 4.0 to 6.0 in phases file. Re-run rq2_th_1 and re-check. Calibration data makes failure unlikely — C3 already passed this gate.** |
 | CP1 | After first mode's 3 reps | Are redistribution times consistent across replicates (IQR < 50% of median)? | If variance is extreme: check for external noise (host CPU steal, Docker pull in background). Consider adding a 4th replicate. |
 | CP2 | After second mode's 3 reps | Do redistribution curves differ visibly between modes so far? | Qualitative check — if topology_host and topology_slowstart look identical, the coordination gap may be too small to measure. Continue to topology_lifecycle regardless; the full dataset is needed for a conclusive answer. |
 | CP3 | End of campaign | Does `controller_env_snapshot.env` confirm all 3 modes? | Cross-check `BACKEND_SELECTION_POLICY` and `SS_ENABLED` per run. Also verify golden config scaling values are present (not defaults). |
@@ -287,7 +289,7 @@ Do NOT re-run a failed run more than twice — debugging a systemic failure mid-
 | **Low event count per mode** | 3 replicates × ~12 events/run = ~36 events/mode. Sufficient for median/IQR comparison. |
 | **SS_ENABLED=0 not representative** | Acknowledged. Tier 1 is disabled to prevent pool contamination. RQ2 measures the routing mechanism, not Tier 1 interaction. A follow-up interaction experiment (RQ2 × Tier 1) is possible but not this plan. |
 | **All-local workload not representative** | Acknowledged. Cross-region traffic is stripped to eliminate WAN latency as a noise source. The routing mechanism operates identically on local vs cross-region traffic — the WSM cost function is agnostic to request origin. |
-| **rate=4.0 matches canonical rate** | The canonical phases.json uses rate=4.0 in storm/spike phases. RQ2's all-local workload uses the same rate — no departure. |
+| **rate=4.0 matches canonical rate** | Confirmed: `phases_rq2.json` uses rate=4.0 for `storage_storm`, `compute_spike`, and their second-cycle counterparts. RQ2's all-local workload uses the same rate as the canonical phases — no departure. |
 | **Run-order effects** | Grouped by mode (all TH → all SS → all TL). Within a mode, order is arbitrary. VM reboot between modes eliminates cross-contamination. |
 | **Warm-lease and slowstart share TTL** | Both use the same TTL (45 s server, 30 s storage) but differ in start time (spawn vs discovery). This is by design — it makes the comparison cleaner. |
 | **Single workload shape** | Only one application (content-discovery). Results may not generalize to different workload profiles. |

@@ -78,16 +78,17 @@ class DataAlert:
     rs_name:           str   # e.g. "rs_net1"
     primary_container: str   # container to run rs.add() against
     port:              int = 27018
-    # ── Tier 2 cross-LAN RS extension (dormant hook) ───────────────────
-    # When a future ``DataAlert`` variant represents a cross-LAN replica-set
-    # extension (owner RS secondary placed in a consumer LAN), set
-    # ``cross_lan_rs=True`` and populate ``owner_lan`` with the source RS
-    # owner's LAN id. Today all ``DataAlert``s are same-LAN (adds a secondary
-    # to ``rs_net{lan}``) so these defaults keep the Tier 1 supersede hook
-    # in ``scaling_policy.py`` inert. See
-    # ``docs/operation/elasticy_manager/implementation/tier1_selective_sync/event_protocol.md`` §2.4.
+    # ── Tier 2 cross-LAN RS extension ──────────────────────────────────
+    # When ``cross_lan_rs=True`` the alert targets a cross-region spawn:
+    # ``lan`` is the consumer LAN (spawn target), ``owner_lan`` is the
+    # data-source LAN, and ``owner_primary`` is the already-resolved
+    # remote-primary ``ip:port`` (e.g. "10.0.0.4:27018").  Same-LAN alerts
+    # leave ``cross_lan_rs=False`` and ``owner_primary=""`` so the seed
+    # host is derived from ``lan``.  See
+    # ``docs/operation/elasticy_manager/implementation/cross_region_tier2/``.
     cross_lan_rs:      bool = False
     owner_lan:         str | None = None
+    owner_primary:     str = ""   # "10.0.0.4:27018" for cross-region
 
 
 @dataclass(frozen=True)
@@ -128,7 +129,13 @@ class CancelComputeDrainAlert:
 
 @dataclass(frozen=True)
 class PrepareStandbyStorageAlert:
-    """Prepare one same-LAN storage reserve through the existing storage add path.
+    """Prepare one storage reserve through the existing storage add path.
+
+    Same-LAN: ``owner_primary=""``, ``owner_lan=""``, RS name matches the
+    local LAN.
+    Cross-region: ``owner_primary`` set to the remote primary ``ip:port``
+    (e.g. ``"10.0.0.4:27018"``), ``owner_lan`` is the data-source LAN
+    (e.g. ``"lan1"``), and ``rs_name`` is the remote RS.
 
     The resulting node is created with ``standby_reserved=True`` and held
     outside VIP until activated by a load or recovery trigger.
@@ -138,6 +145,8 @@ class PrepareStandbyStorageAlert:
     rs_name: str
     primary_container: str
     port: int = 27018
+    owner_primary: str = ""   # "10.0.0.4:27018" for cross-region
+    owner_lan: str = ""       # "lan1" for cross-region
 
 
 @dataclass(frozen=True)
@@ -569,10 +578,24 @@ class ElasticityManager:
             logger.error("[elasticity] compute: failed to spawn %s", name)
 
     def _handle_data(self, alert: DataAlert) -> None:
+        # Seed host: if owner_primary is set (cross-region), use it directly.
+        # Otherwise derive from alert.lan (same-LAN, existing behaviour).
+        if alert.owner_primary:
+            rs_seed_override = alert.owner_primary
+            logger.info(
+                "[elasticity] data: CROSS-REGION spawn lan=%d rs=%s seed=%s owner=%s",
+                alert.lan, alert.rs_name, rs_seed_override, alert.owner_lan,
+            )
+        else:
+            rs_seed_override = None  # derived from alert.lan
+
         name = self._next_name("edge_storage", alert.network_id)
+        if alert.owner_primary:
+            name = f"{name}_cs"
         ip, mac = self._get_allocator(alert.lan).allocate()
         spawn_started_monotonic_s = time.monotonic()
         logger.info("[elasticity] data: spawning %s on LAN %d (ip=%s mac=%s)", name, alert.lan, ip, mac)
+
 
         result = self._storage_adder.add_storage_node(
             lan=alert.lan,
@@ -581,6 +604,7 @@ class ElasticityManager:
             # primary_container=alert.primary_container,
             port=alert.port,
             ip=ip, mac=mac,
+            rs_seed_host_override=rs_seed_override,
         )
         self._storage_adder.log_timings(result)
         self._record({"type": "data", "alert": alert, "name": name, "result": result})
@@ -609,6 +633,7 @@ class ElasticityManager:
                     primary_container=alert.primary_container,
                     port=alert.port,
                     spawn_started_monotonic_s=spawn_started_monotonic_s,
+                    owner_lan=alert.owner_lan or "",
                 )
                 with self._addition_complete_lock:
                     self._addition_complete_infos.append(info)
@@ -668,6 +693,8 @@ class ElasticityManager:
         The node is held outside VIP until activated.
         """
         name = self._next_name("edge_storage", alert.network_id)
+        if alert.owner_primary:
+            name = f"{name}_cs"
         ip, mac = self._get_allocator(alert.lan).allocate()
         spawn_started_monotonic_s = time.monotonic()
         logger.info("[elasticity] standby_storage: spawning reserve %s on LAN %d (ip=%s mac=%s)",
@@ -680,6 +707,7 @@ class ElasticityManager:
             port=alert.port,
             ip=ip, mac=mac,
             heartbeat_enabled=True,
+            rs_seed_host_override=alert.owner_primary or None,
         )
         self._storage_adder.log_timings(result)
         self._record({"type": "prepare_standby_storage", "alert": alert, "name": name, "result": result})
@@ -701,6 +729,7 @@ class ElasticityManager:
                 primary_container=alert.primary_container,
                 port=alert.port,
                 spawn_started_monotonic_s=spawn_started_monotonic_s,
+                owner_lan=alert.owner_lan or "",
                 standby_reserved=True,
             )
             with self._addition_complete_lock:

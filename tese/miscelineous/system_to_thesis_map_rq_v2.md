@@ -1,6 +1,6 @@
 # System-to-Thesis RQ Map v2 — Cross-Layer SDN Orchestration
 
-> **Status:** Reframed based on discussions (2026-06-06). This supersedes the original `system_to_thesis_map_rq_advanced.md` with a three-pillar framing: Telemetry Freshness, Backend Selection, and Data Locality — unified by an SDN cross-layer control plane.
+> **Status:** Reframed based on discussions (2026-06-06, updated 2026-07-12). This supersedes the original `system_to_thesis_map_rq_advanced.md` with a three-pillar framing: Trigger Quality, Telemetry Freshness, and Backend Selection — unified by an SDN cross-layer control plane. The synthesis chapter reconstructs the compound coordination gap from all three RQs.
 
 The main purpose of this note is to answer five practical questions:
 
@@ -27,31 +27,35 @@ controller constant, each orchestration dimension can be varied independently
 while the others are locked, isolating cause and effect within a single
 infrastructure.
 
-The contribution is **characterizing the trade-off surface** across three
-dimensions of cross-layer orchestration — telemetry freshness, backend
-selection policy, and data-locality strategy — and measuring how each
-independently affects service quality during demand shifts. The thesis does
-not claim that unifying these concerns is superior to separated architectures;
-it accepts the latency reduction from collapsing handoffs as a given property
-of the design and focuses instead on what can be learned by examining each
-dimension through a cross-layer control point.
+The contribution is **characterizing the coordination gap** that separated
+architectures impose between monitoring, routing, and scaling — and measuring
+how each link in the detection→delivery→action chain independently affects
+service quality during demand shifts. The thesis does not claim that unifying
+these concerns is superior to separated architectures; it uses the unified SDN
+controller as an experimental apparatus to isolate and measure coordination
+delays that every existing architecture accepts as given. The synthesis
+chapter reconstructs the compound coordination tax from the three RQs,
+producing the first experimental quantification of the cumulative latency
+that three-layer separation imposes on stateful edge services.
 
 ### Central Claim
 
-> This thesis experimentally examines three dimensions of cross-layer SDN
-> orchestration — **telemetry freshness**, **backend selection**, and
-> **data locality** — characterizing how each independently affects service
-> quality during demand shifts in stateful edge services. The SDN control
-> plane serves as the experimental platform that enables isolated variation
-> of each dimension, not as the object of comparison itself.
+> This thesis experimentally examines three links in the detection→delivery→action
+> chain of cross-layer SDN orchestration — **trigger quality** (what is
+> monitored), **telemetry freshness** (how fast it arrives), and **backend
+> selection** (how quickly new capacity receives traffic) — characterizing
+> how each independently affects service quality during demand shifts in
+> stateful edge services. The SDN control plane serves as the experimental
+> platform that enables isolated variation of each link; the synthesis
+> chapter reconstructs the compound coordination tax from all three.
 
 ### The Three Pillars
 
 | Pillar                        | RQ       | Core Question                                                                               |
 | ----------------------------- | -------- | ------------------------------------------------------------------------------------------- |
-| **Telemetry Freshness** | RQ1      | How does telemetry delivery cadence affect control quality during demand shifts?            |
-| **Backend Selection**   | **RQ2** | **How does routing-plane awareness timing affect load redistribution quality during scale-up?**   |
-| **Data Locality**       | RQ3      | How do data-locality readiness strategies trade off service benefit against operating cost? |
+| **Trigger Quality**     | RQ3      | Does a latency-aware degradation score detect stateful-service overload earlier than a CPU-only threshold? |
+| **Telemetry Freshness** | RQ1      | How does telemetry delivery cadence affect reaction latency during demand shifts?            |
+| **Backend Selection**   | RQ2      | How does routing-plane awareness timing affect load redistribution quality during scale-up?   |
 
 ### Why SDN Is the Unifying Substrate
 
@@ -77,7 +81,19 @@ In the proposed architecture, the SDN controller (OS-Ken/Ryu) consumes telemetry
 
 ### Relationship to the Thesis Proposal
 
-While the initial proposal emphasized metadata-driven scaling as the central contribution, architecture development revealed that telemetry freshness and backend selection are equally critical dimensions of cross-layer orchestration. The three-pillar investigation presented here **operationalizes** the proposal's high-level goals ("coordinate auto-scaling based on meta-information") by decomposing the problem into evaluable, independently testable dimensions. The proposal's emphasis on spatio-temporal data popularity is preserved in RQ2 (backend selection, where spawn-time vs. discovery-time routing awareness characterizes the coordination gap) and RQ3 (data-locality readiness strategies).
+While the initial proposal emphasized metadata-driven scaling as the central
+contribution, architecture development revealed that the coordination gap
+between monitoring, routing, and scaling is the more fundamental research
+problem — and one that the literature has never characterized. The three-pillar
+investigation presented here **operationalizes** the proposal's high-level
+goals ("coordinate auto-scaling based on meta-information") by decomposing
+the coordination gap into three independently testable links: detection
+(RQ3), delivery (RQ1), and action (RQ2). The proposal's emphasis on
+spatio-temporal data popularity informed the degradation score's latency-aware
+design (RQ3) and the topology-aware backend selection policies (RQ2). Data
+placement strategies (Tier 0/1/2) are discussed in the synthesis chapter as
+a natural extension of the unified architecture, but their experimental
+evaluation is deferred to future work.
 
 ---
 
@@ -90,13 +106,13 @@ The chosen RQs should satisfy all of the following conditions:
 3. They must **isolate the main independent variable** instead of changing several architectural dimensions at once.
 4. They must remain faithful to the implemented system unless explicitly marked as requiring further development.
 5. They must support a clear methodology chapter and a defensible results chapter.
-6. Each RQ's baselines must encode the **architectural alternative** of separated control loops — so that the comparison is not against a specific competing product but against the *property* those products share (stale state, single-layer visibility, or absent data locality).
+6. Each RQ's baselines must encode the **architectural alternative** of separated control loops — so that the comparison is not against a specific competing product but against the *property* those products share (stale state, single-layer visibility, or trigger blindness).
 
 For this reason, the recommended RQ set below separates:
 
+- **trigger composition** from **delivery mechanism** (RQ3)
 - **telemetry freshness** from **delivery mechanism** (RQ1)
 - **discovery-time** from **spawn-time routing awareness** (RQ2)
-- **cold-start capacity** from **reserved or pre-synchronized capacity** (RQ3)
 
 ---
 
@@ -150,7 +166,7 @@ What this thesis does **not** claim:
 
 What it **does** claim:
 
-- That telemetry freshness, metadata awareness, and data locality each independently affect service quality during demand shifts
+- That trigger composition, telemetry freshness, and routing awareness each independently affect service quality during demand shifts
 - That SDN provides a unified substrate for varying each dimension while holding the others constant, enabling controlled within-system comparison
 - That characterizing the trade-off surface for each dimension — even with negative or nuanced results — is a valid contribution
 
@@ -168,18 +184,37 @@ Instead, each RQ's baselines encode the **architectural property** that separate
 | ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **RQ1** | Polling at 12 s / 30 s intervals              | Stale monitoring → delayed decisions (Prometheus scrape interval → AlertManager → HPA; CloudWatch metric period → Alarm → ASG) |
 | **RQ2** | `topology_slowstart` (invisible until discovery, then graduated ramp) | Discovery-time backend awareness — separated LB doesn't know backend exists until health checks pass; coordination delay between spawn and routing-plane awareness |
-| **RQ3** | Remote serving only / cold-start full replica | No data locality (naïve edge deployment) or reactive-only elasticity (ASG-style cold-start, pay full sync cost on every trigger)   |
+| **RQ3** | CPU-only threshold (w_cpu=1.0, w_lat=0.0, threshold=0.45 uncalibrated) | Trigger blindness to I/O-bound overload — the default in Kubernetes HPA, AWS ASG, and most autoscaling platforms |
 
 ### 4.2 Why This Is Methodologically Valid
 
 - **Same hardware, same workload, same infrastructure** — only the variable under test changes
-- **Each RQ holds the other pillars constant** — RQ1 varies telemetry but locks routing and scaling policy; RQ2 varies selection policy but locks telemetry and scaling; RQ3 varies locality strategy but locks telemetry and routing
-- **The baselines are real operating modes of the system**, not simulated strawmen — the system genuinely runs in polling mode, topology-only mode, and remote-only mode
+- **Each RQ holds the other pillars constant** — RQ1 varies telemetry but locks routing and trigger policy; RQ2 varies selection policy but locks telemetry and trigger; RQ3 varies trigger composition but locks telemetry and routing
+- **The baselines are real operating modes of the system**, not simulated strawmen — the system genuinely runs in polling mode, slowstart mode, and CPU-only mode
 - **Isolation of causation** — a system-vs-system comparison (e.g., "my controller vs. Kubernetes") would confound dozens of variables (language runtime, container runtime, network stack, tuning). Varying one architectural property within the same system isolates the effect
 
-### 4.3 Future Work: Compound Coordination Delay Injection
+### 4.3 Synthesis: The Compound Coordination Gap (Chapter 8)
 
-A cross-cutting synthesis experiment beyond the scope of the current evaluation could inject configurable delay at both handoff points simultaneously (telemetry→routing and alert→action), characterizing the *compounded* cost of full separation. This would directly test whether the coordination gap — the architectural property that motivated the unified design — produces measurable degradation beyond what any single-dimension delay produces. This experiment is deferred to future work because it requires emulating a separated control plane within the unified codebase, which is a non-trivial instrumentation task. The three RQs in this thesis test each dimension independently; the compound interaction remains an open question.
+The synthesis chapter reconstructs the compound coordination gap from the
+three RQ results without requiring additional experiments. RQ3 provides the
+detection penalty (CPU-only may miss I/O-bound overload entirely). RQ1 provides
+the delivery penalty (poll-30s adds ~43 s to breach detection). RQ2 provides
+the action penalty (slowstart adds ~31 s to time-to-first-traffic). The
+synthesis constructs a single timeline showing the cumulative latency from
+overload onset to traffic reaching new capacity in a fully separated
+architecture versus the unified architecture:
+
+| Architecture | Detection | Delivery | Action | Provisioning | Total |
+|---|---|---|---|---|---|
+| Fully separated | CPU-only: never or late | Poll-30s: +~43 s | Slowstart: +~31 s | ~10 s | ~84 s (coordination overhead ~74 s + provisioning ~10 s) |
+| Fully unified | Degradation score: early | Push: ~0 s | Lifecycle: ~0 s | ~10 s | ~10 s + early detection lead |
+
+The coordination tax — the unnecessary latency imposed by three-layer
+separation — is approximately 74 seconds under the conditions tested, or
+unbounded if the CPU-only trigger never fires. This is the first experimental
+quantification of the phenomenon that Wang et al. documented, Pierro & Ullah
+observed as a side effect, and Yaseen (2025) called for at the network layer
+but that no prior work has translated to orchestration latency.
 
 ---
 
@@ -433,148 +468,108 @@ Vary only: `BACKEND_SELECTION_POLICY`.
 
 ---
 
-## RQ3. Partial Replication vs. Cold and Reserved Capacity
+## RQ3. Trigger Quality and Detection Accuracy
 
-> **RQ3.** Under shifting cross-region demand, how do remote serving, selective partial replication, cold-start full replica placement, and reserved-standby full replica promotion trade off service benefit, activation overhead, and lifecycle complexity?
+> **RQ3.** For stateful edge services where I/O latency often degrades before
+> CPU saturates, does a latency-aware multi-dimensional degradation score
+> detect overload earlier and with fewer false positives than a CPU-only
+> threshold?
 
 ### Why RQ3 Is a Strong RQ
 
-This is the strongest version of the elasticity-and-locality question because it does **not** reduce elasticity to generic horizontal scaling. Instead, it compares several strategies with different readiness and cost profiles:
+This RQ isolates the **detection** link of the coordination gap. Before the
+controller can deliver information (RQ1) or act on it (RQ2), it must first
+recognize that overload is occurring. The degradation score that triggers
+scale-up is a weighted combination of CPU saturation (40%) and processing
+latency (60%). The latency component dominates because, in stateful edge
+services, MongoDB I/O operations drive request latency — T_proc rises before
+CPU saturates.
 
-1. do nothing and serve remotely
-2. place only the hot subset locally
-3. provision a full local replica reactively
-4. keep a pre-synchronized standby that can be admitted quickly
+The literature has asked "what metric to use?" — Zhou & Yong (2024) showed
+HTTP 5xx-based HPA outperforms CPU-based HPA for Nginx. PAHPA (Xiao et al.,
+2026) proposed real-time monitoring as a binary correction to predictions.
+But **no study has compared a latency-aware multi-dimensional score against
+a CPU-only threshold for stateful edge services**, where I/O latency is the
+dominant failure mode and CPU is a lagging indicator.
 
-The strategies are not arbitrary features of the system — they form a **monotonic spectrum** from zero-infrastructure/no-readiness to pre-provisioned/high-readiness. The research contribution is characterizing where on this spectrum edge demand regimes justify the cost.
-
-### Readiness-Cost Spectrum
-
-| Strategy                                              | Readiness                          | Idle Cost                                 | Activation Cost                             | Cloud/Industry Analogue                                            |
-| ----------------------------------------------------- | ---------------------------------- | ----------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------ |
-| **Remote serving only** (Tier 0)                | Immediate (already serving)        | Zero                                      | Zero (but high per-request latency)         | No CDN, direct origin fetch                                        |
-| **Selective partial replication** (Tier 1)      | Medium (hot-set sync needed)       | Low (bounded cache via TTL)               | Medium (Change Stream setup + initial sync) | CDN-style partial caching with invalidation                        |
-| **Cold-start full replica** (Tier 2 cold)       | Low (full sync from scratch)       | Zero                                      | High (full initial sync, oplog catch-up)    | ASG cold-start; pay full provisioning cost on every trigger        |
-| **Reserved-standby full replica** (Tier 2 warm) | High (pre-synced, needs promotion) | Medium (idle CPU/RAM/replication traffic) | Low (admission only)                        | Reserved instances / provisioned concurrency / pre-warmed K8s pods |
+Across all four literature domains surveyed for this thesis, every paper that
+studies scaling triggers treats the metric as a given: CPU utilization
+(Kubernetes HPA), request rate (AWS ASG), or a pre-defined compound metric
+(OSM POL). None vary trigger composition as an experimental variable.
 
 ### Concepts Involved in RQ3
 
-- cross-region demand shifts
-- data locality
-- selective partial replication
-- cold-start elasticity
-- reserved capacity / warm elasticity
-- sync tax
-- time-to-benefit
-- reservation tax
-- lifecycle complexity and cleanup debt
+- degradation score composition (CPU vs latency weighting)
+- breach detection time (earliness of overload recognition)
+- false positive rate (spawns during low-load phases)
+- false negative rate (missed spawns during overload)
+- I/O-bound vs CPU-bound overload detection
+- trigger blindness to storage-driven degradation
 
-### Strategy Family for Evaluating RQ3
+### Architectural Framing: What Each Mode Represents
 
-1. **Remote serving only**
-   - baseline
-   - no local copy
-2. **Selective partial replication**
-   - Tier 1-style hot-set replication
-3. **Cold-start full replica placement**
-   - full remote replica created only after the demand breach
-4. **Reserved-standby full replica promotion**
-   - pre-created and pre-synchronized standby excluded from service until promotion
-5. **Hybrid first-step reserved policy**
-   - first extra node uses reserved capacity
-   - additional nodes remain cold-start elastic
+| Mode | Weights | Threshold | Encodes |
+|---|---|---|---|
+| `degradation_score` | w_cpu=0.40, w_lat=0.60 | 0.45 (golden) | Latency-aware multi-dimensional detection tuned for stateful services |
+| `cpu_only` | w_cpu=1.00, w_lat=0.00 | 0.45 (uncalibrated) | CPU-only threshold: the industry default applied without domain-specific tuning |
+
+All other parameters (sliding window, cooldowns, delivery cadence, routing
+policy) are identical across modes.
+
+### Why RQ3 Matches the Current Architecture
+
+The degradation score already accepts weights via environment variables in
+`scaling_config.py`:
+
+```python
+_W_CPU    = float(os.environ.get("SCALEUP_W_CPU",    "0.40"))
+_W_T_PROC = float(os.environ.get("SCALEUP_W_T_PROC", "0.60"))
+```
+
+No code changes are needed. The CPU-only mode is activated by setting
+`SCALEUP_W_CPU=1.0` and `SCALEUP_W_T_PROC=0.0`. The storage tier uses
+separate weights (`SCALEUP_W_STORAGE_CPU`, `SCALEUP_W_T_DB`) which must
+also be set to CPU-only for consistency.
 
 ### Development Required for RQ3
 
-Required for the strongest version of this RQ:
+1. Create env override files for `degradation_score` and `cpu_only` modes.
+2. Ensure the independent breach detector (`breach_detector.py`) reads
+   weights from the same env vars as the controller.
+3. Add a pre-run validation step that confirms weight agreement between
+   controller and observer.
 
-1. Implement **true consumer-LAN full replica placement**, not only same-LAN replica-set growth.
-2. Integrate that placement into the controller's locality logic.
-3. Implement a **reserved-standby mode** for the first full-replica promotion.
-4. Add instrumentation for activation timestamps, sync progress, and admission-to-service timing.
-5. Measure cleanup debt explicitly.
-
-Reserved capacity should be interpreted as a **warm elasticity mode**, not as the removal of elasticity from the thesis. It changes the trade-off from:
-
-- pay cold-start cost only on demand
-
-to:
-
-- pay idle reservation cost in exchange for faster burst response
-
-The most defensible reserved-capacity design is likely:
-
-- reserve capacity only for the **first** full scale-up
-- use cold-start growth only for later additional replicas
-
-This keeps the comparison realistic for edge environments with limited idle resources.
+Estimated: env override files only. Zero code changes.
 
 ### Measurements Required for RQ3
 
-Service-benefit measurements:
-
-1. p95/p99 latency during cross-region hotspot phases
-2. failure rate and completed request volume
-3. phase-specific recovery behavior after a demand surge
-
-Activation-overhead measurements:
-
-1. **Activation latency**
-   - breach detected to backend eligible for routing
-2. **Sync tax**
-   - time, CPU, and bandwidth spent before a cold full replica becomes usable
-3. **Time-to-benefit**
-   - breach detected to latency recovery or service stabilization
-
-Steady-state overhead measurements:
-
-1. **Reservation tax**
-   - idle CPU/RAM/storage/replication traffic for standby capacity
-2. extra node-hours or container-hours consumed by each strategy
-3. background replication cost while standby is not yet serving
-
-Lifecycle-complexity measurements:
-
-1. cleanup debt
-2. failed removals
-3. lingering containers at run end
-4. post-cleanup stale control work
-5. control-plane exceptions caused by scale-down or reconfiguration
+1. **Breach detection time** — `spawn_start_ts − breach_window_end`,
+   compared across trigger modes. Core evidence for detection earliness.
+2. **False positive rate** — spawns during baseline phase / total spawns.
+3. **False negative rate** — spawns missed during stress phases relative
+   to the degradation score baseline.
+4. **Service quality during transitions** — per-phase p50/p95 latency,
+   timeout rate, and completed request volume.
 
 ### Evaluation Design for RQ3
 
-The workload should include different demand regimes, not just a single long-cycle run:
+Six runs, three per mode:
 
-1. brief burst
-2. medium-duration hotspot
-3. sustained hotspot
-4. reversed hotspot direction
+| Run | Trigger | Weights |
+|---|---|---|
+| **R3-DS** (×3) | degradation_score | w_cpu=0.40, w_lat=0.60 |
+| **R3-CPU** (×3) | cpu_only | w_cpu=1.00, w_lat=0.00 |
 
-The main value of RQ3 is not to show that one strategy is universally best. It is to determine **when** the faster readiness of reserved capacity justifies its idle cost, and **when** partial replication is sufficient without escalating to a full remote copy.
+Hold constant: push-mode telemetry, topology_lifecycle routing, golden
+config thresholds, canonical workload.
 
-Hold constant:
-
-- telemetry acquisition mode
-- routing policy
-- workload shape
-
-Vary only:
-
-- data-locality strategy (remote / selective / cold full / warm standby)
+Vary only: `SCALEUP_W_CPU` and `SCALEUP_W_T_PROC` (and storage equivalents).
 
 ### Main Validity Threats for RQ3
 
-- if full-replica placement remains same-LAN only, the cross-region interpretation weakens substantially
-- standby cost must be measured explicitly rather than assumed to be small
-- Tier 1 observability gaps can still confound comparisons if not instrumented clearly
-
-### Fallback Narrower RQ if the Stronger Version Is Not Implemented
-
-If consumer-LAN full replica placement and reserved standby are not implemented in time, the narrower fallback RQ is:
-
-> What service-quality benefit and lifecycle cost does selective partial replication provide under shifting cross-region demand compared with remote serving only?
-
-This fallback is weaker, but still defensible.
+- **CPU-only may never fire at realistic edge CPU levels (2–8%).** This is not a threat — it is the central finding: CPU-based autoscaling is structurally incapable of responding to I/O-bound overload in stateful edge services.
+- **The uncalibrated threshold may be considered unfair.** The experiment explicitly tests the industry default without recalibration. A calibrated comparison is identified as future work.
+- **Bimodality from RQ1 may obscure the signal.** If both triggers produce bimodal outcomes, n=3 may not separate them. But if CPU-only produces zero spawns, the result is binary and conclusive.
 
 ---
 
@@ -584,7 +579,7 @@ This fallback is weaker, but still defensible.
 | ------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ---------------------- |
 | **RQ1** | Delivery cadence (push vs. polling interval)                                                      | Decision staleness, reaction latency, transient p95/p99, control overhead, scaling outcome description             | Polling telemetry source, summary persistence, timing instrumentation, overhead sampler | High                   |
 | **RQ2** | Routing awareness timing (cold-start herd / discovery-time slow-start / spawn-time warm lease) | Load redistribution time, transition-window service quality, per-mode redistribution profile (speed vs. control trade-off) | Policy-mode gating + slow-start ramp in WSM cost functions | High |
-| **RQ3** | Locality / readiness strategy (remote / selective / cold full / warm standby)                     | Latency recovery, activation cost, sync tax, reservation tax, cleanup debt                                         | Consumer-LAN full replica, reserved standby, timing and lifecycle instrumentation       | Low to Medium          |
+| **RQ3** | Trigger composition (degradation score vs CPU-only threshold) | Breach detection time, false positive/negative rate, per-phase service quality | Env var toggle (SCALEUP_W_CPU, SCALEUP_W_T_PROC) | High (zero code changes) |
 
 ---
 
@@ -600,10 +595,10 @@ If the thesis follows this RQ set, the implementation priorities should be:
    - required for RQ1 (control-plane overhead, scaling outcome description) — COMPLETED
 4. **Explicit routing policy-mode gating + slow-start ramp + per-mode unknown-stats treatment**
    - required for RQ2 (`topology_host`: best-case herd, `topology_slowstart`: worst-case invisible → ramp, `topology_lifecycle`: spawn-time warm lease)
-5. **Consumer-LAN full replica placement**
-   - required for the stronger RQ3 (cross-region locality)
-6. **Reserved-standby first-scale promotion path**
-   - strongest extension for making elasticity itself a central thesis contribution
+5. **Trigger mode env var overrides**
+   - required for RQ3 (cpu_only vs degradation_score)
+6. **Breach detector weight synchronization**
+   - required for RQ3 (independent observer must use same weights as controller)
 
 ---
 
@@ -612,10 +607,10 @@ If the thesis follows this RQ set, the implementation priorities should be:
 | Chapter                   | Content                                                                                                                                                   | Feeds Into                    |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
 | 1. Introduction           | Problem statement, three-pillar framing, SDN-as-unifier motivation, industry contrast, proposal alignment                                                 | —                            |
-| 2. Literature Review      | Edge orchestration, SDN control planes, telemetry acquisition models, multi-layer load balancing, data locality & elasticity, coordination gap literature | —                            |
+| 2. Literature Review      | Edge orchestration, SDN control planes, telemetry acquisition models, multi-layer load balancing, coordination gap literature | —                            |
 | 3. System Architecture    | Three-thread controller, Double-VIP model, telemetry fabric, elasticity manager, data gravity tiers, selective sync                                       | Methodology basis for all RQs |
 | 4. Methodology            | RQ formulation, evaluation design, measurement definitions, baseline rationale, held-constant sets                                                        | All RQs                       |
 | 5. RQ1 Evaluation         | Telemetry freshness and delivery cadence results                                                                                                          | Telemetry Freshness pillar    |
 | 6. RQ2 Evaluation         | Routing-awareness timing results (coordination gap in backend discovery)                                                                                                                  | Backend Selection pillar      |
-| 7. RQ3 Evaluation         | Data-locality readiness strategy results                                                                                                                  | Data Locality pillar          |
-| 8. Synthesis & Conclusion | Cross-pillar findings, what SDN unification enables, limitations, future work                                                                             | Thesis defense                |
+| 7. RQ3 Evaluation         | Trigger quality results (degradation score vs CPU-only threshold)                                                                                         | Detection Quality pillar      |
+| 8. Synthesis & Conclusion | Compound coordination gap reconstruction from RQ1+RQ2+RQ3; the 74-second coordination tax; what SDN unification enables; limitations; future work        | Thesis defense                |

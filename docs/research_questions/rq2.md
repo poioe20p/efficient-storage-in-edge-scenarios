@@ -1,7 +1,8 @@
 # RQ2 — Routing-Awareness Timing and the Coordination Gap
 
 **Thesis pillar**: Backend Selection
-**Status**: Implemented — ready for evaluation
+**Status**: Evaluated — results available
+**Experiment**: [`docs/operation/testing/experiment/rq2_evaluation/`](../operation/testing/experiment/rq2_evaluation/)
 **Thesis map**: [`tese/miscelineous/system_to_thesis_map_rq_v2.md`](../../tese/miscelineous/system_to_thesis_map_rq_v2.md)
 
 ---
@@ -46,7 +47,7 @@ the routing plane (Thread 1) can become aware of it in three ways:
 
 | Mode | When routing becomes aware | Ramp-up mechanism | Encodes |
 |---|---|---|---|
-| `topology_host` | **Immediately** — unknown stats treated as best-case (0.0, near-zero cost). Backend enters pool and wins every WSM competition from the first flow. No ramp-up, no priority window. | None — cold-start WSM (leastconn-style) | **No ramp-up, cold-start thundering herd.** Equivalent to HAProxy leastconn with no slow-start: a new backend with 0 connections wins all new traffic immediately. Fastest redistribution, least controlled. |
+| `topology_host` | **Immediately** — unknown stats treated as best-case (0.0, near-zero cost). All backends tie at cost 0.0; round-robin tie-breaking distributes traffic evenly across the pool. No ramp-up, no priority window, no concept of backend readiness. | None — round-robin fair-share (no ramp, no warm lease) | **No lifecycle awareness.** Equivalent to a basic load balancer (HAProxy round-robin) with no backend readiness concept: new backends enter the pool immediately and receive ~1/N fair-share traffic, but serve it cold — before DB connections and caches warm. |
 | `topology_slowstart` | **At discovery time** — when the first telemetry window containing the new backend arrives (0–10 s after spawn, averaging ~5 s). Until then: treated as worst-case (1.0, effectively invisible). After discovery: graduated weight ramp over a configurable TTL period. | Invisible until discovery, then graduated ramp | **Separated LB slow-start with coordination delay.** In a separated system, the LB doesn't know the backend exists until health checks pass. The backend is effectively invisible for the discovery gap — encoding the coordination delay that RQ1 also measures for monitoring. |
 | `topology_lifecycle` | **At spawn time** — Thread 3 creates a warm lease atomically with pool registration. The routing plane sees the backend as "warm" and short-circuits the WSM to select it with priority. | Warm lease (bounded priority window, spawn-time atomic) | **Unified controller.** Routing knows about the spawn immediately because routing and scaling share the same process. No discovery delay, no coordination gap. |
 
@@ -78,6 +79,22 @@ The question is whether this gap is measurable in practice: does spawn-time
 awareness (`topology_lifecycle`) produce faster or smoother load
 redistribution than discovery-time slow-start (`topology_slowstart`), and
 does either beat no ramp-up at all (`topology_host`)?
+
+The modes also test a second timing dimension: **backend readiness** —
+how long the container takes to warm up its DB connection pool and
+internal caches (~5–10 s). The three modes differ in how they align
+traffic arrival with this fixed warm-up period:
+
+| Mode | Traffic starts | Backend warm at | Mismatch | Latency outcome |
+|---|---|---|---|---|
+| `topology_host` | t≈0 s | t≈5–10 s | **5–10 s gap** | Worst (200 ms p50 non-stress) |
+| `topology_slowstart` | t≈10 s | t≈5–10 s | **~0 s gap** | Best (7 ms p50 non-stress) |
+| `topology_lifecycle` | t≈0 s | t≈2–3 s | **~2 s gap** | Good (7 ms p50 non-stress) |
+
+Slowstart's discovery delay doubles as a warm-up window. Lifecycle's
+warm lease concentrates traffic, accelerating cache population. Host
+dilutes traffic via round-robin — the backend never receives enough
+concentrated load to warm up efficiently.
 
 ### 3.3 What Is Held Constant
 
@@ -115,7 +132,7 @@ inconsequential at this scale — still a valid finding.
 
 | Condition | Encodes |
 |---|---|
-| `topology_host` | **Cold-start thundering herd.** Unknown stats → best-case (0.0, near-zero cost) → new backend wins every WSM competition from the first flow. Fastest redistribution, least controlled. Encodes HAProxy leastconn with no slow-start. |
+| `topology_host` | **No lifecycle awareness — round-robin fair-share with cold-start latency.** Unknown stats → best-case (0.0). All backends tie at cost 0.0 → round-robin distributes ~1/N fair share (~30%). Backends receive traffic immediately but serve it cold — DB connections and caches not yet warm. Encodes a basic load balancer with no backend readiness concept. |
 | `topology_slowstart` | **Separated LB slow-start with coordination gap.** Backend invisible (worst-case, 1.0) until telemetry arrives (0–10 s, avg ~5 s). Then graduated ramp at discovery. The discovery gap is the coordination delay — same phenomenon RQ1 measures. Smoothest ramp but slowest start. |
 | `topology_lifecycle` | **Spawn-time warm lease.** Zero discovery gap — routing aware at spawn time (atomic with pool registration). Warm lease provides a bounded priority window — controlled ramp, no cold-start herd. Balanced: fast start, controlled transition. |
 
@@ -138,75 +155,101 @@ awareness (RQ2) without provisioning (RQ3) means nothing to route to.
 
 ## 5. How It Is Measured
 
-Two measurements. **Measurement 1 (load redistribution time) is the core
-evidence** — it directly quantifies the coordination gap in routing.
-Measurement 2 captures the user-visible impact.
+The experiment tests two timing dimensions simultaneously: **awareness
+timing** — when the routing plane learns about the new backend (§5.1–§5.2)
+— and **readiness timing** — how long the backend takes to warm up and
+whether traffic arrival aligns with that window (§5.3).
 
-### 5.1 Load Redistribution Time — Core Evidence
+### 5.1 Traffic Allocation — TTFT and Initial Load Share
 
+**Time-to-First-Traffic (TTFT):**
 ```
-redistribution_time = t_new_backend_reaches_equilibrium − spawn_done_ts
+ttft = t(first_request_arrives_at_new_backend) − spawn_done_ts
 ```
 
-Measured after each scale-up event:
+**Initial Load Share:**
+```
+initial_share = new_backend_request_count / total_VIP_requests_in_first_window
+```
 
-1. Identify `spawn_done_ts` from `container_events.csv`.
-2. From `per_node_stats.csv`, track the new backend's request share over time.
-3. Determine when its share stabilizes within ±10% of the per-backend mean.
+Computed for each scale-up event from `controller_lan*.log` (spawn timestamp,
+backend MAC) and `per_node_stats.csv` (first window with `request_count > 0`).
 
-Expected:
+| Mode | TTFT | Initial share | Mechanism |
+|---|---|---|---|
+| `topology_host` | 51 s (variable, 0–251 s) | 30% (~1/N fair share) | Round-robin distributes evenly; counter state determines when new backend first wins |
+| `topology_slowstart` | 71 s (slowest, consistent) | 55% | Invisible until telemetry discovery (~10 s); graduated ramp thereafter |
+| `topology_lifecycle` | 40 s (fastest, consistent) | 73% (highest) | Warm lease at spawn time short-circuits WSM |
 
-- `topology_host`: **Immediate thundering herd.** Unknown stats → best-case
-  (near-zero cost) → new backend wins every WSM competition from the first
-  flow. Fastest redistribution, but uncontrolled — may overwhelm a cold
-  backend. Encodes HAProxy leastconn without slow-start.
+**Coordination-gap penalty**: the TTFT difference between slowstart and
+lifecycle (31 s ≈ one extra telemetry window) and the initial-share
+difference (−18 pp). These parallel RQ1's breach-detection penalty from
+polling blind spots.
 
-- `topology_slowstart`: **Invisible then graduated ramp.** Backend is
-  worst-case (1.0) until the first telemetry window closes (0–10 s after
-  spawn, averaging ~5 s) — effectively invisible, receiving no traffic.
-  Then the discovery-time ramp begins: graduated weight increase from
-  worst-case to normal over the TTL period. The discovery gap is the
-  **coordination delay** — the routing plane doesn't know the backend
-  exists until telemetry proves it's alive.
+Equilibrium-based redistribution proved unmeasurable — 0 of 47 events
+stabilised under continuous stress because phase transitions and scale-down
+precede steady-state. TTFT and initial share capture the coordination gap
+without requiring the system to stabilise.
 
-- `topology_lifecycle`: **Immediate controlled ramp.** Warm lease at spawn
-  time → backend receives priority traffic from t=0 → bounded priority
-  window → normal competition when the lease expires. No cold-start herd,
-  no discovery gap. Balanced: fast start, controlled transition.
+### 5.2 Service Quality — Per-Phase Latency
 
-The three modes now have genuinely distinct behaviors across the entire
-timeline:
-- `topology_host`: instant herd (0.0) → fastest, uncontrolled
-- `topology_slowstart`: invisible (1.0) → graduated ramp at discovery → slowest start, smoothest
-- `topology_lifecycle`: warm lease from t=0 → controlled ramp, zero gap
+p50/p95/p99 latency disaggregated by phase and LAN, from `client_requests.csv`.
 
-The key comparison is `topology_slowstart` vs `topology_lifecycle`: the
-difference in redistribution time is the **coordination-gap penalty** in
-the routing plane — directly parallel to RQ1's breach-detection penalty
-from polling blind spots.
+| Mode | Non-stress p50 (lan1) | Stress p50 | p95 (all) |
+|---|---|---|---|
+| `topology_host` | 200 ms | ~200–600 ms | ~2500 ms |
+| `topology_slowstart` | 7 ms | ~200–600 ms | ~2500 ms |
+| `topology_lifecycle` | 7 ms | ~200–600 ms | ~2500 ms |
 
-### 5.2 Per-Phase Service Quality — User-Visible Impact
+Host's non-stress penalty comes from traffic hitting cold backends during
+the warm-up window. In stress phases, MongoDB I/O dominates regardless of
+routing policy. Failure rate is 0% across all modes; the 30 s client timeout
+ceiling affects ~1–3% of requests independent of mode.
 
-p95/p99 latency and failure rate during the transition windows after
-scale-up events. A mode with faster redistribution should show lower
-latency and fewer failures during the `compute_spike` phase.
+### 5.3 Readiness Alignment
 
-### 5.3 Measurement Chain
+Routing-plane awareness controls *when* traffic arrives. But the backend
+is not instantaneously ready — its DB connection pool and internal caches
+take ~5–10 s to warm up. The three modes differ in how they align traffic
+arrival with this fixed warm-up period, producing a second timing dimension:
+
+| Mode | Traffic starts | Backend warm | Mismatch | Outcome |
+|---|---|---|---|---|
+| `topology_host` | t≈0 s | t≈5–10 s | **5–10 s gap** | Traffic hits cold backend → worst latency |
+| `topology_slowstart` | t≈10 s (after discovery) | t≈5–10 s | **~0 s gap** | Traffic arrives when warm → best latency |
+| `topology_lifecycle` | t≈0 s (warm lease) | t≈2–3 s | **~2 s gap** | Concentrated traffic accelerates warm-up → good latency |
+
+Slowstart's discovery delay doubles as a warm-up window — the backend
+becomes visible only after it has had time to prepare. Lifecycle's warm
+lease concentrates 100% of traffic on one backend, accelerating cache
+population and narrowing the mismatch to ~2 s. Host dilutes traffic via
+round-robin across all backends — the new backend never receives enough
+concentrated load to warm up efficiently, producing the largest mismatch
+and the worst latency.
+
+Together, awareness timing and readiness timing characterise the two
+constraints that routing policy must satisfy: **traffic should arrive as
+soon as possible, but not before the backend is ready to serve it.**
+
+### 5.4 Measurement Chain
 
 ```
 Routing mode: topology_host → topology_slowstart → topology_lifecycle
   ↓
-  → redistribution: instant herd → invisible-then-ramp → instant controlled
-  → coordination gap: none → 0–10 s discovery delay → none
-  → transition-window service quality: variable (herd) → smooth (ramp) → smooth (warm lease)
+  → TTFT: variable (51 s) → slowest (71 s) → fastest (40 s)
+  → initial share: 30% (fair-share) → 55% (ramp) → 73% (warm lease)
+  → coordination gap: N/A → 31 s penalty vs lifecycle → baseline
+  → service quality (non-stress): 200 ms lan1 → 7 ms → 7 ms
+  → service quality (stress): all converge — storage I/O dominates
+  → readiness mismatch: 5–10 s → ~0 s → ~2 s
 ```
 
 ---
 
 ## 6. Evaluation Design
 
-Three runs, one per mode, using the canonical 10-phase workload. All runs
-use push-mode telemetry and the golden configuration.
+Nine runs, three per mode, using a two-cycle scale-up workout workload.
+All runs use push-mode telemetry and the golden configuration.
 
 | Run | Mode | Routing awareness | Ramp-up |
 |---|---|---|---|
@@ -217,52 +260,77 @@ use push-mode telemetry and the golden configuration.
 Hold constant:
 - Telemetry delivery: push mode (ZMQ)
 - Scaling policy: golden config thresholds
-- Workload: `phases.json`
-- Infrastructure: `CLIENTS=8`, `DEVICES=600`, `NODES=100`
+- Workload: `phases_rq2.json` (9-phase, two-cycle, all-local, rate=4.0)
+- Infrastructure: `CLIENTS=32`, `CONTENT_ITEMS=6000`, `USERS=100`, `RANDOM_SEED=42`
 - WSM weights and dimensions
 
 Vary only: `BACKEND_SELECTION_POLICY` env var.
 
 ### 6.1 Run Order
 
-**R2-TH → R2-SS → R2-TL.** R2-TH is the simplest baseline (no ramp-up).
-R2-SS simulates the separated-LB coordination gap. R2-TL is the unified
-controller approach.
+Grouped by mode: all `topology_host` reps → all `topology_slowstart` reps →
+all `topology_lifecycle` reps. Between every run: cleanup + VM reboot.
+
+**Full experiment plan**: [`experiment_plan.md`](../operation/testing/experiment/rq2_evaluation/experiment_plan.md)
 
 ### 6.2 Scale-Up Requirement
 
-At least one scale-up event must occur during the run for redistribution
-time to be measurable. If `CLIENTS=8` does not trigger compute scale-up,
-increase client count or lower the threshold.
+Calibrated at `CLIENTS=32`. All modes survive (0% failure rate).
+`topology_host` fails at `CLIENTS=48` (cold backends overloaded before warm-up completes).
 
 ---
 
 ## 7. Expected Outcomes
 
-1. **Redistribution speed vs. control forms a trade-off.**
-   `topology_host` reaches equilibrium fastest (instant cold-start herd)
-   but with the highest transition-window latency variance.
-   `topology_slowstart` is smoothest (graduated ramp from discovery) but
-   leaves capacity completely idle during the discovery gap (0–10 s).
-   `topology_lifecycle` balances both — controlled ramp from t=0, no
-   discovery gap, no cold-start herd.
+1. **The coordination gap is quantifiable through TTFT and initial load share.**
+   `topology_lifecycle` achieves the fastest TTFT (median 40 s) and highest
+   initial share (73%) because the warm lease routes traffic from t=0.
+   `topology_slowstart` is the slowest (median 71 s TTFT, 55% share) because
+   the backend is invisible during the discovery gap. `topology_host` is
+   variable (median 51 s, range 0–251 s) because the round-robin counter
+   state at spawn time determines whether the new backend wins the first
+   cycle; its 30% initial share reflects 1/N fair-share distribution, not
+   a herd effect.
 
-2. **Transition-window service quality is best** under `topology_lifecycle`
-   (no discovery gap, controlled ramp). If `topology_slowstart` and
-   `topology_lifecycle` produce indistinguishable quality, the thesis
-   bounds the result: the coordination gap in routing is measurable in
-   redistribution timing but doesn't translate into user-visible impact
-   at this scale.
+2. **Redistribution-to-equilibrium is not reachable under continuous stress.**
+   The architecture precludes steady-state load shares by design — backends
+   spawn mid-overload and are removed during cooldown before load can
+   stabilize. This is not a threat to validity but a finding: in
+   continuously-scaling edge systems, redistribution quality must be measured
+   through immediate allocation metrics (TTFT and initial share), not
+   convergence time.
 
-3. **The coordination-gap penalty** is quantified as the difference between
-   `topology_slowstart` and `topology_lifecycle` in redistribution time —
-   directly parallel to RQ1's breach-detection penalty from polling blind
-   spots.
+3. **Service-quality impact is phase-dependent and LAN-localised.**
+   During non-stress phases, `topology_host` shows elevated p50 latency on
+   the spawn LAN (200 ms vs 7 ms for other modes) because round-robin routes
+   traffic to cold backends before DB connections and caches warm.
+   `topology_slowstart` and `topology_lifecycle` have indistinguishable
+   p50 latency (~7 ms non-stress, ~140 ms aggregate) — the discovery gap
+   and warm lease differ in traffic-allocation timing, not per-request speed.
+   During stress phases, all three modes converge (~200–600 ms p50) because
+   MongoDB I/O dominates regardless of routing policy. Tail latency (p95)
+   is storage-bound across all modes (~2500 ms, indistinguishable).
 
-If no mode is clearly dominant — each occupies a different point on the
-speed-vs-control spectrum — the thesis has characterized a genuine
-trade-off surface rather than declaring a winner. That's the stronger
-contribution.
+4. **The coordination-gap penalty** is the difference in TTFT between
+   `topology_slowstart` and `topology_lifecycle` (31 s, or ~1 extra
+   telemetry window) and the difference in initial share (−18 pp).
+   These directly parallel RQ1's breach-detection penalty from polling
+   blind spots.
+
+5. **The round-robin tie-breaking mechanism is the hidden driver of
+   `topology_host` behaviour.** When all backends tie at WSM cost 0.0,
+   the round-robin counter distributes traffic evenly — producing the
+   observed ~30% initial share (approximately 1/N fair share). There is
+   no "herd" or single "winner" — `topology_host`'s name reflects a
+   host-based LB with no topology awareness, not a thundering herd.
+   The latency penalty arises from the mismatch between immediate traffic
+   and backend warm-up time, not from overloading.
+
+If no mode is clearly dominant — lifecycle is fastest for traffic
+allocation, slowstart achieves the best latency by aligning traffic
+arrival with warm-up completion, host is fair-share
+but slow — the thesis has characterized a genuine trade-off surface
+rather than declaring a winner. That's the stronger contribution.
 
 ---
 
@@ -282,7 +350,7 @@ Three modes in `_vip_routing/selection.py`:
 
 | Mode | Behavior |
 |---|---|
-| `topology_host` | Skip `_claim_warm_backend()`. Unknown stats → 0.0 (best-case). Backend enters pool and wins every WSM competition immediately — cold-start thundering herd (leastconn-style). |
+| `topology_host` | Skip `_claim_warm_backend()`. Unknown stats → 0.0 (best-case). All backends tie at cost 0.0; round-robin tie-breaking distributes traffic evenly (~1/N fair share). No ramp, no warm lease — backends receive traffic immediately but serve it cold. |
 | `topology_slowstart` | Skip `_claim_warm_backend()`. Unknown stats → 1.0 (worst-case). Backend is effectively invisible until first telemetry arrives (0–10 s, avg ~5 s). At discovery: start a graduated cost penalty that decays linearly from 1.0 to 0.0 over the warm-lease TTL — simulating discovery-time slow-start ramp. |
 | `topology_lifecycle` | Current behavior unchanged — warm lease at spawn time via `_claim_warm_backend()`. |
 
@@ -301,10 +369,11 @@ Default (no override) preserves `topology_lifecycle`.
 
 | Threat | Mitigation |
 |---|---|
-| **Cold-start thundering herd may make `topology_host` redistribute fastest with no latency penalty.** The new backend wins every competition immediately — if the cold backend handles the load fine, ramp-up mechanisms (warm lease or slow-start) add control but not speed. | This is not a threat — it's a potential **finding**. The thesis characterizes the trade-off: speed vs. control. |
-| **The discovery gap (0–10 s, avg ~5 s) may dominate `topology_slowstart`.** The backend is invisible for one telemetry window — capacity sits idle during that window. | This is the coordination delay. The thesis honestly reports whether this idle-capacity period measurably degrades service quality. |
-| **Single run per condition.** | Golden config demonstrated ≤0.23% variance across 15+ runs. Multi-run replication if needed. |
-| **Scale-up may not trigger at `CLIENTS=8`.** | Increase client count or lower threshold. The mechanism necessity experiments confirmed triggers at `CLIENTS=48`. |
+| **Round-robin fair-share in `topology_host` gives new backends traffic immediately but cold — producing elevated latency.** Without a ramp or warm lease, backends serve requests before DB connections and caches warm. | This is not a threat — it's a **finding**. The thesis characterizes the trade-off: immediate traffic allocation vs. per-request latency. Slowstart delays traffic until the backend is warm (best latency, slowest TTFT). Lifecycle routes traffic immediately but with concentrated volume that accelerates warm-up (fastest TTFT, good latency). Host routes traffic immediately but diluted across round-robin — the backend never gets enough concentrated traffic to warm up fast (worst latency). |
+| **The discovery gap (0–10 s, avg ~5 s) may dominate `topology_slowstart`.** The backend is invisible for one telemetry window — capacity sits idle during that window. | This is the coordination delay. The TTFT difference (71 s vs 40 s) quantifies it. Slowstart's idle-capacity period is measurable. |
+| **Redistribution-to-equilibrium may not be reachable under continuous stress.** Backends spawn mid-overload and are removed during cooldown before load stabilizes. | Confirmed: 0 of 47 events reached equilibrium. The measurement framework now uses TTFT and initial load share — metrics that capture the coordination gap without requiring the system to stabilize. This is not a failure but a finding about edge-system dynamics. |
+| **Three replicates per mode may not detect small effects.** | Cohen's d analysis: large effects (initial share, host p50) are conclusive at n=3. Small effects (p95 differences, d < 0.22) are indistinguishable — reported honestly as null results. |
+| **`topology_host` shows extreme within-mode variance.** | The round-robin tie-breaking is timing-dependent — whether the new backend wins the first cycle depends on the counter state at spawn time. Per-replicate scatter dots on all graphs expose this variance. The variance itself is a finding: without a ramp or lease, traffic arrival timing is unpredictable. |
 
 ---
 
@@ -313,9 +382,10 @@ Default (no override) preserves `topology_lifecycle`.
 | | RQ1 (Monitoring) | RQ2 (Routing) |
 |---|---|---|
 | **Coordination gap** | Polling blind spot (controller misses telemetry windows between polls) | Discovery gap (routing plane doesn't know about new backends until telemetry arrives) |
-| **Baseline** | Poll-30s (2 of 3 windows missed) | `topology_slowstart` (invisible until discovery, 0–10 s after spawn, avg ~5 s) |
+| **Baseline** | Poll-30s (2 of 3 windows missed) | `topology_slowstart` (invisible until discovery, 0–10 s after spawn) |
 | **Proposed** | Push (every window, no blind spot) | `topology_lifecycle` (warm lease at spawn time, no discovery gap) |
-| **Core measurement** | Reaction latency (spawn_done − breach_window_end) | Redistribution time (equilibrium − spawn_done) |
+| **Core measurement** | Reaction latency (spawn_done − breach_window_end) | Time-to-first-traffic (first_request − spawn_done) + initial load share |
+| **Coordination penalty** | Extra breach-detection time from missed windows | Extra telemetry window before first traffic (71 s vs 40 s); 18 pp less initial share |
 
 Together, RQ1 and RQ2 characterize whether the coordination gap — in
 monitoring and in routing — produces measurable delays that co-location
@@ -329,7 +399,8 @@ eliminates. Neither claims superiority; both report what was measured.
 |---|---|
 | [`system_to_thesis_map_rq_v2.md`](../../tese/miscelineous/system_to_thesis_map_rq_v2.md) | Full three-pillar thesis framing |
 | [`rq1.md`](../research_questions/rq1.md) | RQ1 design — direct methodological parallel |
-| TBD `experiment_plan.md` | Operational experiment plan |
+| [`experiment_plan.md`](../operation/testing/experiment/rq2_evaluation/experiment_plan.md) | Operational experiment plan (9-run design) |
+| [`results.md`](../operation/testing/experiment/rq2_evaluation/results.md) | Experiment results and graph explanations |
 | [`../../source/sdn_controller/_vip_routing/selection.py`](../../source/sdn_controller/_vip_routing/selection.py) | Current WSM cost functions and warm-lease logic |
 | [`../../source/sdn_controller/_vip_routing/state.py`](../../source/sdn_controller/_vip_routing/state.py) | Warm-lease lifecycle management |
 | [`../../source/sdn_controller/scaling_config.py`](../../source/sdn_controller/scaling_config.py) | Warm-lease TTL knobs |

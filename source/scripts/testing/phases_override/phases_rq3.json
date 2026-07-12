@@ -1,0 +1,52 @@
+{
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_s": 120,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.5,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "scale_out",
+      "duration_s": 300,
+      "rate_per_client": 2.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.50,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.25
+      }
+    },
+    {
+      "name": "cross_region_pressure",
+      "duration_s": 900,
+      "rate_per_client": 3.0,
+      "cross_region_ratio": 0.95,
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.92,
+        "feed_ranking": 0.05,
+        "service_pressure": 0.03
+      }
+    },
+    {
+      "name": "cooldown",
+      "duration_s": 300,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.10,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    }
+  ]
+}

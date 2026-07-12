@@ -101,6 +101,16 @@
 % If you get told that the Introduction and/or Conclusion should be un-numbered chapters, use \chapter* instead of \chapter (add an asterisk). The same can be done for sections with \section*, \subsection*, and \subsubsection*.
 % =====================================================================
 \chapter{Introduction}\label{ch:introduction}
+Orchestrating edge web services means dealing with coordination delays between routing,
+ auto-scaling and monitoring components. This has been shown to negatively affect overhead 
+ on overall infrastructure and QoS due to the unaccounted effects each module has on each other. 
+ In this chapter the context, motivation and problem statement are explained in the 
+ \ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
+ The research questions that emerged are available on \ref{sec:research_questions}. 
+The methodology used to develop the thesis is detailed in \ref{sec:research_methodology},
+the main contributions in \ref{sec:contributions} and finally the outlining of the rest of the 7 
+chapters of the thesis are presented in \ref{sec:document_structure}.
+
 
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
 % TODO: Edge computing + stateful web services. Multi-Region Content Discovery
@@ -111,7 +121,10 @@
 % TODO: The 6 objectives from the thesis proposal.
 
 \section{Research Questions}\label{sec:research_questions}
-% TODO: RQ1 (Telemetry Freshness), RQ2 (Backend Selection), RQ3 (Data Locality).
+% TODO: RQ3 (Trigger Quality — degradation_score vs. cpu_only), RQ1 (Telemetry
+% Freshness — push vs. poll at 5s/12s/30s), RQ2 (Backend Selection — host/slowstart/lifecycle).
+% Detection→delivery→action chain. Baselines encode architectural properties of separated
+% systems (CPU-only threshold, Poll-30s, discovery-time slowstart).
 
 \section{Research Methodology}\label{sec:research_methodology}
 % TODO: Design Science Research Methodology (DSRM) — Peffers et al. (2007-8),
@@ -130,27 +143,68 @@
 \section{Review Methodology}\label{sec:review_method}
 % TODO: Databases, search terms, time range, inclusion/exclusion criteria.
 
-\section{Edge Computing Architectures}\label{sec:lit_edge_architectures}
-% TODO: Edge vs. cloud vs. fog; containerization; stateful vs. stateless services.
+\section{The Unexamined Default: Three-Layer Separation}\label{sec:lit_three_layer_separation}
+% TODO: Every major orchestration architecture (Kubernetes, NFV MANO, MEC) separates
+% monitoring, routing, and scaling into independent components. Table: K8s (Prometheus→
+% AlertManager, kube-proxy, HPA), NFV MANO (OSM MON, SDN+HAProxy, OSM POL→LCM),
+% MEC (InfluxDB, SDN switches, K8s scheduler). This separation is not presented as a
+% design choice — it is the unexamined default. Consequence: coordination gap (30–120 s
+% total latency for a 10 s container boot). Documented (Wang et al.), observed as side
+% effect (Pierro & Ullah), called for (Yaseen, 2025) — but never isolated or measured.
 
-\section{Resource Allocation in Edge Computing}\label{sec:lit_resource_allocation}
-% TODO: Compute and data resource allocation strategies; metadata-driven approaches.
+\section{Auto Scaling}\label{sec:lit_auto_scaling}
+% TODO: Domain survey — what it studies (when and by how much to scale: HyMetricScaler,
+% Toka et al. 2021, De Silva et al. 2026, PAHPA), what it ignores (monitoring freshness,
+% LB discovery timing, trigger composition treated as givens), strongest gap evidence
+% (Ghorab et al. 2020 call for joint LB+scaling; Pierro & Ullah observe throughput
+% decreasing with more pods — symptom of coordination gap treated as side effect).
+% Finding: no auto-scaling paper varies monitoring freshness, LB discovery timing, or
+% trigger composition as independent experimental variables.
 
-\section{Elasticity and Auto-Scaling Mechanisms}\label{sec:lit_autoscaling}
-% TODO: Taxonomy; industry systems (K8s HPA, AWS ASG); control-loop cadences;
-% separation benefits.
+\section{Load Balancing on SDN}\label{sec:lit_sdn_lb}
+% TODO: Domain survey — what it studies (algorithm design: 30 metrics taxonomised across
+% 41 papers — Alrammahi & Bhaya 2022; 120+ papers surveyed — Belgaum et al. 2020,
+% Mawale & Wankhade 2025), what it ignores (zero metrics concern data freshness; "periodically"
+% appears everywhere — Caiza & Campoverde 2024, Zhang & Guo 2014 — without asking what
+% happens if the period changes), strongest gap evidence (Caiza & Campoverde use WSM —
+% same approach as this thesis — but bury the freshness question in an adverb).
+% Finding: no SDN LB paper varies metric collection cadence, compares push vs. pull,
+% or evaluates LB under a changing backend pool.
 
-\section{Service Placement and Orchestration}\label{sec:lit_service_placement}
-% TODO: Service placement algorithms; orchestration frameworks; data gravity concepts;
-% tiered storage at the edge.
+\section{Monitoring \& Telemetry}\label{sec:lit_monitoring}
+% TODO: Domain survey — what it studies (monitoring as end in itself: AdapPF bandwidth
+% optimisation, Acala aggregation, Zhou & Yong custom metrics, PAHPA real-time correction),
+% what it ignores (consumer of telemetry always out of scope; monitoring→decision interface
+% is one-way pipe), strongest gap evidence (AdapPF only paper varying scrape interval with
+% downstream effect — but framed as bandwidth saving; Yaseen 2025 calls for monitoring
+% "tightly integrated with network control and automation" — call unanswered).
+% Finding: no monitoring paper varies delivery cadence as a spectrum, measures downstream
+% effect on both scaling and LB quality, or co-locates monitoring with scaling/routing.
 
-\section{Software-Defined Networking for Edge Systems}\label{sec:lit_sdn}
-% TODO: SDN principles; controllers (Ryu/OS-Ken); traffic engineering;
-% SDN at the edge; Double-VIP concepts.
+\section{Resource Orchestration on SDN}\label{sec:lit_sdn_orchestration}
+% TODO: Domain survey — what it studies (resource allocation: Zehra & Shah 2017; InterCloud:
+% Aliyu et al. 2017; edge optimisation: Nain et al. 2024 — 29pp survey; IIoT: Okwuibe
+% et al. 2020; cross-layer: Rafiee et al. 2024), what it ignores (SDN always the network
+% layer, never the orchestration platform; compute is K8s' job, monitoring is InfluxDB's
+% job — separation is architectural, not accidental), strongest gap evidence (Okwuibe
+% et al.: Docker+SDN+edge+MongoDB — closest stack — but orchestration split across 3
+% systems; Nain et al.: "does not consider load balancing, resource allocation, and
+% computational offloading together"; Breitbach et al.: n-replication Tier 0→1→2 at
+% application layer, no SDN integration).
+% Finding: no paper co-locates monitoring, routing, and scaling in a single SDN controller.
 
 \section{Summary and Research Gaps}\label{sec:lit_synthesis}
-% TODO: Each domain treats concerns separately. No platform isolates monitoring,
-% routing, and data placement as independently tunable dimensions.
+% TODO: (1) Cross-dimensional gap matrix — present the table from global_literature_review.md
+% §3 showing every reviewed paper against four dimensions (monitoring freshness varied?,
+% LB discovery timing varied?, trigger composition varied?, components co-located?) — this
+% thesis is the only row where all four are addressed. (2) Why the gap matters: Wang et al.
+% document it, Pierro & Ullah observe symptoms, Yaseen calls for integration — three
+% independent observations never connected. (3) Compound coordination tax: ~74 s
+% (43 s projected delivery + 31 s measured action); ~10 s provisioning constant across
+% architectures. Total separated latency: ~84 s vs. ~10 s unified. 31 s empirically
+% confirmed (RQ2, n=9); 43 s awaits RQ1 confirmation. (4) Gap: no existing work isolates
+% the detection→delivery→action
+% chain for independent experimental characterization.
 
 
 
@@ -170,7 +224,9 @@ component to be independently managed and tested.
 
 \subsection{Services}\label{sec:elastic_compute}
 % TODO: Compute scaling — T_proc threshold; edge server containers;
-% VIP_SERVER pool registration.
+% VIP_SERVER pool registration. Three backend selection policy modes:
+% topology_host (no ramp-up, cold-start WSM), topology_slowstart (invisible
+% until discovery, graduated ramp), topology_lifecycle (spawn-time warm lease).
 
 \subsection{Data}\label{sec:elastic_data}
 % TODO: Data scaling — T_dados threshold; Tier 0 → Tier 2 transitions;
@@ -178,7 +234,10 @@ component to be independently managed and tested.
 
 \section{Monitoring and Decision Engine}\label{sec:monitoring_decision}
 % TODO: Telemetry pipeline (ZMQ PUSH → Aggregator → summaries → Controller);
-% push (ZMQ) and poll (HTTP) delivery; degradation score; threshold evaluation;
+% push (ZMQ) and poll (HTTP) delivery. Degradation score: weighted combination
+% of CPU saturation (40\%) and processing latency (60\%); latency dominates for
+% stateful services (I/O drives T_proc before CPU saturates). CPU-only threshold
+% (w_cpu=1.0, w_lat=0.0) as industry-default alternative. Threshold evaluation;
 % sliding window; alert submission.
 
 \section{Control Workflow}\label{sec:control_workflow}
@@ -197,7 +256,8 @@ component to be independently managed and tested.
 
 \subsection{Services}\label{sec:impl_compute}
 % TODO: Edge server (Python/Flask); container lifecycle (build, start, health check,
-% OVS wiring, drain, removal); VIP_SERVER registration.
+% OVS wiring, drain, removal); VIP_SERVER registration. BACKEND_SELECTION_POLICY
+% env var (topology_host / topology_slowstart / topology_lifecycle).
 
 \subsection{Data}\label{sec:impl_data}
 % TODO: MongoDB replica sets; programmatic rs.add()/rs.remove(); VIP_DATA routing;
@@ -207,7 +267,9 @@ component to be independently managed and tested.
 \section{Monitoring and Decision Engine}\label{sec:impl_monitoring}
 % TODO: Aggregator (ZMQ PUB/SUB + HTTP cache); collect_resource_stats.py
 % (domain + debug + per-node CSVs); telemetry source abstraction
-% (ZmqTelemetrySource, PollingTelemetrySource); ElasticityManager.
+% (ZmqTelemetrySource, PollingTelemetrySource). Degradation score with
+% configurable weights via SCALEUP_W_CPU / SCALEUP_W_T_PROC env vars;
+% ElasticityManager.
 
 \section{Control Workflow}\label{sec:impl_control}
 % TODO: OS-Ken/Ryu controller; 3 greenthreads; shared data structures;
@@ -224,9 +286,10 @@ component to be independently managed and tested.
 \chapter{Evaluation Methodology}\label{ch:methodology}
 
 \section{Experimental Objectives}\label{sec:experimental_objectives}
-% TODO: Overall aim — characterize how telemetry freshness, backend selection,
-% and data locality each independently affect service quality during demand shifts.
-% DSRM framing (Peffers et al., 2007-8; Hevner et al., 2004).
+% TODO: Overall aim — characterize the coordination gap by varying each link in the
+% detection→delivery→action chain independently: trigger quality (RQ3), telemetry
+% freshness (RQ1), and backend selection (RQ2) — measuring how each affects service
+% quality during demand shifts. DSRM framing (Peffers et al., 2007-8; Hevner et al., 2004).
 
 \section{Evaluation Scenarios}\label{sec:evaluation_scenarios}
 % TODO: Within-system, single-variable manipulation. Comparison strategy:
@@ -234,9 +297,12 @@ component to be independently managed and tested.
 % Each RQ holds the other pillars constant. 10-phase workload.
 
 \section{Performance Metrics}\label{sec:performance_metrics}
-% TODO: Reaction latency (spawn_done − breach_window_end, segmented);
-% service quality (p95/p99 latency, failure rate); control overhead (CPU%, RSS);
-% load distribution; operating cost. Independent breach detector.
+% TODO: Reaction latency (spawn_done − breach_window_end, segmented:
+% breach-detection + provisioning); service quality (p95/p99 latency, failure rate);
+% control overhead (CPU%, RSS); load redistribution (time-to-equilibrium, ramp shape);
+% detection accuracy (false positive/negative rate for RQ3). Independent breach detector.
+% Per-RQ locks: RQ1 holds golden trigger + topology_lifecycle; RQ2 holds push telemetry
+% + golden trigger; RQ3 holds push telemetry + topology_lifecycle.
 
 \section{Experimental Procedure with Results Statistical Analysis}\label{sec:experiment_procedure}
 % TODO: Pre-run → setup → run → post-run → copy-back → cross-run comparison.
@@ -246,19 +312,32 @@ component to be independently managed and tested.
 
 
 \chapter{Experimental Results}\label{ch:results}
+% Section order follows detection→delivery→action chain: RQ3 → RQ1 → RQ2 → Synthesis.
 
-\section{Resource Allocation Efficiency}\label{sec:results_allocation}
-% TODO: Does the system deploy resources only when justified?
-% Storage and compute node counts across phases.
+\section{Trigger Quality — Overload Detection (RQ3)}\label{sec:results_rq3_trigger}
+% TODO: Breach detection time: spawn_start_ts − breach_window_end across
+% degradation_score vs. cpu_only modes. False positive rate (spawns during baseline /
+% total spawns). False negative rate (spawns missed during stress phases). Service
+% quality during transitions: per-phase p50/p95 latency, timeout rate, completed
+% request volume. Key finding (projected): CPU-only may never fire at realistic edge
+% CPU levels (2–8\%) for I/O-bound stateful services.
 
-\section{Elastic Scaling Performance}\label{sec:results_scaling}
-% TODO: RQ1 — Reaction latency across delivery cadences (Push, Poll-5s,
-% Poll-12s, Poll-30s). Breach-detection segment vs. provisioning segment.
+\section{Telemetry Freshness — Delivery Cadence (RQ1)}\label{sec:results_rq1_telemetry}
+% TODO: Reaction latency across delivery cadences (Push, Poll-5s, Poll-12s,
+% Poll-30s). Breach-detection segment vs. provisioning segment. Decision staleness
+% (consumed_at − window_end) — confirms all modes sub-second; mechanism is missed
+% windows, not data staleness. Service quality (p95/p99, failure rate) per cadence.
+% Control-plane overhead per mode. Scaling outcome description: per-phase table
+% comparing breached windows vs. spawns completed.
 
-\section{Service Placement Effectiveness}\label{sec:results_placement}
-% TODO: RQ2 — Load distribution and latency per backend selection policy
-% (topology_only, topology_host, topology_host_replica).
-% RQ3 — Service quality vs. operating cost per locality strategy.
+\section{Backend Selection — Routing Awareness (RQ2)}\label{sec:results_rq2_backend}
+% TODO: Load redistribution time: spawn_done_ts → equilibrium (±10\% of per-backend
+% mean) across topology_host (no ramp-up), topology_slowstart (discovery-time ramp),
+% topology_lifecycle (spawn-time warm lease). Transition-window service quality:
+% p95/p99 latency and failure rate in compute_spike phase. Per-mode redistribution
+% profile: request share over time, ramp shape. Key finding (empirically confirmed,
+% n=9): discovery-time slowstart imposes ~31 s action penalty — new capacity sits
+% idle for one full telemetry window.
 
 \section{Network Performance}\label{sec:results_network}
 % TODO: Control-plane overhead (CPU%, RSS); cross-LAN latency;
@@ -267,10 +346,21 @@ component to be independently managed and tested.
 \section{Scalability Analysis}\label{sec:results_scalability}
 % TODO: Behavior under increasing load; scaling outcome description
 % (breached windows vs. spawns completed); mechanism activation patterns.
+% Resource allocation efficiency: does the system deploy resources only when
+% justified? Storage and compute node counts across phases.
 
-\section{Discussion}\label{sec:discussion}
-% TODO: Cross-RQ synthesis. Which dimension matters most?
-% Sharpest trade-offs? What's negligible? Implications for edge system designers.
+\section{Discussion — The Compound Coordination Gap}\label{sec:discussion}
+% TODO: Reconstruct the compound coordination tax from RQ3→RQ1→RQ2 results.
+% Table: Fully separated (CPU-only: never/late | Poll-30s: +~43 s projected |
+% Slowstart: +31 s measured | Provisioning: ~10 s | Total: ~84 s or unbounded)
+% vs. Fully unified (Degradation score: early | Push: ~0 s | Lifecycle: ~0 s |
+% Provisioning: ~10 s | Total: ~10 s + early detection lead). Coordination tax:
+% ~74 s (43 s delivery + 31 s action). First experimental quantification of
+% phenomenon documented by Wang et al., observed by Pierro & Ullah, called for
+% by Yaseen (2025). Which link matters most? Sharpest trade-offs? What's negligible?
+% Implications for edge system designers. Data placement strategies (Tier 0/1/2)
+% as infrastructure context: unified architecture enables tiered data gravity;
+% experimental characterization of data locality trade-offs deferred to future work.
 
 
 
@@ -284,10 +374,17 @@ component to be independently managed and tested.
 
 \section{Limitations}\label{sec:limitations}
 % TODO: Controlled testbed; simulated workload; single window size;
-% Tier 1 partial; statistical power; MongoDB-specific; compound delay not tested.
+% Tier 1 partial; statistical power (n=3 per condition); RQ1 and RQ3 results
+% projected/designed — experimental confirmation pending (RQ2 empirically confirmed,
+% n=9); MongoDB-specific mechanisms (Double-VIP); compound coordination delay
+% synthesized from per-link results, not tested as single experiment.
 
 \section{Future Research Directions}\label{sec:future_work}
-% TODO: Compound delay injection; window size variation; Tier 1 full implementation;
+% TODO: Compound coordination delay injection experiment (emulate full separation
+% with configurable delays at both handoff points simultaneously); window size
+% variation (freshness vs. noise trade-off); Tier 1 Selective Sync full implementation
+% and experimental validation; data locality experimental characterization (Tier 0 vs.
+% Tier 1 vs. Tier 2 cold vs. Tier 2 warm — designed, deferred from RQ3 scope);
 % larger-scale deployment; real-world traces; ML-driven threshold adaptation.
 
 \end{document}

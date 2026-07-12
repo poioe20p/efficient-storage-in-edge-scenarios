@@ -25,7 +25,7 @@ from typing import Any
 LAST_NORMAL_RE = re.compile(
     r"vip_data\((?P<domain>n[12])\): client=(?P<client>\S+) -> vip=(?P<vip>\S+) -> real=(?P<real>\S+) recovery=False"
 )
-STORAGE_NAME_RE = re.compile(r"^edge_storage_(?:server_n[12]|lan[12]_dyn\d+)$")
+STORAGE_NAME_RE = re.compile(r"^edge_storage_(?:server_n[12]|lan[12]_dyn\d+(?:_cs)?)$")
 
 STOP_REQUESTED = False
 

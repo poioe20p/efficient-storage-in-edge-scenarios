@@ -166,3 +166,60 @@ _SS_BREACH_WINDOWS_N = int(os.environ.get("SS_BREACH_WINDOWS_N", "5"))
 _SS_BREACH_WINDOWS_M = int(os.environ.get("SS_BREACH_WINDOWS_M", "2"))
 # Optional TTL on cached docs; 0 disables. Belt-and-suspenders guard.
 _SS_MAX_TTL_S = int(os.environ.get("SS_MAX_TTL_S", "0"))
+
+# ── Cross-region Tier 2 storage (feature flags) ───────────────────────
+_CROSS_REGION_STORAGE_ENABLED = int(os.environ.get(
+    "CROSS_REGION_STORAGE_ENABLED", "0"))
+_CROSS_REGION_STORAGE_WARM = int(os.environ.get(
+    "CROSS_REGION_STORAGE_WARM", "0"))
+_MAX_CROSS_REGION_STORAGE = int(os.environ.get(
+    "MAX_CROSS_REGION_STORAGE", "1"))
+
+# ── Cross-region Tier 2 detection/policy ──────────────────────────────
+# Cooldown after cross-region admission/spawn before re-evaluating.
+_CROSS_REGION_STORAGE_COOLDOWN_S = float(os.environ.get(
+    "CROSS_REGION_STORAGE_COOLDOWN_S", "120"))
+# M-of-N sliding window for cross-region DB pressure (mirrors Tier 1
+# breach ring in selective_sync/promotion.py).
+_CROSS_REGION_BREACH_WINDOWS_M = int(os.environ.get(
+    "CROSS_REGION_BREACH_WINDOWS_M", "2"))
+_CROSS_REGION_BREACH_WINDOWS_N = int(os.environ.get(
+    "CROSS_REGION_BREACH_WINDOWS_N", "5"))
+# p95 DB time (ms) threshold per remote LAN for cross-region pressure.
+# Must be set above baseline WAN transit (normal cross-region reads at
+# 260ms WAN ≈ 300–500ms p95), but below saturation (2–10s p95).
+# Default 1000ms catches queuing before connection-pool failures start.
+# Mirrors the same signal Tier 1 uses (TAU_DADOS_MS in
+# selective_sync/hotness.py), but at a cross-region-appropriate level.
+_CROSS_REGION_DB_P95_THRESHOLD_MS = float(os.environ.get(
+    "CROSS_REGION_DB_P95_THRESHOLD_MS", "1000"))
+
+# Minimum cross-region read volume per telemetry window to sustain a
+# cold-started cross-region replica.  When demand drops below this floor,
+# the replica is eligible for scale-down.  Activation uses p95 > threshold;
+# sustainment uses demand volume — two independent signals prevent the
+# control-loop paradox where the replica's presence suppresses p95.
+_CROSS_REGION_MIN_READS_TO_SUSTAIN = int(os.environ.get(
+    "CROSS_REGION_MIN_READS_TO_SUSTAIN", "10"))
+
+# Sliding-window debounce on the sustainment signal — require at least M
+# windows with ``total_reads < _CROSS_REGION_MIN_READS_TO_SUSTAIN`` out of
+# the most recent N before submitting a cross-region scale-down.  Short
+# windows (default 2-of-3) prevent single-window dips from triggering
+# unnecessary scale-down→re-spawn cycles while still responding quickly
+# when demand truly subsides (cooldown reads stay at 0–15 for many windows).
+_CROSS_REGION_SUSTAIN_WINDOWS_M = int(os.environ.get(
+    "CROSS_REGION_SUSTAIN_WINDOWS_M", "2"))
+_CROSS_REGION_SUSTAIN_WINDOWS_N = int(os.environ.get(
+    "CROSS_REGION_SUSTAIN_WINDOWS_N", "3"))
+
+# Minimum cross-region read volume per telemetry window required to
+# activate a cross-region replica (warm standby admission or cold-start
+# spawn).  Prevents spurious spawns during low-load phases (e.g.,
+# baseline) where natural content distribution produces a handful of
+# cross-region reads whose p95 may breach the threshold but whose volume
+# is too low to justify a dedicated replica.  Calibrated from RQ3
+# strategy-comparison v1: baseline shows ~12 xreg reads/window;
+# pressure windows produce 100–300+ per collection.
+_CROSS_REGION_MIN_READS_TO_ACTIVATE = int(os.environ.get(
+    "CROSS_REGION_MIN_READS_TO_ACTIVATE", "50"))

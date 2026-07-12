@@ -42,6 +42,7 @@ class StorageNodeAdder(_BaseNodeAdder):
         ip: str | None = None,
         mac: str | None = None,
         heartbeat_enabled: bool = False,
+        rs_seed_host_override: str | None = None,
     ) -> NodeResult:
         """Spawn an edge_storage_server container, attach it to OVS LAN ``lan``,
                 and join the replica set via the sidecar's direct seed-host reconfig.
@@ -53,11 +54,15 @@ class StorageNodeAdder(_BaseNodeAdder):
         timings = StepTimings()
         t_total = time.perf_counter()
 
-        # Derive primary IP from LAN topology convention:
-        #   lan1 → 10.0.0.4, lan2 → 10.0.1.4
-        primary_ip = f"10.0.{lan - 1}.4"
-        rs_seed_host = f"{primary_ip}:{port}"
-        logger.info("[node_add] RS seed host for lan%d: %s", lan, rs_seed_host)
+        if rs_seed_host_override is not None:
+            rs_seed_host = rs_seed_host_override
+            logger.info("[node_add] RS seed host (override): %s", rs_seed_host)
+        else:
+            # Derive primary IP from LAN topology convention:
+            #   lan1 → 10.0.0.4, lan2 → 10.0.1.4
+            primary_ip = f"10.0.{lan - 1}.4"
+            rs_seed_host = f"{primary_ip}:{port}"
+            logger.info("[node_add] RS seed host for lan%d: %s", lan, rs_seed_host)
 
         # ── Step 1: docker run ────────────────────────────────────────────────
         logger.info("[node_add] step=docker_run container=%s rs=%s", name, rs_name)

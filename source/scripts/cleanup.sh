@@ -274,9 +274,9 @@ images_cleanup() {
 
 list_dynamic_storage_volumes() {
 	local docker_cli="$1"
-	# Elasticity names dynamic storage nodes as edge_storage_lanX_dynY.
+	# Elasticity names dynamic storage nodes as edge_storage_lanX_dynY(_cs for cross-region).
 	${docker_cli} volume ls --format '{{.Name}}' 2>/dev/null \
-		| grep -E '^edge_storage_lan[0-9]+_dyn[0-9]+-data$' || true
+		| grep -E '^edge_storage_lan[0-9]+_dyn[0-9]+(_cs)?-data$' || true
 }
 
 volumes_cleanup() {

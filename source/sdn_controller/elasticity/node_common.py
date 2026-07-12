@@ -99,7 +99,7 @@ class NodeInfo:
     rs_name:           str = ""
     primary_container: str = ""
     port:              int = 27018
-    owner_lan:         str = ""   # selective_storage only: e.g. "lan1"
+    owner_lan:         str = ""   # selective_storage or cross-region storage: e.g. "lan1"
     spawn_started_monotonic_s: float = 0.0
     ready_logged: bool = False
     standby_reserved: bool = False  # storage persistent reserve — excluded from VIP & ordinary accounting

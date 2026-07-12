@@ -1,6 +1,6 @@
 # RQ1 v3 Results — Measurement-Corrected Re-run
 
-**Date**: 2026-07-03 (execution), 2026-07-04 (analysis)
+**Date**: 2026-07-03 (execution), 2026-07-04 (analysis), 2026-07-10 (graph updates)
 **Plan**: [`experiment_plan_v3.md`](experiment_plan_v3.md)
 **Predecessor**: [`results_v2final.md`](results_v2final.md)
 **Graphs**: [`graphs/comparison/`](graphs/comparison/)
@@ -62,7 +62,7 @@ The v3 experiment re-ran the thesis-quality RQ1 dataset with three measurement-i
 
 Poll-12s and Poll-30s are both window-gated at the 10-second aggregation window (`AGGREGATION_WINDOW_S=10`), not gated by their respective polling intervals. This confirms the system's aggregation architecture correctly bounds staleness independently of polling cadence.
 
-**Evidence**: [`rq1_staleness.csv`](graphs/comparison/rq1_v3_staleness_comparison.png) in each run's `analysis/` folder.
+**Evidence**: Per-run `analysis/rq1_staleness.csv` (12 files); cross-mode comparison: [`rq1_v3_staleness_comparison.png`](graphs/comparison/rq1_v3_staleness_comparison.png).
 
 ### C3 — Reaction latency monotonic with polling interval
 
@@ -80,7 +80,7 @@ Poll-12s and Poll-30s are both window-gated at the 10-second aggregation window 
 The monotonic trend holds: Push < Poll-5s < Poll-12s < Poll-30s. Note:
 - **poll30_1 is an outlier** with μ=115.3s (vs 55–56s for poll30_2/3). This run also had the highest failure rate (35.1%) and the fewest compute spawns (6 vs 9–11 for other poll30 runs), suggesting a runaway degradation loop where slow reactions lead to fewer spawns, which leads to more failures.
 
-**Evidence**: [`rq1_reaction_latency.csv`](graphs/comparison/rq1_v3_reaction_latency.png) in each run's `analysis/` folder.
+**Evidence**: Per-run `analysis/rq1_reaction_latency.csv` (11 files; push_1 has none); cross-mode comparison: [`rq1_v3_reaction_latency.png`](graphs/comparison/rq1_v3_reaction_latency.png).
 
 ### C4 — All four mechanisms exercise
 
@@ -210,9 +210,10 @@ The v3 fixes successfully eliminated measurement artifacts. The persistence of b
 
 | Artifact | Location |
 |----------|----------|
-| Comparison graphs | [`graphs/comparison/`](graphs/comparison/) |
+| Comparison graphs (×8) | [`graphs/comparison/`](graphs/comparison/) — latency mean/max/combined, CPU+RAM overhead, staleness, timeout rate, per-phase timeout, decision quality table |
 | Per-run data (×12) | `source/scripts/testing/metrics/20260703_*_rq1_v3_*/` |
 | Decision quality aggregate | [`graphs/comparison/rq1_v3_decision_quality.csv`](graphs/comparison/rq1_v3_decision_quality.csv) |
+| Design diagrams (×2) | [`docs/diagrams/rq1/`](../../../diagrams/rq1/) — experimental design + telemetry timeline |
 | This results document | [`results_v3.md`](results_v3.md) |
 
 ---
@@ -223,3 +224,4 @@ The v3 fixes successfully eliminated measurement artifacts. The persistence of b
 |------|--------|
 | 2026-07-04 | Initial v3 results written. 12/12 runs analyzed. Bimodality confirmed as genuine system non-determinism. All 7 criteria assessed. Comparison graphs generated. |
 | 2026-07-04 | **Correction**: Deep log inspection of push_1, poll5_2, poll12_2. C4 changed from "Partially met" → "Met" — all 12 runs spawned compute nodes; the decision_quality aggregate was misleading (spawns occurred in phases other than compute_spike). push_1 reaction latency estimated at ~33s (breaches detected in all phases, spawns followed; timings CLI pairing gap). |
+| 2026-07-10 | **Graph improvements**: Scatter dots (per-replicate values) added to all bar charts to show within-mode variance. Error bars (±1σ) added to per-phase timeout graph. n= sample-size footnotes and total-request-count subtitles added to all graphs. Duplicate "Average Failure Rate" graph removed (merged with Timeout Rate). All titles updated to "RQ1 v3". |

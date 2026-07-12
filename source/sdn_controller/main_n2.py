@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from collections import deque
 from dataclasses import dataclass
 
 from os_ken.base import app_manager
@@ -29,6 +30,13 @@ from .scaling_config import (
     _SCALE_DOWN_CANDIDATE_MAX_STALENESS_S,
     _STORAGE_PERSISTENT_RESERVE_ENABLED,
     _STORAGE_RESERVE_PENDING_WINDOWS,
+    _CROSS_REGION_STORAGE_ENABLED,
+    _CROSS_REGION_STORAGE_WARM,
+    _CROSS_REGION_STORAGE_COOLDOWN_S,
+    _CROSS_REGION_BREACH_WINDOWS_M,
+    _CROSS_REGION_BREACH_WINDOWS_N,
+    _CROSS_REGION_DB_P95_THRESHOLD_MS,
+    _MAX_CROSS_REGION_STORAGE,
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
@@ -66,6 +74,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self.datapaths = []
         self._datapath_by_id = {}
         self._lan_id = os.environ.get("LAN_ID", "lan2")
+        self._lan_num = 1 if self._lan_id == "lan1" else 2
 
         _aggregator_endpoints = [
             ep.strip()
@@ -106,6 +115,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # Coordinator-state PUB socket — see main_n1.py for rationale.
         self._coordinator_state_publisher = CoordinatorStatePublisher()
 
+        # ── Cross-region Tier 2 warm standby state ──
+        self._cross_region_breach_ring: dict[str, deque] = {}
+        self._cross_region_last_activation_ts: float = float("-inf")
+        self._cross_region_reserve_prepared: bool = False
+        self._cross_region_reserve_prepare_attempts: int = 0
+        self._last_summary: TelemetrySummary | None = None
+
         # Thread 2 — telemetry source (ZMQ push or HTTP poll)
         _telemetry_source_mode = os.environ.get("TELEMETRY_SOURCE", "zmq")
         if _telemetry_source_mode == "poll":
@@ -140,6 +156,12 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             )
         self._telemetry.start()
 
+        # ── Cross-region warm standby: init slot, defer pre-spawn ──
+        if _CROSS_REGION_STORAGE_ENABLED and _CROSS_REGION_STORAGE_WARM:
+            self._node_registry.init_cross_region_reserve_slot()
+            # Pre-spawn deferred to first telemetry callback — peer topology
+            # must be available before resolve_peer_primary can succeed.
+
     # ------------------------------------------------------------------
     # Tier 1 coordinator closures
     # ------------------------------------------------------------------
@@ -173,7 +195,16 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
     def _on_reserve_ready(self, mac: str) -> None:
         """Callback invoked by ControlEventDispatcher when a reserved node reaches SECONDARY."""
-        self._node_registry.mark_storage_reserve_ready(mac)
+        info = self._node_registry.get_node_info(mac)
+        if info is None:
+            return
+        # Cross-region reserve: owner_lan is populated (empty for same-LAN).
+        if info.owner_lan:
+            self._node_registry.mark_cross_region_reserve_ready(
+                mac, info.ip or "", info.name,
+            )
+        else:
+            self._node_registry.mark_storage_reserve_ready(mac)
 
     def _try_prepare_storage_reserve(self, summary: TelemetrySummary, lan: int) -> None:
         """Submit reserve preparation when the slot is NONE and the primary is available."""
@@ -319,6 +350,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
     def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
         """Thread 2 callback — thin mediator that orchestrates composed components."""
+        self._last_summary = summary
         consumed_at = time.time()
         if summary.network_id != self._lan_id:
             logger.debug("ignoring telemetry for %s (this controller owns %s)",
@@ -394,6 +426,33 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         if slot.state == "READY_RESERVED" and slot.activation_pending:
             self._handle_storage_reserve_trigger(summary, lan, slot.pending_reason or "pending")
+
+        # ── Cross-region warm standby: deferred pre-spawn ──────────
+        if _CROSS_REGION_STORAGE_ENABLED and _CROSS_REGION_STORAGE_WARM and not self._cross_region_reserve_prepared:
+            self._cross_region_reserve_prepare_attempts += 1
+            self._prepare_cross_region_reserve_if_needed()
+            slot = self._node_registry.get_cross_region_reserve_slot()
+            if slot is not None and slot.state != "NONE":
+                self._cross_region_reserve_prepared = True
+                logger.info(
+                    "[cross-region-reserve] pre-flight OK after %d attempt(s) — standby preparing",
+                    self._cross_region_reserve_prepare_attempts,
+                )
+            elif self._cross_region_reserve_prepare_attempts == 3:
+                logger.warning(
+                    "[cross-region-reserve] pre-flight: %d failed attempts — "
+                    "peer topology may not be available yet; will keep retrying",
+                    self._cross_region_reserve_prepare_attempts,
+                )
+            elif self._cross_region_reserve_prepare_attempts == 10:
+                logger.error(
+                    "[cross-region-reserve] pre-flight FAILED after %d attempts — "
+                    "peer topology unavailable; warm standby will NOT activate this run",
+                    self._cross_region_reserve_prepare_attempts,
+                )
+
+        # ── Cross-region warm standby: admit on pressure ────────────
+        self._evaluate_cross_region_activation(summary)
 
         # 5. Absent node detection → alert submission
         for mac in self._node_registry.detect_absent(summary):
@@ -638,6 +697,155 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             flags=ofproto.OFPFF_SEND_FLOW_REM # flag that tells the switch to notify the controller when the flow is removed.
         )
         datapath.send_msg(mod)
+
+
+    # ── Cross-region Tier 2 warm standby ──────────────────────────────────
+
+    def _prepare_cross_region_reserve_if_needed(self) -> None:
+        """Pre-spawn one cross-region warm standby (if enabled)."""
+        if not _CROSS_REGION_STORAGE_ENABLED or not _CROSS_REGION_STORAGE_WARM:
+            return
+
+        if not self._node_registry.should_prepare_cross_region_reserve():
+            return
+
+        peer_lan = "lan2" if self._lan_id == "lan1" else "lan1"
+        peer_lan_num = 2 if self._lan_id == "lan1" else 1
+
+        result = self.resolve_peer_primary(peer_lan)
+        if result is None:
+            logger.warning(
+                "[cross-region-reserve] cannot resolve peer primary for %s — deferring",
+                peer_lan,
+            )
+            return
+        peer_rs_name, peer_primary_host = result
+
+        self._node_registry.mark_cross_region_reserve_prepare_submitted(
+            peer_lan, peer_rs_name,
+        )
+        primary_container = f"edge_storage_server_n{peer_lan_num}"
+
+        alert = PrepareStandbyStorageAlert(
+            lan=self._lan_num,
+            network_id=self._lan_id,
+            rs_name=peer_rs_name,
+            primary_container=primary_container,
+            owner_primary=peer_primary_host,
+            owner_lan=peer_lan,
+        )
+        self._elasticity.submit(alert)
+        logger.info(
+            "[cross-region-reserve] prepare submitted: target_lan=%d rs=%s primary=%s",
+            self._lan_num, peer_rs_name, peer_primary_host,
+        )
+
+    def _evaluate_cross_region_activation(self, summary: TelemetrySummary) -> None:
+        """Admit warm standby or spawn cold replica on cross-region pressure."""
+        if not _CROSS_REGION_STORAGE_ENABLED:
+            return
+
+        peer_lan = "lan2" if self._lan_id == "lan1" else "lan1"
+
+        # ── Shared breach detection ─────────────────────────────────────
+        if not self._cross_region_db_breach_this_window(summary, peer_lan):
+            return
+        if not self._cross_region_breach_ring_ready(peer_lan, summary):
+            return
+        if self._cross_region_cooldown_active():
+            return
+
+        if _CROSS_REGION_STORAGE_WARM:
+            # ── Phase 1: admit standby ──────────────────────────────────
+            slot = self._node_registry.get_cross_region_reserve_slot()
+            if slot is None or slot.state != "READY_RESERVED":
+                return
+            mac, ip, name = self._node_registry.consume_cross_region_reserve()
+            vip_domain = f"n{self._lan_num}"
+            self._promote_storage_backend(mac, vip_domain)
+            self._cross_region_last_activation_ts = time.monotonic()
+            logger.info(
+                "[cross-region-reserve] ACTIVATED: mac=%s ip=%s name=%s vip=%s owner=%s",
+                mac, ip, name, vip_domain, slot.owner_lan,
+            )
+            self._prepare_cross_region_reserve_if_needed()
+
+        else:
+            # ── Phase 2: cold-start spawn via DataAlert ──────────────────
+            current = self._count_cross_region_active()
+            if current >= _MAX_CROSS_REGION_STORAGE:
+                return
+
+            peer_lan_num = 2 if self._lan_id == "lan1" else 1
+
+            result = self.resolve_peer_primary(peer_lan)
+            if result is None:
+                logger.warning(
+                    "[cross-region-cold] cannot resolve peer primary for %s — deferring",
+                    peer_lan,
+                )
+                return
+            peer_rs_name, peer_primary_host = result
+
+            primary_container = f"edge_storage_server_n{peer_lan_num}"
+
+            alert = DataAlert(
+                lan=self._lan_num,
+                network_id=self._lan_id,
+                rs_name=peer_rs_name,
+                primary_container=primary_container,
+                port=27018,
+                cross_lan_rs=True,
+                owner_lan=peer_lan,
+                owner_primary=peer_primary_host,
+            )
+            self._elasticity.submit(alert)
+            self._cross_region_last_activation_ts = time.monotonic()
+            logger.info(
+                "[cross-region-cold] SPAWN submitted: consumer_lan=%d owner=%s rs=%s",
+                self._lan_num, peer_lan, peer_rs_name,
+            )
+
+    def _count_cross_region_active(self) -> int:
+        """Count active cross-region storage nodes.
+
+        Cross-region nodes have ``owner_lan`` populated (Phase 0).
+        Same-LAN nodes leave it empty.
+        """
+        return sum(
+            1 for info in self._node_registry.list_dynamic("storage")
+            if info.owner_lan and not info.standby_reserved
+        )
+
+    def _cross_region_db_breach_this_window(
+        self, summary: TelemetrySummary, peer_lan: str,
+    ) -> bool:
+        """True if cross-region p95 DB time exceeds threshold for the peer LAN.
+
+        The threshold must be set above baseline WAN transit (normal
+        cross-region reads at 260ms WAN ≈ 300–500ms p95) but well below
+        saturation (2–10s p95).  Default 1000ms is calibrated from v3/v6
+        data and is tunable via ``CROSS_REGION_DB_P95_THRESHOLD_MS``.
+        """
+        threshold = _CROSS_REGION_DB_P95_THRESHOLD_MS
+        return any(
+            srv.t_db_p95_ms_per_lan.get(peer_lan, 0.0) > threshold
+            for srv in summary.servers.values()
+        )
+
+    def _cross_region_breach_ring_ready(self, peer_lan: str, summary: TelemetrySummary) -> bool:
+        ring = self._cross_region_breach_ring.setdefault(
+            peer_lan, deque(maxlen=_CROSS_REGION_BREACH_WINDOWS_N)
+        )
+        breached = self._cross_region_db_breach_this_window(
+            summary, peer_lan,
+        )
+        ring.append(breached)
+        return sum(ring) >= _CROSS_REGION_BREACH_WINDOWS_M
+
+    def _cross_region_cooldown_active(self) -> bool:
+        elapsed = time.monotonic() - self._cross_region_last_activation_ts
+        return elapsed < _CROSS_REGION_STORAGE_COOLDOWN_S
 
 
     # Packet In Handler

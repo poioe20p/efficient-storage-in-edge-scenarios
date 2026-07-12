@@ -16,6 +16,7 @@ from .scaling_config import (
     _NODE_BIRTH_GRACE_S,
     _STORAGE_PERSISTENT_RESERVE_ENABLED,
     _STORAGE_RESERVE_PENDING_WINDOWS,
+    _CROSS_REGION_STORAGE_ENABLED,
 )
 from .elasticity.elasticity import (
     ElasticityManager,
@@ -45,6 +46,26 @@ class StorageReserveSlot:
     pending_windows_remaining: int = 0
 
 
+@dataclass
+class CrossRegionReserveSlot:
+    """Controller-side state for one cross-region storage reserve.
+
+    Tracks a pre-spawned secondary of the PEER LAN's replica set, placed
+    in THIS LAN to serve cross-region reads locally.  Owned by Thread 2.
+    One slot per consumer LAN (the local LAN).  None when the feature is
+    disabled.
+    """
+    state: str = "NONE"          # NONE | PREPARING | READY_RESERVED
+    mac: str = ""
+    ip: str = ""
+    container_name: str = ""
+    owner_lan: str = ""          # "lan1" or "lan2" — which RS this reserve belongs to
+    rs_name: str = ""            # e.g. "rs_net1" (the REMOTE RS)
+    pending_reason: str = ""
+    prepare_submitted_ts: float = 0.0
+    ready_ts: float = 0.0
+
+
 class DynamicNodeRegistry:
     """Tracks dynamically added nodes for scale-down and absence detection.
 
@@ -59,6 +80,9 @@ class DynamicNodeRegistry:
         self._birth_ts: dict[str, float] = {}
         # Persistent reserve — one slot per LAN, keyed by LAN number.
         self._reserve_slots: dict[int, StorageReserveSlot] = {}
+        # Cross-region reserve — one slot for the peer LAN's RS secondary
+        # placed in this LAN.  None when feature is disabled.
+        self._cross_region_reserve_slot: CrossRegionReserveSlot | None = None
 
     # ── Thread 3 → Thread 2 sync ────────────────────────────────────────
 
@@ -428,3 +452,64 @@ class DynamicNodeRegistry:
                 primary_container=info.primary_container,
                 port=info.port,
             )
+
+    # ── Cross-region storage reserve helpers ────────────────────────────
+
+    def init_cross_region_reserve_slot(self) -> CrossRegionReserveSlot:
+        """Create and return a fresh cross-region reserve slot.
+
+        Called once at startup if ``_CROSS_REGION_STORAGE_ENABLED`` is set.
+        """
+        self._cross_region_reserve_slot = CrossRegionReserveSlot()
+        logger.info("[cross-region-reserve] slot initialised")
+        return self._cross_region_reserve_slot
+
+    def get_cross_region_reserve_slot(self) -> CrossRegionReserveSlot | None:
+        """Return the cross-region reserve slot, or None if disabled."""
+        return self._cross_region_reserve_slot
+
+    def should_prepare_cross_region_reserve(self) -> bool:
+        slot = self._cross_region_reserve_slot
+        return slot is not None and slot.state == "NONE"
+
+    def mark_cross_region_reserve_prepare_submitted(
+        self, owner_lan: str, rs_name: str,
+    ) -> None:
+        slot = self._cross_region_reserve_slot
+        assert slot is not None
+        slot.state = "PREPARING"
+        slot.owner_lan = owner_lan
+        slot.rs_name = rs_name
+        slot.prepare_submitted_ts = time.monotonic()
+        logger.info(
+            "[cross-region-reserve] prepare_submitted owner=%s rs=%s",
+            owner_lan, rs_name,
+        )
+
+    def mark_cross_region_reserve_ready(
+        self, mac: str, ip: str, container_name: str,
+    ) -> None:
+        slot = self._cross_region_reserve_slot
+        assert slot is not None
+        slot.state = "READY_RESERVED"
+        slot.mac = mac
+        slot.ip = ip
+        slot.container_name = container_name
+        slot.ready_ts = time.monotonic()
+        logger.info(
+            "[cross-region-reserve] ready mac=%s ip=%s name=%s",
+            mac, ip, container_name,
+        )
+
+    def consume_cross_region_reserve(self) -> tuple[str, str, str]:
+        """Activate: return (mac, ip, container_name) and reset slot to NONE."""
+        slot = self._cross_region_reserve_slot
+        assert slot is not None
+        mac, ip, name = slot.mac, slot.ip, slot.container_name
+        owner = slot.owner_lan
+        slot.state = "NONE"
+        slot.mac = slot.ip = slot.container_name = ""
+        logger.info(
+            "[cross-region-reserve] consumed mac=%s owner=%s", mac, owner,
+        )
+        return mac, ip, name
