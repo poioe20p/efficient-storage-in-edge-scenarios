@@ -38,6 +38,78 @@ Non-canonical validation and diagnostic profiles live under
 
 ---
 
+## Resource-Constrained Configuration (RQ3 Calibration)
+
+The production golden config (`STORAGE_CPUS=0.10`, `EDGE_CPUS=0.30`) produces
+CPU utilisation that is intentionally low — storage ~20–46%, edge ~2–22%.
+This is correct for normal operation: the system has headroom and scale-up
+fires only under genuine stress.
+
+RQ3 (trigger-quality comparison: degradation_score vs cpu_only vs latency_only)
+requires a different operating point: CPU must reach ~60% during stress phases
+so that the three trigger modes have a meaningful overload signal to compare.
+If CPU stays in the 20% range, all three modes behave identically — the
+comparison is inconclusive.
+
+To create this overload signal, Docker CPU limits are tightened for both
+storage and edge containers. A 6-run calibration matrix (2026-07-13) identified
+the following resource-constrained configuration:
+
+### Calibration Results
+
+| Run | `STORAGE_CPUS` | `EDGE_CPUS` | Storage CPU (storage_storm, pre-scale) | Edge CPU (compute_spike, pre-scale) |
+| --- | --- | --- | --- | --- |
+| C0 | 0.10 | 0.30 | ~20% | ~22% |
+| C1 | 0.06 | 0.30 | ~34% | ~22% |
+| C2 | 0.10 | 0.08 | ~29% | 60–87% |
+| C3 | 0.06 | 0.08 | ~39% | variable |
+| **C4 (winner)** | **0.04** | **0.06** | **48–70%** | **56–67%** |
+
+**Winner rationale**: C4 is the tightest config where both tiers reach ~60%
+CPU during their respective stress phases without triggering system failure.
+Storage peaks at 70% in the first 60s of `storage_storm` (before scale-up
+relieves pressure). Edge reaches 56–67% during `compute_spike`. The system
+remained stable: no OOM kills, no controller tracebacks, 61 total 503s across
+the full 24-minute workload (acceptable for calibration purposes).
+
+C5 (STORAGE_CPUS=0.03, EDGE_CPUS=0.04) was not executed — the calibration
+success criteria were satisfied at C4, and further tightening risks MongoDB's
+WiredTiger functional floor.
+
+### RQ3 Resource-Constrained Launch Command
+
+```bash
+sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \
+  OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/current_state_integrated.env \
+  RUN_LABEL=<label> \
+  PHASES_CONFIG=testing/phases.json \
+  WAN_RTT_MS=260 CLIENTS=48 CONTENT_ITEMS=6000 USERS=100 \
+  STORAGE_CPUS=0.04 EDGE_CPUS=0.06 \
+  STORAGE_MEMORY=512m EDGE_MEMORY=256m \
+  RANDOM_SEED=42 \
+  SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1
+```
+
+### Distinction from Production Golden Config
+
+| Parameter | Production Golden | RQ3 Calibrated | Purpose of change |
+| --- | --- | --- | --- |
+| `STORAGE_CPUS` | 0.10 | **0.04** | Push storage CPU from ~20% → ~60% during `storage_storm` |
+| `EDGE_CPUS` | 0.30 | **0.06** | Push edge CPU from ~22% → ~60% during `compute_spike` |
+| All other parameters | Golden values | **Unchanged** | Trigger thresholds, cooldowns, and mechanism toggles are identical |
+
+The production golden config remains `STORAGE_CPUS=0.10, EDGE_CPUS=0.30` for
+all non-RQ3 experiments. The RQ3 calibration config is a testing-specific
+override — it creates a resource-constrained environment where trigger quality
+can be meaningfully compared, not a new production baseline.
+
+The calibration plan is documented at
+[`docs/operation/testing/experiment/rq3_evaluation/calibration_plan.md`](../operation/testing/experiment/rq3_evaluation/calibration_plan.md).
+Run artifacts are stored on the cloud VM under
+`source/scripts/testing/metrics/20260713_*_cal_c*`.
+
+---
+
 ## Mechanism Toggles
 
 | Parameter | Value | Purpose |

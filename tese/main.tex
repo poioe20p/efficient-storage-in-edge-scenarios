@@ -102,11 +102,11 @@
 % =====================================================================
 \chapter{Introduction}\label{ch:introduction}
 Orchestrating edge web services means dealing with coordination delays between routing,
- auto-scaling and monitoring components. This has been shown to negatively affect overhead 
- on overall infrastructure and QoS due to the unaccounted effects each module has on each other. 
- In this chapter the context, motivation and problem statement are explained in the 
+ auto-scaling and monitoring components. This has been shown to negatively impact the overall infrastructure and even QoS 
+ due to the unaccounted effects each module has on each other.
+ In this chapter the context, motivation and problem statement are explained in 
  \ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
- The research questions that emerged are available on \ref{sec:research_questions}. 
+ The research questions that emerged are available in \ref{sec:research_questions}. 
 The methodology used to develop the thesis is detailed in \ref{sec:research_methodology},
 the main contributions in \ref{sec:contributions} and finally the outlining of the rest of the 7 
 chapters of the thesis are presented in \ref{sec:document_structure}.
@@ -116,6 +116,21 @@ chapters of the thesis are presented in \ref{sec:document_structure}.
 % TODO: Edge computing + stateful web services. Multi-Region Content Discovery
 % Platform as experimental workload. Coordination-gap observation as motivation.
 % DO NOT mention IoT.
+In the year 2025 global internet traffic surprassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
+corresponds to a more than double increase in the amount of internet traffic generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
+ \parencite{ITU2025InternetTraffic}.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/global-internet-traffic-over-the-years.pdf}
+    \caption{Global internet traffic between 2020 and 2025.}
+    \label{fig:internet_traffic}
+\end{figure}
+This increase has been driven by the technological discoveries and developments such as streaming, social media, IoT and an 
+ever growing number of connected devices. 
+
+These platforms and services are very often built and or deployed on the cloud, where resources are abundant.
+
+
 
 \section{Objectives}\label{sec:objectives}
 % TODO: The 6 objectives from the thesis proposal.

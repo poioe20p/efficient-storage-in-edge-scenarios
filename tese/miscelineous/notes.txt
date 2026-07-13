@@ -4,3 +4,58 @@ Start-Service ssh-agent
 
 # Add your key (you'll type the passphrase once per boot)
 ssh-add ~/.ssh/edge-testop
+
+
+¶1 — DATA GROWTH (2-3 sentences)
+  "In 2025, global internet traffic exceeded 8,800 exabytes — more than double
+   the volume recorded in 2020 [chart citation]. Mobile traffic alone nearly tripled
+   over the same period, driven by streaming, cloud services, and proliferating
+   connected devices."
+  
+  → Immediately establishes scale and urgency.
+
+¶2 — CLOUD (3-4 sentences)
+  "Cloud computing has absorbed this growth through elastic provisioning,
+   pay-as-you-go pricing, and global Points of Presence. Hyperscale data centers
+   process and store the bulk of this traffic..."
+  
+  → Cloud as the solution to data volume.
+
+¶3 — CLOUD LIMITATIONS → EDGE (3-4 sentences)
+  "...But centralized cloud architectures impose structural latency: a user
+   in Singapore accessing a data center in Virginia pays 250+ ms Round-Trip Time
+   regardless of provisioning scale. Edge computing addresses this by placing
+   compute and storage at the network periphery — closer to where data is
+   generated and consumed."
+  
+  → Edge as the logical next step.
+
+¶4 — STANDARD EDGE PLATFORM ARCHITECTURE (4-5 sentences)
+  "Edge platforms deliver services through three functions: monitoring
+   infrastructure health, load balancing traffic across backend instances,
+   and auto-scaling resources in response to demand shifts. In every major
+   architecture — Kubernetes, NFV MANO frameworks, MEC platforms — these three
+   are implemented as separate components with independent control loops."
+  
+  → Introduce the object of study.
+
+¶5 — THE COORDINATION GAP (4-5 sentences)
+  "Each handoff between components introduces delay. A Prometheus scrape
+   interval, an AlertManager evaluation, an HPA reconciliation, and a kube-proxy
+   endpoint propagation can accumulate 30–120 seconds of coordination latency —
+   even though the container itself boots in 10 seconds. This phenomenon has been
+   documented, observed as a side effect, and called for — but never isolated
+   or measured as an independent experimental variable."
+  
+  → The gap.
+
+¶6 — THIS THESIS (4-5 sentences)
+  "This thesis experimentally characterizes the coordination gap by decomposing
+   it into three independently testable links: how overload is detected (trigger
+   quality), how fast that information reaches the controller (delivery cadence),
+   and how quickly new capacity receives traffic (routing awareness). Using a
+   stateful edge workload — a content-discovery platform backed by a
+   network-partitioned document database — and a unified SDN controller as the
+   experimental apparatus, we isolate each link, vary it independently, and
+   reconstruct the compound coordination tax that every separated architecture
+   pays."

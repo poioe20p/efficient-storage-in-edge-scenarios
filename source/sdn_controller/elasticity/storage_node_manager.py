@@ -236,10 +236,11 @@ class StorageNodeAdder(_BaseNodeAdder):
         # else: container doesn't exist — nothing to clean up
         vol = f"{name}-data"
         storage_cpus = os.environ.get("STORAGE_CPUS", "0.15")
+        storage_mem = os.environ.get("STORAGE_MEMORY", "512m")
         cmd = [
             "docker", "run", "-dit",
             "--cpus", storage_cpus,
-            "--memory", "512m",
+            "--memory", storage_mem,
             "--network", "none",
             "--name", name,
             "-v", f"{vol}:/data/db",

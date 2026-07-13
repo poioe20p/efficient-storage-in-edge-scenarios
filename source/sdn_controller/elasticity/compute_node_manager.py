@@ -210,10 +210,11 @@ class ComputeNodeAdder(_BaseNodeAdder):
             logger.info("[node_add] removing stale container %s (state=%s)", name, state)
             self._cleanup_container(name)
         edge_cpus = os.environ.get("EDGE_CPUS", "0.30")
+        edge_mem = os.environ.get("EDGE_MEMORY", "256m")
         cmd = [
             "docker", "run", "-dit",
             "--cpus", edge_cpus,
-            "--memory", "256m",
+            "--memory", edge_mem,
             "--sysctl", "net.core.somaxconn=1024",
             "--network", "none",
             "--name", name,

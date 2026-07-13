@@ -184,7 +184,7 @@ Instead, each RQ's baselines encode the **architectural property** that separate
 | ------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **RQ1** | Polling at 12 s / 30 s intervals              | Stale monitoring → delayed decisions (Prometheus scrape interval → AlertManager → HPA; CloudWatch metric period → Alarm → ASG) |
 | **RQ2** | `topology_slowstart` (invisible until discovery, then graduated ramp) | Discovery-time backend awareness — separated LB doesn't know backend exists until health checks pass; coordination delay between spawn and routing-plane awareness |
-| **RQ3** | CPU-only threshold (w_cpu=1.0, w_lat=0.0, threshold=0.45 uncalibrated) | Trigger blindness to I/O-bound overload — the default in Kubernetes HPA, AWS ASG, and most autoscaling platforms |
+| **RQ3** | CPU-only threshold (w_cpu=1.0, w_lat=0.0, threshold=0.20 uncalibrated) plus latency-only triangulation | Trigger blindness to I/O-bound overload — the default in Kubernetes HPA, AWS ASG, and most autoscaling platforms; latency-only tests whether the dimension alone suffices |
 
 ### 4.2 Why This Is Methodologically Valid
 
@@ -510,8 +510,14 @@ studies scaling triggers treats the metric as a given: CPU utilization
 
 | Mode | Weights | Threshold | Encodes |
 |---|---|---|---|
-| `degradation_score` | w_cpu=0.40, w_lat=0.60 | 0.45 (golden) | Latency-aware multi-dimensional detection tuned for stateful services |
-| `cpu_only` | w_cpu=1.00, w_lat=0.00 | 0.45 (uncalibrated) | CPU-only threshold: the industry default applied without domain-specific tuning |
+| `degradation_score` | w_cpu=0.40, w_lat=0.60 | 0.20 (golden) | Latency-aware multi-dimensional detection tuned for stateful services; calibrated across 15+ stability experiments |
+| `cpu_only` | w_cpu=1.00, w_lat=0.00 | 0.20 (uncalibrated) | CPU-only threshold: the industry default applied without domain-specific tuning |
+| `latency_only` | w_cpu=0.00, w_lat=1.00 | 0.20 (uncalibrated) | Latency-only threshold: tests whether the right dimension alone is sufficient, or whether CPU confirmation provides filtering value |
+
+Three pairwise comparisons isolate distinct questions: (1) cpu_only vs
+latency_only — does the dimension matter? (2) latency_only vs
+degradation_score — does multi-dimensional help? (3) cpu_only vs
+degradation_score — is the proposed approach better than the default?
 
 All other parameters (sliding window, cooldowns, delivery cadence, routing
 policy) are identical across modes.
@@ -533,7 +539,8 @@ also be set to CPU-only for consistency.
 
 ### Development Required for RQ3
 
-1. Create env override files for `degradation_score` and `cpu_only` modes.
+1. Create env override files for `degradation_score`, `cpu_only`, and `latency_only` modes
+   (`rq3_degradation_score.env`, `rq3_cpu_only.env`, `rq3_latency_only.env`).
 2. Ensure the independent breach detector (`breach_detector.py`) reads
    weights from the same env vars as the controller.
 3. Add a pre-run validation step that confirms weight agreement between
@@ -553,23 +560,26 @@ Estimated: env override files only. Zero code changes.
 
 ### Evaluation Design for RQ3
 
-Six runs, three per mode:
+Nine runs, three per mode, mirroring RQ2's design:
 
 | Run | Trigger | Weights |
 |---|---|---|
 | **R3-DS** (×3) | degradation_score | w_cpu=0.40, w_lat=0.60 |
 | **R3-CPU** (×3) | cpu_only | w_cpu=1.00, w_lat=0.00 |
+| **R3-LAT** (×3) | latency_only | w_cpu=0.00, w_lat=1.00 |
 
 Hold constant: push-mode telemetry, topology_lifecycle routing, golden
-config thresholds, canonical workload.
+config thresholds (base 0.20, adaptive increment 0.10 per spawn),
+canonical workload at golden sizing (CLIENTS=48, WAN_RTT_MS=260,
+DEVICES=6000, NODES=100, STORAGE_CPUS=0.10, VIP_HARD_TIMEOUT=60).
 
-Vary only: `SCALEUP_W_CPU` and `SCALEUP_W_T_PROC` (and storage equivalents).
+Vary only: `SCALEUP_W_CPU`, `SCALEUP_W_T_PROC`, `SCALEUP_W_STORAGE_CPU`, `SCALEUP_W_T_DB`.
 
 ### Main Validity Threats for RQ3
 
-- **CPU-only may never fire at realistic edge CPU levels (2–8%).** This is not a threat — it is the central finding: CPU-based autoscaling is structurally incapable of responding to I/O-bound overload in stateful edge services.
-- **The uncalibrated threshold may be considered unfair.** The experiment explicitly tests the industry default without recalibration. A calibrated comparison is identified as future work.
-- **Bimodality from RQ1 may obscure the signal.** If both triggers produce bimodal outcomes, n=3 may not separate them. But if CPU-only produces zero spawns, the result is binary and conclusive.
+- **CPU-only may fire but at the wrong times.** With the golden config's CPU floor of 3% and base threshold of 0.20, CPU-only needs ~5% CPU to trigger — reachable at edge levels. The three-mode design triangulates: if latency_only detects the same overload without the false positives, the latency dimension is the essential signal.
+- **The uncalibrated threshold may be considered unfair.** All three modes use 0.20. The experiment explicitly tests uncalibrated modes. A calibrated comparison is identified as future work.
+- **Bimodality from RQ1 may obscure the signal.** If all three triggers produce bimodal outcomes, n=3 may not separate them. But the pairwise comparisons provide more resolution than a single baseline-vs-proposed comparison.
 
 ---
 
@@ -579,7 +589,7 @@ Vary only: `SCALEUP_W_CPU` and `SCALEUP_W_T_PROC` (and storage equivalents).
 | ------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ---------------------- |
 | **RQ1** | Delivery cadence (push vs. polling interval)                                                      | Decision staleness, reaction latency, transient p95/p99, control overhead, scaling outcome description             | Polling telemetry source, summary persistence, timing instrumentation, overhead sampler | High                   |
 | **RQ2** | Routing awareness timing (cold-start herd / discovery-time slow-start / spawn-time warm lease) | Load redistribution time, transition-window service quality, per-mode redistribution profile (speed vs. control trade-off) | Policy-mode gating + slow-start ramp in WSM cost functions | High |
-| **RQ3** | Trigger composition (degradation score vs CPU-only threshold) | Breach detection time, false positive/negative rate, per-phase service quality | Env var toggle (SCALEUP_W_CPU, SCALEUP_W_T_PROC) | High (zero code changes) |
+| **RQ3** | Trigger composition (degradation score vs CPU-only vs latency-only) | Breach detection time, false positive/negative rate (pairwise), per-phase service quality | Env var toggle (SCALEUP_W_CPU, SCALEUP_W_T_PROC) | High (zero code changes) |
 
 ---
 
@@ -596,7 +606,7 @@ If the thesis follows this RQ set, the implementation priorities should be:
 4. **Explicit routing policy-mode gating + slow-start ramp + per-mode unknown-stats treatment**
    - required for RQ2 (`topology_host`: best-case herd, `topology_slowstart`: worst-case invisible → ramp, `topology_lifecycle`: spawn-time warm lease)
 5. **Trigger mode env var overrides**
-   - required for RQ3 (cpu_only vs degradation_score)
+   - required for RQ3 (degradation_score, cpu_only, latency_only — 3 env files)
 6. **Breach detector weight synchronization**
    - required for RQ3 (independent observer must use same weights as controller)
 
@@ -612,5 +622,5 @@ If the thesis follows this RQ set, the implementation priorities should be:
 | 4. Methodology            | RQ formulation, evaluation design, measurement definitions, baseline rationale, held-constant sets                                                        | All RQs                       |
 | 5. RQ1 Evaluation         | Telemetry freshness and delivery cadence results                                                                                                          | Telemetry Freshness pillar    |
 | 6. RQ2 Evaluation         | Routing-awareness timing results (coordination gap in backend discovery)                                                                                                                  | Backend Selection pillar      |
-| 7. RQ3 Evaluation         | Trigger quality results (degradation score vs CPU-only threshold)                                                                                         | Detection Quality pillar      |
+| 7. RQ3 Evaluation         | Trigger quality results (degradation score vs CPU-only vs latency-only thresholds)                                                                        | Detection Quality pillar      |
 | 8. Synthesis & Conclusion | Compound coordination gap reconstruction from RQ1+RQ2+RQ3; the 74-second coordination tax; what SDN unification enables; limitations; future work        | Thesis defense                |

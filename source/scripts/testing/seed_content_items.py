@@ -546,7 +546,7 @@ def seed(uri_lan1: str, uri_lan2: str, content_items_per_region: int):
     docs_by_region = generate_documents(content_items_per_region)
 
     for region, uri in uris.items():
-        client = MongoClient(uri)
+        client = MongoClient(uri, timeoutMS=120000)
         collection = client["edge_platform"]["content_items"]
         ops = [
             UpdateOne({"_id": doc["_id"]}, {"$set": doc}, upsert=True)
