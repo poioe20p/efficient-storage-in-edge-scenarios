@@ -42,8 +42,8 @@ Options:
 	-d, --docker     Clean only Docker resources (containers, dangling images, networks)
 	-s, --stop-containers  Stop all running containers (no removal)
 	    --images     Remove project images tagged :latest (in addition to selected mode)
-	-v, --volumes            Remove edge_storage_server volumes
-	-r, --reset              Remove all containers and prune edge_storage_server volumes
+	-v, --volumes            Remove ALL edge_storage_server volumes (static + dynamic)
+	-r, --reset              Remove all containers and all edge_storage_server volumes
 	    --image-filter NAME  Scope stop/remove operations to containers from image NAME
 	-h, --help               Show this help
 EOF
@@ -272,11 +272,43 @@ images_cleanup() {
 	fi
 }
 
-list_dynamic_storage_volumes() {
+list_transient_volumes() {
 	local docker_cli="$1"
-	# Elasticity names dynamic storage nodes as edge_storage_lanX_dynY(_cs for cross-region).
+	# Dynamic storage nodes: edge_storage_lanX_dynY(_cs for cross-region).
+	# Selective-sync containers: sel_sync_lanX_dynY.
 	${docker_cli} volume ls --format '{{.Name}}' 2>/dev/null \
-		| grep -E '^edge_storage_lan[0-9]+_dyn[0-9]+(_cs)?-data$' || true
+		| grep -E '^edge_storage_lan[0-9]+_dyn[0-9]+(_cs)?-data$|^sel_sync_lan[0-9]+_dyn[0-9]+-data$' || true
+}
+
+# Kept for backward compatibility with any external callers.
+list_dynamic_storage_volumes() {
+	list_transient_volumes "$1"
+}
+
+transient_volumes_cleanup() {
+	log "🧹 Removing transient (dynamic) Docker volumes"
+	local DOCKER
+	DOCKER=$(docker_cmd)
+	if [[ -z "$DOCKER" ]]; then
+		warn "Docker not installed; skipping transient volume cleanup."
+		return 0
+	fi
+	local extra_vols
+	extra_vols=$(list_transient_volumes "$DOCKER")
+	local removed=0
+	for vol in $extra_vols; do
+		if ${DOCKER} volume rm -f "$vol" >/dev/null 2>&1; then
+			log "Removed transient volume: $vol"
+			((++removed))
+		else
+			warn "Failed to remove transient volume: $vol"
+		fi
+	done
+	if [[ $removed -gt 0 ]]; then
+		log "✅ Removed ${removed} transient volume(s)."
+	else
+		log "No transient volumes to remove."
+	fi
 }
 
 volumes_cleanup() {
@@ -302,19 +334,8 @@ volumes_cleanup() {
 			log "Volume not present, skipping: $vol"
 		fi
 	done
-	local extra_vols
-	extra_vols=$(list_dynamic_storage_volumes "$DOCKER")
-	for vol in $extra_vols; do
-		if ${DOCKER} volume rm "$vol" >/dev/null 2>&1; then
-			log "Removed extra node volume: $vol"
-			((++removed))
-		else
-			warn "Failed to remove extra node volume: $vol"
-		fi
-	done
-	if [[ $removed -gt 0 ]]; then
-		log "✅ Removed ${removed} volume(s)."
-	fi
+	# Also clean up transient (dynamic) volumes
+	transient_volumes_cleanup
 }
 
 reset_cleanup() {
@@ -355,16 +376,9 @@ reset_cleanup() {
 			log "Volume not present, skipping: $vol"
 		fi
 	done
-	local extra_vols
-	extra_vols=$(list_dynamic_storage_volumes "$DOCKER")
-	for vol in $extra_vols; do
-		if ${DOCKER} volume rm -f "$vol" >/dev/null 2>&1; then
-			log "Removed extra node volume: $vol"
-			((++removed))
-		else
-			warn "Failed to remove extra node volume: $vol"
-		fi
-	done
+	# Also clean up transient (dynamic) volumes
+	transient_volumes_cleanup
+
 	if [[ $removed -gt 0 ]]; then
 			log "✅ Reset removed ${removed} edge_storage_server volume(s)."
 	fi
@@ -411,12 +425,14 @@ case "$MODE" in
 	all)
 		network_cleanup
 		docker_cleanup
+		transient_volumes_cleanup
 		;;
 	network)
 		network_cleanup
 		;;
 	docker)
 		docker_cleanup
+		transient_volumes_cleanup
 		;;
 esac
 

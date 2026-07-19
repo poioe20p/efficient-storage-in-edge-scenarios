@@ -71,7 +71,8 @@ seed_content_items:
 	$(PYTHON) testing/seed_content_items.py \
 	  --mongo-lan1 $(MONGO_LAN1) \
 	  --mongo-lan2 $(MONGO_LAN2) \
-	  --content-items $(CONTENT_ITEMS)
+	  --content-items $(CONTENT_ITEMS) \
+	  --data-seed $(DATA_SEED)
 
 ## 2 — Seed user_profiles collection on both LANs
 seed_user_profiles:
@@ -79,7 +80,8 @@ seed_user_profiles:
 	  --mongo-lan1 $(MONGO_LAN1) \
 	  --mongo-lan2 $(MONGO_LAN2) \
 	  --content-items $(CONTENT_ITEMS) \
-	  --users $(USERS)
+	  --users $(USERS) \
+	  --data-seed $(DATA_SEED)
 
 ## 3 — Create indexes on both replica-set primaries
 create_indexes:

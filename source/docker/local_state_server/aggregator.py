@@ -410,6 +410,7 @@ def _publish_loop() -> None:
 
             avg_time_proc   = statistics.mean(time_procs_all)
             avg_time_db     = statistics.mean(time_dbs_all)
+            p95_time_proc   = _p95(time_procs_all)
             p95_time_db     = _p95(time_dbs_all)
             avg_cpu_percent = statistics.mean(cpus_all)
             peak_time_total = max(time_totals_all)
@@ -426,7 +427,7 @@ def _publish_loop() -> None:
             avg_time_db_cmd_count = statistics.mean(e.get("time_db_cmd_count", 0) for e in http_events)
         else:
             avg_time_proc = avg_time_db = avg_cpu_percent = peak_time_total = 0.0
-            p95_time_db = 0.0
+            p95_time_proc = p95_time_db = 0.0
             median_time_proc = median_time_db = median_cpu_percent = 0.0
             median_time_total = median_ram_used_mb = 0.0
             total_requests = 0
@@ -471,6 +472,7 @@ def _publish_loop() -> None:
                 "total_requests":          total_requests,
                 "avg_time_proc_ms":        avg_time_proc,
                 "avg_time_db_ms":          avg_time_db,
+                "p95_time_proc_ms":        p95_time_proc,
                 "p95_time_db_ms":          p95_time_db,
                 "average_cpu_percent":     avg_cpu_percent,
                 "peak_time_total_ms":      peak_time_total,

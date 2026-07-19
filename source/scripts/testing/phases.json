@@ -5,7 +5,7 @@
       "duration_s": 60,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
-      "client_fraction": 0.25,
+      "client_fraction": 0.10,
       "mix": {
         "content_lookup": 0.60,
         "feed_ranking": 0.25,
@@ -31,7 +31,7 @@
       "name": "tier1_hotspot",
       "duration_s": 180,
       "rate_per_client": 5.0,
-      "cross_region_ratio": 0.95,
+      "cross_region_ratio": 0.40,
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
@@ -58,7 +58,7 @@
       "name": "reverse_hotspot",
       "duration_s": 180,
       "rate_per_client": 5.0,
-      "cross_region_ratio": 0.95,
+      "cross_region_ratio": 0.40,
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
@@ -77,7 +77,7 @@
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
-        "feed_ranking": 1.0
+        "service_pressure": 1.0
       }
     },
     {

@@ -84,6 +84,7 @@ class DomainSummary(BaseModel):
     total_requests: int
     avg_time_proc_ms: float
     avg_time_db_ms: float
+    p95_time_proc_ms: float = 0.0
     p95_time_db_ms: float = 0.0
     average_cpu_percent: float
     peak_time_total_ms: float

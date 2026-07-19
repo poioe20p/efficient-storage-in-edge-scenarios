@@ -146,6 +146,11 @@ check_mongo_ok() {
     local output="$1"
     local description="$2"
     if ! echo "$output" | grep -Eq '"ok"\s*:\s*1'; then
+        # Accept "already initialized" (code 23) as success
+        if echo "$output" | grep -Eq '"codeName"\s*:\s*"AlreadyInitialized"'; then
+            echo "${description} already initialized (accepting as ok)."
+            return 0
+        fi
         echo "${description} did not return ok: 1. Output:"
         printf '%s\n' "$output"
         exit 1
@@ -318,7 +323,7 @@ if [[ $? -ne 0 ]]; then
     echo "Failed to build first network. Aborting."
     exit 1
 fi
-sleep 1
+sleep 15  # allow MongoDB at tight CPU limits time to start
 
 
 # =============================
@@ -386,6 +391,8 @@ sleep 2
 # ==============================
 # 5 - Initialize the edge_storage_server_n2 replica set
 # ==============================
+echo "Waiting 15s for MongoDB to start at tight CPU limits..."
+sleep 15
 echo "Initializing replica set for edge_storage_server_n2..."
 set +e
 RS_STATUS_CHECK=$(docker exec -i edge_storage_server_n2 mongosh --quiet --host 10.0.1.4 --port 27018 --quiet --eval "

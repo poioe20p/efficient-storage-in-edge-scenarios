@@ -1,372 +1,288 @@
+# RQ3 — Trigger Composition Characterization
 
-# RQ3 — Trigger Quality and Detection Accuracy
-
-**Thesis pillar**: Trigger Quality
-**Status**: Designed — ready for evaluation
-**Thesis map**: [`tese/miscelineous/system_to_thesis_map_rq_v2.md`](../../tese/miscelineous/system_to_thesis_map_rq_v2.md)
+**Thesis pillar**: Detection
+**Status**: Designed
+**Gap basis**: [`global_literature_review.md`](../../tese/literature_review/global_literature_review.md) §7 Gap Matrix — zero papers across six domains vary trigger composition as an experimental variable.
 
 ---
 
-## 1. Thesis Context
+## 1. What the Literature Gap Is
 
-This thesis investigates whether collapsing three traditionally separated
-control-plane concerns — **information acquisition** (monitoring), **backend
-selection** (load balancing), and **infrastructure adaptation** (auto-scaling)
-— into a single SDN controller process eliminates coordination gaps that
-degrade service quality during demand shifts.
+The global literature review surveys 60+ papers across six domains. The gap
+matrix (§7) identifies four dimensions no paper addresses simultaneously.
+One column — **trigger composition varied?** — is empty. Every paper that
+studies auto-scaling triggers treats the metric as a given: CPU utilization
+(Kubernetes HPA), request rate (AWS ASG), or a pre-defined compound metric
+(OSM POL). None vary what goes into the trigger and measure what happens.
 
-RQ1 characterized the **delivery** link: does push-mode telemetry beat
-polling by eliminating the blind spot between scrapes? RQ2 characterized
-the **action** link: does spawn-time routing awareness beat discovery-time
-awareness by eliminating the LB discovery gap?
+RQ3 fills this column. It does not claim a better formula. It characterizes
+what each composition does under the same conditions.
 
-RQ3 moves upstream to the **detection** link: before the controller can
-deliver information (RQ1) or act on it (RQ2), it must first recognize that
-overload is occurring. The degradation score that triggers scale-up is a
-weighted combination of CPU saturation and processing latency. The question
-is whether this latency-aware multi-dimensional score detects stateful-service
-overload earlier and with fewer false positives than a CPU-only threshold —
-the default in every major autoscaling platform.
+### 1.1 Prerequisite: Scaling Must Produce Visible Improvement
+
+For trigger composition to be a meaningful variable, scaling up must
+demonstrably improve the conditions the trigger measures: CPU utilization
+and processing latency. If adding capacity does not reduce CPU or latency,
+then the choice of trigger is irrelevant — no composition can detect
+overload that scaling cannot relieve.
+
+This prerequisite must be satisfied at whatever resource configuration is
+chosen for the evaluation. The resource limits are not fixed in advance;
+they are selected from the range explored during pre-experiment calibration
+to meet a specific condition: **during a stress phase, the pre-scale window
+shows elevated CPU and latency, and the post-scale window (after spawns
+complete) shows a measurable reduction in both.**
+
+Two bodies of prior work identify candidate configurations:
+
+**Mechanism necessity experiments (v6)**. At WAN = 260 ms with storage
+`--cpus` = 0.10–0.15 and edge `--cpus` = 0.30, enabling Tier 1 selective
+sync reduced median tier1_hotspot latency by 39 % (5,922 ms → 3,633 ms).
+Storage elasticity at these CPU limits produced measurable CPU distribution
+across additional MongoDB nodes. These experiments confirm the system
+responds to provisioning changes.
+
+**Phase 1a resource calibration (C0–C5)**. A range of `STORAGE_CPUS`
+(0.10 → 0.03) and `EDGE_CPUS` (0.30 → 0.03) was tested. Multiple
+configurations produced stress-phase overload with successful scale-up.
+The winning configuration for RQ3 is whichever configuration shows the
+clearest pre-scale → post-scale improvement in both CPU and latency for
+both compute and storage tiers — not necessarily C4.
+
+The comparison structure for each RQ3 run is: **non-stress baseline →
+pre-scale stress onset → post-scale stabilized stress**. The degradation
+score must cross threshold during pre-scale stress; the post-scale window
+must show reduced CPU and latency relative to pre-scale; and this cycle
+must hold for both tiers. The resource configuration that best satisfies
+this condition is selected before the 9-run evaluation begins.
 
 ---
 
 ## 2. Research Question
 
-> For stateful edge services where I/O latency often degrades before CPU
-> saturates, does a latency-aware multi-dimensional degradation score
-> detect overload earlier and with fewer false positives than a CPU-only
-> threshold?
+> *For stateful edge services under constrained resources, how does the
+> composition of the degradation score — which signals are included and
+> at what weight — affect detection behavior?*
+
+### 2.1 Decomposed Questions
+
+| SQ             | Question                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SQ3a** | Given identical floors, spans, thresholds, and sliding-window parameters, do different trigger compositions produce different false-positive rates during baseline? |
+| **SQ3b** | Do different trigger compositions produce different detection sensitivity during stress — spawn count, time-to-first-spawn, and spawns missed?                     |
+| **SQ3c** | Do detection differences produce measurable service quality differences — per-phase latency, timeout rate, and completed request volume?                           |
 
 ---
 
-## 3. What Is Being Investigated
+## 3. What Is Being Measured
 
-The controller's scaling policy evaluates each telemetry window using a
-weighted degradation score. The canonical configuration (from the
-golden config established across 15+ stability experiments;
-see [`golden_config.md`](../operation/testing/golden_config.md)) is:
+### 3.0 Why This Formula
+
+The degradation score combines CPU and processing latency because, in
+stateful edge services backed by MongoDB, these two signals capture
+different aspects of system health that neither captures alone:
+
+**CPU utilization** reflects resource saturation — how close the container
+is to its CPU limit. At C4 constraints, baseline CPU fluctuates
+substantially (22–92 % in 5 s windows on the aggregator node) from
+non-workload sources: container startup, OVS flow installation, MongoDB
+background operations. A CPU spike alone does not mean the service is
+degraded.
+
+**Processing latency** reflects service quality — how long requests take.
+For compute (T_proc), it captures end-to-end request duration including
+MongoDB I/O. For storage (T_db), it captures database operation latency.
+Latency rises when the database is saturated, when reads go cross-region
+over WAN, or when request queues build up. But transient latency spikes
+occur without CPU pressure — a single slow MongoDB operation, a WAN
+fluctuation, or a client burst.
+
+**Together**, the two signals cross-validate: a simultaneous spike in both
+dimensions indicates genuine overload — the machine is saturated AND
+requests are suffering. A spike in only one dimension is more likely noise.
+This is why the formula has the structure it does, and why the comparison
+of single-dimension vs. composite triggers is meaningful: it tests whether
+both signals together provide information that either alone lacks.
+
+The specific weights (0.40/0.60 for compute, 0.60/0.40 for storage)
+emerged from pre-experiment calibration at C4 and are held constant for
+the composite mode. Weight sensitivity is deferred to future work.
+
+### 3.1 The Detection Mechanism
+
+The controller receives telemetry summaries from edge servers. Each summary
+contains CPU utilization and processing latency (T_proc for compute, T_db
+for storage) measured over the same window. The controller evaluates a
+degradation score:
 
 ```
-score = 0.40 × saturate((CPU% − 3) / 10) + 0.60 × saturate((T_proc_ms − 15) / 80)
+score = w_cpu × saturate((CPU% − floor_cpu) / span_cpu)
+      + w_lat × saturate((latency_ms − floor_lat) / span_lat)
 ```
 
-Where:
+When the score exceeds a threshold for a configurable number of consecutive
+windows, the controller triggers scale-up. All trigger modes share the same
+floors, spans, thresholds, sliding-window mechanism, cooldowns, and adaptive
+threshold increment. Only the weights differ.
 
-- `saturate(x) = clamp(x, 0, 1)`
-- CPU component: activates above 3%, saturates at 13%
-- Latency component: activates above 15 ms, saturates at 95 ms
-- Threshold: score ≥ 0.20 for 3 of 5 consecutive windows triggers scale-up
-  (base threshold; increases by 0.10 after each scale-up, to 0.85 max —
-  all trigger modes share the same adaptive mechanism)
+### 3.2 Three Trigger Modes
 
-The latency component carries 60% of the weight. This reflects the reality
-of stateful edge services: MongoDB I/O operations dominate request latency,
-and storage saturation manifests as rising `T_proc` before CPU utilization
-spikes. A CPU-only threshold may miss this early I/O-bound degradation
-signal entirely; a latency-only threshold may capture it but lose the
-confirming signal that CPU provides.
+| Mode                  | Compute weights        | Storage weights        | Encodes                                                                           |
+| --------------------- | ---------------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| `degradation_score` | w_cpu=0.40, w_lat=0.60 | w_cpu=0.60, w_tdb=0.40 | Both signals. The system default.                                                 |
+| `cpu_only`          | w_cpu=1.00, w_lat=0.00 | w_cpu=1.00, w_tdb=0.00 | CPU only. The default in Kubernetes HPA, AWS ASG, and most autoscaling platforms. |
+| `latency_only`      | w_cpu=0.00, w_lat=1.00 | w_cpu=0.00, w_tdb=1.00 | Latency only. The dimension that matters for I/O-bound stateful services.         |
 
-The experiment compares three trigger compositions under identical workload,
-delivery cadence (push), and routing policy (lifecycle). All three are
-evaluated within the same sliding-window mechanism (3 of 5 windows). The
-only difference is what the score measures.
+### 3.3 Why Identical Parameters Are the Fair Comparison
 
-### 3.1 Three Trigger Modes
+All three modes use the same floors, spans, thresholds, and window counts.
+A CPU spike of 82% produces the same CPU component value in every mode:
+`sat((82 − floor) / span)`. The only difference is whether that component
+contributes 40%, 100%, or 0% to the final score.
 
-| Mode                  | Weights                | Threshold           | Encodes                                                                                                                                           |
-| --------------------- | ---------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `degradation_score` | w_cpu=0.40, w_lat=0.60 | 0.20 (golden)       | Latency-aware multi-dimensional detection: the current system default, calibrated across 15+ stability experiments                                |
-| `cpu_only`          | w_cpu=1.00, w_lat=0.00 | 0.20 (uncalibrated) | CPU-only threshold: the default in Kubernetes HPA, AWS ASG, and most autoscaling platforms — applied without domain-specific tuning              |
-| `latency_only`      | w_cpu=0.00, w_lat=1.00 | 0.20 (uncalibrated) | Latency-only threshold: tests whether the latency dimension alone is sufficient, or whether multi-dimensional scoring provides additional benefit |
+If cpu_only were given a higher floor to suppress FPs, that higher floor
+would also suppress stress detection — the comparison would test calibration
+asymmetry, not trigger composition. Identical parameters mean any behavioral
+difference is caused by the weights alone. The FP rate differences between
+modes are the finding, not a calibration artifact to be eliminated.
 
-All three modes use the same 0.20 base threshold without recalibration.
-This is intentional:
+### 3.4 What Is Held Constant
 
-- `cpu_only` tests what happens when a standard CPU-threshold autoscaling
-  policy is applied to a stateful edge workload. With the golden config's
-  CPU floor of 3% and span of 10, CPU needs to reach approximately 5% to
-  cross the 0.20 threshold — reachable at edge container levels (2–8%).
-- `latency_only` tests whether the latency dimension alone captures the
-  I/O-bound degradation signal, or whether CPU provides useful confirmation
-  (fewer false positives from transient latency spikes).
-- `degradation_score` tests whether the weighted combination outperforms
-  either single-dimension trigger.
+| Parameter                                                                             | Fixed because                                            |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Resource constraints | Selected from Phase 1a calibration — the config where pre-scale → post-scale improvement is clearest (§1.1) |
+| Telemetry delivery (push)                                                             | Eliminates the monitoring blind spot                     |
+| Routing policy (warm lease)                                                           | Eliminates the LB discovery gap                          |
+| Workload (`phases.json`)                                                            | Identical across all runs                                |
+| Floors, spans, thresholds, window size, REQUIRED count, cooldowns, adaptive increment | Identical across all modes                               |
+| RANDOM_SEED                                                                           | Workload reproducibility                                 |
 
-Three pairwise comparisons isolate distinct questions:
-
-| Comparison                        | Question                                                                                                                                     |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| cpu_only vs latency_only          | **Does the dimension matter?** If latency_only detects I/O-bound overload that cpu_only misses, the latency signal is essential.       |
-| latency_only vs degradation_score | **Does multi-dimensional help?** If degradation_score detects earlier or with fewer false positives, CPU provides useful confirmation. |
-| cpu_only vs degradation_score     | **Is the proposed approach better than the default?** The original comparison, contextualized by the other two.                        |
-
-### 3.2 What Is Held Constant
-
-- Telemetry delivery: **push mode** (ZMQ at window close) — RQ1's optimal.
-- Routing policy: `topology_lifecycle` (warm lease) — RQ2's optimal.
-- Scaling policy: golden configuration thresholds and cooldowns (identical
-  sliding window: 3 of 5 windows for compute, 2 of 5 for storage;
-  adaptive threshold increment 0.10 per spawn, max 0.85).
-- Workload: canonical `phases.json` (~28 min, 6 phases at golden sizing).
-- Infrastructure: two-LAN topology, WAN_RTT_MS=260, CLIENTS=48,
-  DEVICES=6000, NODES=100, STORAGE_CPUS=0.10, VIP_HARD_TIMEOUT=60.
-- Aggregation window: 10 s.
-
-Vary only: **the weights that compose the degradation score** for both
-compute and storage tiers (`SCALEUP_W_CPU`, `SCALEUP_W_T_PROC`,
+Vary only: score weights (`SCALEUP_W_CPU`, `SCALEUP_W_T_PROC`,
 `SCALEUP_W_STORAGE_CPU`, `SCALEUP_W_T_DB`).
 
 ---
 
 ## 4. Why This Question Exists
 
-### 4.1 Purpose
+### 4.1 It Fills a Documented Gap
 
-RQ3 tests whether **what** the controller monitors matters as much as
-**how fast** it receives the information (RQ1) and **how quickly** it
-routes traffic after acting (RQ2). Together the three RQs form a complete
-causal chain:
+The global literature review's gap matrix (§7) shows: across 60+ papers in
+six domains, no paper varies trigger composition experimentally. The
+auto-scaling literature treats the trigger metric as a given. RQ3 asks
+what happens when you change it.
 
-```
-Overload occurs
-    │
-    ▼
-[RQ3: How well is it detected?]      ← Trigger quality
-    │
-    ▼
-[RQ1: How fast does the controller   ← Delivery cadence
- learn about the detection?]
-    │
-    ▼
-[RQ2: How fast does new capacity     ← Routing awareness
- receive traffic?]
-    │
-    ▼
-System responds
-```
+### 4.2 It Completes the Detection→Delivery→Action Chain
 
-### 4.2 Literature Gap
+RQ1 characterizes delivery (how fast signals arrive). RQ2 characterizes
+action (how fast new capacity receives traffic). RQ3 characterizes detection
+(what signals trigger action). Three links, three characterizations.
 
-The monitoring literature has asked "what metric to use?" — Zhou & Yong
-(2024) showed that HTTP 5xx-based HPA outperforms CPU-based HPA for Nginx
-web servers. The auto-scaling literature has asked "should predictions be
-corrected by real-time data?" — PAHPA (Xiao et al., 2026) proposed a
-binary correction mechanism. But **no study has compared a latency-aware
-multi-dimensional degradation score against a CPU-only threshold for
-stateful edge services**, where I/O latency is the dominant failure mode
-and CPU utilization is a lagging indicator.
+### 4.3 Any Outcome Is Informative
 
-Across all four literature domains surveyed for this thesis — auto-scaling,
-SDN load balancing, monitoring & telemetry, and resource orchestration —
-every paper that studies scaling triggers treats the metric as a given:
-CPU utilization (Kubernetes HPA), request rate (AWS ASG), or a pre-defined
-compound metric (OSM POL). None vary the trigger composition as an
-experimental variable, and none test whether latency awareness provides
-detection signal that CPU alone cannot capture.
-
-### 4.3 What Each Condition Encodes
-
-| Condition                       | Encodes                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `degradation_score`           | The proposed approach: latency-aware, multi-dimensional detection tuned for stateful services. If this detects overload earlier or with fewer false positives than either single-dimension trigger, the thesis has evidence that multi-dimensional scoring provides irreducible benefit.                                             |
-| `cpu_only` (uncalibrated)     | The industry default: CPU-threshold autoscaling applied to a stateful edge workload without domain-specific tuning. If this fires later or produces more false positives, the thesis quantifies the cost of using the wrong dimension for stateful services.                                                                         |
-| `latency_only` (uncalibrated) | The right dimension alone: latency-based scaling applied without CPU confirmation. If this matches degradation_score, the latency dimension is sufficient and CPU adds no benefit. If it produces more false positives (transient latency spikes triggering unnecessary spawns), multi-dimensional scoring provides filtering value. |
-
-A secondary experiment with **calibrated** thresholds (matching sensitivity
-on a reference workload) for all three modes is deferred to future work. The
-uncalibrated comparison answers the practical question: "If you take each of
-these trigger strategies — the industry default, the right dimension alone,
-and the proposed multi-dimensional approach — and apply them to the same
-stateful edge workload, how do they compare?"
-
-### 4.4 Integration with RQ1 and RQ2
-
-RQ3 completes the detection→delivery→action chain. The synthesis chapter
-(Ch. 8) reconstructs the compound coordination gap across all three links:
-
-| Link      | RQ  | Gap measured                                                                                                            | Penalty                                                                      |
-| --------- | --- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Detection | RQ3 | Wrong trigger dimension (CPU-only) may detect later or with more noise; latency-aware scoring captures I/O-bound signal | Quantified via breach detection time delta and false positive/negative rates |
-| Delivery  | RQ1 | Poll-30s blind spot: 2 of 3 windows missed                                                                              | ~43 s added to breach detection (projected)                                  |
-| Action    | RQ2 | Slowstart discovery gap: backend invisible                                                                              | ~31 s added to time-to-first-traffic (measured, n=9)                         |
-
-The compound penalty of a fully separated architecture with a CPU-only
-trigger may be unbounded — if the trigger never fires, no amount of
-delivery freshness or routing awareness can compensate.
+- If all three modes produce identical behavior: trigger composition doesn't
+  matter at C4. The detection link is not the bottleneck.
+- If cpu_only produces more FPs during baseline (CPU spikes without latency
+  still cross threshold): CPU carries noise that latency confirmation filters.
+- If latency_only produces more FPs (transient latency spikes without CPU
+  still cross threshold): latency carries noise that CPU confirmation filters.
+- If composite produces the fewest FPs: cross-signal confirmation filters
+  noise that either single dimension triggers on.
 
 ---
 
 ## 5. How It Is Measured
 
-### 5.1 Breach Detection Time
+### 5.1 Baseline False Positives (SQ3a)
+
+Score-triggered spawns during the baseline phase. Reserve spawns (persistent
+storage mechanism) excluded. Compared across the three modes.
+
+### 5.2 Spawn Count Per Stress Phase (SQ3b)
+
+Spawns during `storage_storm` and `compute_spike`, counted per mode across
+3 replicates.
+
+### 5.3 Time-to-First-Spawn (SQ3b)
 
 ```
-breach_detection = spawn_start_ts − breach_window_end
+ttfs = first_spawn_start_ts − phase_start_ts
 ```
 
-The breach window is identified by an independent observer (`breach_detector.py`)
-that computes the degradation score from telemetry data using the same formula
-and thresholds the controller uses. For CPU-only mode, the observer uses the
-same weights as the controller (w_cpu=1.0, w_lat=0.0). This preserves
-methodological separation: the observer measures "when was overload visible
-in telemetry according to the active trigger," not "when the controller
-decided to act."
+How quickly each mode responds to the onset of a stress phase.
 
-Comparison across three modes: does the degradation score's breach window
-precede the CPU-only score's breach window? Does latency-only match the
-degradation score's detection timing, or does CPU confirmation provide
-additional lead time? If latency rises before CPU in stateful services,
-latency_only and degradation_score should both detect overload earlier
-than cpu_only — the question is whether degradation_score's CPU component
-filters noise (fewer false positives from transient latency spikes) without
-delaying detection.
+### 5.4 Service Quality (SQ3c)
 
-### 5.2 False Positive Rate
+Per-phase p50/p95 latency, timeout rate, and completed request volume.
+Compared across modes — a mode that misses spawns during stress should
+show higher latency and timeout rates.
 
-```
-false_positive_rate = spawns_during_baseline / total_spawns
-```
+### 5.5 Score Component Decomposition
 
-A false positive is a spawn initiated during the baseline phase (low load,
-where the static infrastructure should suffice). Both triggers use the same
-sliding window (3 of 5 windows) and cooldown (45 s for compute). The
-comparison tests whether CPU-only produces more spurious spawns because CPU
-spikes from non-workload sources (container startup, MongoDB background
-operations, OVS flow installation) cross the threshold without corresponding
-latency degradation.
-
-### 5.3 False Negative Rate
-
-A false negative is a failure to spawn during a high-load phase where the
-degradation score successfully triggers. Operationalized as:
-
-Computed pairwise for all three modes. If degradation_score triggers N
-spawns during `storage_storm` and cpu_only triggers M < N, the false
-negative count is N − M. The latency_only mode provides a reference point:
-if latency_only matches degradation_score's spawn count but cpu_only
-misses spawns, the latency dimension is the essential signal that cpu_only
-lacks. If latency_only triggers more spawns than degradation_score without
-corresponding service improvement, those extra spawns are false positives
-from transient latency noise.
-
-### 5.4 Service Quality During Transitions
-
-Same metrics as RQ1 and RQ2: per-phase p50/p95 latency, timeout rate, and
-completed request volume from `client_requests.csv`. The comparison tests
-whether CPU-only's delayed or absent spawns produce measurably worse
-service quality during demand shifts.
-
-### 5.5 Measurement Chain
-
-```
-Trigger mode: degradation_score → latency_only → cpu_only
-  ↓
-  → breach detection time: earliest (both dims) → early (latency dim) → later (CPU dim lags)
-  → false positives: lowest (CPU filters latency noise) → moderate (latency spikes) → low (CPU is conservative)
-  → false negatives: baseline → similar to baseline → higher (misses I/O-bound overload)
-  → service quality (stress phases): best → good → worst
-```
+Per-window breakdown of score into CPU and latency components. Shows which
+dimension drives the score in each mode during each phase. Diagnostic, not
+primary evidence.
 
 ---
 
 ## 6. Evaluation Design
 
-Nine runs, three per mode, using the canonical workload. All runs use
-push-mode telemetry and topology_lifecycle routing — the optimal
-downstream links. This mirrors RQ2's 9-run design (3 modes × 3 replicates).
+Nine runs, three per mode. All at the resource configuration selected in §1.1, all with identical parameters.
 
-| Run                    | Trigger           | Weights                | Threshold |
-| ---------------------- | ----------------- | ---------------------- | --------- |
-| **R3-DS** (×3)  | degradation_score | w_cpu=0.40, w_lat=0.60 | 0.20      |
-| **R3-CPU** (×3) | cpu_only          | w_cpu=1.00, w_lat=0.00 | 0.20      |
-| **R3-LAT** (×3) | latency_only      | w_cpu=0.00, w_lat=1.00 | 0.20      |
+| Run                    | Trigger           | Compute weights | Storage weights |
+| ---------------------- | ----------------- | --------------- | --------------- |
+| **R3-DS** (×3)  | degradation_score | 0.40 / 0.60     | 0.60 / 0.40     |
+| **R3-CPU** (×3) | cpu_only          | 1.00 / 0.00     | 1.00 / 0.00     |
+| **R3-LAT** (×3) | latency_only      | 0.00 / 1.00     | 0.00 / 1.00     |
 
-Hold constant:
+### 6.1 Parameter Selection
 
-- Telemetry delivery: push mode (ZMQ)
-- Routing policy: `topology_lifecycle`
-- Scaling policy: golden config thresholds (sliding window 3/5,
-  adaptive threshold 0.10 per spawn, cooldown 45 s for compute,
-  120 s for storage)
-- Workload: canonical `phases.json` (~28 min, 6 phases)
-- Infrastructure: `WAN_RTT_MS=260`, `CLIENTS=48`, `DEVICES=6000`,
-  `NODES=100`, `STORAGE_CPUS=0.10`, `VIP_HARD_TIMEOUT=60`,
-  `RANDOM_SEED=42`
-- All other env vars: golden configuration
-  (`current_state_integrated.env`)
+Floors, spans, and thresholds are applied identically to all three modes.
+The recommended starting point is the Phase 1c calibration values (C3b
+config), adjusted for whichever resource configuration is selected in
+§1.1. Any parameter set that is reasonable for all modes is valid — the
+comparison is between trigger compositions under the same conditions,
+not between parameter sets.
 
-Vary only: `SCALEUP_W_CPU`, `SCALEUP_W_T_PROC`, `SCALEUP_W_STORAGE_CPU`,
-`SCALEUP_W_T_DB`.
+### 6.2 Run Order
 
-### 6.1 Run Order
+Grouped by trigger. Between runs: full cleanup + VM reboot.
 
-Grouped by trigger: all `degradation_score` reps → all `cpu_only` reps →
-all `latency_only` reps. Between runs: cleanup + VM reboot as per standard
-protocol.
+### 6.3 Success Criteria
 
-### 6.2 Success Criteria
-
-1. **All 9 runs complete** to idle phase with zero controller tracebacks.
-2. **R3-DS replicates RQ1 push baseline behaviour** — expected bimodality
-   (1–2 healthy runs with ≤2% timeout in storage_storm, 1 degraded run).
-   Confirms the golden config baseline.
-3. **R3-CPU produces a distinguishable outcome** — either fires later,
-   produces different spawn counts, or shows different false positive/
-   negative rates compared to degradation_score.
-4. **R3-LAT provides the triangulation point** — shows whether latency
-   alone matches degradation_score (dimension is sufficient) or whether
-   CPU confirmation provides measurable benefit (multi-dimensional
-   advantage).
-5. **Within-mode variance is estimable** — n=3 allows μ ± σ for breach
-   detection time and spawn counts per mode.
+1. All 9 runs complete with zero controller tracebacks.
+2. Within-mode consistency across 3 replicates.
+3. At least one pairwise comparison produces distinguishable spawn counts
+   or service quality outcomes.
 
 ---
 
 ## 7. Expected Outcomes
 
-1. **The latency dimension detects I/O-bound overload earlier than CPU alone.**
-   Because `T_proc` rises before CPU saturates in stateful services (MongoDB
-   operations block the request handler while the CPU waits on I/O),
-   `latency_only` and `degradation_score` should both register degradation
-   earlier than `cpu_only` — by approximately 1–2 telemetry windows
-   (10–20 s). This confirms that the *dimension* matters more than the
-   *weighting*.
-2. **CPU-only may fire but with worse timing.** With the golden config's
-   lower thresholds (CPU floor 3%, base threshold 0.20), CPU-only needs
-   approximately 5% CPU to trigger — reachable at edge container levels
-   (2–8%). The question is not *whether* it fires, but *when* and *with
-   what noise*. CPU spikes from non-workload sources (container startup,
-   MongoDB background operations, OVS flow installation) may cross the
-   threshold without corresponding latency degradation, producing false
-   positives. Conversely, I/O-bound overload may not push CPU high enough
-   to trigger, producing false negatives.
-3. **The three-mode spectrum reveals whether multi-dimensional scoring
-   provides irreducible benefit.** Three scenarios:
+### 7.1 Baseline Behavior (SQ3a)
 
-   - `latency_only ≈ degradation_score` (both beat cpu_only): the latency
-     dimension is sufficient; multi-dimensional scoring adds no benefit.
-     The thesis bounds the problem — trigger quality matters, but only
-     because of dimension choice, not weighting.
-   - `degradation_score > latency_only > cpu_only`: multi-dimensional
-     scoring provides measurable benefit over either single dimension.
-     The thesis quantifies how much.
-   - All three indistinguishable: trigger quality is not the bottleneck
-     at this workload scale. The coordination gap is primarily about
-     delivery cadence (RQ1) and routing awareness (RQ2). Still a valid
-     finding — it bounds the problem.
-4. **The bimodality observed in RQ1 v3 provides context.** RQ1 showed that
-   the system operates near a phase transition: some runs handle
-   storage_storm with 1–2% timeout, others degrade to 17–60%. RQ3 tests
-   whether trigger composition shifts this phase boundary — if
-   `degradation_score` keeps the system near the boundary (sometimes
-   healthy, sometimes degraded) while `cpu_only` consistently falls on
-   the degraded side, the thesis has evidence that trigger quality is
-   the mechanism behind RQ1's bimodality.
+cpu_only will produce more FPs than composite because CPU spikes during
+baseline (72–92% in 5 s windows) cross the threshold when CPU is the only
+signal — there is no latency confirmation to filter them. latency_only will
+also produce more FPs because transient T_proc spikes (100–255ms) cross
+the threshold when latency is the only signal.
 
-Any outcome — degradation_score dominates, latency_only suffices, or all
-three are equivalent — is a valid contribution. The thesis characterizes
-the detection link of the coordination gap regardless of which direction
-the evidence points.
+The composite score requires both to spike simultaneously, which happens
+less often. The FP rate difference between modes is the evidence that
+cross-signal confirmation filters noise.
+
+### 7.2 Stress Detection (SQ3b)
+
+All three modes should fire during stress — CPU reaches 68–84% and T_proc
+reaches 180–255ms during compute_spike. The differences are in spawn count
+(does latency-only fire more often?) and timing (does latency fire earlier
+than CPU?).
+
+### 7.3 Service Quality (SQ3c)
+
+If extra spawns from single-dimension modes don't improve service quality,
+those spawns are waste — the system scaled unnecessarily. If missed spawns
+from a mode produce worse service quality, that mode is failing to detect
+real overload.
 
 ---
 
@@ -374,77 +290,41 @@ the evidence points.
 
 ### 8.1 Trigger Mode Selection
 
-The degradation score already accepts weights via environment variables
-in `scaling_config.py`:
+Already supported via environment variables in `scaling_config.py`. No
+code changes needed.
 
-```python
-_W_CPU    = float(os.environ.get("SCALEUP_W_CPU",    "0.40"))
-_W_T_PROC = float(os.environ.get("SCALEUP_W_T_PROC", "0.60"))
-```
+### 8.2 Env Override Files
 
-No code changes needed. The CPU-only mode is activated by:
+Three files under `source/scripts/testing/controller_env_overrides/`,
+all derived from the same base configuration, varying only the four
+weight variables.
 
-```env
-SCALEUP_W_CPU=1.0
-SCALEUP_W_T_PROC=0.0
-```
+### 8.3 Breach Detector
 
-### 8.2 Controller Env Overrides
-
-- `testing/controller_env_overrides/rq3_degradation_score.env` → golden defaults (or explicit `SCALEUP_W_CPU=0.40`, `SCALEUP_W_T_PROC=0.60`, `SCALEUP_W_STORAGE_CPU=0.60`, `SCALEUP_W_T_DB=0.40`)
-- `testing/controller_env_overrides/rq3_cpu_only.env` → `SCALEUP_W_CPU=1.0`, `SCALEUP_W_T_PROC=0.0`, `SCALEUP_W_STORAGE_CPU=1.0`, `SCALEUP_W_T_DB=0.0`
-- `testing/controller_env_overrides/rq3_latency_only.env` → `SCALEUP_W_CPU=0.0`, `SCALEUP_W_T_PROC=1.0`, `SCALEUP_W_STORAGE_CPU=0.0`, `SCALEUP_W_T_DB=1.0`
-
-Both compute and storage weights must be set for a consistent trigger regime.
-
-### 8.3 Breach Detector Configuration
-
-The independent breach detector (`breach_detector.py`, to be created as part
-of RQ3 preparation) must use the same weights as the active trigger mode.
-It replicates the degradation score calculation from `scaling_policy.py`
-but operates on recorded telemetry data as an offline observer. The detector
-reads weights from the same env vars as the controller. A pre-run validation
-step confirms weight agreement between controller and observer before each
-experiment.
+`breach_detector.py` replays recorded telemetry through each mode's score
+function offline. Reads weights from the same env vars as the controller.
+Used for time-to-first-spawn measurement.
 
 ---
 
 ## 9. Validity Threats
 
-| Threat                                                                                                                                                                                                                                                   | Mitigation                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **CPU-only may fire but at the wrong times.** With the golden config's CPU floor of 3% and base threshold of 0.20, CPU-only needs approximately 5% CPU to trigger — reachable at edge levels. The risk is not "never fires" but "fires on noise." | The three-mode design triangulates this: if latency_only detects the same overload without the false positives, CPU confirmation is unnecessary. If degradation_score filters noise better than latency_only, multi-dimensional scoring provides value. Either way, the three-way comparison isolates the mechanism.                        |
-| **The uncalibrated threshold comparison may be considered unfair.** All three modes use 0.20 — the threshold calibrated for the weighted score, not for single-dimension use.                                                                     | The experiment explicitly tests the*uncalibrated* modes. A calibrated comparison (matching sensitivity on a reference workload) is identified as future work. The uncalibrated comparison answers the practical question: "If you take each strategy and apply it to the same workload without per-strategy tuning, how do they compare?" |
-| **Bimodality from RQ1 may obscure the RQ3 signal.** If both triggers produce bimodal healthy/degraded splits, n=3 may not statistically separate them.                                                                                             | The primary comparison is qualitative: does CPU-only fire at all? If it produces zero spawns, the result is binary and conclusive regardless of variance. If it fires but produces bimodal outcomes similar to the degradation score, that is also a finding — trigger quality is not the bottleneck at this scale.                        |
-| **The breach detector must use the same weights as the controller.** If the observer uses different weights than the active trigger, breach detection time measurements are invalid.                                                               | The breach detector reads weights from the same env vars as the controller. A pre-run validation step confirms weight agreement before each experiment.                                                                                                                                                                                     |
-| **Storage degradation score weights also need to be changed.** The degradation score is used for both compute and storage scale-up. CPU-only should apply to both tiers for consistency.                                                           | The storage score uses separate weights (`SCALEUP_W_STORAGE_CPU`, `SCALEUP_W_T_DB`). These must also be set to CPU-only (w_storage_cpu=1.0, w_t_db=0.0) for a consistent trigger regime. Both env var sets are included in the override files.                                                                                          |
+| Threat                                                                                                                                                                                                                                                                                                                                                                          | Mitigation |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| **The chosen floors/thresholds may advantage one mode.** The parameters are applied identically to all modes. If a reviewer argues that cpu_only should have a higher CPU floor, the response is: that higher floor would also suppress stress detection. The parameters must be the same for all modes because changing them would test calibration, not composition.    |            |
+| **The composite score has more parameters.** It has two degrees of freedom (two weights) vs one for single-dimension modes. This is inherent to the comparison — the thesis does not claim parameter-count fairness. It claims that the literature has never varied composition, and these three compositions represent points in the design space worth characterizing. |            |
+| **n=3 provides limited statistical power.** Three replicates allow μ ± σ. Consistency across replicates within a mode, combined with non-overlapping ranges between modes, is the evidentiary standard.                                                                                                                                                                |            |
+| **Storage and compute tiers may respond differently.** Storage uses T_db; compute uses T_proc. The two tiers are analyzed separately. Consistent results across both strengthen the finding.                                                                                                                                                                              |            |
+| **Signal aggregation happens at the edge server, not the controller.** Both signals share a measurement interval because the edge server measures them during request processing. The controller receives the pre-aggregated summary and evaluates it.                                                                                                                    |            |
 
 ---
 
-## 10. RQ3↔RQ1↔RQ2 Relationship
+## 10. Related Documents
 
-|                                | RQ3 (Detection)                                                                                                                                                 | RQ1 (Delivery)                                                                  | RQ2 (Action)                                                                |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| **Coordination gap**     | Wrong trigger dimension: CPU-only detects later/noisier than latency-aware; latency-only may lack CPU confirmation                                              | Polling blind spot: controller misses telemetry windows between polls           | Discovery gap: routing plane doesn't know about new backends                |
-| **Baseline**             | cpu_only (w_cpu=1.0, w_lat=0.0)                                                                                                                                 | Poll-30s (2 of 3 windows missed)                                                | topology_slowstart (invisible until discovery)                              |
-| **Proposed**             | degradation_score (w_cpu=0.40, w_lat=0.60) + latency_only triangulation                                                                                         | Push (every window, no blind spot)                                              | topology_lifecycle (warm lease at spawn time)                               |
-| **Core measurement**     | Breach detection time, false positive/negative rate (pairwise)                                                                                                  | Reaction latency (spawn_done − breach_window_end)                              | Time-to-first-traffic, initial load share                                   |
-| **Coordination penalty** | Detection delay from wrong dimension (quantified via breach detection time delta); noise from transient CPU/latency spikes (quantified via false positive rate) | Extra breach-detection time from missed windows (~43 s for poll-30s, projected) | Extra telemetry window before first traffic (~31 s for slowstart, measured) |
-
-Together, RQ3, RQ1, and RQ2 characterize the three-link causal chain from
-overload detection to traffic redistribution. The synthesis chapter (Ch. 8)
-reconstructs the compound coordination gap across all three links.
-
----
-
-## 11. Related Documents
-
-| Document                                                                                              | Purpose                            |
-| ----------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| [`system_to_thesis_map_rq_v2.md`](../../tese/miscelineous/system_to_thesis_map_rq_v2.md)             | Full three-pillar thesis framing   |
-| [`rq1.md`](../research_questions/rq1.md)                                                             | RQ1 design — delivery cadence     |
-| [`rq2.md`](../research_questions/rq2.md)                                                             | RQ2 design — routing awareness    |
-| [`../../source/sdn_controller/scaling_policy.py`](../../source/sdn_controller/scaling_policy.py)     | Degradation score implementation   |
-| [`../../source/sdn_controller/scaling_config.py`](../../source/sdn_controller/scaling_config.py)     | Weight and threshold configuration |
-| [`../operation/testing/experiment/rq1_evaluation/`](../operation/testing/experiment/rq1_evaluation/) | RQ1 experiment plan and results    |
-| [`../operation/testing/experiment/rq2_evaluation/`](../operation/testing/experiment/rq2_evaluation/) | RQ2 experiment plan and results    |
+| Document                                                                                           | Purpose                                             |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| [`global_literature_review.md`](../../tese/literature_review/global_literature_review.md)         | Literature gap — trigger composition column (§7)  |
+| [`calibration_results.md`](../operation/testing/experiment/rq3_evaluation/calibration_results.md) | C4 baseline calibration — parameter starting point |
+| [`calibration_plan.md`](../operation/testing/experiment/rq3_evaluation/calibration_plan.md)       | Full calibration plan                               |
+| [`scaling_config.py`](../../source/sdn_controller/scaling_config.py)                              | Weight and threshold configuration                  |
+| [`scaling_policy.py`](../../source/sdn_controller/scaling_policy.py)                              | Degradation score implementation                    |

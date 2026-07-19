@@ -546,7 +546,7 @@ def seed(uri_lan1: str, uri_lan2: str, content_items_per_region: int):
     docs_by_region = generate_documents(content_items_per_region)
 
     for region, uri in uris.items():
-        client = MongoClient(uri, timeoutMS=120000)
+        client = MongoClient(uri, timeoutMS=0, connectTimeoutMS=60000, serverSelectionTimeoutMS=60000)
         collection = client["edge_platform"]["content_items"]
         ops = [
             UpdateOne({"_id": doc["_id"]}, {"$set": doc}, upsert=True)
@@ -565,5 +565,8 @@ if __name__ == "__main__":
     parser.add_argument("--mongo-lan1", default=REGIONS["lan1"], help="MongoDB URI for LAN 1 primary")
     parser.add_argument("--mongo-lan2", default=REGIONS["lan2"], help="MongoDB URI for LAN 2 primary")
     parser.add_argument("--content-items", type=int, default=50, help="Content items per region")
+    parser.add_argument("--data-seed", type=int, default=None, help="Fixed seed for reproducible content generation")
     args = parser.parse_args()
+    if args.data_seed is not None:
+        random.seed(args.data_seed)
     seed(args.mongo_lan1, args.mongo_lan2, args.content_items)

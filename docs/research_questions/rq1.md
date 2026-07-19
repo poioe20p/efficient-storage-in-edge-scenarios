@@ -1,8 +1,10 @@
 # RQ1 — Telemetry Delivery Cadence and Control Quality
 
-**Thesis pillar**: Information Acquisition
-**Status**: Designed — ready for evaluation
-**Evaluation plan**: [`docs/operation/testing/experiment/rq1_evaluation/experiment_plan.md`](../operation/testing/experiment/rq1_evaluation/experiment_plan.md)
+**Thesis pillar**: Telemetry Freshness (the delivery link)
+**Status**: V3 evaluated (12 runs, n=3 per mode). V4 rerun planned (6 runs, Push + Poll-30s only) — scoring-corrected after CPU_SPAN=5 bug discovery.
+**Results**: [`docs/operation/testing/experiment/rq1_thesis_final/results_v3.md`](../operation/testing/experiment/rq1_thesis_final/results_v3.md)
+**V4 plan**: [`docs/operation/testing/experiment/rq1_thesis_final/experiment_plan_v4.md`](../operation/testing/experiment/rq1_thesis_final/experiment_plan_v4.md)
+**Comparison graphs**: [`docs/operation/testing/experiment/rq1_thesis_final/graphs/comparison/`](../operation/testing/experiment/rq1_thesis_final/graphs/comparison/)
 **Thesis map**: [`tese/miscelineous/system_to_thesis_map_rq_v2.md`](../../tese/miscelineous/system_to_thesis_map_rq_v2.md)
 
 ---
@@ -78,6 +80,17 @@ which the system is overloaded but no action is taken. The controller
 eventually receives fresh data, but it missed the critical intermediate
 windows that showed the onset of overload.
 
+**Compound effect — sliding windows amplify the penalty.** The controller's
+scale-up decision uses sliding windows defined in *window counts* (5 windows,
+3 hits). In Push mode (10 s/window), this covers ~50 s of wall-clock time.
+In Poll-30s (30 s/poll), the same 5 windows span ~150 s — a 3× compound
+effect. The experiment does not isolate pure delivery cadence; it measures
+the **compound coordination gap** that real separated architectures
+experience: wasted windows (blind spot) × sustained degradation required
+(wall-clock duration of the evaluation window). This compound effect is
+the thesis contribution — it is what makes the coordination gap a measurable
+architectural property rather than an abstract latency budget.
+
 ---
 
 ## 4. Why This Question Exists
@@ -94,27 +107,52 @@ polling staleness matters only above some cadence threshold.
 
 ### 4.2 What Each Condition Encodes
 
-| Condition          | Delivery            | Blind spot                                                | Encodes                                                                                       |
-| ------------------ | ------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Push**     | ZMQ at window close | None                                                      | The unified architecture: telemetry arrives immediately, no handoff delay                     |
-| **Poll-5s**  | HTTP every 5 s      | None (catches every window; ~50% of polls are duplicates) | Over-polling: wastes resources without benefit                                                |
-| **Poll-12s** | HTTP every 12 s     | Minor (~1 of 6 windows missed)                            | Practical alternative to push — polls just after window close with headroom for clock desync |
-| **Poll-30s** | HTTP every 30 s     | Major (~2 of 3 windows missed)                            | Separated-architecture property: Prometheus scrape interval, CloudWatch metric period         |
+Each mode tests a specific claim about the coordination gap. The rightmost
+column maps each condition to the five-form evidence structure established
+in the [global literature review](../../tese/literature_review/global_literature_review.md).
 
-Poll-30s is the critical condition. If the controller sees only 1 of every 3
-telemetry snapshots and its reaction to overload is measurably slower or its
-service quality measurably worse, then the thesis has evidence that the
-coordination gap matters. If push and poll-30s produce indistinguishable
-reaction latency, the thesis has evidence that the gap is real on paper but
-inconsequential at these cadences — still a valid contribution.
+| Condition | Delivery | Blind spot | Encodes | Lit. evidence addressed |
+|---|---|---|---|---|
+| **Push** | ZMQ at window close | None | The unified architecture: telemetry arrives immediately, no handoff delay | Form 2: quantifies AdapPF's observation — *how much* better when every window is seen |
+| **Poll-5s** | HTTP every 5 s | None (duplicates ~50% of polls) | Over-polling: wastes resources; proves the mechanism is missed windows, not stale data | Form 1: confirms Yaseen's "visibility gap" is ~0 s at consumption time — the HTTP cache works |
+| **Poll-12s** | HTTP every 12 s | Minor (~1 of 6 windows missed) | Practical alternative — polls just after window close; shows the penalty is gradual, not binary | Form 4: bridges the monitoring→LB disconnect — the blind spot Caiza & Campoverde's "periodically" buries now has a measured cost |
+| **Poll-30s** | HTTP every 30 s | Major (~2 of 3 windows missed) | Separated-architecture default: the equivalent of Prometheus scrape interval, CloudWatch metric period | Form 1+2+4: quantifies Wang et al.'s documented-but-unmeasured delivery gap; measures the symptom Pierro & Ullah observed (throughput ↓); tests Yaseen's claim that visibility gaps matter for infrastructure decisions |
+
+Poll-30s is the critical condition. It encodes the architectural property
+that every separated monitoring system imposes — the controller simply does
+not see most of the telemetry it needs. If push and poll-30s produce
+indistinguishable reaction latency and service quality, the coordination
+gap exists on paper but is inconsequential at these cadences — a valid
+bounding result. If Poll-30s is measurably worse, the thesis has evidence
+that the gap is real, quantifiable, and architecturally significant.
+
+**Result**: Poll-30s produced 4.3× higher mean timeout rate than Push
+(25.5% vs 5.9%) and 2.3× higher mean reaction latency (75.7 s vs 33.2 s).
+The gap is real and measurable. See [`results_v3.md`](../operation/testing/experiment/rq1_thesis_final/results_v3.md) for full analysis.
 
 ### 4.3 What Is Held Constant
 
 The aggregation window is fixed at 10 s. Window size variation (1 s, 5 s,
 30 s) — testing the freshness-versus-noise tradeoff — is deferred to future
 work. All other parameters (workload, thresholds, infrastructure, routing
-policy) use the [golden configuration](../operation/testing/golden_config.md)
-proven stable across 15+ prior stability experiments.
+policy) use the RQ3-validated configuration.
+
+### 4.4 Code-Level Mechanisms That Compound the Gap
+
+A code audit of `source/sdn_controller/` identified three secondary
+mechanisms beyond simple data freshness that compound the coordination gap
+in Poll-30s. These are not confounds — they are the architectural
+consequences of delivery cadence that real separated systems experience.
+
+| Mechanism | Push | Poll-30s | Impact |
+|---|---|---|---|
+| Scale-up sliding window wall-clock duration | ~50 s (5 windows × 10 s) | ~150 s (5 windows × 30 s) | Requires 3× more sustained degradation to trigger a reaction |
+| Dead-node detection timeout | ~180 s (18 windows × 10 s) | ~540 s (18 windows × 30 s) | Crashed nodes block scale-up for 9 min in poll mode vs 3 min in push |
+| VIP routing server-stats staleness | ≤10 s | ≤30 s | Poll-30s routing decisions may use up to 30 s-stale load data, sending disproportionate traffic to overloaded servers |
+
+These mechanisms are documented in the [experiment plan v4](../operation/testing/experiment/rq1_thesis_final/experiment_plan_v4.md) validity threats.
+They are inherent to the window-count-based design and are identical in v3
+and v4 — the v4 rerun does not change them.
 
 ---
 
@@ -137,26 +175,31 @@ delivery pipeline is healthy; it does not differentiate between modes.
 ### 5.2 Reaction Latency — Core Evidence
 
 ```
-spawn_done_ts − breach_window_end
+total_reaction_s = breach_detection_s + provision_time_s
 ```
 
-Segmented into:
+Computed from per-event `rq1_reaction_latency.csv` across all replicates.
 
-- **Breach detection** (`spawn_start_ts − breach_window_end`): time from the
-  first telemetry window showing overload to spawn initiation. In push mode
-  this is dominated by the controller's evaluation logic (sliding window,
-  cooldown, ~10–20 s). In poll-30s the blind spot adds up to 30 s on top.
+- **Breach detection** (`breach_detection_s`): time from breach window end
+  to spawn initiation. Dominated by controller evaluation logic (sliding
+  window, cooldown). In Poll-30s the blind spot adds up to 30 s per missed
+  window, AND the sliding window's wall-clock duration triples (150 s vs
+  50 s) — the measured penalty is the compound of both effects.
   **This is the segment where the polling penalty appears.**
-- **Provisioning** (`spawn_done_ts − spawn_start_ts`): container boot time +
-  OVS wiring. Expected constant (~1–2 s) across all modes.
+- **Provisioning** (`provision_time_s`): container boot + OVS wiring.
+  Measured as constant ~14 s across all modes — the penalty is entirely
+  in detection, not in provisioning.
+
+**Result**: Detection grows with polling interval (Push ~19 s → Poll-30s
+~62 s); provisioning is flat (~14 s). The mechanism is confirmed:
+polling delays *when the controller learns*, not *how fast it provisions*.
 
 The breach window is identified by an independent observer
-(`breach_detector.py`) that computes `degradation_score` from telemetry
-data using the same formula and thresholds the controller uses. It fires on
-the first individual window where `score ≥ threshold` — it does not
-replicate the controller's sliding window mechanism. This preserves the
-methodological separation: the breach detector measures "when was overload
-visible in telemetry," not "when the controller decided to act."
+(`breach_detector.py`) using the same formula and thresholds as the
+controller. It fires on the first individual window where
+`score ≥ threshold` — measuring "when overload was visible in telemetry,"
+not "when the controller decided to act." This preserves methodological
+separation between detection timing and controller decision logic.
 
 ### 5.3 Transient Service Quality — User-Visible Impact
 
@@ -195,49 +238,72 @@ it confirms the pipeline is healthy but does not appear in the causal chain.
 
 ---
 
-## 6. Evaluation Design
+## 6. Evaluation Design (Executed)
 
-Four runs, one per condition, using the canonical 10-phase integrated
-workload (`phases.json`, ~28 min). All runs use the [golden
-configuration](../operation/testing/golden_config.md): `CLIENTS=8`,
-`DEVICES=600`, `NODES=100`, thresholds from `current_state_integrated.env`.
+The experiment was executed as a 12-run campaign (n=3 replicates × 4 modes)
+using the RQ1 workload (`phases.json`, 7 phases, ~28 min per run). All runs
+used `CLIENTS=48`, `DEVICES=6000`, `NODES=100`, `WAN_RTT_MS=200`,
+`CURL_MAX_TIME=30`, `VIP_HARD_TIMEOUT=60`, `RANDOM_SEED=42`, and thresholds
+from `current_state_integrated.env`. Full container + volume reset
+(`cleanup.sh -r`) between runs ensured identical initial state.
 
-| Run                | Delivery            | Blind spot                         |
-| ------------------ | ------------------- | ---------------------------------- |
-| **Push**     | ZMQ at window close | None                               |
-| **Poll-5s**  | HTTP every 5 s      | None (dedup filters ~50% of polls) |
-| **Poll-12s** | HTTP every 12 s     | ~1 of 6 windows missed             |
-| **Poll-30s** | HTTP every 30 s     | ~2 of 3 windows missed             |
+| Mode | Delivery | Blind spot | Replicates | Timeout rate (μ ± σ) | Reaction latency (μ) |
+|---|---|---|---|---|---|
+| **Push** | ZMQ at window close | None | n=3 | 5.9 ± 7.2% | 33.2 s |
+| **Poll-5s** | HTTP every 5 s | None | n=3 | 8.1 ± 5.4% | 39.6 s |
+| **Poll-12s** | HTTP every 12 s | ~1 of 6 windows missed | n=3 | 14.7 ± 11.7% | 48.1 s |
+| **Poll-30s** | HTTP every 30 s | ~2 of 3 windows missed | n=3 | 25.5 ± 9.1% | 75.7 s |
 
 Full operational details — run matrix, shell commands, pre-run checklist,
 artifact contract, success criteria, and validity threats — are in the
-[evaluation experiment plan](../operation/testing/experiment/rq1_evaluation/experiment_plan.md).
+[experiment plan](../operation/testing/experiment/rq1_thesis_final/experiment_plan_v3.md).
+Complete results in [`results_v3.md`](../operation/testing/experiment/rq1_thesis_final/results_v3.md).
 
 ---
 
-## 7. Expected Outcomes
+## 7. Outcomes (Evaluated)
 
-1. **Information age at consumption** is ~0 s for all four conditions.
-   Confirms the delivery pipeline is healthy and the HTTP cache works.
-2. **Reaction latency increases with polling interval.** The
-   breach-detection segment grows as the blind spot widens. Push and
-   poll-5s should be comparable (both catch every window). Poll-12s may
-   show a small increase. Poll-30s should show the largest detection
-   latency.
-3. **Transient service quality degrades** when the blind spot prolongs
-   overload. p95/p99 latency and failure rate are higher in demand-shift
-   phases under poll-30s compared to push.
-4. **Control-plane overhead** differs modestly between push (persistent
-   ZMQ greenthread) and poll (periodic HTTP GET).
-5. **Scaling outcomes may diverge** under poll-30s: spawns may arrive
-   after the demand spike has passed.
+All four expectations were tested with n=3 replicates per mode (12 total
+runs, RANDOM_SEED=42, identical workload). Full results in
+[`results_v3.md`](../operation/testing/experiment/rq1_thesis_final/results_v3.md).
 
-If expectation 2 does not hold — reaction latency is indistinguishable
-across modes — the thesis can bound the problem: the coordination gap
-exists on paper but does not translate into measurably slower reactions
-at cadences up to 30 s. If it does hold, the thesis can quantify the
-relationship: a polling interval of *X* seconds adds up to *Y* seconds to
-breach detection time.
+1. **Information age at consumption** — ✅ Confirmed. ~0 s for all four
+   modes (Push: 0.039 s, Poll-5s: 5.181 s, Poll-12s: 9.984 s, Poll-30s:
+   9.945 s). The HTTP cache delivers fresh data; the mechanism is missed
+   windows, not stale data at consumption time.
+
+2. **Reaction latency increases with polling interval** — ✅ Confirmed.
+   Push: 33.2 s, Poll-5s: 39.6 s, Poll-12s: 48.1 s, Poll-30s: 75.7 s.
+   Monotonic trend holds. The breach-detection segment accounts for the
+   increase; provisioning is constant (~14 s across all modes).
+
+3. **Transient service quality degrades** — ✅ Confirmed in mean, with
+   caveat. Timeout rate increases monotonically: Push 5.9%, Poll-5s 8.1%,
+   Poll-12s 14.7%, Poll-30s 25.5%. However, within-mode variance is large
+   (σ = 7–12 percentage points) due to a **bimodal operational regime**:
+   each mode splits into healthy (~1–2% timeout) and degraded (10–35%
+   timeout) runs. This bimodality persists despite RANDOM_SEED=42 and
+   `cleanup.sh -r` — it is genuine system non-determinism, not a
+   measurement artifact or workload confound. The storage_storm phase is
+   the inflection point where the system bifurcates.
+
+4. **Control-plane overhead** — ✅ Confirmed modest. CPU: 14.2% (Push),
+   14.0% (Poll-5s/12s), 11.0% (Poll-30s). RAM: 86–94 MB across all modes.
+   Polling does not impose meaningful overhead at these cadences.
+
+5. **Scaling outcomes diverge** — ✅ Confirmed. Poll-30s runs spawn fewer
+   compute nodes (6–11 per run vs 15–20 for Push/Poll-5s/Poll-12s) and
+   exhibit a runaway degradation loop in the worst case (poll30_1:
+   115.3 s reaction latency, 35.1% timeout rate). All four elasticity
+   mechanisms exercise in all 12 runs (storage scale-out, compute
+   scale-up, Tier 1 selective sync, reserve activation).
+
+**Unexpected finding — bimodality**: The bimodal split within each mode
+is the most significant result. It shows that at this scale (48 clients,
+6000 devices, 100 nodes), the system operates near a phase transition
+between healthy and degraded regimes. This phenomenon is invisible to any
+single-run experiment and only becomes measurable with n=3 replication and
+identical workload seeding.
 
 ---
 

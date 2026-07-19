@@ -186,5 +186,8 @@ if __name__ == "__main__":
     parser.add_argument("--mongo-lan2", default=REGIONS["lan2"], help="MongoDB URI for LAN 2 primary")
     parser.add_argument("--users", type=int, default=40, help="User profiles per region")
     parser.add_argument("--content-items", type=int, default=100, help="Content items per region")
+    parser.add_argument("--data-seed", type=int, default=None, help="Fixed seed for reproducible user generation")
     args = parser.parse_args()
+    if args.data_seed is not None:
+        random.seed(args.data_seed)
     seed(args.mongo_lan1, args.mongo_lan2, args.users, args.content_items)

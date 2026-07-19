@@ -98,9 +98,14 @@ class ScalingPolicy:
         return w_cpu * cpu_component + w_lat * lat_component
 
     @staticmethod
+    def compute_latency_signal(ds: DomainSummary) -> float:
+        """Mean proc latency — avoids timeout-censored p95 contamination."""
+        return ds.avg_time_proc_ms
+
+    @staticmethod
     def storage_latency_signal(ds: DomainSummary) -> float:
-        """Use a tail-aware DB latency signal for predictive storage scale-up."""
-        return max(ds.avg_time_db_ms, ds.p95_time_db_ms)
+        """Mean DB latency — avoids timeout-censored p95 contamination."""
+        return ds.avg_time_db_ms
 
     # ── Cooldown queries ─────────────────────────────────────────────────
 
@@ -168,7 +173,7 @@ class ScalingPolicy:
             return 0.0, None
 
         peer_score = self.degradation_score(
-            peer_ds.average_cpu_percent, peer_ds.avg_time_proc_ms,
+            peer_ds.average_cpu_percent, self.compute_latency_signal(peer_ds),
             _W_CPU, _W_T_PROC,
             _CPU_FLOOR, _CPU_SPAN,
             _T_PROC_FLOOR, _T_PROC_SPAN,
@@ -188,8 +193,9 @@ class ScalingPolicy:
             )
             return None
 
+        compute_latency_ms = self.compute_latency_signal(ds)
         compute_score = self.degradation_score(
-            ds.average_cpu_percent, ds.avg_time_proc_ms,
+            ds.average_cpu_percent, compute_latency_ms,
             _W_CPU, _W_T_PROC,
             _CPU_FLOOR, _CPU_SPAN,
             _T_PROC_FLOOR, _T_PROC_SPAN,
@@ -213,17 +219,17 @@ class ScalingPolicy:
         window_size = len(self._scale_up_compute_window)
         logger.debug(
             "[scale-up] compute score=%.2f (τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d) "
-            "cpu=%.1f%% T_proc=%.1fms window=%d/%d on %s",
+            "cpu=%.1f%% T_proc=%.1fms T_proc_signal=%.1fms window=%d/%d on %s",
             compute_score, effective_threshold, base_threshold, peer_relief,
             peer_score_display, dynamic_compute_count,
-            ds.average_cpu_percent, ds.avg_time_proc_ms,
+            ds.average_cpu_percent, ds.avg_time_proc_ms, compute_latency_ms,
             window_hits, window_size,
             network_id,
         )
         if window_hits >= _SCALE_UP_REQUIRED:
             logger.info(
                 "[scale-up] compute triggered: %d/%d windows ≥ %.2f "
-                "(τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d, last score=%.2f, cpu=%.1f%%, T_proc=%.1fms) on %s",
+                "(τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d, last score=%.2f, cpu=%.1f%%, T_proc=%.1fms, T_proc_signal=%.1fms) on %s",
                 window_hits,
                 window_size,
                 effective_threshold,
@@ -233,7 +239,7 @@ class ScalingPolicy:
                 peer_score_display,
                 dynamic_compute_count,
                 compute_score,
-                ds.average_cpu_percent, ds.avg_time_proc_ms, network_id,
+                ds.average_cpu_percent, ds.avg_time_proc_ms, compute_latency_ms, network_id,
             )
             self._scale_up_compute_window.clear()
             self._scale_down_compute_window.clear()  # cross-direction reset
@@ -342,8 +348,7 @@ class ScalingPolicy:
             )
             return False
 
-        below = (ds.avg_storage_cpu_percent < _TAU_STORAGE_CPU_DOWN
-                 and ds.avg_time_db_ms < _TAU_DB_DOWN_MS)
+        below = ds.avg_time_db_ms < _TAU_DB_DOWN_MS
         self._scale_down_storage_window.append(below)
         hits = sum(self._scale_down_storage_window)
         armed = hits >= _SCALE_DOWN_STORAGE_REQUIRED

@@ -47,7 +47,7 @@ the routing plane (Thread 1) can become aware of it in three ways:
 
 | Mode | When routing becomes aware | Ramp-up mechanism | Encodes |
 |---|---|---|---|
-| `topology_host` | **Immediately** — unknown stats treated as best-case (0.0, near-zero cost). All backends tie at cost 0.0; round-robin tie-breaking distributes traffic evenly across the pool. No ramp-up, no priority window, no concept of backend readiness. | None — round-robin fair-share (no ramp, no warm lease) | **No lifecycle awareness.** Equivalent to a basic load balancer (HAProxy round-robin) with no backend readiness concept: new backends enter the pool immediately and receive ~1/N fair-share traffic, but serve it cold — before DB connections and caches warm. |
+| `topology_host` | **Immediately** — unknown stats treated as best-case (0.0, near-zero cost). All backends tie at cost 0.0; round-robin tie-breaking distributes traffic evenly across the pool. No ramp-up, no priority window, no concept of backend readiness. | None — round-robin fair-share (no ramp, no warm lease) | **No integration between infrastructure provisioner and load balancer.** The LB discovers backends via pool membership alone — no health-check gating, no slow-start ramp, no awareness that the backend is new. Encodes the default behaviour of any LB deployed without explicit slow-start configuration: the backend appears in the pool and receives traffic immediately, but serves it cold. This is the baseline against which any form of routing-plane awareness must be measured. |
 | `topology_slowstart` | **At discovery time** — when the first telemetry window containing the new backend arrives (0–10 s after spawn, averaging ~5 s). Until then: treated as worst-case (1.0, effectively invisible). After discovery: graduated weight ramp over a configurable TTL period. | Invisible until discovery, then graduated ramp | **Separated LB slow-start with coordination delay.** In a separated system, the LB doesn't know the backend exists until health checks pass. The backend is effectively invisible for the discovery gap — encoding the coordination delay that RQ1 also measures for monitoring. |
 | `topology_lifecycle` | **At spawn time** — Thread 3 creates a warm lease atomically with pool registration. The routing plane sees the backend as "warm" and short-circuits the WSM to select it with priority. | Warm lease (bounded priority window, spawn-time atomic) | **Unified controller.** Routing knows about the spawn immediately because routing and scaling share the same process. No discovery delay, no coordination gap. |
 
@@ -132,24 +132,28 @@ inconsequential at this scale — still a valid finding.
 
 | Condition | Encodes |
 |---|---|
-| `topology_host` | **No lifecycle awareness — round-robin fair-share with cold-start latency.** Unknown stats → best-case (0.0). All backends tie at cost 0.0 → round-robin distributes ~1/N fair share (~30%). Backends receive traffic immediately but serve it cold — DB connections and caches not yet warm. Encodes a basic load balancer with no backend readiness concept. |
+| `topology_host` | **No integration between provisioner and LB — fair-share with cold-start latency.** Unknown stats → best-case (0.0). All backends tie at cost 0.0 → round-robin distributes ~1/N fair share (~30%). Backends receive traffic immediately but serve it cold — DB connections and caches not yet warm. Encodes the default behaviour of any LB deployed without explicit slow-start or health-check gating: the backend is just another pool member. |
 | `topology_slowstart` | **Separated LB slow-start with coordination gap.** Backend invisible (worst-case, 1.0) until telemetry arrives (0–10 s, avg ~5 s). Then graduated ramp at discovery. The discovery gap is the coordination delay — same phenomenon RQ1 measures. Smoothest ramp but slowest start. |
-| `topology_lifecycle` | **Spawn-time warm lease.** Zero discovery gap — routing aware at spawn time (atomic with pool registration). Warm lease provides a bounded priority window — controlled ramp, no cold-start herd. Balanced: fast start, controlled transition. |
+| `topology_lifecycle` | **Spawn-time warm lease.** Zero discovery gap — routing aware at spawn time (atomic with pool registration). Warm lease provides a bounded priority window — controlled ramp with immediate priority. Balanced: fast start, controlled transition. |
 
 ### 4.3 Integration with RQ3
 
-RQ3 provisions backends (Tier 2 cold/warm spawns). RQ2 determines how
-quickly those backends receive traffic after they're provisioned:
+RQ3 characterizes the **detection** link of the coordination gap — what
+signals trigger scale-up and how trigger composition affects detection
+behavior under resource constraint. RQ2 characterizes the **action** link —
+how quickly newly provisioned backends receive traffic after they are
+spawned. Together they span the two downstream links of the
+RQ3→RQ1→RQ2 chain:
 
-| RQ3 provides | RQ2 determines |
+| RQ3 determines | RQ2 determines |
 |---|---|
-| Compute scale-up → new edge server spawned | How fast does it start receiving traffic? (Redistribution time) |
-| Tier 2 cold → new storage replica spawned | How fast does it reach equilibrium load share? |
+| What signals trigger a spawn (degradation_score vs. cpu_only vs. latency_only) | How fast the spawned backend receives traffic (TTFT) |
+| How early overload is detected (time-to-first-spawn under each trigger mode) | How much immediate traffic the new backend captures (initial load share) |
 
-The synthesis: **RQ3 controls what capacity exists; RQ2 controls how
-quickly that capacity is utilized.** Warm provisioning (RQ3) without
-spawn-time routing awareness (RQ2) means idle capacity. Spawn-time
-awareness (RQ2) without provisioning (RQ3) means nothing to route to.
+The synthesis: **RQ3 controls when and why capacity is created; RQ2
+controls how quickly that capacity is utilized.** Detection without fast
+routing means spawns occur but capacity sits idle. Fast routing without
+detection means nothing to route to.
 
 ---
 
@@ -253,7 +257,7 @@ All runs use push-mode telemetry and the golden configuration.
 
 | Run | Mode | Routing awareness | Ramp-up |
 |---|---|---|---|
-| **R2-TH** | `topology_host` | Immediate (pool entry), unknown stats → 0.0 (best-case) | None — cold-start herd |
+| **R2-TH** | `topology_host` | Immediate (pool entry), unknown stats → 0.0 (best-case) | None — round-robin fair-share |
 | **R2-SS** | `topology_slowstart` | Discovery-time (first telemetry, 0–10 s after spawn) | Invisible (1.0) → graduated ramp at discovery |
 | **R2-TL** | `topology_lifecycle` | Spawn-time (atomic with pool registration) | Warm lease (bounded priority window) |
 
@@ -379,7 +383,7 @@ Default (no override) preserves `topology_lifecycle`.
 
 ## 10. RQ2↔RQ1 Parallel
 
-| | RQ1 (Monitoring) | RQ2 (Routing) |
+| | RQ1 (Telemetry Freshness) | RQ2 (Backend Selection) |
 |---|---|---|
 | **Coordination gap** | Polling blind spot (controller misses telemetry windows between polls) | Discovery gap (routing plane doesn't know about new backends until telemetry arrives) |
 | **Baseline** | Poll-30s (2 of 3 windows missed) | `topology_slowstart` (invisible until discovery, 0–10 s after spawn) |

@@ -101,8 +101,8 @@
 % If you get told that the Introduction and/or Conclusion should be un-numbered chapters, use \chapter* instead of \chapter (add an asterisk). The same can be done for sections with \section*, \subsection*, and \subsubsection*.
 % =====================================================================
 \chapter{Introduction}\label{ch:introduction}
-Orchestrating edge web services means dealing with coordination delays between routing,
- auto-scaling and monitoring components. This has been shown to negatively impact the overall infrastructure and even QoS 
+Orchestrating edge web services means dealing with coordination delays between routing/load balancing,
+ auto-scaling and monitoring infraestructure. This has been shown to negatively impact the overall infrastructureand even QoS 
  due to the unaccounted effects each module has on each other.
  In this chapter the context, motivation and problem statement are explained in 
  \ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
@@ -111,7 +111,6 @@ The methodology used to develop the thesis is detailed in \ref{sec:research_meth
 the main contributions in \ref{sec:contributions} and finally the outlining of the rest of the 7 
 chapters of the thesis are presented in \ref{sec:document_structure}.
 
-
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
 % TODO: Edge computing + stateful web services. Multi-Region Content Discovery
 % Platform as experimental workload. Coordination-gap observation as motivation.
@@ -119,16 +118,35 @@ chapters of the thesis are presented in \ref{sec:document_structure}.
 In the year 2025 global internet traffic surprassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
 corresponds to a more than double increase in the amount of internet traffic generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
  \parencite{ITU2025InternetTraffic}.
+
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.8\textwidth]{images/global-internet-traffic-over-the-years.pdf}
-    \caption{Global internet traffic between 2020 and 2025.}
+    \caption{Global internet traffic between 2020 and 2025. Source: Statista, based on ITU data~\parencite{ITU2025InternetTraffic}.}
     \label{fig:internet_traffic}
 \end{figure}
-This increase has been driven by the technological discoveries and developments such as streaming, social media, IoT and an 
-ever growing number of connected devices. 
 
-These platforms and services are very often built and or deployed on the cloud, where resources are abundant.
+This growth has been driven by technological advancements that have in turn led to the explosion of real-time interactive and
+data-intensive applications. Examples include are web streaming and cloud gaming, which are services where users expect sub-second latency and high resolution multimedia. 
+These are just a few examples that demonstrate the demand of infrastructure that is able to deliver performance with high availability and reliability at global scale, in other words
+regardless of where the end users are located.
+
+Cloud computing is and has been the \parencite{Gurung2026CloudRevolutionTracingOriginsRise} backbone that enables these applications to operate at a global scale. It brings automatic scaling, both horizontally and
+vertically, a pay-per-use model and among other aspects, \parencite{Gurung2026CloudRevolutionTracingOriginsRise} a globally distributed offering and availability that has establised it as
+the foundational layer that supports modern applications and services. 
+
+But at the same time, a growing percentage of global internet traffic comes from mobile devices, which now represent the main gateway to internet 
+access \parencite{Gaudiaut2026MobileTrafficShare}. This ongoing shift underscores that the majority of internet access comes from the network edge, far from the cloud data centers, evidencing the importance of edge infrastructure as a complement and or
+alternative to the cloud infraestructure for many scenarios. As presented in \parencite{Cao2020OverviewEdgeComputingResearch}, \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings the computational resources to the network edge which and therefore closer to the end-users and
+end-products allowing for much lower latency in provisioning services and applications to users.
+
+
+% there's a huge platora of services and applicatons that present latency and processing requirements that are more suited towards edge computing over cloud computing.
+%Because despite the cloud being abundant in computing and storage resources, it suffers from higher latency due to the distance to it's users. In constrant, edge computing brings the resoruces closer to the end user thus reduncing latency and also reduces backbone traffic
+%and aproveitar_em_ingles on more bandwidth available.
+%Despite the advanges that edge computing brings, on the flip side, it's an environment where resources are constrainted, with higher limitations
+%for computing and storage, infraestrucutre beign more ephemeral, heteregenrousrs and frequently distributed. This indentifies the importance of
+%resource managment and load balancing among available infrastructureand or resoruces.
 
 
 
@@ -263,7 +281,7 @@ component to be independently managed and tested.
 
 \chapter{Implementation of Proposed Solution}\label{ch:implementation}
 
-\section{Experimental Infrastructure}\label{sec:impl_infrastructure}
+\section{Experimental infraestructure}\label{sec:impl_infraestructure}
 % TODO: Docker containers; OVS topology (two LANs + WAN bridge, tc-netem);
 % WAN emulation profiles; cloud VM host.
 
@@ -374,7 +392,7 @@ component to be independently managed and tested.
 % phenomenon documented by Wang et al., observed by Pierro & Ullah, called for
 % by Yaseen (2025). Which link matters most? Sharpest trade-offs? What's negligible?
 % Implications for edge system designers. Data placement strategies (Tier 0/1/2)
-% as infrastructure context: unified architecture enables tiered data gravity;
+% as infrastructurecontext: unified architecture enables tiered data gravity;
 % experimental characterization of data locality trade-offs deferred to future work.
 
 

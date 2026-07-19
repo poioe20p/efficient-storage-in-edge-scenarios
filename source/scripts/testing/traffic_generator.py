@@ -175,7 +175,7 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
     if request_type == "feed_ranking":
         return f"{base}/feed/{target['user_id']}?limit=10"
     if request_type == "service_pressure":
-        return f"{base}/service_pressure?window_min=10&limit=10"
+        return f"{base}/service_pressure?window_min=1&limit=10"
     if request_type == "content_update":
         return f"{base}/content"
     if request_type == "content_aggregate":
@@ -440,11 +440,18 @@ async def run(args):
                 pf.write(phase.name)
 
             # Select active client subset for this phase (client_fraction < 1.0
-            # simulates some clients being idle, as in real deployments)
+            # simulates some clients being idle, as in real deployments).
+            # Per-LAN proportional sampling ensures balanced traffic across LANs
+            # instead of global random sample which can skew toward one LAN.
             fraction = getattr(phase, 'client_fraction', 1.0)
             if fraction < 1.0:
-                n_active = max(1, int(len(all_clients) * fraction))
-                phase_clients = random.sample(all_clients, n_active)
+                n_lan1 = max(1, int(len(lan1_clients) * fraction))
+                n_lan2 = max(1, int(len(lan2_clients) * fraction))
+                lan1_active = [(ns, lan) for ns, lan in random.sample(
+                    [(ns, "lan1") for ns in lan1_clients], n_lan1)]
+                lan2_active = [(ns, lan) for ns, lan in random.sample(
+                    [(ns, "lan2") for ns in lan2_clients], n_lan2)]
+                phase_clients = lan1_active + lan2_active
             else:
                 phase_clients = all_clients
 
