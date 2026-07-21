@@ -101,9 +101,12 @@
 % If you get told that the Introduction and/or Conclusion should be un-numbered chapters, use \chapter* instead of \chapter (add an asterisk). The same can be done for sections with \section*, \subsection*, and \subsubsection*.
 % =====================================================================
 \chapter{Introduction}\label{ch:introduction}
-Orchestrating edge web services means dealing with coordination delays between routing/load balancing,
- auto-scaling and monitoring infraestructure. This has been shown to negatively impact the overall infrastructureand even QoS 
- due to the unaccounted effects each module has on each other.
+%Orchestrating edge web services means dealing with coordination delays between routing/load balancing,
+%auto-scaling and monitoring infraestructure due to their independent control loops. This has been shown to negatively impact the overall infrastructure and even QoS 
+%due to the unaccounted effects each module has on each other.
+Studies have shown that edge web services encompassing routing, monitoring and auto-scaling can suffer from coordination 
+delays that arrise from the independent control loops through which each module operates. This accumulation of handoff delays
+between components degrades service quality and can reduce orchestration reliability.
  In this chapter the context, motivation and problem statement are explained in 
  \ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
  The research questions that emerged are available in \ref{sec:research_questions}. 
@@ -126,20 +129,23 @@ corresponds to a more than double increase in the amount of internet traffic gen
     \label{fig:internet_traffic}
 \end{figure}
 
-This growth has been driven by technological advancements that have in turn led to the explosion of real-time interactive and
-data-intensive applications. Examples include are web streaming and cloud gaming, which are services where users expect sub-second latency and high resolution multimedia. 
+This growth has been driven by many technological advancements some of which, have in turn galvanized the emergence of real-time interactive and
+data-intensive applications among others. Examples include web streaming and cloud gaming, which are both services where users expect sub-second latency and high resolution multimedia, highliting the need for fast and capable data processing.
 These are just a few examples that demonstrate the demand of infrastructure that is able to deliver performance with high availability and reliability at global scale, in other words
 regardless of where the end users are located.
 
-Cloud computing is and has been the \parencite{Gurung2026CloudRevolutionTracingOriginsRise} backbone that enables these applications to operate at a global scale. It brings automatic scaling, both horizontally and
-vertically, a pay-per-use model and among other aspects, \parencite{Gurung2026CloudRevolutionTracingOriginsRise} a globally distributed offering and availability that has establised it as
+Cloud computing is and has been the \parencite{Gurung2026CloudRevolutionTracingOriginsRise} backbone that enables these applications to operate at a global scale. It offers automatic scaling, both horizontally and
+vertically, a pay-per-use model and among other aspects, \parencite{Gurung2026CloudRevolutionTracingOriginsRise} a globally distributed offering and availability that has established it as
 the foundational layer that supports modern applications and services. 
 
 But at the same time, a growing percentage of global internet traffic comes from mobile devices, which now represent the main gateway to internet 
-access \parencite{Gaudiaut2026MobileTrafficShare}. This ongoing shift underscores that the majority of internet access comes from the network edge, far from the cloud data centers, evidencing the importance of edge infrastructure as a complement and or
-alternative to the cloud infraestructure for many scenarios. As presented in \parencite{Cao2020OverviewEdgeComputingResearch}, \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings the computational resources to the network edge which and therefore closer to the end-users and
+access \parencite{Gaudiaut2026MobileTrafficShare}. This ongoing shift underscores that the majority of internet access comes from the network edge, far from the cloud data centers, evidencing the importance of edge computing as an extension or
+alternative to cloud computing for many scenarios. As presented in \parencite{Cao2020OverviewEdgeComputingResearch}, \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings the computational resources to the network edge which and therefore closer to the end-users and
 end-products allowing for much lower latency in provisioning services and applications to users.
+Beyond lower latency, edge computing also reduces bandwidth pressure on the core network. Because as data can be processed and stored locally, at the edge, 
+for quicker responses, only a subset of it is sent to the cloud \parencite{Cao2020OverviewEdgeComputingResearch}, freeing up backbone available bandwidth.
 
+On the flip side, the edge computing is not a replacement for cloud computing \parencite{Cao2020OverviewEdgeComputingResearch}, rather an extension of it because 
 
 % there's a huge platora of services and applicatons that present latency and processing requirements that are more suited towards edge computing over cloud computing.
 %Because despite the cloud being abundant in computing and storage resources, it suffers from higher latency due to the distance to it's users. In constrant, edge computing brings the resoruces closer to the end user thus reduncing latency and also reduces backbone traffic

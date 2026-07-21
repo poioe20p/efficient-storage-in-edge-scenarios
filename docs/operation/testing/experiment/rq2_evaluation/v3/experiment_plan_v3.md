@@ -325,7 +325,7 @@ Apply **between every run** (not just between modes):
 
 ## 9. Focus & Evidence
 
-### Primary
+### Primary Artifacts
 
 `controller_lan*.log` + `per_node_stats.csv` → `cli_rq2_redistribution.py`:
 
@@ -345,7 +345,7 @@ python3 -m source.scripts.testing.analysis.rq2.campaign_analysis \
   <run_folder_1> <run_folder_2> ... <run_folder_9>
 ```
 
-### Secondary
+### Secondary Artifacts
 
 - `client_requests.csv` → per-phase, per-LAN p50/p95/p99 via `metrics_stats.py`
 - `container_events.csv` → verify no `sel_sync_` containers (`SS_ENABLED=0`)
@@ -354,11 +354,86 @@ python3 -m source.scripts.testing.analysis.rq2.campaign_analysis \
   `SCALEUP_CPU_SPAN=40`, `SS_ENABLED=0`, `MAX_DYNAMIC_COMPUTE=12`
 - `phases_snapshot.json` → verify correct phases file
 
+### Thesis Graphs Produced
+
+| Graph | Measurement | Type |
+|---|---|---|
+| G1 — TTFT Distribution by Mode | §10.1 | Box plot per mode + scatter dots |
+| G2 — Initial Load Share Distribution by Mode | §10.1 | Box plot per mode + scatter dots |
+| G3 — Coordination Gap Decomposition | §10.1 | Grouped bar (time + share) |
+| G4 — Readiness Mismatch by Mode | §10.2 | Box plot per mode + scatter dots |
+| G5 — Non-Stress p50 Latency by Mode | §10.2 | Grouped bar per phase |
+| G6 — Per-Phase p50 Latency by Mode | §10.3 | Grouped bar, all phases |
+| G7 — Per-Mode Latency Percentiles (p50/p95/p99) | §10.3 | Grouped bar per mode |
+| G8 — Stress vs Non-Stress p95 by Mode | §10.3 | Grouped bar, two conditions |
+
 ---
 
-## 10. Metrics & Success Criteria
+## 10. How It Is Measured
 
-### 10.1 Traffic Allocation (Primary)
+Four measurements answer the question, following the pattern established in
+[RQ1](../../../../research_questions/rq1.md#5-how-it-is-measured). **Measurement 1
+(TTFT + Initial Load Share) is the core thesis evidence** — the others provide
+confirmation, context, and user-visible impact assessment. Each measurement
+names the thesis-level graph that visualises it.
+
+### 10.1 Traffic Allocation at Spawn — Core Evidence (Awareness Timing)
+
+This measurement captures the **coordination gap** — how quickly and how
+forcefully a newly spawned backend receives traffic. It directly answers the
+thesis question: does spawn-time routing awareness produce faster, higher-volume
+load redistribution than discovery-time awareness?
+
+**TTFT (Time-to-First-Traffic):**
+
+```
+ttft = t(first_request_arrives_at_new_backend) − spawn_done_ts
+```
+
+Computed per spawn event from `controller_lan*.log` (spawn_done timestamp,
+backend MAC) and `per_node_stats.csv` (first telemetry window with
+`request_count > 0` for that MAC). The telemetry window cadence (~10 s) is the
+natural resolution.
+
+**Initial Load Share:**
+
+```
+initial_share = new_backend_request_count / total_VIP_requests_in_first_window
+```
+
+The fraction of VIP traffic the new backend captures in its first visible
+telemetry window. Computed per spawn event from the same artifacts.
+
+**What each mode encodes in these two metrics:**
+
+| Mode | TTFT driver | Initial share driver | Expected TTFT | Expected share |
+|---|---|---|---|---|
+| `topology_host` | Round-robin counter state — backend wins when its turn arrives. High variance (0–251 s in original run). | ~1/N fair share (~30% at N≈3). Every backend ties at cost 0.0; round-robin distributes evenly. | 51 s median | ~30% |
+| `topology_slowstart` | Discovery delay (~10 s avg) + ramp duration. Backend invisible until first telemetry. Consistent, predictable. | Graduated ramp — starts low, builds to full weight. Invisible until discovery, then penalty decays over 45 s. | 71 s median | ~55% |
+| `topology_lifecycle` | Warm lease at t=0 — selected immediately via WSM bypass. Consistent, fastest. | Priority routing — WSM short-circuited during warm lease. Highest immediate share. | 40 s median | ~73% |
+
+**Why both metrics together:** TTFT alone doesn't tell the full story. A
+backend could receive its first request quickly (low TTFT) but capture only
+a trickle of traffic (low share). Conversely, a backend could wait longer
+(high TTFT) but then receive a flood (high share). The two metrics together
+characterise both *when* redistribution begins and *how aggressively* it
+proceeds — the speed and the magnitude of the routing response.
+
+**Variance is a first-class finding.** Host's round-robin mechanism produces
+inherently variable TTFT (counter-dependent). Lifecycle's warm lease is
+deterministic. The variance difference between modes is as informative as the
+median difference — it reveals whether the routing mechanism provides
+*predictable* load redistribution or a *lottery*.
+
+**Thesis-level graphs:**
+
+| Graph | Type | What it shows |
+|---|---|---|
+| **G1 — TTFT Distribution by Mode** | Box plot (or violin) per mode, individual spawn events as scatter dots | Central tendency AND variance. Host's wide IQR (round-robin lottery) vs lifecycle's tight cluster (deterministic warm lease). The variance IS the finding. |
+| **G2 — Initial Load Share Distribution by Mode** | Box plot per mode, individual spawn events as scatter dots | How aggressively each mode redirects traffic. Lifecycle's high median + tight IQR vs host's low median + wide spread. |
+| **G3 — Coordination Gap Decomposition** | Grouped bar: ΔTTFT and ΔInitialShare between mode pairs | The coordination gap expressed as **time lost** (TTFT_slowstart − TTFT_lifecycle) AND **throughput lost** (InitialShare_lifecycle − InitialShare_slowstart). Parallels RQ1's breach-detection penalty as the routing-plane analogue. |
+
+**Success criteria:**
 
 | ID | Criterion | Operational definition | Expected |
 |---|---|---|---|
@@ -366,27 +441,157 @@ python3 -m source.scripts.testing.analysis.rq2.campaign_analysis \
 | C2 | Coordination-gap penalty | TTFT_median(slowstart) − TTFT_median(lifecycle) | ≥ 20 s |
 | C3 | Lifecycle highest initial share | Per-mode mean initial share across all compute spawn events | lifecycle > slowstart > host |
 
-### 10.2 Service Quality (Secondary)
+### 10.2 Readiness Alignment — Secondary (Readiness Timing)
+
+This measurement captures the second timing dimension: **when the backend is
+actually ready to serve** relative to when traffic arrives. It answers: does
+the routing mechanism align traffic arrival with backend warm-up, or does it
+send traffic to a cold backend?
+
+**Readiness Mismatch:**
+
+```
+mismatch = window_end_ts − spawn_done_ts
+```
+
+Where `window_end_ts` is the closing boundary of the first telemetry window in
+which the backend appears with `request_count > 0`. This uses the telemetry
+window cadence (~10 s) as the natural resolution of the readiness measurement.
+Small mismatch = traffic arrived in or near the first window after spawn.
+
+**What each mode encodes:**
+
+| Mode | Traffic starts | Backend warm at | Mismatch | Mechanism |
+|---|---|---|---|---|
+| `topology_host` | t≈0 s | t≈5–10 s | **5–10 s gap** | Round-robin sends traffic immediately to a cold backend. Fair-share dilution means no single backend gets enough concentrated load to warm its DB pool and caches quickly. Backend serves cold — elevated latency until caches populate. |
+| `topology_slowstart` | t≈10 s | t≈5–10 s | **~0 s gap** | Discovery delay (~10 s) doubles as a warm-up window. By the time the backend becomes visible and receives traffic, its DB connection pool and caches are already warm. Best alignment — but by accident, not by design. |
+| `topology_lifecycle` | t≈0 s | t≈2–3 s | **~2 s gap** | Warm lease concentrates traffic on the new backend immediately, accelerating cache population. Small initial gap, fast convergence — the backend warms up *because* it receives priority traffic, not before. |
+
+**The cold-start penalty is visible in non-stress latency.** Under low load
+(baseline, cooldowns, demand_drop), the dominant latency factor is backend
+readiness — whether the DB connection pool is populated and caches are hot.
+Under high load (storage_storm, compute_spike), MongoDB I/O dominates and
+masks the readiness effect. Non-stress p50 is therefore the **user-visible
+proxy for readiness alignment**.
+
+**Thesis-level graphs:**
+
+| Graph | Type | What it shows |
+|---|---|---|
+| **G4 — Readiness Mismatch by Mode** | Box plot per mode, individual spawn events as scatter dots | Quantifies the traffic-arrival-to-warm-up gap. Slowstart's near-zero mismatch (serendipitous alignment) vs host's large positive gap (cold serving) vs lifecycle's small gap (accelerated warm-up). |
+| **G5 — Non-Stress p50 Latency by Mode** | Grouped bar per non-stress phase (baseline, cooldowns, demand_drop), three bars per phase (host/slowstart/lifecycle) | The user-visible consequence of readiness mismatch. Host's elevated p50 (cold backends) vs slowstart/lifecycle's low p50 (warm backends). This graph makes the readiness penalty tangible — it answers "does the user notice?" |
+
+**Success criteria:**
 
 | ID | Criterion | Operational definition | Expected |
 |---|---|---|---|
 | C4 | Host elevated non-stress p50 | Per-mode p50 latency for baseline+cooldowns+demand_drop phases, LAN1, all reps | host > slowstart AND host > lifecycle; slowstart vs lifecycle within 20% |
-| C5 | All modes converge in stress | Per-mode p50 for storage_storm+compute_spike phases, any LAN | max(host,slowstart,lifecycle) / min(host,slowstart,lifecycle) ≤ 3.0 |
-| C6 | p95 within 15% across modes | Per-mode p95 per phase, all LANs | max/min ratio ≤ 1.15 for each phase independently |
-| C7 | Zero failures | HTTP status ≠ 200 count / total requests, per mode | ≤ 0.1% |
+| C8 | Host largest readiness mismatch | Per-mode median mismatch across all compute spawn events | host > lifecycle > slowstart |
+| C9 | Slowstart near-zero mismatch | slowstart median mismatch | ≤ 10 s (one telemetry window) |
 
-### 10.3 Readiness Alignment (Secondary)
+### 10.3 Per-Phase Service Quality — User-Visible Impact
+
+This measurement captures the **end-user experience** across the full workload
+timeline. It answers: do the routing mechanisms produce different latency
+profiles under different load conditions, and do they converge when MongoDB
+I/O dominates?
+
+**Per-phase p50/p95/p99 latency** from `client_requests.csv`, disaggregated by
+phase, LAN, and mode. Computed via `metrics_stats.py`.
+
+**Phase-dependent latency regimes:**
+
+| Phase type | Phases | Dominant latency factor | Expected mode effect |
+|---|---|---|---|
+| **Non-stress** | baseline, cooldown_1/2/3, demand_drop | Backend readiness (DB pool, caches) | **host >> slowstart ≈ lifecycle**. Host routes to cold backends; slowstart/lifecycle backends are warm. p50 differential is the readiness penalty. |
+| **Storage stress** | storage_storm, storage_storm_2 | MongoDB I/O (content_update, content_aggregate at 4.0 rps) | **All modes converge.** Storage I/O dominates — the routing choice is irrelevant. p95 ~2500 ms in all modes. |
+| **Compute stress** | compute_spike, compute_spike_2 | CPU saturation (feed_ranking, service_pressure) | **Modes may diverge** if uneven load distribution creates hotspots. Lifecycle's concentrated routing could overload individual backends; host's round-robin could spread CPU load more evenly. This is the phase where routing quality matters most for compute-bound workloads. |
+
+**Why phase disaggregation matters:** A whole-run average conflates non-stress
+phases (where routing quality dominates) with storage phases (where I/O
+dominates). The per-phase breakdown reveals *when* routing matters and *when*
+it doesn't — bounding the scope of the routing-plane coordination gap.
+
+**Thesis-level graphs:**
+
+| Graph | Type | What it shows |
+|---|---|---|
+| **G6 — Per-Phase p50 Latency by Mode** | Grouped bar chart, one group per phase (9 phases), three bars per group (host/slowstart/lifecycle) | The full timeline. Mode differences visible in non-stress phases (readiness effect), convergence in storage_storm (I/O dominance), possible divergence in compute_spike (load distribution effect). This is the **master service-quality graph** — the single most informative visualisation of RQ2's user-visible impact. |
+| **G7 — Per-Mode Latency Percentiles (p50/p95/p99)** | Grouped bar chart, one group per mode, three bars per group (p50, p95, p99) | Aggregate view across all phases. Shows that p95/p99 are storage-dominated (~2500 ms in all modes, mode-independent) while p50 reflects routing quality. Demonstrates that routing choice affects **median** experience but not **tail** latency — the tail is storage-bound regardless of routing policy. |
+| **G8 — Stress vs Non-Stress p95 by Mode** | Grouped bar chart, two groups (stress phases pooled, non-stress phases pooled), three bars each | Confirms convergence under stress and divergence under low load. Stress p95 bars nearly equal height; non-stress p95 bars show host penalty. |
+
+**Success criteria:**
 
 | ID | Criterion | Operational definition | Expected |
 |---|---|---|---|
-| C8 | Host largest mismatch | Per-mode: (first telemetry window end) − (spawn_done_ts) | host > lifecycle > slowstart |
-| C9 | Slowstart near-zero mismatch | slowstart mismatch value | ≤ 10 s (one telemetry window) |
+| C5 | All modes converge in storage stress | Per-mode p50 for storage_storm+storage_storm_2 phases, any LAN | max(host,slowstart,lifecycle) / min(host,slowstart,lifecycle) ≤ 3.0 |
+| C6 | p95 within 15% across modes | Per-mode p95 per phase, all LANs | max/min ratio ≤ 1.15 for each phase independently |
 
-Mismatch = `window_end_ts − spawn_done_ts` where `window_end_ts` is the
-closing boundary of the first telemetry window in which the backend appears
-with `request_count > 0`.
+**C5 rationale**: In the original run, storage-phase p50 ranged from ~200 ms
+to ~600 ms across modes — a 3× spread driven partly by aggressive scoring.
+With corrected scoring (CPU_SPAN=40), convergence should be tighter. The
+≤ 3.0 threshold is intentionally loose — it tests whether convergence exists
+at all, not whether it's perfect.
 
-### 10.4 Sanity Checks
+**C6 rationale**: The original run showed p95 ~2500 ms across all modes —
+well within 15%. This criterion verifies that storage-bound tail latency
+remains mode-independent regardless of scoring correction.
+
+### 10.4 Failure Rate — Safety Check
+
+HTTP status ≠ 200 count / total requests, per mode, from `client_requests.csv`.
+Expected ≤ 0.1% across all modes (30 s client timeout ceiling).
+
+| ID | Criterion | Operational definition | Expected |
+|---|---|---|---|
+| C7 | Zero failures | HTTP status ≠ 200 count / total requests, per mode | ≤ 0.1% |
+
+**Graph**: Not a standalone thesis graph — reported as a statistic in the
+results narrative. If failures exceed 0.1%, a per-phase failure breakdown
+becomes a supplementary graph and the analysis investigates whether failures
+correlate with specific routing modes or phases.
+
+### 10.5 Measurement Chain (Causal Model)
+
+```text
+BACKEND_SELECTION_POLICY
+  │
+  ├─→ Awareness Timing (§10.1)
+  │     ├─ TTFT (G1) ─────────── when does redistribution begin?
+  │     ├─ Initial Load Share (G2) ─ how much traffic moves?
+  │     └─ Coordination Gap (G3) ── time lost + throughput lost
+  │
+  ├─→ Readiness Alignment (§10.2)
+  │     ├─ Mismatch (G4) ──────── does traffic hit a warm backend?
+  │     └─ Non-Stress p50 (G5) ── do users notice cold backends?
+  │
+  └─→ Service Quality (§10.3)
+        ├─ Per-Phase p50 (G6) ─── when does routing matter?
+        ├─ Aggregate Percentiles (G7) ─ median vs tail
+        └─ Stress vs Non-Stress p95 (G8) ─ convergence vs divergence
+```
+
+The causal interpretation: `BACKEND_SELECTION_POLICY` determines **when**
+routing becomes aware of a new backend (awareness timing) and **how** traffic
+arrives (concentrated via warm lease vs diluted via round-robin), which
+determines **whether** the backend is warm when traffic hits (readiness
+alignment), which determines **what** latency users experience (service
+quality).
+
+The coordination gap (§10.1) is the **direct mechanism** — the delay between
+spawn and routing action. Readiness (§10.2) is the **mediating variable** —
+the backend's internal state when that action occurs. Service quality (§10.3)
+is the **user-visible outcome**. All three are necessary to fully answer RQ2:
+a mechanism without user impact is academic; user impact without mechanism is
+unexplained.
+
+This three-tier structure mirrors RQ1's measurement chain (missed windows →
+breach detection → timeout rate) and enables the cross-RQ synthesis the thesis
+requires: RQ1 measures the monitoring gap, RQ2 measures the routing gap, RQ3
+measures the detection gap — together characterising whether collapsing three
+control-plane concerns eliminates delays that matter in practice.
+
+### 10.6 Sanity Checks
 
 | ID | Check | Artifact | Expectation |
 |---|---|---|---|
