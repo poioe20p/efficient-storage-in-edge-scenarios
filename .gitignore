@@ -237,6 +237,8 @@ source/scripts/testing/data/workload_snapshot/device_registry.json
 source/scripts/testing/phases.json
 docs/operation/testing/experiment/rq1_thesis_final/graphs/2026*
 docs/operation/testing/experiment/stability/workload_deiotification_golden_validation/graphs
+docs/operation/testing/experiment/rq1_thesis_final/v7/graphs/*
+docs/operation/testing/experiment/rq1_thesis_final/v7/graphs/20260721*
 tese/literature_review
 
 tools/

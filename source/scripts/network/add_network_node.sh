@@ -12,8 +12,10 @@ readonly OVS_CONTAINER="ovs"
 declare -A LAN_BRIDGE=( [1]="ovs-br0" [2]="ovs-br1" )
 declare -A LAN_SUBNET=( [1]="10.0.0" [2]="10.0.1" )
 declare -A LAN_GATEWAY=( [1]="10.0.0.1" [2]="10.0.1.1" )
-declare -A VETH_RANGE_START=( [1]=100 [2]=200 )
-declare -A VETH_RANGE_END=( [1]=149 [2]=249 )
+# Service node veth ranges — LAN2 shifted to 250-299 to make room for
+# expanded test-client range on LAN1 (150-245, 96 slots for Pilot B).
+declare -A VETH_RANGE_START=( [1]=100 [2]=250 )
+declare -A VETH_RANGE_END=( [1]=149 [2]=299 )
 # .1 = gateway, .252 = VIP_DATA recovery, .253 = VIP_SERVER,
 # .254 = VIP_DATA_N{lan};
 # test clients (namespace-based) use .56+

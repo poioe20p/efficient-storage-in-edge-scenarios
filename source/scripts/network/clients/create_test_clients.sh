@@ -7,8 +7,8 @@
 # dedicated veth pair connected to the OVS bridge — no container image needed.
 #
 # Veth ranges reserved for test clients (must not overlap with service nodes):
-#   LAN 1 → veth150–veth199  (service nodes use 100–149)
-#   LAN 2 → veth250–veth299  (service nodes use 200–249)
+#   LAN 1 → veth150–veth245  (service nodes use 100–149)
+#   LAN 2 → veth300–veth395  (service nodes use 250–299)
 #
 # This separation prevents the SDN controller's find_free_veth_index() from
 # exhausting its range when test clients are active simultaneously.
@@ -22,9 +22,10 @@ readonly OVS_CONTAINER="ovs"
 declare -A LAN_BRIDGE=(   [1]="ovs-br0"  [2]="ovs-br1"  )
 declare -A LAN_SUBNET=(   [1]="10.0.0"   [2]="10.0.1"   )
 declare -A LAN_GATEWAY=(  [1]="10.0.0.1" [2]="10.0.1.1" )
-# Test client veth ranges — separate from add_network_node.sh ranges (100–149, 200–249)
-declare -A VETH_RANGE_START=( [1]=150 [2]=250 )
-declare -A VETH_RANGE_END=(   [1]=199 [2]=299 )
+# Test client veth ranges — separate from add_network_node.sh ranges (100–149, 250–299)
+# Expanded from 50 to 96 slots per LAN for Pilot B (96 clients/LAN).
+declare -A VETH_RANGE_START=( [1]=150 [2]=300 )
+declare -A VETH_RANGE_END=(   [1]=245 [2]=395 )
 # .1 = gateway, .252 = VIP_DATA recovery, .253 = VIP_SERVER, .254 = VIP_DATA_N{lan}
 declare -A RESERVED_SUFFIX=( [1]="1 252 253 254" [2]="1 252 253 254" )
 
@@ -126,7 +127,8 @@ auto_assign_ip() {
 	local host
 	# Start from .56 — octets .2–.55 are reserved for dynamic service nodes
 	# added via add_network_node.sh / add_network_storage_node.sh.
-	for host in $(seq 56 105); do
+	# Expanded from .56-.105 to .56-.151 for Pilot B (96 clients/LAN).
+	for host in $(seq 56 151); do
 		local candidate="${subnet}.${host}"
 		if ! echo "$used" | grep -qxF "$candidate"; then
 			echo "$candidate"
@@ -134,7 +136,7 @@ auto_assign_ip() {
 		fi
 	done
 
-	die "No free IP address available in ${subnet}.56-105 (test client range)."}
+	die "No free IP address available in ${subnet}.56-151 (test client range)."}
 }
 
 auto_generate_mac() {

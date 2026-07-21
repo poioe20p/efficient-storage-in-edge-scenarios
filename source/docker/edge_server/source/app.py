@@ -1,6 +1,6 @@
 import logging
 
-from flask import Flask
+from flask import Flask, g, abort
 
 from db_monitor import register as _register_db_monitor
 

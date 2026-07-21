@@ -17,8 +17,10 @@ readonly OVS_CONTAINER="ovs"
 
 declare -A LAN_BRIDGE=(     [1]="ovs-br0"  [2]="ovs-br1"  )
 # Test client veth range — must match create_test_clients.sh
-declare -A VETH_RANGE_START=( [1]=150 [2]=250 )
-declare -A VETH_RANGE_END=(   [1]=199 [2]=299 )
+# Expanded from 50 to 96 slots per LAN for Pilot B (96 clients/LAN).
+# LAN2 shifted to 300-395 to avoid collision with service nodes (250-299).
+declare -A VETH_RANGE_START=( [1]=150 [2]=300 )
+declare -A VETH_RANGE_END=(   [1]=245 [2]=395 )
 
 LAN=""
 PREFIX="test_client"

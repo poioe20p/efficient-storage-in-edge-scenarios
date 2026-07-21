@@ -1,0 +1,120 @@
+{
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_s": 60,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.10,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "storage_storm",
+      "duration_s": 240,
+      "rate_per_client": 4.0,
+      "cross_region_ratio": 0.90,
+      "hotspot_direction": "",
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.35,
+        "feed_ranking": 0.10,
+        "service_pressure": 0.05,
+        "content_update": 0.30,
+        "content_aggregate": 0.20
+      }
+    },
+    {
+      "name": "cleanup_gap_1",
+      "duration_s": 240,
+      "rate_per_client": 0.5,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.05,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "tier1_hotspot",
+      "duration_s": 180,
+      "rate_per_client": 5.0,
+      "cross_region_ratio": 0.40,
+      "hotspot_direction": "",
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.80,
+        "feed_ranking": 0.05,
+        "service_pressure": 0.05,
+        "content_update": 0.05,
+        "content_aggregate": 0.05
+      }
+    },
+    {
+      "name": "inter_hotspot_cooldown",
+      "duration_s": 300,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.10,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "reverse_hotspot",
+      "duration_s": 180,
+      "rate_per_client": 5.0,
+      "cross_region_ratio": 0.40,
+      "hotspot_direction": "",
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.80,
+        "feed_ranking": 0.05,
+        "service_pressure": 0.05,
+        "content_update": 0.05,
+        "content_aggregate": 0.05
+      }
+    },
+    {
+      "name": "cleanup_gap_2",
+      "duration_s": 240,
+      "rate_per_client": 0.5,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.05,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "compute_spike",
+      "duration_s": 180,
+      "rate_per_client": 2.0,
+      "cross_region_ratio": 0.0,
+      "hotspot_direction": "",
+      "client_fraction": 1.0,
+      "mix": {
+        "service_pressure": 1.0
+      }
+    },
+    {
+      "name": "demand_drop",
+      "duration_s": 300,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.10,
+      "mix": {
+        "content_lookup": 0.60,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    }
+  ]
+}

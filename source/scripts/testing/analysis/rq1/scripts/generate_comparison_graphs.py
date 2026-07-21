@@ -211,7 +211,7 @@ def _plot_decision_quality_table(
     fig_h = n_rows * 0.72 + 1.6  # extra 1.6" for title + legend
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
-    fig.suptitle("RQ1 v3 — Decision Quality: Breached Windows & Spawns by Phase / Mode",
+    fig.suptitle(f"{title_prefix} — Decision Quality: Breached Windows & Spawns by Phase / Mode",
                  fontsize=14, fontweight="bold", y=0.96)
 
     table = ax.table(
@@ -369,6 +369,7 @@ def generate_graphs(
     poll12_dirs: list[Path],
     poll30_dirs: list[Path],
     output_dir: Path,
+    title_prefix: str = "RQ1 v3",
 ) -> None:
     try:
         import matplotlib
@@ -387,7 +388,7 @@ def generate_graphs(
     # ── Graph 1a: Mean Reaction Latency ──────────────────────────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     _style_bar_ax(ax, x, MODE_LABELS, "Mean Reaction Latency (s)",
-                  "RQ1 v3 — Mean Reaction Latency by Telemetry Mode")
+                  f"{title_prefix} — Mean Reaction Latency by Telemetry Mode")
     ax.bar(x, [d["latency_mean"] for d in data], color=MODE_COLORS,
             edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax, x, data, "latency_values")
@@ -401,7 +402,7 @@ def generate_graphs(
     # ── Graph 1b: Max Reaction Latency ───────────────────────────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     _style_bar_ax(ax, x, MODE_LABELS, "Max Reaction Latency (s)",
-                  "RQ1 v3 — Max Reaction Latency by Telemetry Mode")
+                  f"{title_prefix} — Max Reaction Latency by Telemetry Mode")
     ax.bar(x, [d["latency_max"] for d in data], color=MODE_COLORS,
             edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax, x, data, "latency_max_values")
@@ -420,7 +421,7 @@ def generate_graphs(
     ax.bar(x + w/2, [d["latency_max"] for d in data], w, label="Max",
            color="#1565C0", edgecolor="black", alpha=BAR_ALPHA)
     _style_bar_ax(ax, x, MODE_LABELS, "Reaction Latency (s)",
-                  "RQ1 v3 — Reaction Latency by Telemetry Mode")
+                  f"{title_prefix} — Reaction Latency by Telemetry Mode")
     ax.legend(fontsize=TICK_SIZE - 1)
     # Annotate values
     for i in range(len(data)):
@@ -437,13 +438,13 @@ def generate_graphs(
     # ── Graph 2: Controller Overhead ─────────────────────────────
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=FIG_DOUBLE)
     _style_bar_ax(ax1, x, MODE_LABELS, "CPU %",
-                  "RQ1 v3 — Avg Controller CPU by Telemetry Mode")
+                  f"{title_prefix} — Avg Controller CPU by Telemetry Mode")
     ax1.bar(x, [d["cpu_mean"] for d in data], color=MODE_COLORS,
             edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax1, x, data, "cpu_values")
     _add_bar_labels(ax1, x, data, "cpu_mean", "{:.1f}%", 0.15)
     _style_bar_ax(ax2, x, MODE_LABELS, "RSS (MB)",
-                  "RQ1 v3 — Avg Controller RAM by Telemetry Mode")
+                  f"{title_prefix} — Avg Controller RAM by Telemetry Mode")
     ax2.bar(x, [d["ram_mean"] for d in data], color=MODE_COLORS,
             edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax2, x, data, "ram_values")
@@ -457,7 +458,7 @@ def generate_graphs(
     # ── Graph 3: Staleness ───────────────────────────────────────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     _style_bar_ax(ax, x, MODE_LABELS, "Max Staleness (s)",
-                  "RQ1 v3 — Max Information Age (Staleness) by Telemetry Mode")
+                  f"{title_prefix} — Max Information Age (Staleness) by Telemetry Mode")
     ax.bar(x, [d["staleness_max"] for d in data], color=MODE_COLORS,
            edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax, x, data, "staleness_values")
@@ -472,7 +473,7 @@ def generate_graphs(
     total_req_str = _format_total_requests(data)
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     _style_bar_ax(ax, x, MODE_LABELS, "Timeout Rate (%)",
-                  f"RQ1 v3 — Timeout Rate by Telemetry Mode\n{total_req_str}")
+                  f"{title_prefix} — Timeout Rate by Telemetry Mode\n{total_req_str}")
     ax.bar(x, [d["timeout_mean"] for d in data], color=MODE_COLORS,
            edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax, x, data, "timeout_values")
@@ -497,7 +498,7 @@ def generate_graphs(
     ax.set_xticklabels([p.replace("_", "\n") for p in PHASE_ORDER],
                        fontsize=TICK_SIZE - 1)
     ax.set_ylabel("Timeout Rate (%)", fontsize=LABEL_SIZE)
-    ax.set_title(f"RQ1 v3 — Per-Phase Timeout Rate by Telemetry Mode\n{total_req_str}",
+    ax.set_title(f"{title_prefix} — Per-Phase Timeout Rate by Telemetry Mode\n{total_req_str}",
                  fontsize=TITLE_SIZE, fontweight="bold")
     ax.legend(fontsize=TICK_SIZE - 1, framealpha=0.8)
     ax.grid(axis="y", alpha=GRID_ALPHA, linestyle="--")
@@ -519,16 +520,18 @@ def generate_graphs(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate RQ1 mode-comparison graphs")
-    parser.add_argument("--run-dirs-push", nargs="+", required=True, dest="push",
-                        help="Push mode run directories (3 replicates)")
-    parser.add_argument("--run-dirs-poll5", nargs="+", required=True, dest="poll5",
-                        help="Poll-5s mode run directories (3 replicates)")
-    parser.add_argument("--run-dirs-poll12", nargs="+", required=True, dest="poll12",
-                        help="Poll-12s mode run directories (3 replicates)")
-    parser.add_argument("--run-dirs-poll30", nargs="+", required=True, dest="poll30",
-                        help="Poll-30s mode run directories (3 replicates)")
+    parser.add_argument("--run-dirs-push", nargs="*", default=[], dest="push",
+                        help="Push mode run directories")
+    parser.add_argument("--run-dirs-poll5", nargs="*", default=[], dest="poll5",
+                        help="Poll-5s mode run directories")
+    parser.add_argument("--run-dirs-poll12", nargs="*", default=[], dest="poll12",
+                        help="Poll-12s mode run directories")
+    parser.add_argument("--run-dirs-poll30", nargs="*", default=[], dest="poll30",
+                        help="Poll-30s mode run directories")
     parser.add_argument("--output-dir", required=True, dest="output",
                         help="Output directory for PNGs")
+    parser.add_argument("--title-prefix", default="RQ1 v3", dest="title_prefix",
+                        help="Prefix for graph titles (default: 'RQ1 v3')")
     args = parser.parse_args()
 
     generate_graphs(
@@ -537,6 +540,7 @@ def main() -> None:
         poll12_dirs=[Path(d) for d in args.poll12],
         poll30_dirs=[Path(d) for d in args.poll30],
         output_dir=Path(args.output),
+        title_prefix=args.title_prefix,
     )
 
 
