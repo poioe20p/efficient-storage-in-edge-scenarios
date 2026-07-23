@@ -268,7 +268,7 @@ ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && \
   PHASES_CONFIG=testing/phases_override/phases_rq2.json \
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/rq2_v3_topology_host.env \
   WAN_RTT_MS=185 CLIENTS=96 CONTENT_ITEMS=6000 STORAGE_CPUS=0.08 EDGE_CPUS=0.30 \
-  CURL_MAX_TIME=30 RANDOM_SEED=42 \
+  CURL_MAX_TIME=30 RANDOM_SEED=42 DATA_SEED=42 \
   > /tmp/rq2_v3_th_1.log 2>&1 &"
 ```
 
@@ -283,7 +283,7 @@ ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && \
   PHASES_CONFIG=testing/phases_override/phases_rq2.json \
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/rq2_v3_topology_slowstart.env \
   WAN_RTT_MS=185 CLIENTS=96 CONTENT_ITEMS=6000 STORAGE_CPUS=0.08 EDGE_CPUS=0.30 \
-  CURL_MAX_TIME=30 RANDOM_SEED=42 \
+  CURL_MAX_TIME=30 RANDOM_SEED=42 DATA_SEED=42 \
   > /tmp/rq2_v3_ss_1.log 2>&1 &"
 ```
 
@@ -298,7 +298,7 @@ ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && \
   PHASES_CONFIG=testing/phases_override/phases_rq2.json \
   OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/rq2_v3_topology_lifecycle.env \
   WAN_RTT_MS=185 CLIENTS=96 CONTENT_ITEMS=6000 STORAGE_CPUS=0.08 EDGE_CPUS=0.30 \
-  CURL_MAX_TIME=30 RANDOM_SEED=42 \
+  CURL_MAX_TIME=30 RANDOM_SEED=42 DATA_SEED=42 \
   > /tmp/rq2_v3_tl_1.log 2>&1 &"
 ```
 
@@ -385,7 +385,8 @@ Graphs produced (11 total, matching [`rq2_v3.md` §6](../../../../research_quest
 | `g5b_nonstress_p50.png` | G5b — Non-Stress p50 Latency by Mode |
 | `g6_per_phase_p50.png` | G6 — Per-Phase p50 Latency by Mode |
 | `g7_percentiles.png` | G7 — Per-Mode Latency Percentiles |
-| `g8_phase_type_p95.png` | G8 — Latency by Phase Type |
+| `g8_phase_type_p95.png` | G8 — Latency by Phase Type (p95) |
+| `g8b_phase_type_p50.png` | G8b — Latency by Phase Type (p50) |
 
 ### Secondary Artifacts
 
@@ -410,7 +411,8 @@ Graphs produced (11 total, matching [`rq2_v3.md` §6](../../../../research_quest
 | G5b — Non-Stress p50 Latency by Mode | §10.2 | Grouped bar per phase + error bars + scatter |
 | G6 — Per-Phase p50 Latency by Mode | §10.2 | Grouped bar, all phases + error bars + scatter |
 | G7 — Per-Mode Latency Percentiles (p50/p95/p99) | §10.2 | Grouped bar per mode + error bars + scatter |
-| G8 — Latency by Phase Type | §10.2 | Grouped bar, 4 groups + error bars + scatter |
+| G8 — Latency by Phase Type (p95) | §10.2 | Grouped bar, 4 groups + error bars + scatter |
+| G8b — Latency by Phase Type (p50) | §10.2 | Grouped bar, 4 groups + error bars + scatter |
 
 ---
 
@@ -551,3 +553,11 @@ Post-analysis cleanup: remove transient `client_requests.csv` and
 - VIP routing selection: [`source/sdn_controller/_vip_routing/selection.py`](../../../../source/sdn_controller/_vip_routing/selection.py)
 - Original results (invalidated scoring): [`../v1/results.md`](../v1/results.md)
 - v2 plan (superseded): [`../v2/experiment_plan_v2.md`](../v2/experiment_plan_v2.md)
+
+---
+
+## 16. Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-07-23 | Initial campaign executed: 9 runs (3 modes × 3 reps). All sanity checks passed. TTFT ranking inverted vs. plan (host < lifecycle, not lifecycle < host). Coordination gap confirmed at 20.4 s. Failure rates elevated (1.1–6.1%) due to CLIENTS=96 + rate=4.0 overload. | [results.md §1](./results.md) |

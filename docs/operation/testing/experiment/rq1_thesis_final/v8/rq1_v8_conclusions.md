@@ -8,16 +8,25 @@ Each measurement is answered against v8 data. Cross-reference [`experiment_plan_
 
 ## 1. Reaction latency
 
-| Mode | Mean (s) | Per-run means (s) |
-|------|----------|--------------------|
-| Push | 178 ± 47 | 121, 237, 176 |
-| Poll-5s | 155 ± 91 | 145, 270, 49 |
-| Poll-12s | 221 ± 92 | 146, 350, 168 |
-| Poll-30s | 225 ± 196 | 503, 76, 98 |
+**Reaction events detected per mode (total across 3 runs):**
 
-**Answer**: Clear signal. Push mean reaction latency (178 s) is 43–47 s lower than Poll-12s (221 s) and Poll-30s (225 s). Poll-30s has the single worst run at 503 s — a 4× degradation over the Push worst case (237 s). The signal is in worst-case behavior: Push keeps reaction latency bounded; Poll modes allow it to spike. Poll-5s (155 s mean) is noisy — one run at 49 s is suspiciously low, likely a data artifact.
+| Mode | Events total | Per-run |
+|------|-------------|---------|
+| Push | 15 | 5, 5, 5 |
+| Poll-5s | 15 | 5, 5, 5 |
+| Poll-12s | 15 | 5, 5, 5 |
+| Poll-30s | **8** | 5, 2, 1 |
 
-→ **Monotonic trend confirmed between Push and Poll-12s/Poll-30s.**
+**Answer**: The reaction latency CSV is **survivor-biased** for Poll modes. Push detects every breached window (5 per run, 15 total). Poll-30s T2 detected only 2 breaches; T3 detected only 1. The other breaches were undetected — the controller never knew overload was happening, so those events have no row in the CSV.
+
+The per-run means are misleading:
+- T2 "76s mean" = average of 2 fast detections that happened to align with a poll. The 8+ missed breaches have infinite detection time and are excluded.
+- T3 "98s mean" = a single detection. The run had 4.2% stress timeout rate — those failures happened because the controller was blind.
+- Only T1 (5 events, 503s mean) reflects the true cost of Poll-30s: when the controller DOES detect breaches, detection time is in the 500–670s range vs Push's 12–91s for non-initial detections.
+
+The correct comparison is **not** mean reaction latency across detected events — it's **how many breaches were detected at all** and **what happened to the undetected ones**. Push detects 100% of breached windows and acts on all of them. Poll-30s T2 detected ~20% of breaches; the undetected 80% contributed to a 9.5% stress timeout rate.
+
+→ **Mean reaction latency from this CSV is not a valid cross-mode comparison. The metric that separates modes is breach detection coverage: Push = 15/15 events, Poll-30s = 8 total with 2 runs nearly blind. The undetected breaches manifest as timeouts and tail latency.**
 
 ---
 
@@ -122,7 +131,7 @@ Each measurement is answered against v8 data. Cross-reference [`experiment_plan_
 
 | Measurement | Signal? | What it shows |
 |-------------|---------|---------------|
-| Reaction latency | ✅ | Push 178s, bounded worst-case; Poll-30s spikes to 503s |
+| Reaction latency | ✅ | Push detects 15/15 breaches; Poll-30s T2=2, T3=1. Mean comparison invalid due to survivor bias |
 | Throughput | ✅ | Poll-30s −19% mean; T2 at half throughput |
 | Stress timeout rate | ✅ | Push σ=0.4% vs Poll σ=3–5%; rare cascades |
 | p95 endpoint latency | ✅ | Poll-30s 13.5s vs ~7–8s for all others |
@@ -133,8 +142,8 @@ Each measurement is answered against v8 data. Cross-reference [`experiment_plan_
 
 **The system is robust enough that most runs succeed regardless of mode.** The difference between telemetry cadences is not whether the system eventually copes — it's **how reliably** it copes and **how many users are affected** during the detection gap.
 
-- **Push** delivers consistent, bounded reaction latency and tight timeout rates across all 3 replicates.
-- **Poll-30s** delivers equivalent throughput and timeout rates most of the time, but incurs 1-in-3 runs with degraded performance (T2) and 70–90% worse tail latency even in good runs.
+- **Push** detects every breached window (15/15 events) and spawns in response. All 3 runs show tight timeout rates and ~67K throughput.
+- **Poll-30s** is nearly blind: 2 of 3 runs detected only 1–2 breaches all experiment. The undetected breaches didn't vanish — they became timeouts and tail latency. Even when it works (T1, 5 events), detection times are 500–670s vs Push's 12–91s for adaptive spawns.
 - **Poll-5s and Poll-12s** are intermediate; they share Push's worst-case latency envelope but lack its consistency.
 
 The evidence supports a **reliability argument**, not a throughput argument. Faster telemetry doesn't make the system faster on average — it makes it fail less often and less severely when conditions are hardest.

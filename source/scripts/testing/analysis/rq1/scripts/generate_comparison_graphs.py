@@ -47,7 +47,9 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
     stales_per_run: list[float] = []    # per-run max staleness
     timeouts: list[float] = []          # per-run timeout rate (%)
     ep_means: list[float] = []          # per-run weighted mean endpoint latency (s)
-    ep_p95s: list[float] = []           # per-run weighted mean p95 endpoint latency (s)
+    ep_p50s: list[float] = []           # per-run weighted p50 endpoint latency (s)
+    ep_p95s: list[float] = []           # per-run weighted p95 endpoint latency (s)
+    ep_per_phase_p95: dict[str, list[float]] = {}  # per-phase per-run p95
     total_requests: int = 0
     n_reaction_events: int = 0
     per_phase: dict[str, list[float]] = {}
@@ -77,7 +79,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         if run_stales:
             stales_per_run.append(np.max(run_stales))
 
-        # Endpoint latency (user-facing HTTP) — per-run weighted means
+        # Endpoint latency (user-facing HTTP) — per-run weighted aggregates
         ep_rows = _safe_read_csv(run_dir / "analysis" / "rq1" / "rq1_endpoint_latency.csv")
         if ep_rows:
             total_count = sum(int(r["count"]) for r in ep_rows)
@@ -85,9 +87,20 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
                 ep_means.append(
                     sum(float(r["mean"]) * int(r["count"]) for r in ep_rows) / total_count
                 )
+                ep_p50s.append(
+                    sum(float(r["p50"]) * int(r["count"]) for r in ep_rows) / total_count
+                )
                 ep_p95s.append(
                     sum(float(r["p95"]) * int(r["count"]) for r in ep_rows) / total_count
                 )
+            # Per-phase p95
+            for r in ep_rows:
+                ph = r["phase"]
+                p95 = float(r["p95"])
+                cnt = int(r["count"])
+                if ph not in ep_per_phase_p95:
+                    ep_per_phase_p95[ph] = []
+                ep_per_phase_p95[ph].append((p95, cnt))
 
         # Timeout rate — per-run
         cr_rows = _safe_read_csv(run_dir / "client_requests.csv")
@@ -119,6 +132,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "staleness_max": np.mean(stales_per_run) if stales_per_run else 0,
         "timeout_mean": np.mean(timeouts) if timeouts else 0,
         "ep_mean": np.mean(ep_means) if ep_means else 0,
+        "ep_p50_mean": np.mean(ep_p50s) if ep_p50s else 0,
         "ep_p95_mean": np.mean(ep_p95s) if ep_p95s else 0,
         # std devs (for error bars)
         "latency_mean_std": np.std(lats_per_run) if len(lats_per_run) > 1 else 0,
@@ -128,6 +142,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "staleness_max_std": np.std(stales_per_run) if len(stales_per_run) > 1 else 0,
         "timeout_std": np.std(timeouts) if len(timeouts) > 1 else 0,
         "ep_mean_std": np.std(ep_means) if len(ep_means) > 1 else 0,
+        "ep_p50_std": np.std(ep_p50s) if len(ep_p50s) > 1 else 0,
         "ep_p95_std": np.std(ep_p95s) if len(ep_p95s) > 1 else 0,
         # per-replicate lists (for scatter dots)
         "latency_values": lats_per_run,
@@ -137,7 +152,22 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "staleness_values": stales_per_run,
         "timeout_values": timeouts,
         "ep_mean_values": ep_means,
+        "ep_p50_values": ep_p50s,
         "ep_p95_values": ep_p95s,
+        # per-phase p95 (mean across replicates, weighted by request count)
+        "ep_p95_per_phase": {
+            ph: np.mean([sum(p95 * c for p95, c in vals) / sum(c for _, c in vals)
+                         if sum(c for _, c in vals) > 0 else 0
+                         for vals in [ep_per_phase_p95.get(ph, [(0, 1)])]])
+            for ph in ep_per_phase_p95
+        },
+        "ep_p95_per_phase_std": {
+            ph: np.std([sum(p95 * c for p95, c in vals) / sum(c for _, c in vals)
+                        if sum(c for _, c in vals) > 0 else 0
+                        for vals in [ep_per_phase_p95.get(ph, [(0, 1)])]])
+            if len(ep_per_phase_p95.get(ph, [])) > 1 else 0
+            for ph in ep_per_phase_p95
+        },
         # per-phase (mean across replicates)
         "per_phase": {ph: np.mean(rates) for ph, rates in per_phase.items()},
         "per_phase_std": {ph: np.std(rates) if len(rates) > 1 else 0
@@ -406,47 +436,59 @@ def generate_graphs(
     data = [collect_mode_data(dirs) for dirs in all_dirs]
     x = np.arange(len(MODE_LABELS))
 
-    # ── Graph 1a: Mean Reaction Latency ──────────────────────────
+    # ── Graph 1a: Reaction Events Detected (count) ───────────────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _style_bar_ax(ax, x, MODE_LABELS, "Mean Reaction Latency (s)",
-                  f"{title_prefix} — Mean Reaction Latency by Telemetry Mode")
-    ax.bar(x, [d["latency_mean"] for d in data], color=MODE_COLORS,
+    _style_bar_ax(ax, x, MODE_LABELS, "Reaction Events Detected",
+                  f"{title_prefix} — Reaction Events Detected by Telemetry Mode\n(Poll-30s survivor bias: only detected breaches counted; undetected breaches have no row)")
+    ax.bar(x, [d["n_reaction_events"] for d in data], color=MODE_COLORS,
             edgecolor="black", alpha=BAR_ALPHA)
-    _add_scatter_dots(ax, x, data, "latency_values")
-    _add_bar_labels(ax, x, data, "latency_mean", "{:.1f}s", 2)
-    _add_sample_footnote(fig, data, "reaction events", "n_reaction_events")
-    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    # Per-replicate scatter: n_reaction_events is total, so show per-run as label
+    for i, d in enumerate(data):
+        ax.text(i, d["n_reaction_events"] - 2, f"n={d['n_reaction_events']}",
+                ha="center", fontweight="bold", fontsize=ANNO_SIZE + 2, color="white")
+    ax.set_ylim(0, max(d["n_reaction_events"] for d in data) + 5)
+    _add_sample_footnote(fig, data, "total events across 3 runs", "n_reaction_events")
+    plt.tight_layout(rect=[0, 0.06, 1, 0.90])
     fig.savefig(output_dir / "rq1_v8_reaction_latency_mean.png", dpi=150)
     plt.close(fig)
     print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_mean.png'}")
 
-    # ── Graph 1b: Max Reaction Latency ───────────────────────────
+    # ── Graph 1b: Max Detected Reaction Latency (survivor-aware) ──
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _style_bar_ax(ax, x, MODE_LABELS, "Max Reaction Latency (s)",
-                  f"{title_prefix} — Max Reaction Latency by Telemetry Mode")
+    _style_bar_ax(ax, x, MODE_LABELS, "Max Detected Reaction Latency (s)",
+                  f"{title_prefix} — Max Detected Reaction Latency\nPoll-30s: 2/3 runs detected only 1–2 breaches; undetected breaches have infinite latency")
     ax.bar(x, [d["latency_max"] for d in data], color=MODE_COLORS,
             edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax, x, data, "latency_max_values")
     _add_bar_labels(ax, x, data, "latency_max", "{:.1f}s", 3)
+    # Add detection count under each bar
+    for i, d in enumerate(data):
+        ax.text(i, -15, f"({d['n_reaction_events']} events)", ha="center",
+                fontsize=ANNO_SIZE - 1, fontstyle="italic", color="#666666")
+    _add_sample_footnote(fig, data, "detected reaction events", "n_reaction_events")
+    plt.tight_layout(rect=[0, 0.10, 1, 0.88])
+    fig.savefig(output_dir / "rq1_v8_reaction_latency_max.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_max.png'}")
     _add_sample_footnote(fig, data, "reaction events", "n_reaction_events")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
     fig.savefig(output_dir / "rq1_v8_reaction_latency_max.png", dpi=150)
     plt.close(fig)
     print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_max.png'}")
 
-    # ── Graph 1c: Mean Endpoint Latency (user-facing HTTP) ───────
+    # ── Graph 1c: Median Endpoint Latency (p50, user-facing) ────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _style_bar_ax(ax, x, MODE_LABELS, "Mean Endpoint Latency (s)",
-                  f"{title_prefix} — Mean Endpoint Latency by Telemetry Mode")
-    ax.bar(x, [d["ep_mean"] for d in data], color=MODE_COLORS,
+    _style_bar_ax(ax, x, MODE_LABELS, "Median Endpoint Latency — p50 (s)",
+                  f"{title_prefix} — Median Endpoint Latency (p50) by Telemetry Mode")
+    ax.bar(x, [d["ep_p50_mean"] for d in data], color=MODE_COLORS,
             edgecolor="black", alpha=BAR_ALPHA)
-    _add_scatter_dots(ax, x, data, "ep_mean_values")
-    _add_bar_labels(ax, x, data, "ep_mean", "{:.2f}s", 0.05)
+    _add_scatter_dots(ax, x, data, "ep_p50_values")
+    _add_bar_labels(ax, x, data, "ep_p50_mean", "{:.3f}s", 0.02)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v8_endpoint_latency_mean.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_endpoint_latency_p50.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_mean.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_p50.png'}")
 
     # ── Graph 1d: p95 Endpoint Latency (user-facing HTTP tail) ───
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -456,6 +498,37 @@ def generate_graphs(
             edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax, x, data, "ep_p95_values")
     _add_bar_labels(ax, x, data, "ep_p95_mean", "{:.2f}s", 0.05)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v8_endpoint_latency_p95.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_p95.png'}")
+
+    # ── Graph 1e: Per-Phase p95 Endpoint Latency ─────────────────
+    fig, ax = plt.subplots(figsize=FIG_PER_PHASE)
+    phase_x = np.arange(len(PHASE_ORDER))
+    width = 0.2
+    for i, (mode, d) in enumerate(zip(MODE_LABELS, data)):
+        values = [d["ep_p95_per_phase"].get(ph, 0) for ph in PHASE_ORDER]
+        stds = [d.get("ep_p95_per_phase_std", {}).get(ph, 0) for ph in PHASE_ORDER]
+        ax.bar(phase_x + i * width, values, width, label=mode,
+               color=MODE_COLORS[i], edgecolor="black", alpha=BAR_ALPHA,
+               yerr=stds, capsize=3, error_kw={"linewidth": 1.2})
+    ax.set_xticks(phase_x + width * 1.5)
+    ax.set_xticklabels([p.replace("_", "\n") for p in PHASE_ORDER],
+                       fontsize=TICK_SIZE - 1)
+    ax.set_ylabel("p95 Endpoint Latency (s)", fontsize=LABEL_SIZE)
+    ax.set_title(f"{title_prefix} — Per-Phase p95 Endpoint Latency by Telemetry Mode",
+                 fontsize=TITLE_SIZE, fontweight="bold")
+    ax.legend(fontsize=TICK_SIZE - 1, framealpha=0.8)
+    ax.grid(axis="y", alpha=GRID_ALPHA, linestyle="--")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 0.94])
+    fig.savefig(output_dir / "rq1_v8_endpoint_latency_per_phase_p95.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_per_phase_p95.png'}")
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
     fig.savefig(output_dir / "rq1_v8_endpoint_latency_p95.png", dpi=150)
@@ -499,8 +572,8 @@ def generate_graphs(
     # ── Graph 4: Timeout Rate (merged — was two duplicate graphs) ─
     total_req_str = _format_total_requests(data)
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _style_bar_ax(ax, x, MODE_LABELS, "Timeout Rate (%)",
-                  f"{title_prefix} — Timeout Rate by Telemetry Mode\n{total_req_str}")
+    _style_bar_ax(ax, x, MODE_LABELS, "Mean Timeout Rate (%)",
+                  f"{title_prefix} — Mean Timeout Rate by Telemetry Mode\n{total_req_str}")
     ax.bar(x, [d["timeout_mean"] for d in data], color=MODE_COLORS,
            edgecolor="black", alpha=BAR_ALPHA)
     _add_scatter_dots(ax, x, data, "timeout_values")

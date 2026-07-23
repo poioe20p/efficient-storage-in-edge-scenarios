@@ -181,28 +181,33 @@ def compute_initial_share(spawns: list[dict], run_dir: Path) -> dict[int, float 
     first visible telemetry window.
 
     Uses per_node_stats.csv: for the first window where request_count > 0 for
-    the spawn MAC, compute its request_count / total_requests in that window.
+    the spawn MAC, compute request_count / total_requests_in_that_window
+    (summed across all backends reporting in the same window).
     """
     pns_path = run_dir / "per_node_stats.csv"
     if not pns_path.exists():
         return {i: None for i in range(len(spawns))}
 
-    # Build: mac → (window_end, request_count)
-    first_window_data: dict[str, tuple[float, int, float]] = {}
+    # First pass: build window_totals and per-MAC first-window data
+    window_totals: dict[float, int] = {}
+    first_window_data: dict[str, tuple[float, int]] = {}  # mac → (window_end, request_count)
     with open(pns_path) as f:
         for row in csv.DictReader(f):
             mac = row.get("server_id", "").strip()
             rc = int(row.get("request_count", 0))
             we = _safe_float(row.get("window_end"))
-            total = _safe_float(row.get("total_node_requests", 0))
-            if mac and rc > 0 and mac not in first_window_data and we > 0:
-                first_window_data[mac] = (we, rc, total)
+            if not mac or we <= 0:
+                continue
+            window_totals[we] = window_totals.get(we, 0) + rc
+            if rc > 0 and mac not in first_window_data:
+                first_window_data[mac] = (we, rc)
 
     init_share: dict[int, float | None] = {}
     for i, sp in enumerate(spawns):
         mac = sp["mac"]
         if mac and mac in first_window_data:
-            _we, rc, total = first_window_data[mac]
+            we, rc = first_window_data[mac]
+            total = window_totals.get(we, 0)
             init_share[i] = rc / total if total > 0 else None
         else:
             init_share[i] = None
