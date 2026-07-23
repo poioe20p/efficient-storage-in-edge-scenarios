@@ -46,6 +46,8 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
     rams: list[float] = []              # per-run mean RAM
     stales_per_run: list[float] = []    # per-run max staleness
     timeouts: list[float] = []          # per-run timeout rate (%)
+    ep_means: list[float] = []          # per-run weighted mean endpoint latency (s)
+    ep_p95s: list[float] = []           # per-run weighted mean p95 endpoint latency (s)
     total_requests: int = 0
     n_reaction_events: int = 0
     per_phase: dict[str, list[float]] = {}
@@ -74,6 +76,18 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
             run_stales.append(float(row["staleness_s"]))
         if run_stales:
             stales_per_run.append(np.max(run_stales))
+
+        # Endpoint latency (user-facing HTTP) — per-run weighted means
+        ep_rows = _safe_read_csv(run_dir / "analysis" / "rq1" / "rq1_endpoint_latency.csv")
+        if ep_rows:
+            total_count = sum(int(r["count"]) for r in ep_rows)
+            if total_count > 0:
+                ep_means.append(
+                    sum(float(r["mean"]) * int(r["count"]) for r in ep_rows) / total_count
+                )
+                ep_p95s.append(
+                    sum(float(r["p95"]) * int(r["count"]) for r in ep_rows) / total_count
+                )
 
         # Timeout rate — per-run
         cr_rows = _safe_read_csv(run_dir / "client_requests.csv")
@@ -104,6 +118,8 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "ram_mean": np.mean(rams) if rams else 0,
         "staleness_max": np.mean(stales_per_run) if stales_per_run else 0,
         "timeout_mean": np.mean(timeouts) if timeouts else 0,
+        "ep_mean": np.mean(ep_means) if ep_means else 0,
+        "ep_p95_mean": np.mean(ep_p95s) if ep_p95s else 0,
         # std devs (for error bars)
         "latency_mean_std": np.std(lats_per_run) if len(lats_per_run) > 1 else 0,
         "latency_max_std": np.std(lats_max_per_run) if len(lats_max_per_run) > 1 else 0,
@@ -111,6 +127,8 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "ram_std": np.std(rams) if len(rams) > 1 else 0,
         "staleness_max_std": np.std(stales_per_run) if len(stales_per_run) > 1 else 0,
         "timeout_std": np.std(timeouts) if len(timeouts) > 1 else 0,
+        "ep_mean_std": np.std(ep_means) if len(ep_means) > 1 else 0,
+        "ep_p95_std": np.std(ep_p95s) if len(ep_p95s) > 1 else 0,
         # per-replicate lists (for scatter dots)
         "latency_values": lats_per_run,
         "latency_max_values": lats_max_per_run,
@@ -118,6 +136,8 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "ram_values": rams,
         "staleness_values": stales_per_run,
         "timeout_values": timeouts,
+        "ep_mean_values": ep_means,
+        "ep_p95_values": ep_p95s,
         # per-phase (mean across replicates)
         "per_phase": {ph: np.mean(rates) for ph, rates in per_phase.items()},
         "per_phase_std": {ph: np.std(rates) if len(rates) > 1 else 0
@@ -172,6 +192,7 @@ def _collect_dq_for_mode(run_dirs: list[Path]) -> dict[str, dict]:
 def _plot_decision_quality_table(
     all_dq: list[dict[str, dict]],
     output_dir: Path,
+    title_prefix: str = "RQ1 v3",
 ) -> None:
     """Render a cross-mode decision quality comparison table as PNG.
 
@@ -258,7 +279,7 @@ def _plot_decision_quality_table(
              bbox=dict(boxstyle="round,pad=0.4", facecolor="#f5f5f5", edgecolor="#cccccc", alpha=0.8))
 
     fig.tight_layout(rect=[0.02, 0.10, 0.98, 0.93])
-    path = output_dir / "rq1_v2_decision_quality.png"
+    path = output_dir / "rq1_v8_decision_quality.png"
     fig.savefig(path, dpi=200)
     plt.close(fig)
     print(f"Wrote {path}")
@@ -269,7 +290,7 @@ def _write_decision_quality_csv(
     output_dir: Path,
 ) -> None:
     """Write cross-mode decision quality CSV."""
-    path = output_dir / "rq1_v2_decision_quality.csv"
+    path = output_dir / "rq1_v8_decision_quality.csv"
     with path.open("w", newline="", encoding="utf-8") as f:
         fieldnames = [
             "phase",
@@ -395,9 +416,9 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "latency_mean", "{:.1f}s", 2)
     _add_sample_footnote(fig, data, "reaction events", "n_reaction_events")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v2_latency_mean.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_reaction_latency_mean.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v2_latency_mean.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_mean.png'}")
 
     # ── Graph 1b: Max Reaction Latency ───────────────────────────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -409,31 +430,37 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "latency_max", "{:.1f}s", 3)
     _add_sample_footnote(fig, data, "reaction events", "n_reaction_events")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v2_latency_max.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_reaction_latency_max.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v2_latency_max.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_max.png'}")
 
-    # ── Graph 1c: Reaction Latency Comparison (combined) ─────────
+    # ── Graph 1c: Mean Endpoint Latency (user-facing HTTP) ───────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    w = 0.35
-    ax.bar(x - w/2, [d["latency_mean"] for d in data], w, label="Mean",
-           color="#90CAF9", edgecolor="black", alpha=BAR_ALPHA)
-    ax.bar(x + w/2, [d["latency_max"] for d in data], w, label="Max",
-           color="#1565C0", edgecolor="black", alpha=BAR_ALPHA)
-    _style_bar_ax(ax, x, MODE_LABELS, "Reaction Latency (s)",
-                  f"{title_prefix} — Reaction Latency by Telemetry Mode")
-    ax.legend(fontsize=TICK_SIZE - 1)
-    # Annotate values
-    for i in range(len(data)):
-        ax.text(i - w/2, data[i]["latency_mean"] + 1, f'{data[i]["latency_mean"]:.0f}s',
-                ha="center", fontsize=ANNO_SIZE - 2, fontweight="bold", color="#1565C0")
-        ax.text(i + w/2, data[i]["latency_max"] + 1, f'{data[i]["latency_max"]:.0f}s',
-                ha="center", fontsize=ANNO_SIZE - 2, fontweight="bold", color="#0D47A1")
-    _add_sample_footnote(fig, data, "reaction events", "n_reaction_events")
+    _style_bar_ax(ax, x, MODE_LABELS, "Mean Endpoint Latency (s)",
+                  f"{title_prefix} — Mean Endpoint Latency by Telemetry Mode")
+    ax.bar(x, [d["ep_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "ep_mean_values")
+    _add_bar_labels(ax, x, data, "ep_mean", "{:.2f}s", 0.05)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v2_reaction_latency.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_endpoint_latency_mean.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v2_reaction_latency.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_mean.png'}")
+
+    # ── Graph 1d: p95 Endpoint Latency (user-facing HTTP tail) ───
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _style_bar_ax(ax, x, MODE_LABELS, "p95 Endpoint Latency (s)",
+                  f"{title_prefix} — p95 Endpoint Latency by Telemetry Mode")
+    ax.bar(x, [d["ep_p95_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "ep_p95_values")
+    _add_bar_labels(ax, x, data, "ep_p95_mean", "{:.2f}s", 0.05)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v8_endpoint_latency_p95.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_p95.png'}")
 
     # ── Graph 2: Controller Overhead ─────────────────────────────
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=FIG_DOUBLE)
@@ -451,9 +478,9 @@ def generate_graphs(
     _add_bar_labels(ax2, x, data, "ram_mean", "{:.0f} MB", 2)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v2_overhead_comparison.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_overhead_comparison.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v2_overhead_comparison.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_overhead_comparison.png'}")
 
     # ── Graph 3: Staleness ───────────────────────────────────────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -465,9 +492,9 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "staleness_max", "{:.1f}s", 0.3)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v2_staleness_comparison.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_staleness_comparison.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v2_staleness_comparison.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_staleness_comparison.png'}")
 
     # ── Graph 4: Timeout Rate (merged — was two duplicate graphs) ─
     total_req_str = _format_total_requests(data)
@@ -480,9 +507,9 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "timeout_mean", "{:.1f}%", 2)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 0.97])
-    fig.savefig(output_dir / "rq1_v2_timeout_comparison.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_timeout_comparison.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v2_timeout_comparison.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_timeout_comparison.png'}")
 
     # ── Graph 5: Per-Phase Timeout ───────────────────────────────
     fig, ax = plt.subplots(figsize=FIG_PER_PHASE)
@@ -506,13 +533,13 @@ def generate_graphs(
     ax.spines["right"].set_visible(False)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 0.94])
-    fig.savefig(output_dir / "rq1_v2_per_phase_timeout.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v8_per_phase_timeout.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v2_per_phase_timeout.png'}")
+    print(f"Wrote {output_dir / 'rq1_v8_per_phase_timeout.png'}")
 
     # ── Graph 6 removed (was duplicate of Graph 4) ──────────────
     all_dq = [_collect_dq_for_mode(dirs) for dirs in all_dirs]
-    _plot_decision_quality_table(all_dq, output_dir)
+    _plot_decision_quality_table(all_dq, output_dir, title_prefix)
     _write_decision_quality_csv(all_dq, output_dir)
 
     print("\nAll comparison graphs generated.")

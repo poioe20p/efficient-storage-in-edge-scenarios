@@ -5,7 +5,7 @@
       "duration_s": 60,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
-      "client_fraction": 0.5,
+      "client_fraction": 0.10,
       "mix": {
         "content_lookup": 0.60,
         "feed_ranking": 0.25,
@@ -47,9 +47,7 @@
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
-        "content_lookup": 0.20,
-        "feed_ranking": 0.65,
-        "service_pressure": 0.15
+        "service_pressure": 1.0
       }
     },
     {
@@ -99,9 +97,7 @@
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
-        "content_lookup": 0.20,
-        "feed_ranking": 0.65,
-        "service_pressure": 0.15
+        "service_pressure": 1.0
       }
     },
     {

@@ -3,7 +3,7 @@
 > **Canonical reference** for how RQ2 was tested. Values extracted from
 > `experiment_plan_v3.md`, `phases_rq2.json`, `current_state_integrated.env`,
 > `osken-controller.env`, and `scaling_config.py`.
-> **Corresponding RQ doc**: [`rq2.md`](rq2.md)
+> **Corresponding RQ doc**: [`rq2_v3.md`](rq2_v3.md)
 
 ---
 
@@ -19,11 +19,11 @@ compute_spike → cooldown, followed by extended demand_drop.
 | 1 | `baseline` | 60 s | 1.0 | 0% | 50% | 60% lookup, 25% ranking, 15% pressure |
 | 2 | `storage_storm` | 240 s | 4.0 | 0% | 100% | 35% lookup, 30% update, 20% aggregate |
 | 3 | `cooldown_1` | 180 s | 1.0 | 0% | 10% | baseline mix — drain before compute spike |
-| 4 | `compute_spike` | 180 s | 4.0 | 0% | 100% | 20% lookup, 65% ranking, 15% pressure |
+| 4 | `compute_spike` | 180 s | 4.0 | 0% | 100% | 100% service_pressure — pure compute stress |
 | 5 | `cooldown_2` | 180 s | 1.0 | 0% | 10% | baseline mix — drain before second cycle |
 | 6 | `storage_storm_2` | 240 s | 4.0 | 0% | 100% | Same as storage_storm — second storage cycle |
 | 7 | `cooldown_3` | 180 s | 1.0 | 0% | 10% | baseline mix — drain before second compute spike |
-| 8 | `compute_spike_2` | 180 s | 4.0 | 0% | 100% | Same as compute_spike — second compute cycle |
+| 8 | `compute_spike_2` | 180 s | 4.0 | 0% | 100% | 100% service_pressure — second compute cycle |
 | 9 | `demand_drop` | 300 s | 1.0 | 0% | 10% | baseline mix — extended drain to observe full scale-down |
 
 ### Rationale for key design choices
@@ -31,12 +31,14 @@ compute_spike → cooldown, followed by extended demand_drop.
 | Choice | Why |
 |--------|-----|
 | All-local traffic (cross_region_ratio=0.0) | Isolates the routing mechanism from cross-region effects. WAN latency would confound per-request latency measurements. |
-| Two-cycle design | Each stress phase appears twice → doubles the number of spawn events per run. Increases statistical power for TTFT and initial share distributions. |
+| 100% service_pressure in compute_spike | Isolates compute-bound stress — no storage component to confound. Guarantees CPU saturation and compute spawns even with corrected scoring (CPU_SPAN=40). |
 | rate=4.0 for all stress phases | Consistent intensity across storage and compute stress — ensures spawns in both phase types. |
 | 180 s cooldowns | Compute cooldown is 180 s; cooldowns match this to ensure nodes persist through the transition but drain before the next stress phase. |
 | 300 s demand_drop | Extended final drain — allows observation of full scale-down sequence. |
 | No tier1_hotspot or reverse_hotspot | These phases test Tier 1 selective sync (SS_ENABLED=1), which is disabled for RQ2. Irrelevant to the routing-plane coordination gap. |
-| client_fraction=0.50 for baseline | Higher than canonical (0.10) — provides enough background load to detect routing differences even in control phases. |
+| Two-cycle design | Each stress phase appears twice → doubles the number of spawn events per run. Increases statistical power for TTFT and initial share distributions. |
+| 100% service_pressure in compute_spike | Isolates compute-bound stress — no storage component to confound. Guarantees CPU saturation and compute spawns even with corrected scoring (CPU_SPAN=40). |
+| client_fraction=0.10 for baseline | Matches canonical — low enough to guarantee zero unintended spawns during the quiescent control phase. G5 (baseline p50) is the cleanest routing-quality signal; background load would dilute it. |
 
 ---
 
@@ -128,8 +130,12 @@ reduces event count but increases per-event signal quality for TTFT and initial 
 | Mode | Unknown stats default | Warm lease | Ramp | Encodes |
 |---|---|---|---|---|
 | `topology_host` | 0.0 (best-case) | Skipped | None — round-robin fair-share | No integration between provisioner and LB |
-| `topology_slowstart` | 1.0 (worst-case, invisible) | Skipped | Graduated: penalty 1.0→0.0 over 45 s after discovery | Separated LB with coordination delay |
-| `topology_lifecycle` | 1.0 (worst-case, penalised) | Created at spawn (WSM bypass) | Warm lease priority window (45 s) | Unified controller — zero coordination gap |
+| `topology_slowstart` | 0.0 (neutral), penalty 1.0 | Skipped | Graduated: penalty 1.0→0.0 over 45 s after discovery | Separated LB with coordination delay |
+| `topology_lifecycle` | 1.0 (worst-case, bypassed) | Created at spawn (WSM bypass) | Warm lease priority window (45 s) | Unified controller — zero coordination gap |
+
+> **Code note:** Warm leases are created unconditionally for all backends
+> at spawn time. Only `topology_lifecycle` consumes them via
+> `_claim_warm_backend()`; the other modes ignore them.
 
 ### 6.2 WSM Weights (Server Selection)
 
@@ -210,38 +216,39 @@ All other parameters (`CLIENTS=96`, `WAN_RTT_MS=185`, `STORAGE_CPUS=0.08`,
 
 ---
 
-## 11. Measurements (G1–G8 + Failure Rate)
+## 11. Measurements (G1–G8 + G2b, G4b, G5b)
 
-See [`experiment_plan_v3.md` §10](../../operation/testing/experiment/rq2_evaluation/v3/experiment_plan_v3.md#10-how-it-is-measured) for full metric definitions and the causal measurement chain.
+See [`rq2_v3.md` §5](rq2_v3.md#5-how-it-is-measured) for full metric definitions
+and the causal measurement chain.
 
-### 11.1 Awareness Timing — Core Evidence
+### 11.1 Spawn-to-Service Timing — Core Evidence
 
-| ID | Metric | Graph | Primary artifact | Operational definition |
-|----|--------|-------|-----------------|----------------------|
-| M1 | **TTFT** (Time-to-First-Traffic) | G1 — Box plot per mode + scatter dots | `cli_rq2_redistribution.py` → `rq2_redistribution_summary.csv` | `t(first_request) − spawn_done_ts`, per spawn event |
-| M2 | **Initial Load Share** | G2 — Box plot per mode + scatter dots | `cli_rq2_redistribution.py` → `rq2_redistribution_summary.csv` | `new_backend_requests / total_VIP_requests` in first visible window |
-| M3 | **Coordination Gap Decomposition** | G3 — Grouped bar (ΔTTFT + ΔInitialShare) | Derived from M1 + M2 | `TTFT_median(slowstart) − TTFT_median(lifecycle)` and `InitialShare_median(lifecycle) − InitialShare_median(slowstart)` |
-
-### 11.2 Readiness Alignment
+All metrics computed per **compute** spawn event only. Storage spawns excluded.
 
 | ID | Metric | Graph | Primary artifact | Operational definition |
 |----|--------|-------|-----------------|----------------------|
-| M4 | **Readiness Mismatch** | G4 — Box plot per mode + scatter dots | `per_node_stats.csv` + `controller_lan*.log` | `window_end_ts − spawn_done_ts` for first window with `request_count > 0` |
-| M5 | **Non-Stress p50 Latency** | G5 — Grouped bar per phase (baseline, cooldowns, demand_drop) | `client_requests.csv` via `metrics_stats.py` | Per-mode p50 for non-stress phases — user-visible proxy for readiness |
+| M1 | **TTFT** (Time-to-First-Traffic) | G1 — Box plot per mode + scatter dots | `cli_rq2_redistribution.py` | `t(first_request) − spawn_done_ts`, per spawn event. ~10 s window resolution. |
+| M2 | **TFR** (Time-to-First-Response) | G2 — Box plot per mode + scatter dots | Requires per-backend response tracking instrumentation | `t(first_response) − spawn_done_ts`, per spawn event |
+| M3 | **TTFT × TFR Scatter** | G2b — 2D scatter, color=mode | Derived from M1 + M2 | Joint distribution of speed vs readiness |
+| M4 | **Backend Initialisation Time** | G3 — Box plot per mode + scatter dots | Derived from M1 + M2 | `tfr − ttft`, per spawn event |
+| M5 | **Initial Load Share** | G4 — Box plot per mode + scatter dots | `cli_rq2_redistribution.py` | `new_backend_requests / total_VIP_requests` in first visible window |
+| M6 | **TTFT × Initial Share Scatter** | G4b — 2D scatter, color=mode | Derived from M1 + M5 | Joint distribution of speed vs magnitude |
 
-### 11.3 Service Quality — User-Visible Impact
+### 11.2 Service Quality — User-Visible Impact
 
 | ID | Metric | Graph | Primary artifact | Operational definition |
 |----|--------|-------|-----------------|----------------------|
-| M6 | **Per-Phase p50 Latency** | G6 — Grouped bar, all 9 phases | `client_requests.csv` via `metrics_stats.py` | Per-mode p50 per phase — the master service-quality graph |
-| M7 | **Per-Mode Latency Percentiles** | G7 — Grouped bar (p50/p95/p99) per mode | `client_requests.csv` via `metrics_stats.py` | Aggregate p50/p95/p99 per mode across all phases |
-| M8 | **Stress vs Non-Stress p95** | G8 — Grouped bar, two conditions | `client_requests.csv` via `metrics_stats.py` | Per-mode p95 pooled by phase type (stress vs non-stress) |
+| M7 | **Baseline p50 Latency** | G5 — Grouped bar, baseline phase only | `client_requests.csv` via `metrics_stats.py` | Per-mode p50 for baseline — the only phase guaranteed quiescent |
+| M8 | **Non-Stress p50 Latency** | G5b — Grouped bar per low-load phase | `client_requests.csv` via `metrics_stats.py` | Per-mode p50 for baseline + cooldowns + demand_drop |
+| M9 | **Per-Phase p50 Latency** | G6 — Grouped bar, all 9 phases | `client_requests.csv` via `metrics_stats.py` | Per-mode p50 per phase — the master service-quality graph |
+| M10 | **Per-Mode Latency Percentiles** | G7 — Grouped bar (p50/p95/p99) per mode | `client_requests.csv` via `metrics_stats.py` | Aggregate percentiles per mode across all phases |
+| M11 | **Latency by Phase Type** | G8 — Grouped bar, 4 groups (baseline / post-stress / storage / compute) | `client_requests.csv` via `metrics_stats.py` | Per-mode p95 pooled by phase type |
 
-### 11.4 Safety
+### 11.3 Safety
 
 | ID | Metric | Artifact | Expected |
 |----|--------|----------|----------|
-| M9 | **Failure Rate** | `client_requests.csv` | HTTP status ≠ 200 ≤ 0.1% across all modes |
+| M12 | **Failure Rate** | `client_requests.csv` | HTTP status ≠ 200 ≤ 0.1% across all modes |
 
 ### 11.5 Sanity Checks
 

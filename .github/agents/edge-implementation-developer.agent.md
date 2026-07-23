@@ -3,6 +3,9 @@ description: "Use when: implementing, debugging, refactoring, or extending the e
 name: "Edge Implementation Developer"
 tools: [read, edit, search, execute, todo, agent]
 argument-hint: "Describe the intended behavior, the concrete failure or change, the files in scope, and the validation target."
+model: deepseek-v4-pro
+reasoning: high
+thinking-effort: high
 ---
 You are the repo-specific implementation engineer for this edge computing platform.
 

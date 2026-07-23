@@ -193,7 +193,11 @@ _curl_warn_shown = False
 
 
 async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None = None) -> tuple:
-    """Execute curl inside a network namespace. Returns (http_status, latency_s).
+    """Execute curl inside a network namespace.
+
+    Returns ``(http_status, latency_s, backend_id)``.
+    *backend_id* is the value of the ``X-Backend-ID`` response header, or
+    ``"unknown"`` if the header is absent (e.g. connection failure).
 
     When *body* is not None the request is sent as POST with
     ``Content-Type: application/json``.
@@ -203,7 +207,7 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
 
     cmd = [
         "ip", "netns", "exec", ns,
-        "curl", "-s", "-o", "/dev/null",
+        "curl", "-s", "-o", "/dev/null", "-D", "-",
         "-w", "\n%{http_code} %{time_total}",
         "--max-time", curl_max_time,
     ]
@@ -213,7 +217,7 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
 
     if dry_run:
         print(f"[DRY-RUN] {' '.join(cmd)}")
-        return 200, 0.0
+        return 200, 0.0, "dry_run"
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -223,13 +227,32 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
     stdout, stderr = await proc.communicate()
 
     output = stdout.decode().strip()
-    # -w output is on the last line (prefixed with \n to separate from any body leak)
+
+    # Extract X-Backend-ID from response headers (dumped via -D -).
+    # Headers appear before the blank-line separator; -w output is on the
+    # last line, prefixed with \n.
+    backend_id = "unknown"
+    header_lines: list[str] = []
+    in_headers = True
+    for line in output.split("\n"):
+        stripped = line.strip()
+        if stripped == "":
+            in_headers = False
+            continue
+        if in_headers:
+            header_lines.append(stripped)
+    for hdr in header_lines:
+        if hdr.lower().startswith("x-backend-id:"):
+            backend_id = hdr.split(":", 1)[1].strip()
+            break
+
+    # -w output is on the last line (prefixed with \n to separate from body/headers)
     last_line = output.split("\n")[-1].strip() if output else ""
     parts = last_line.split()
 
     if len(parts) == 2:
         try:
-            return int(parts[0]), float(parts[1])
+            return int(parts[0]), float(parts[1]), backend_id
         except ValueError:
             pass
 
@@ -241,7 +264,7 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
         print(f"         stdout={output[:200]!r}")
         print(f"         stderr={err!r}")
 
-    return 0, 0.0
+    return 0, 0.0, backend_id
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +311,7 @@ async def client_loop(
             sent_at = datetime.now(timezone.utc).isoformat()
             phase_name = phase.name
 
-            http_status, latency_s = await exec_curl(ns, url, dry_run, body)
+            http_status, latency_s, backend_id = await exec_curl(ns, url, dry_run, body)
 
             row = [
                 sent_at,
@@ -302,6 +325,7 @@ async def client_loop(
                 http_status,
                 round(latency_s, 4),
                 datetime.now(timezone.utc).isoformat(),
+                backend_id,
             ]
             async with csv_lock:
                 for csv_writer, csv_file in csv_targets:
@@ -339,7 +363,7 @@ async def client_loop(
             )
         sent_at = datetime.now(timezone.utc).isoformat()
         phase_name = phase.name
-        http_status, latency_s = await exec_curl(ns, url, dry_run, body)
+        http_status, latency_s, backend_id = await exec_curl(ns, url, dry_run, body)
         request_count += 1
 
         row = [
@@ -354,6 +378,7 @@ async def client_loop(
             http_status,
             round(latency_s, 4),
             datetime.now(timezone.utc).isoformat(),
+            backend_id,
         ]
         async with csv_lock:
             for csv_writer, csv_file in csv_targets:
@@ -425,7 +450,7 @@ async def run(args):
     header = [
         "sent_at", "phase", "client_ns", "client_lan", "endpoint",
         "content_id", "user_id", "target_region", "http_status", "latency_s",
-        "completed_at",
+        "completed_at", "backend_id",
     ]
 
     aggregate_file = open(args.output, "w", newline="")

@@ -1,4 +1,5 @@
 import logging
+import os
 
 from flask import Flask, g, abort
 
@@ -44,6 +45,21 @@ init_telemetry(
     get_drain_state=process_state.get_drain_state,
 )
 register_post_telemetry_request_hooks(app, process_state)
+
+
+@app.after_request
+def _add_backend_identity(response):
+    """Stamp every response with the container identity so the traffic
+    generator can log which backend served each request.
+
+    Uses the Docker container hostname (e.g. edge_server_lan1_dyn2) as the
+    stable identifier.  The controller also knows container names from spawn
+    events, enabling cross-referencing for TFR (Time-to-First-Response)
+    computation."""
+    backend_id = os.environ.get("CONTAINER_NAME", os.environ.get("HOSTNAME", "unknown"))
+    response.headers["X-Backend-ID"] = backend_id
+    return response
+
 
 if __name__ == "__main__":
     log.info(
