@@ -50,6 +50,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
     ep_p50s: list[float] = []           # per-run weighted p50 endpoint latency (s)
     ep_p95s: list[float] = []           # per-run weighted p95 endpoint latency (s)
     ep_per_phase_p95: dict[str, list[float]] = {}  # per-phase per-run p95
+    ep_per_phase_p50: dict[str, list[float]] = {}  # per-phase per-run p50
     total_requests: int = 0
     n_reaction_events: int = 0
     per_phase: dict[str, list[float]] = {}
@@ -93,13 +94,17 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
                 ep_p95s.append(
                     sum(float(r["p95"]) * int(r["count"]) for r in ep_rows) / total_count
                 )
-            # Per-phase p95
+            # Per-phase p50 and p95
             for r in ep_rows:
                 ph = r["phase"]
+                p50 = float(r["p50"])
                 p95 = float(r["p95"])
                 cnt = int(r["count"])
+                if ph not in ep_per_phase_p50:
+                    ep_per_phase_p50[ph] = []
                 if ph not in ep_per_phase_p95:
                     ep_per_phase_p95[ph] = []
+                ep_per_phase_p50[ph].append((p50, cnt))
                 ep_per_phase_p95[ph].append((p95, cnt))
 
         # Timeout rate — per-run
@@ -167,6 +172,20 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
                         for vals in [ep_per_phase_p95.get(ph, [(0, 1)])]])
             if len(ep_per_phase_p95.get(ph, [])) > 1 else 0
             for ph in ep_per_phase_p95
+        },
+        # per-phase p50
+        "ep_p50_per_phase": {
+            ph: np.mean([sum(p50 * c for p50, c in vals) / sum(c for _, c in vals)
+                         if sum(c for _, c in vals) > 0 else 0
+                         for vals in [ep_per_phase_p50.get(ph, [(0, 1)])]])
+            for ph in ep_per_phase_p50
+        },
+        "ep_p50_per_phase_std": {
+            ph: np.std([sum(p50 * c for p50, c in vals) / sum(c for _, c in vals)
+                        if sum(c for _, c in vals) > 0 else 0
+                        for vals in [ep_per_phase_p50.get(ph, [(0, 1)])]])
+            if len(ep_per_phase_p50.get(ph, [])) > 1 else 0
+            for ph in ep_per_phase_p50
         },
         # per-phase (mean across replicates)
         "per_phase": {ph: np.mean(rates) for ph, rates in per_phase.items()},
@@ -529,6 +548,30 @@ def generate_graphs(
     fig.savefig(output_dir / "rq1_v8_endpoint_latency_per_phase_p95.png", dpi=150)
     plt.close(fig)
     print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_per_phase_p95.png'}")
+
+    # ── Graph 1f: Per-Phase p50 Endpoint Latency ─────────────────
+    fig, ax = plt.subplots(figsize=FIG_PER_PHASE)
+    for i, (mode, d) in enumerate(zip(MODE_LABELS, data)):
+        values = [d["ep_p50_per_phase"].get(ph, 0) for ph in PHASE_ORDER]
+        stds = [d.get("ep_p50_per_phase_std", {}).get(ph, 0) for ph in PHASE_ORDER]
+        ax.bar(phase_x + i * width, values, width, label=mode,
+               color=MODE_COLORS[i], edgecolor="black", alpha=BAR_ALPHA,
+               yerr=stds, capsize=3, error_kw={"linewidth": 1.2})
+    ax.set_xticks(phase_x + width * 1.5)
+    ax.set_xticklabels([p.replace("_", "\n") for p in PHASE_ORDER],
+                       fontsize=TICK_SIZE - 1)
+    ax.set_ylabel("p50 Endpoint Latency (s)", fontsize=LABEL_SIZE)
+    ax.set_title(f"{title_prefix} — Per-Phase p50 Endpoint Latency by Telemetry Mode",
+                 fontsize=TITLE_SIZE, fontweight="bold")
+    ax.legend(fontsize=TICK_SIZE - 1, framealpha=0.8)
+    ax.grid(axis="y", alpha=GRID_ALPHA, linestyle="--")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 0.94])
+    fig.savefig(output_dir / "rq1_v8_endpoint_latency_per_phase_p50.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_per_phase_p50.png'}")
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
     fig.savefig(output_dir / "rq1_v8_endpoint_latency_p95.png", dpi=150)

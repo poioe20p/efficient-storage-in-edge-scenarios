@@ -26,6 +26,8 @@ import numpy as np
 MODE_LABELS = ["Host", "Slowstart", "Lifecycle"]
 MODE_ORDER = ["topology_host", "topology_slowstart", "topology_lifecycle"]
 MODE_COLORS = ["#F44336", "#FF9800", "#4CAF50"]  # red, orange, green
+MODE_MARKERS = ["^", "s", "o"]  # triangle, square, circle — B&W-distinguishable
+MODE_EDGECOLORS = ["#B71C1C", "#E65100", "#1B5E20"]  # darker shades for marker edges
 FIG_SINGLE = (10, 6)
 FIG_WIDE = (14, 6)
 TITLE_SIZE = 13
@@ -209,8 +211,9 @@ def main():
         xs = [float(s["ttft_s"]) for s in all_spawns if s["mode"] == mode and s.get("ttft_s") and s.get("tfr_s")]
         ys = [float(s["tfr_s"]) for s in all_spawns if s["mode"] == mode and s.get("ttft_s") and s.get("tfr_s")]
         if xs:
-            ax.scatter(xs, ys, color=MODE_COLORS[MODE_ORDER.index(mode)], alpha=0.55, s=DOT_SIZE,
-                       label=MODE_LABELS[MODE_ORDER.index(mode)], edgecolors="white", linewidth=0.8)
+            idx = MODE_ORDER.index(mode)
+            ax.scatter(xs, ys, color=MODE_COLORS[idx], marker=MODE_MARKERS[idx], alpha=0.65, s=DOT_SIZE * 1.3,
+                       label=MODE_LABELS[idx], edgecolors=MODE_EDGECOLORS[idx], linewidth=1.2)
     lims = [0, max(ax.get_xlim()[1], ax.get_ylim()[1])]
     ax.plot(lims, lims, "k--", alpha=0.25, linewidth=1, label="TFR = TTFT")
     ax.set_xlabel("TTFT (s)", fontsize=LABEL_SIZE)
@@ -253,8 +256,9 @@ def main():
         xs = [float(s["ttft_s"]) for s in all_spawns if s["mode"] == mode and s.get("ttft_s") and s.get("initial_share")]
         ys = [float(s["initial_share"]) for s in all_spawns if s["mode"] == mode and s.get("ttft_s") and s.get("initial_share")]
         if xs:
-            ax.scatter(xs, ys, color=MODE_COLORS[MODE_ORDER.index(mode)], alpha=0.55, s=DOT_SIZE,
-                       label=MODE_LABELS[MODE_ORDER.index(mode)], edgecolors="white", linewidth=0.8)
+            idx = MODE_ORDER.index(mode)
+            ax.scatter(xs, ys, color=MODE_COLORS[idx], marker=MODE_MARKERS[idx], alpha=0.65, s=DOT_SIZE * 1.3,
+                       label=MODE_LABELS[idx], edgecolors=MODE_EDGECOLORS[idx], linewidth=1.2)
     ax.set_xlabel("TTFT (s)", fontsize=LABEL_SIZE)
     ax.set_ylabel("Initial Load Share", fontsize=LABEL_SIZE)
     ax.set_title("G4b — TTFT vs Initial Load Share by Mode", fontsize=TITLE_SIZE, fontweight="bold")
