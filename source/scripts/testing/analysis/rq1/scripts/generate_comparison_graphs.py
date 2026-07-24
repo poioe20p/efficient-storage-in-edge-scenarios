@@ -530,9 +530,10 @@ def generate_graphs(
     for i, (mode, d) in enumerate(zip(MODE_LABELS, data)):
         values = [d["ep_p95_per_phase"].get(ph, 0) for ph in PHASE_ORDER]
         stds = [d.get("ep_p95_per_phase_std", {}).get(ph, 0) for ph in PHASE_ORDER]
+        yerr_lower = [min(s, v) for v, s in zip(values, stds)]
         ax.bar(phase_x + i * width, values, width, label=mode,
                color=MODE_COLORS[i], edgecolor="black", alpha=BAR_ALPHA,
-               yerr=stds, capsize=3, error_kw={"linewidth": 1.2})
+               yerr=(yerr_lower, stds), capsize=3, error_kw={"linewidth": 1.2})
     ax.set_xticks(phase_x + width * 1.5)
     ax.set_xticklabels([p.replace("_", "\n") for p in PHASE_ORDER],
                        fontsize=TICK_SIZE - 1)
@@ -554,9 +555,10 @@ def generate_graphs(
     for i, (mode, d) in enumerate(zip(MODE_LABELS, data)):
         values = [d["ep_p50_per_phase"].get(ph, 0) for ph in PHASE_ORDER]
         stds = [d.get("ep_p50_per_phase_std", {}).get(ph, 0) for ph in PHASE_ORDER]
+        yerr_lower = [min(s, v) for v, s in zip(values, stds)]
         ax.bar(phase_x + i * width, values, width, label=mode,
                color=MODE_COLORS[i], edgecolor="black", alpha=BAR_ALPHA,
-               yerr=stds, capsize=3, error_kw={"linewidth": 1.2})
+               yerr=(yerr_lower, stds), capsize=3, error_kw={"linewidth": 1.2})
     ax.set_xticks(phase_x + width * 1.5)
     ax.set_xticklabels([p.replace("_", "\n") for p in PHASE_ORDER],
                        fontsize=TICK_SIZE - 1)
@@ -634,9 +636,12 @@ def generate_graphs(
     for i, (mode, d) in enumerate(zip(MODE_LABELS, data)):
         values = [d["per_phase"].get(ph, 0) for ph in PHASE_ORDER]
         stds = [d.get("per_phase_std", {}).get(ph, 0) for ph in PHASE_ORDER]
+        # Clip error bars: don't extend below 0
+        yerr_lower = [min(s, v) for v, s in zip(values, stds)]
+        yerr_upper = stds
         bars = ax.bar(phase_x + i * width, values, width, label=mode,
                       color=MODE_COLORS[i], edgecolor="black", alpha=BAR_ALPHA,
-                      yerr=stds, capsize=3, error_kw={"linewidth": 1.2})
+                      yerr=(yerr_lower, yerr_upper), capsize=3, error_kw={"linewidth": 1.2})
     ax.set_xticks(phase_x + width * 1.5)
     ax.set_xticklabels([p.replace("_", "\n") for p in PHASE_ORDER],
                        fontsize=TICK_SIZE - 1)

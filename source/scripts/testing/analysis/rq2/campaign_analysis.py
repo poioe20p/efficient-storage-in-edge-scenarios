@@ -219,7 +219,7 @@ def main():
     ax.set_xlabel("TTFT (s)", fontsize=LABEL_SIZE)
     ax.set_ylabel("TFR (s)", fontsize=LABEL_SIZE)
     ax.set_title("G2b — TTFT vs TFR by Mode\n(diagonal = backend ready when traffic arrived)", fontsize=TITLE_SIZE, fontweight="bold")
-    ax.legend(fontsize=9, loc="lower right")
+    ax.legend(fontsize=9, loc="upper left")
     ax.grid(alpha=GRID_ALPHA, linestyle="--")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -242,7 +242,17 @@ def main():
     # G4 — Initial Load Share
     # ══════════════════════════════════════════════════════════════
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _boxplot_v8(ax, share_data, "Initial Load Share", "G4 — Initial Load Share Distribution by Mode")
+    _boxplot_v8(ax, share_data, "Initial Load Share",
+                "G4 — Initial Load Share Distribution by Mode\n(fraction of VIP traffic in first ~10 s telemetry window)")
+    # Annotate median pool size per mode (align with _boxplot_v8 positions)
+    modes_present = [m for m in MODE_ORDER if m in share_data and share_data[m]]
+    for i, mode in enumerate(modes_present):
+        psz = [int(s["pool_size"]) for s in all_spawns
+               if s["mode"] == mode and s.get("pool_size") and s.get("initial_share")]
+        if psz:
+            med_ps = np.median(psz)
+            ax.annotate(f"pool≈{med_ps:.0f}", (i, 0.02), ha="center", va="bottom",
+                       fontsize=8, color="#333333", style="italic")
     fig.tight_layout()
     fig.savefig(args.out_dir / "g4_initial_share.png", dpi=150)
     plt.close(fig)
@@ -253,16 +263,21 @@ def main():
     # ══════════════════════════════════════════════════════════════
     fig, ax = plt.subplots(figsize=(9, 7))
     for mode in MODE_ORDER:
-        xs = [float(s["ttft_s"]) for s in all_spawns if s["mode"] == mode and s.get("ttft_s") and s.get("initial_share")]
-        ys = [float(s["initial_share"]) for s in all_spawns if s["mode"] == mode and s.get("ttft_s") and s.get("initial_share")]
+        spawns_mode = [s for s in all_spawns if s["mode"] == mode and s.get("ttft_s") and s.get("initial_share")]
+        xs = [float(s["ttft_s"]) for s in spawns_mode]
+        ys = [float(s["initial_share"]) for s in spawns_mode]
+        psz = [int(s["pool_size"]) if s.get("pool_size") else 0 for s in spawns_mode]
         if xs:
             idx = MODE_ORDER.index(mode)
-            ax.scatter(xs, ys, color=MODE_COLORS[idx], marker=MODE_MARKERS[idx], alpha=0.65, s=DOT_SIZE * 1.3,
+            # Scale pool_size to dot area: 2 nodes → 40, 20 nodes → 350
+            sizes = [max(35, min(350, 20 + (p - 1) * 18)) if p > 0 else 60 for p in psz]
+            ax.scatter(xs, ys, color=MODE_COLORS[idx], marker=MODE_MARKERS[idx], alpha=0.65, s=sizes,
                        label=MODE_LABELS[idx], edgecolors=MODE_EDGECOLORS[idx], linewidth=1.2)
     ax.set_xlabel("TTFT (s)", fontsize=LABEL_SIZE)
     ax.set_ylabel("Initial Load Share", fontsize=LABEL_SIZE)
-    ax.set_title("G4b — TTFT vs Initial Load Share by Mode", fontsize=TITLE_SIZE, fontweight="bold")
-    ax.legend(fontsize=9, loc="lower right")
+    ax.set_title("G4b — TTFT vs Initial Load Share by Mode\n(dot size = pool size: more backends → larger dot → share is diluted)",
+                 fontsize=TITLE_SIZE, fontweight="bold")
+    ax.legend(fontsize=9, loc="upper left")
     ax.grid(alpha=GRID_ALPHA, linestyle="--")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)

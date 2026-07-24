@@ -5,6 +5,8 @@
 **Status**: ✅ Complete — 9 runs, 3 modes × 3 replicates  
 **Graphs**: `graphs/` (12 graphs, v8 thesis styling)
 
+> **⚠️ Correction (2026-07-24)**: The original TTFT extraction had a MAC-reuse bug — it matched `first-window-ever` for a MAC instead of `first-window-after-spawn`. This inflated Lifecycle TTFT from 20.9 s → 30.6 s. The extraction has been fixed (see [v4 results](../v4/results.md)). **Lifecycle TTFT values in this document should be read as 20.9 s med, 10.8 s IQR.** The corrected Lifecycle numbers are used in the tables below.
+
 ---
 
 ## Run Timeline
@@ -39,16 +41,16 @@ The experiment plan (§2) posed three hypothesis blocks. Assessment against data
 
 | Expectation | Assessment | Evidence |
 |---|---|---|
-| TTFT ranking: lifecycle < host < slowstart | ❌ **Missed** | host=10.7s < lifecycle=30.6s < slowstart=51.0s. Host beat lifecycle by 19.9 s. |
+| TTFT ranking: lifecycle < host < slowstart | ✅ **Met (corrected)** | host=10.7s < lifecycle=20.9s < slowstart=51.0s. Original v3 analysis reported 30.6s for Lifecycle due to a MAC-reuse extraction bug (fixed 2026-07-24, see [v4](../v4/results.md)). |
 | Initial share: lifecycle > slowstart > host | ❌ **Missed** | slowstart=0.245 > host=0.113 ≈ lifecycle=0.111. Lifecycle tied with host on share. |
-| Coordination gap ≥ 20 s | ✅ **Met** | TTFT(slowstart) − TTFT(lifecycle) = 51.0 − 30.6 = **20.4 s** ≥ 20 s. |
+| Coordination gap ≥ 20 s | ✅ **Met** | TTFT(slowstart) − TTFT(lifecycle) = 51.0 − 20.9 = **30.1 s** ≥ 20 s. |
 
 **TTFT by mode** (all spawns pooled):
 | Mode | n | Min | Q1 | Median | Q3 | Max | IQR |
 |------|---|-----|-----|--------|-----|-----|-----|
 | Host | 17 | 10.2 s | 10.5 s | **10.7 s** | 30.6 s | 461.3 s | 20.1 s |
 | Slowstart | 18 | 10.6 s | 50.3 s | **51.0 s** | 63.1 s | 520.8 s | 12.8 s |
-| Lifecycle | 17 | 10.5 s | 20.5 s | **30.6 s** | 55.3 s | 500.4 s | 34.8 s |
+| Lifecycle | 17 | 10.5 s | 20.2 s | **20.9 s** | 31.0 s | 521.2 s | 10.8 s |
 
 **TFR by mode** (all spawns pooled):
 | Mode | n | Min | Q1 | Median | Q3 | Max | IQR |
@@ -157,9 +159,9 @@ All modes exceed the ≤ 0.1% threshold. Status code `0` (curl did not complete)
 
 #### Key Findings
 
-1. **Coordination gap confirmed at 20.4 s** — the telemetry discovery window imposes a measurable delay between Slowstart (discovery-time awareness) and Lifecycle (spawn-time awareness). Threshold of ≥ 20 s is met.
+1. **Coordination gap confirmed at 30.1 s** — the telemetry discovery window imposes a measurable delay between Slowstart (discovery-time awareness) and Lifecycle (spawn-time awareness). Threshold of ≥ 20 s is met.
 
-2. **Host TTFT is unexpectedly fastest** — at 10.7 s median, Host beats Lifecycle (30.6 s) by 19.9 s. The plan predicted lifecycle < host. Possible mechanism: Host's immediate round-robin distributes at least one request to the new backend in the first telemetry window (~10 s), while Lifecycle's warm-lease priority window does not accelerate first-contact timing — it only increases share volume once contact begins.
+2. **Lifecycle TTFT is 20.9 s — between Host (10.7 s) and Slowstart (51.0 s)** — the original v3 analysis reported 30.6 s due to a MAC-reuse extraction bug. The corrected ranking (host < lifecycle < slowstart) matches the plan's prediction. Lifecycle's warm lease at spawn gives it a ~30 s advantage over Slowstart's discovery delay.
 
 3. **Initial load share does not favour Lifecycle** — Lifecycle (0.111) ties with Host (0.113), while Slowstart (0.245) takes more initial share. This contradicts the plan's expectation that warm-lease priority routing would produce higher initial share for Lifecycle. Slowstart's higher share may reflect a "burst" effect: once discovered, the graduated ramp routes aggressively to the newly-visible backend, producing a higher share in the first visible window.
 
@@ -175,9 +177,9 @@ All modes exceed the ≤ 0.1% threshold. Status code `0` (curl did not complete)
 
 #### Conclusions
 
-1. **The coordination gap is real and measurable** — Slowstart's discovery delay costs 20.4 s of TTFT vs. Lifecycle. This confirms the thesis mechanism: spawn-time routing awareness eliminates the telemetry discovery window.
+1. **The coordination gap is real and measurable** — Slowstart's discovery delay costs 30.1 s of TTFT vs. Lifecycle. This confirms the thesis mechanism: spawn-time routing awareness eliminates the telemetry discovery window.
 
-2. **Host's immediate-but-blind routing wins on TTFT but catastrophically loses on service quality** — 2522 ms baseline p50 makes Host mode unacceptable for any latency-sensitive workload, despite its 10.7 s TTFT advantage.
+2. **Host's immediate round-robin wins on TTFT but catastrophically loses on service quality** — Host's 10.7 s TTFT is the fastest, but 2522 ms baseline p50 makes it unacceptable for any latency-sensitive workload.
 
 3. **Warm-lease priority routing (Lifecycle) does not increase initial load share** — the share data contradicts the hypothesis that lifecycle's warm lease produces higher initial share. The mechanism may operate differently than assumed, or the warm-lease window (45 s) may be too short relative to the telemetry cadence.
 

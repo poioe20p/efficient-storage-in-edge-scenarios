@@ -115,7 +115,7 @@ the main contributions in \ref{sec:contributions} and finally the outlining of t
 chapters of the thesis are presented in \ref{sec:document_structure}.
 
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
-% TODO: Edge computing + stateful web services. Multi-Region Content Discovery
+% TODO: Geo-distributed deployment + stateful web services. Multi-Region Content Discovery
 % Platform as experimental workload. Coordination-gap observation as motivation.
 In the year 2025 global internet traffic surprassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
 corresponds to a more than double increase in the amount of internet traffic generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
@@ -139,13 +139,14 @@ the foundational layer that supports modern applications and services.
 
 But at the same time, a growing percentage of global internet traffic comes from mobile devices, which now represent the main gateway to internet 
 access \parencite{Gaudiaut2026MobileTrafficShare}. This ongoing shift underscores that the majority of internet access comes from the network edge, far from the cloud data centers, evidencing the importance of edge computing as an extension or
-alternative to cloud computing for many scenarios. As presented in \parencite{Cao2020OverviewEdgeComputingResearch}, \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings the computational resources to the network edge which and therefore closer to the end-users and
+alternative to cloud computing as it enables geo-distributed deployements of applications and services. As presented in \parencite{Cao2020OverviewEdgeComputingResearch}, \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings the computational resources to the network edge which and therefore closer to the end-users and
 end-products allowing for much lower latency in provisioning services and applications to users.
-Beyond lower latency, edge computing also reduces bandwidth pressure on the core network. Because as data can be processed and stored locally, at the edge, 
+Beyond lower latency, edge computing with the geo-distributed deployments empowers the reduction of bandwidth pressure on the core network. Because as data can be processed and stored locally, at the edge, 
 for quicker responses, only a subset of it is sent to the cloud \parencite{Cao2020OverviewEdgeComputingResearch}, freeing up backbone available bandwidth.
 
-On the flip side, edge computing is not a replacement for cloud computing \parencite{Cao2020OverviewEdgeComputingResearch}, rather an extension of it because
+Despite the advantages edge computing also faces, some difficulties regarding resource scarcity, reliability and 
 
+On the flip side, edge computing is not a replacement for cloud computing \parencite{Cao2020OverviewEdgeComputingResearch}, rather a complitment or extension as cloud computing can be understood as the persistent computing and storage layer to be
 % use tese\literature_review\Edge Platform\An_Overview_on_Edge_Computing_Research.pdf and  tese\literature_review\Resource Orchestration on SDN\Resource optimization in edge and SDN-based edge computing - a comprehensive study.pdf (go to the challenges section)
 
 % there's a huge platora of services and applicatons that present latency and processing requirements that are more suited towards edge computing over cloud computing.
@@ -257,7 +258,7 @@ component to be independently managed and tested.
 % decoupled compute/data scaling; domain-agnostic observability.
 
 \section{Architecture}\label{sec:architecture_overview}
-% TODO: Component diagram. Two edge networks + WAN. OVS, edge servers, storage servers.
+% TODO: Component diagram. Two geo-distributed networks + WAN. OVS, edge servers, storage servers.
 % SDN controller (3 greenthreads). Double-VIP model. Telemetry pipeline.
 
 \section{Distributed Elastic Allocation of Resources}\label{sec:elastic_allocation}
@@ -359,7 +360,7 @@ component to be independently managed and tested.
 % degradation_score vs. cpu_only modes. False positive rate (spawns during baseline /
 % total spawns). False negative rate (spawns missed during stress phases). Service
 % quality during transitions: per-phase p50/p95 latency, timeout rate, completed
-% request volume. Key finding (projected): CPU-only may never fire at realistic edge
+% request volume. Key finding (projected): CPU-only may never fire at realistic resource-constrained
 % CPU levels (2–8\%) for I/O-bound stateful services.
 
 \section{Telemetry Freshness — Delivery Cadence (RQ1)}\label{sec:results_rq1_telemetry}
@@ -398,7 +399,7 @@ component to be independently managed and tested.
 % ~74 s (43 s delivery + 31 s action). First experimental quantification of
 % phenomenon documented by Wang et al., observed by Pierro & Ullah, called for
 % by Yaseen (2025). Which link matters most? Sharpest trade-offs? What's negligible?
-% Implications for edge system designers. Data placement strategies (Tier 0/1/2)
+% Implications for geo-distributed system designers. Data placement strategies (Tier 0/1/2)
 % as infrastructurecontext: unified architecture enables tiered data gravity;
 % experimental characterization of data locality trade-offs deferred to future work.
 

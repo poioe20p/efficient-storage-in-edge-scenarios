@@ -49,6 +49,7 @@ def init_vip_routing_state(controller) -> None:
     # traffic is distributed instead of always hitting the first entry.
     controller._rr_server_idx: int = 0
     controller._rr_storage_idx: dict[str, int] = {}   # domain -> counter
+    controller._warm_rr_idx: int = 0  # round-robin across warm-lease candidates
 
     import threading
     controller._warm_lock = threading.Lock()

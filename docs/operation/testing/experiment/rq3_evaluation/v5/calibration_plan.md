@@ -1,7 +1,7 @@
 # RQ3 v2 — Trigger Divergence Calibration
 
 **Date**: 2026-07-24
-**Status**: 📋 Partially Executed — main divergence calibration (6 runs) complete, storage CPU weight probe pending
+**Status**: 📋 Plan superseded by [`calibration_results_v2.md`](calibration_results_v2.md) — all 8 calibration runs complete
 **Depends on**: G0-v6 resource validation (complete — 0.08/0.25 CPUs at 96 clients, WAN=185 produces clear pre→post improvement)
 **Purpose**: Verify that the G0-v6 scoring thresholds (floors, spans, base thresholds) produce behavioural divergence when the three RQ3 trigger weight configurations are applied.
 **Supersedes**: The concrete thresholds in this plan supersede the (TBD) markers in `rq3_setup_v2.md` §3.2 and §4.2 for calibration purposes. The setup doc will be finalised after this calibration produces the definitive values.

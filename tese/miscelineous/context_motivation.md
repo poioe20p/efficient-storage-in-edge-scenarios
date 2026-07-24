@@ -1,4 +1,5 @@
 Revised §1.1 Structure — 9 Paragraphs
+
 Understood. You want a properly developed introduction, not a compressed one. Here's a 9-paragraph structure that follows your funnel logic, with each paragraph doing exactly one job and citing the right papers. Each ¶ is roughly the size of your existing traffic paragraph (5–7 lines).
 
 ¶1 — Internet Traffic Growth (The Hook)
@@ -31,27 +32,110 @@ Also: Shi et al. (2016) — "Edge Computing: Vision and Challenges," IEEE Intern
 
 These two together are the canonical pair. Satyanarayanan gives you the conceptual argument (distance = latency); Shi gives you the structured survey.
 
-¶5 — Edge Advantages
-Job: Present the three core advantages of edge computing. (1) Low latency: services deployed closer to users, shorter RTT. (2) High bandwidth availability / reduced backbone traffic: data processed locally instead of traversing the core network, alleviating congestion on inter-domain links. (3) Context awareness / location awareness: edge nodes can leverage local environmental information that a distant cloud cannot access. For your thesis, advantages (1) and (2) are the most relevant — latency drives your p95/p99 metrics, and reduced backbone traffic connects to your data locality story (cross-region reads, Tier 1/2 data placement).
+¶5 — Geo-Distributed Deployment Advantages
 
-Citation: Shi et al. (2016) and/or Mao et al. (2017) — "A Survey on Mobile Edge Computing," IEEE Communications Surveys & Tutorials. DOI: 10.1109/COMST.2017.2937873. Not in your .bib. Mao is more comprehensive on the advantages taxonomy.
+Deploying services across geo-distributed sites offers several advantages over centralized cloud
+deployments. First, services deployed closer to users experience lower
+round-trip time, directly benefiting latency-sensitive applications.
+Second, processing data locally instead of traversing the core network
+reduces backbone traffic and alleviates congestion on inter-domain links
+\parencite{Cao2020OverviewEdgeComputingResearch,Satyanarayanan2017EmergenceEdgeComputing}.
+For this thesis, both advantages are
+directly relevant: latency drives the p95 and p99 metrics used to evaluate
+service quality, and reduced backbone traffic connects to the data
+locality trade-offs explored in the experimental workload (cross-region
+reads, tiered data placement).
 
-¶6 — Edge Constraints: The Resource Scarcity Problem
-Job: The flip side. Unlike the cloud, edge environments are resource-constrained — limited CPU, memory, storage, and power per node. Edge infrastructure is heterogeneous (different hardware across sites), variable (demand fluctuates), and distributed (many small sites rather than few large data centers). These constraints mean that resource efficiency is not optional — edge platforms must allocate resources judiciously, scaling only when justified by demand. This sets up the entire motivation for your thesis: how do you orchestrate resources efficiently at the edge?
+¶6 — Geo-Distributed Constraints: Resource Scarcity and Data Gravity
 
-Citation: Khan et al. (2019) — "Edge computing: A survey," Future Generation Computer Systems. DOI: 10.1016/j.future.2019.02.050. Good on resource constraints. Not in your .bib. Alternatively, Shi et al. (2016) already covers constraints — you could cite the same paper as ¶5 for consistency.
+Geo-distributed deployments, however, face a different scarcity than hyperscale
+clouds. Unlike cloud data centers where resources are conceptually
+infinite, geo-distributed sites operate under finite per-site capacity
+\parencite{Tao2019,Hong2019}. The binding constraint is not CPU or
+memory exhaustion but network locality: scaling a service across sites
+to absorb a demand surge forces requests and data to traverse the
+wide-area link. This is a qualitatively different bottleneck
+from CPU or memory exhaustion. When data has a home — when a content item
+ingested at one site is requested by users of another — the orchestration
+system must decide whether to serve the request remotely, paying WAN
+latency on every access; to replicate the hot data subset locally, paying
+synchronisation overhead; or to provision a full replica, paying storage
+and replication cost \parencite{Qadir2020,Sonkoly2021}. These are not
+stateless scale-out decisions; they are data-gravity-aware resource
+allocation decisions, and they must be made under the time pressure of an
+ongoing demand shift.
 
-¶7 — Stateful Services: The Harder Problem
-Job: This is the bridge paragraph — the most important one you're missing. Many edge services are not stateless microservices that can be freely replicated. They are stateful — they depend on data co-located with compute. A content discovery platform, for instance, serves personalized feeds built from content items stored across regions; the data has gravity — it pulls computation toward where it resides. This makes resource management fundamentally different from the stateless cloud pattern: you cannot simply spin up a new instance anywhere; you must consider where the data lives, how fresh it is, and how much data to replicate locally. Introduce the Multi-Region Content Discovery Platform here as the representative workload: content items ingested regionally, discovered globally through tag-based personalized feeds, with heterogeneous document types and two stress regimes (data-locality and compute-analytics).
+¶7 — Stateful Services in Geo-Distributed Deployments
 
-Citation: None strictly needed — this is conceptual framing. But you could cite Breitbach et al. (2019) — "Context-Aware Data and Task Placement in Edge Computing Environments" — which is already in your .bib and studies n-replication data placement (mirroring Tier 0→1→2).
+The resource management problem is compounded when the services themselves
+are stateful. Stateless microservices can be replicated freely — a new
+instance absorbs traffic immediately. But many geo-distributed applications depend on
+data co-located with compute. A content discovery platform, for instance,
+ingests content items regionally and serves personalized feeds globally.
+The data has gravity: it resides in the database of the region that
+ingested it, and a server in the opposite region that needs that data
+must either fetch it remotely or wait for local replication
+\parencite{Breitbach2019ContextAwareDataTaskPlacement,Pelle2022CostLatencyEdgePlatform}. This means adding a new server in
+response to load does not, by itself, solve the problem. The data must
+be brought closer, and the orchestration system must detect when this is
+necessary, deliver that information to the decision point, provision the
+right kind of capacity, and redirect traffic to it. In resource-constrained
+deployments, where over-provisioning across sites is not an option, each of these
+steps introduces delay that directly degrades the quality of service users
+experience. This thesis uses a Multi-Region Content Discovery Platform
+as its experimental workload: content items are ingested regionally and
+discovered globally through tag-based personalized feeds, with
+heterogeneous document types and two stress regimes — one driven by data
+locality, the other by compute-analytics throughput.
 
 ¶8 — The Orchestration Problem: The Coordination Gap
-Job: Now introduce the coordination gap. In every major edge/cloud platform — Kubernetes, NFV MANO (OSM, ONAP), MEC platforms — three critical functions are handled by separate components: monitoring (Prometheus/InfluxDB), traffic routing (kube-proxy/SDN switches), and auto-scaling (HPA/OSM LCM). Each component operates on its own control loop with its own reconciliation interval and no shared state. The accumulation of these independent delays creates a coordination gap: the time between overload onset and traffic reaching newly provisioned capacity can reach 30–120 seconds, even though the container itself boots in ~10 seconds (Podolskiy et al.). This separation is the unexamined default — no paper across the literature argues for or against it. It has been documented (Wang et al., SDNFV architecture), observed as a side effect (Pierro & Ullah, K8s HPA evaluation), and called for (Yaseen, 2025) — but never isolated, measured, or varied as an independent experimental variable.
 
-Citations: Wang2026AutoScalingLoadAwareSDNFV ✅ in .bib | Pierro2026EvaluatingKubernetesAutoscalingStrategiesIoT ✅ in .bib | Yaseen2025CountersTelemetrySurveyProgrammableNetwork ✅ in .bib | Podolskiy et al. ❌ missing from .bib — I need to find the DOI for this one. It's the IaaS provider latency measurement paper cited in the global lit review.
+In every major cloud and edge platform — Kubernetes, NFV MANO frameworks
+such as OSM and ONAP, and MEC platforms — the functions that would need
+to coordinate during a demand shift are implemented as separate components
+with independent control loops. A monitoring system such as Prometheus or
+InfluxDB scrapes metrics on a fixed interval. An auto-scaler such as the
+Kubernetes HPA or the OSM Policy Manager evaluates thresholds and
+provisions new instances. A load balancer — kube-proxy, HAProxy, or SDN
+flow tables — eventually discovers the new backends and steers traffic to
+them. Each handoff between these components adds latency: the monitoring
+scrape interval, the alarm evaluation window, the provisioning time, and
+the health-check discovery gap accumulate to 30–120 seconds of
+coordination latency, even though the container itself boots in
+approximately 10 seconds \parencite{PodolskiyIaaS}. The coordination gap
+is not unique to geo-distributed deployments — Podolskiy et al.\ documented
+it across AWS, Azure, and GCP — but its consequences are amplified where
+resources are finite: cloud data centers mask the gap with
+over-provisioning; resource-constrained sites cannot. This coordination gap
+— the accumulated delay between overload onset and traffic reaching newly
+provisioned capacity — has been documented in passing by Wang et al.\ in
+their SDNFV 5G architecture \parencite{Wang2026AutoScalingLoadAwareSDNFV},
+observed as a side effect by Pierro and Ullah in a Kubernetes HPA
+evaluation \parencite{Pierro2026EvaluatingKubernetesAutoscalingStrategiesIoT},
+and called for at the survey level by Yaseen
+\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork} — but
+never isolated, measured, or varied as an independent experimental
+variable. No paper across the literature argues for this separation or
+against co-location: it is the unexamined default.
 
-¶9 — Central Claim, Honest Scope, and What This Thesis Does
-Job: Close the section with a clear thesis statement. "This thesis experimentally examines three links in the detection→delivery→action chain — trigger quality, telemetry freshness, and backend selection — characterizing how each independently affects service quality during demand shifts in stateful edge services." The SDN controller is the experimental apparatus, not the hypothesis. Then add the honest scope: does not claim SDN superiority over Kubernetes; does not claim scalability to large deployments; does not claim generalizability beyond MongoDB replica sets. This preempts the "you didn't compare against X" critique.
+¶9 — Central Claim and Honest Scope
 
-Citation: None — this is your claim.
+This thesis experimentally examines three links in the detection→delivery→
+action chain — trigger quality (what signals are monitored), telemetry
+freshness (how fast those signals arrive), and backend selection (how
+quickly new capacity receives traffic) — characterising how each
+independently affects service quality during demand shifts in a stateful
+service deployed across two geo-distributed sites. An SDN controller serves
+as the experimental apparatus: by co-locating monitoring, routing, and
+scaling in a single process with shared data structures, it eliminates
+the propagation delays that confound separated architectures and enables
+each link to be varied while the others are held constant. The thesis does
+not claim that SDN is superior to Kubernetes or any specific orchestration
+platform; does not claim that the coordination gap matters equally for all
+workloads or at all deployment scales; and does not claim that the
+mechanisms demonstrated — the Double-VIP traffic model, the MongoDB
+replica-set tiering — generalise beyond the tested infrastructure. It
+claims only that the coordination gap is a measurable, previously
+uncharacterised phenomenon, and that varying each link independently
+within a unified control point reveals which dimensions matter and under
+what conditions.

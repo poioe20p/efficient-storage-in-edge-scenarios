@@ -100,28 +100,34 @@ def compute_ttft(spawns: list[dict], run_dir: Path) -> dict[int, float | None]:
     """Match each spawn to its first telemetry window with request_count > 0.
 
     Returns dict mapping spawn index → TTFT in seconds, or None if unmatched.
+
+    v4 fix: matches first window *after spawn_ts* for the MAC, not first-ever
+    window.  This correctly handles MAC reuse across container lifetimes.
     """
     pns_path = run_dir / "per_node_stats.csv"
     if not pns_path.exists():
         return {i: None for i in range(len(spawns))}
 
-    # Build: mac → first_window_end (Unix seconds)
-    first_window: dict[str, float] = {}
+    # Collect ALL (window_end, request_count) per MAC
+    mac_windows: dict[str, list[tuple[float, int]]] = defaultdict(list)
     with open(pns_path) as f:
         for row in csv.DictReader(f):
             mac = row.get("server_id", "").strip()
             rc = int(row.get("request_count", 0))
             we = _safe_float(row.get("window_end"))
-            if mac and rc > 0 and mac not in first_window and we > 0:
-                first_window[mac] = we
+            if mac and we > 0:
+                mac_windows[mac].append((we, rc))
 
     ttft: dict[int, float | None] = {}
     for i, sp in enumerate(spawns):
         mac = sp["mac"]
-        if mac and mac in first_window:
-            ttft_val = first_window[mac] - sp["spawn_ts"]
-            if 0 <= ttft_val <= 600:
-                ttft[i] = ttft_val
+        if mac and mac in mac_windows:
+            # Find first window_end >= spawn_ts with request_count > 0
+            for we, rc in sorted(mac_windows[mac]):
+                if we >= sp["spawn_ts"] and rc > 0:
+                    ttft_val = we - sp["spawn_ts"]
+                    ttft[i] = ttft_val if 0 <= ttft_val <= 600 else None
+                    break
             else:
                 ttft[i] = None
         else:
@@ -176,9 +182,9 @@ def compute_tfr(spawns: list[dict], run_dir: Path) -> dict[int, float | None]:
 # Step 4 — Initial load share (from per_node_stats first window)
 # ---------------------------------------------------------------------------
 
-def compute_initial_share(spawns: list[dict], run_dir: Path) -> dict[int, float | None]:
+def compute_initial_share(spawns: list[dict], run_dir: Path) -> tuple[dict[int, float | None], dict[int, int | None]]:
     """Compute the fraction of VIP traffic captured by the new backend in its
-    first visible telemetry window.
+    first visible telemetry window, and the pool size (active backends) in that window.
 
     Uses per_node_stats.csv: for the first window where request_count > 0 for
     the spawn MAC, compute request_count / total_requests_in_that_window
@@ -186,11 +192,12 @@ def compute_initial_share(spawns: list[dict], run_dir: Path) -> dict[int, float 
     """
     pns_path = run_dir / "per_node_stats.csv"
     if not pns_path.exists():
-        return {i: None for i in range(len(spawns))}
+        return {i: None for i in range(len(spawns))}, {i: None for i in range(len(spawns))}
 
-    # First pass: build window_totals and per-MAC first-window data
+    # First pass: build window_totals, per-window node counts, and per-MAC first-window data
     window_totals: dict[float, int] = {}
-    first_window_data: dict[str, tuple[float, int]] = {}  # mac → (window_end, request_count)
+    window_node_counts: dict[float, set] = {}  # window_end -> set of MACs
+    first_window_data: dict[str, tuple[float, int]] = {}  # mac -> (window_end, request_count)
     with open(pns_path) as f:
         for row in csv.DictReader(f):
             mac = row.get("server_id", "").strip()
@@ -199,19 +206,28 @@ def compute_initial_share(spawns: list[dict], run_dir: Path) -> dict[int, float 
             if not mac or we <= 0:
                 continue
             window_totals[we] = window_totals.get(we, 0) + rc
+            if we not in window_node_counts:
+                window_node_counts[we] = set()
+            if rc > 0:
+                window_node_counts[we].add(mac)
             if rc > 0 and mac not in first_window_data:
                 first_window_data[mac] = (we, rc)
 
+    window_pool_sizes: dict[float, int] = {we: len(macs) for we, macs in window_node_counts.items()}
+
     init_share: dict[int, float | None] = {}
+    pool_size: dict[int, int | None] = {}
     for i, sp in enumerate(spawns):
         mac = sp["mac"]
         if mac and mac in first_window_data:
             we, rc = first_window_data[mac]
             total = window_totals.get(we, 0)
             init_share[i] = rc / total if total > 0 else None
+            pool_size[i] = window_pool_sizes.get(we)
         else:
             init_share[i] = None
-    return init_share
+            pool_size[i] = None
+    return init_share, pool_size
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +257,7 @@ def main():
 
     ttft = compute_ttft(spawns, run_dir)
     tfr = compute_tfr(spawns, run_dir)
-    init_share = compute_initial_share(spawns, run_dir)
+    init_share, pool_sizes = compute_initial_share(spawns, run_dir)
 
     # Assemble rows
     rows: list[dict] = []
@@ -250,6 +266,7 @@ def main():
         ttft_val = ttft.get(i)
         tfr_val = tfr.get(i)
         init_val = init_share.get(i)
+        ps_val = pool_sizes.get(i)
         if ttft_val is not None:
             n_ttft += 1
         if tfr_val is not None:
@@ -264,6 +281,7 @@ def main():
             "tfr_s": f"{tfr_val:.1f}" if tfr_val is not None else "",
             "init_time_s": f"{(tfr_val - ttft_val):.1f}" if (ttft_val is not None and tfr_val is not None) else "",
             "initial_share": f"{init_val:.4f}" if init_val is not None else "",
+            "pool_size": f"{ps_val}" if ps_val is not None else "",
         })
 
     print(f"  TTFT matched:  {n_ttft}/{len(spawns)}")
@@ -273,7 +291,7 @@ def main():
     out_path = args.out or (run_dir / "analysis" / "rq2_spawn_metrics.csv")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["spawn_ts", "container", "mac", "lan", "mode",
-                  "ttft_s", "tfr_s", "init_time_s", "initial_share"]
+                  "ttft_s", "tfr_s", "init_time_s", "initial_share", "pool_size"]
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

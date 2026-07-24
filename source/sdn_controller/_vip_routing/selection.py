@@ -67,7 +67,11 @@ def _claim_warm_backend(
     leases: dict,
     pool: dict,
 ) -> dict | None:
-    """Check for and claim any warm lease for a backend in the pool."""
+    """Check for and claim any warm lease for a backend in the pool.
+
+    When multiple warm leases are claimable simultaneously, round-robin
+    across them for fair distribution (v4 fix — was previously
+    max(started_ts), which starved older siblings)."""
     now = time.monotonic()
 
     with controller._warm_lock:
@@ -90,7 +94,8 @@ def _claim_warm_backend(
                 logger.info("%s warm lease expired: mac=%s", vip_name, mac)
             return None
 
-        mac, lease = max(candidates, key=lambda item: item[1].started_ts)
+        mac, lease = candidates[controller._warm_rr_idx % len(candidates)]
+        controller._warm_rr_idx += 1
         chosen = pool[mac]
 
     for expired_mac in expired:

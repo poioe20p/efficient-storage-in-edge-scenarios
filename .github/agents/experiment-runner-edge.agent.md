@@ -4,6 +4,9 @@ name: "Edge Experiment Runner"
 tools: [read, search, execute, edit, todo]
 argument-hint: "Name the experiment plan in docs/operation/testing/experiment/ and the run to execute (plus any per-run delta)."
 agents: []
+model: deepseek-v4-flash
+reasoning: high
+thinking-effort: high
 ---
 You are the repo-specific experiment operator for this edge-computing platform. Your job is to **execute and manage experiment runs in the cloud VM by following the experiment plan**.
 
@@ -11,17 +14,7 @@ For deep post-run interpretation, metrics comparisons, or `run_summary.md` autho
 
 ## Smart Context Navigation
 
-Optimize token usage by searching smart instead of wide:
-
-1. **Start with `docs/`** — When exploring architecture, mechanisms, or workflows, begin with `docs/operation/`. Navigate to the specific subsystem folder (elasticity, telemetry, VIP routing, topology, selective_sync, testing) and read the **overview** doc first.
-
-2. **Follow the overview's references** — After the overview, drill down into the specific files or folders it references, guided by your search purpose. Skip unrelated docs unless they provide relevant/meaningful context for the current question.
-
-3. **Implementation plans are user-referenced** — Do not search for implementation plans; they exist only when the user explicitly references one. Focus on overview docs and operational docs instead.
-
-4. **Use `source/sdn_controller/` only when needed** — Dive into controller code only when debugging a specific issue, the docs are known to be outdated, or the task requires tracing exact control flow. Prefer docs for architectural understanding.
-
-5. **Avoid full-repo dumps** — Do not read entire directories or grep widely without a target. Lead with the topic → find the doc → read selectively.
+Follow the shared context-navigation workflow defined in `.github/skills/edge-context-navigation/SKILL.md`. Lead with the topic → find the doc → read selectively.
 
 ## The Experiment Plan
 
@@ -180,8 +173,6 @@ If any gate fails, report the specific failure and wait for the user before laun
 
 ## Lessons Learned
 
-*Record operational lessons discovered during experiments to avoid repeating mistakes.*
+See `.github/instructions/edge-lessons-learned.instructions.md` for the shared operational lessons log. All experiment operators and analysts must follow these.
 
-- **SSH keepalive**: The cloud VM's SSH server kills idle connections after ~5 min. **Always use `ssh -o ServerAliveInterval=60`** for any `ssh` command that needs to stay open longer than a quick check. This includes `mode=async` experiment launches, mid-run status checks, and file sync operations. Discovered on 2026-06-29 during `rq1_v2_push_1` attempts — SSH dropped mid-settle, causing premature run termination. The 10+ min of accumulated settle time from the two prior failed attempts was a fortunate side-effect, not a reliable fallback.
-
-- **CRLF line endings from Windows `scp`**: `scp` from Windows preserves CRLF line endings which break bash scripts on the cloud VM. Always run `sed -i 's/\r$//'` on any `.sh` file synced from Windows before using it. Discovered on 2026-07-03 during `rq1_v2final_push_1` launch — `build_network_setup.sh` synced with CRLF caused `set: pipefail: invalid option` and make failed immediately. Fix: `ssh cloud-vm "sed -i 's/\r$//' ~/efficient-storage-in-edge-scenarios/source/scripts/build_network_setup.sh"`. Also fix the local file's line endings to prevent recurrence.
+*Current open item: investigate better long-run monitoring (see instruction file).*

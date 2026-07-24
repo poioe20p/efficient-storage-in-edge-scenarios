@@ -17,8 +17,8 @@ The main purpose of this note is to answer five practical questions:
 ### Thesis Type & Contribution
 
 This thesis is an **experimental examination** of cross-layer orchestration
-for stateful edge services, conducted through a centralized SDN control plane
-deployed over a controlled two-network edge topology. The SDN controller
+for stateful services in geo-distributed deployments, conducted through a centralized SDN control plane
+deployed over a controlled two-network topology. The SDN controller
 collapses three traditionally separated concerns — telemetry collection, traffic
 steering, and infrastructure scaling — into a single process with shared data
 structures. This unification is not the hypothesis under test; it is the
@@ -36,7 +36,7 @@ controller as an experimental apparatus to isolate and measure coordination
 delays that every existing architecture accepts as given. The synthesis
 chapter reconstructs the compound coordination tax from the three RQs,
 producing the first experimental quantification of the cumulative latency
-that three-layer separation imposes on stateful edge services.
+that three-layer separation imposes on stateful services in geo-distributed deployments.
 
 ### Central Claim
 
@@ -45,7 +45,7 @@ that three-layer separation imposes on stateful edge services.
 > monitored), **telemetry freshness** (how fast it arrives), and **backend
 > selection** (how quickly new capacity receives traffic) — characterizing
 > how each independently affects service quality during demand shifts in
-> stateful edge services. The SDN control plane serves as the experimental
+> stateful services deployed across geo-distributed sites. The SDN control plane serves as the experimental
 > platform that enables isolated variation of each link; the synthesis
 > chapter reconstructs the compound coordination tax from all three.
 
@@ -77,14 +77,18 @@ Industry examples of this separation:
 
 In the proposed architecture, the SDN controller (OS-Ken/Ryu) consumes telemetry directly (Thread 2), routes traffic per-flow via OpenFlow (Thread 1), and mutates infrastructure by spawning/draining containers (Thread 3) — all from a single process with shared data structures. There are no handoff delays between components because there are no separate components.
 
-**The thesis does not claim SDN is universally better.** It characterizes *what the unification enables and what it costs*, under controlled edge conditions. A negative or nuanced result is still a valid contribution: knowing that the coordination gap matters only above a certain demand threshold is useful knowledge.
+**The thesis does not claim SDN is universally better.** It characterizes *what the unification enables and what it costs*, under controlled resource-constrained, geo-distributed conditions. A negative or nuanced result is still a valid contribution: knowing that the coordination gap matters only above a certain demand threshold is useful knowledge.
 
 ### Relationship to the Thesis Proposal
 
 While the initial proposal emphasized metadata-driven scaling as the central
 contribution, architecture development revealed that the coordination gap
 between monitoring, routing, and scaling is the more fundamental research
-problem — and one that the literature has never characterized. The three-pillar
+problem — and one that the literature has never characterized. The coordination
+gap is not unique to geo-distributed deployments (Podolskiy et al. documented
+it across AWS, Azure, and GCP), but its consequences are amplified where
+resources are finite: cloud data centers mask the gap with over-provisioning;
+resource-constrained sites cannot. The three-pillar
 investigation presented here **operationalizes** the proposal's high-level
 goals ("coordinate auto-scaling based on meta-information") by decomposing
 the coordination gap into three independently testable links: detection
@@ -224,7 +228,7 @@ but that no prior work has translated to orchestration latency.
 
 ## RQ1. Telemetry Freshness and Delivery Cadence
 
-> **RQ1.** How does telemetry delivery cadence affect controller decision staleness, reaction latency, and transient service quality during demand shifts in a stateful edge system?
+> **RQ1.** How does telemetry delivery cadence affect controller decision staleness, reaction latency, and transient service quality during demand shifts in a stateful system under resource constraints?
 
 ### Why RQ1 Is a Strong RQ
 
@@ -377,7 +381,7 @@ Vary only:
 
 ## RQ2. Routing-Awareness Timing and the Coordination Gap
 
-> **RQ2.** How does the timing of routing-plane awareness relative to backend spawn — at spawn time (warm lease, in-process) versus at discovery time (slow-start ramp, simulating a separated LB) versus no ramp-up — affect load redistribution quality during scale-up events in a stateful edge system?
+> **RQ2.** How does the timing of routing-plane awareness relative to backend spawn — at spawn time (warm lease, in-process) versus at discovery time (slow-start ramp, simulating a separated LB) versus no ramp-up — affect load redistribution quality during scale-up events in a stateful system under resource constraints?
 
 ### Why RQ2 Is a Strong RQ
 
@@ -470,7 +474,7 @@ Vary only: `BACKEND_SELECTION_POLICY`.
 
 ## RQ3. Trigger Composition Characterization
 
-> **RQ3.** For stateful edge services under constrained resources, how does
+> **RQ3.** For stateful services under constrained resources, how does
 > the composition of the degradation score — which signals are included and
 > at what weight — affect detection behavior, measured as the calibration
 > required to suppress baseline false positives and the detection sensitivity
@@ -496,7 +500,7 @@ The literature has asked "what metric to use?" — Zhou & Yong (2024) showed
 HTTP 5xx-based HPA outperforms CPU-based HPA for Nginx. PAHPA (Xiao et al.,
 2026) proposed real-time monitoring as a binary correction to predictions.
 But no study has compared single-dimension triggers against a composite
-trigger for stateful edge services, and no study has independently
+trigger for stateful services under resource constraints, and no study has independently
 calibrated each trigger to comparable sensitivity before comparison.
 
 ### Concepts Involved in RQ3
