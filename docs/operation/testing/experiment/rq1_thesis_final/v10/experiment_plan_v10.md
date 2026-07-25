@@ -411,3 +411,10 @@ source/scripts/testing/metrics/<LABEL>/
 
 After the campaign, cross-mode comparison graphs go to:
 `docs/operation/testing/experiment/rq1_thesis_final/v10/analysis/`.
+
+## Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-07-25 | Campaign executed P1–T3 (6/12 runs). Gate failed — C2 pilot did not replicate. Campaign stopped. | Push μ=73.8K (below 85K gate), timeout 3.9% vs 3.6% (inverted). See [results.md §1](./results.md). |
+| 2026-07-25 | Plan authored | C2 pilot (EDGE_CPUS=0.15) showed clean Push vs P30 separation at n=1 |
