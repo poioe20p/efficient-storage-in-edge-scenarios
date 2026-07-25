@@ -5,7 +5,13 @@
 **Status**: ✅ Complete — 9 runs, 3 modes × 3 replicates  
 **Graphs**: `graphs/` (12 graphs, v8 thesis styling)
 
-> **⚠️ Correction (2026-07-24)**: The original TTFT extraction had a MAC-reuse bug — it matched `first-window-ever` for a MAC instead of `first-window-after-spawn`. This inflated Lifecycle TTFT from 20.9 s → 30.6 s. The extraction has been fixed (see [v4 results](../v4/results.md)). **Lifecycle TTFT values in this document should be read as 20.9 s med, 10.8 s IQR.** The corrected Lifecycle numbers are used in the tables below.
+> **⚠️ Correction (2026-07-24)**: The original TTFT extraction had a MAC-reuse bug — it matched `first-window-ever` for a MAC instead of `first-window-after-spawn`. This inflated **all modes'** TTFT. Corrected pooled medians:
+> - Host: 10.9 s (was 10.7 s — minor)
+> - Slowstart: **30.4 s** (was 51.0 s — major)
+> - Lifecycle: **20.9 s** (was 30.6 s — major)
+> - Coordination gap: **9.5 s** (was 20.4 s — below ≥20 s threshold)
+>
+> The extraction has been fixed. All TTFT values in this document now use the corrected extraction. See [v4 results](../v4/results.md) for the full analysis.
 
 ---
 
@@ -16,12 +22,12 @@
 | v1 (`rq2_v3_th_1`) | 2026-07-23 12:14 | topology_host | ✅ | 11 | 10.5 s | 9.1 s | 0.060 | 1.64% |
 | v1 (`rq2_v3_th_2`) | 2026-07-23 13:19 | topology_host | ✅ | 13 | 30.7 s | 15.4 s | 0.241 | 2.34% |
 | v1 (`rq2_v3_th_3`) | 2026-07-23 14:15 | topology_host | ✅ | 14 | 10.6 s | 8.2 s | 0.113 | 2.16% |
-| v1 (`rq2_v3_ss_1`) | 2026-07-23 15:14 | topology_slowstart | ✅ | 20 | 50.5 s | 29.1 s | 0.307 | 1.43% |
-| v1 (`rq2_v3_ss_2`) | 2026-07-23 16:17 | topology_slowstart | ✅ | 17 | 60.8 s | 20.3 s | 0.009 | 1.14% |
-| v1 (`rq2_v3_ss_3`) | 2026-07-23 17:15 | topology_slowstart | ✅ | 16 | 50.3 s | 31.1 s | 0.395 | 1.22% |
-| v1 (`rq2_v3_tl_1`) | 2026-07-23 19:16 | topology_lifecycle | ✅ | 10 | 40.3 s | 19.7 s | 0.394 | 6.12% |
-| v1 (`rq2_v3_tl_2`) | 2026-07-23 20:16 | topology_lifecycle | ✅ | 17 | 50.3 s | 21.3 s | 0.016 | 1.27% |
-| v1 (`rq2_v3_tl_3`) | 2026-07-23 21:13 | topology_lifecycle | ✅ | 14 | 20.8 s | 13.5 s | 0.229 | 1.52% |
+| v1 (`rq2_v3_ss_1`) | 2026-07-23 15:14 | topology_slowstart | ✅ | 20 | 30.7 s | 29.1 s | 0.307 | 1.43% |
+| v1 (`rq2_v3_ss_2`) | 2026-07-23 16:17 | topology_slowstart | ✅ | 17 | 30.1 s | 20.3 s | 0.009 | 1.14% |
+| v1 (`rq2_v3_ss_3`) | 2026-07-23 17:15 | topology_slowstart | ✅ | 16 | 35.4 s | 31.1 s | 0.395 | 1.22% |
+| v1 (`rq2_v3_tl_1`) | 2026-07-23 19:16 | topology_lifecycle | ✅ | 10 | 30.6 s | 19.7 s | 0.394 | 6.12% |
+| v1 (`rq2_v3_tl_2`) | 2026-07-23 20:16 | topology_lifecycle | ✅ | 17 | 25.4 s | 21.3 s | 0.016 | 1.27% |
+| v1 (`rq2_v3_tl_3`) | 2026-07-23 21:13 | topology_lifecycle | ✅ | 14 | 20.7 s | 13.5 s | 0.229 | 1.52% |
 
 ---
 
@@ -43,13 +49,14 @@ The experiment plan (§2) posed three hypothesis blocks. Assessment against data
 |---|---|---|
 | TTFT ranking: lifecycle < host < slowstart | ✅ **Met (corrected)** | host=10.7s < lifecycle=20.9s < slowstart=51.0s. Original v3 analysis reported 30.6s for Lifecycle due to a MAC-reuse extraction bug (fixed 2026-07-24, see [v4](../v4/results.md)). |
 | Initial share: lifecycle > slowstart > host | ❌ **Missed** | slowstart=0.245 > host=0.113 ≈ lifecycle=0.111. Lifecycle tied with host on share. |
-| Coordination gap ≥ 20 s | ✅ **Met** | TTFT(slowstart) − TTFT(lifecycle) = 51.0 − 20.9 = **30.1 s** ≥ 20 s. |
+| Coordination gap ≥ 20 s | ❌ **Missed (corrected)** | TTFT(slowstart) − TTFT(lifecycle) = 30.4 − 20.9 = **9.5 s** < 20 s. Original v3 reported 20.4 s due to MAC-reuse extraction bug inflating both modes. |
 
 **TTFT by mode** (all spawns pooled):
 | Mode | n | Min | Q1 | Median | Q3 | Max | IQR |
 |------|---|-----|-----|--------|-----|-----|-----|
-| Host | 17 | 10.2 s | 10.5 s | **10.7 s** | 30.6 s | 461.3 s | 20.1 s |
-| Slowstart | 18 | 10.6 s | 50.3 s | **51.0 s** | 63.1 s | 520.8 s | 12.8 s |
+| Host | 34 | 10.0 s | 10.5 s | **10.9 s** | 20.8 s | 461.3 s | 10.3 s |
+| Slowstart | 49 | 10.2 s | 20.7 s | **30.4 s** | 50.5 s | 521.2 s | 29.8 s |
+| Lifecycle | 44 | 10.0 s | 11.0 s | **20.9 s** | 60.6 s | 531.4 s | 49.6 s |
 | Lifecycle | 17 | 10.5 s | 20.2 s | **20.9 s** | 31.0 s | 521.2 s | 10.8 s |
 
 **TFR by mode** (all spawns pooled):
@@ -159,7 +166,7 @@ All modes exceed the ≤ 0.1% threshold. Status code `0` (curl did not complete)
 
 #### Key Findings
 
-1. **Coordination gap confirmed at 30.1 s** — the telemetry discovery window imposes a measurable delay between Slowstart (discovery-time awareness) and Lifecycle (spawn-time awareness). Threshold of ≥ 20 s is met.
+1. **Coordination gap is 9.5 s — below the ≥20 s threshold.** The MAC-reuse extraction bug inflated both Slowstart (51.0→30.4 s) and Lifecycle (30.6→20.9 s). The corrected gap is smaller than the plan's hypothesis.
 
 2. **Lifecycle TTFT is 20.9 s — between Host (10.7 s) and Slowstart (51.0 s)** — the original v3 analysis reported 30.6 s due to a MAC-reuse extraction bug. The corrected ranking (host < lifecycle < slowstart) matches the plan's prediction. Lifecycle's warm lease at spawn gives it a ~30 s advantage over Slowstart's discovery delay.
 
@@ -177,7 +184,7 @@ All modes exceed the ≤ 0.1% threshold. Status code `0` (curl did not complete)
 
 #### Conclusions
 
-1. **The coordination gap is real and measurable** — Slowstart's discovery delay costs 30.1 s of TTFT vs. Lifecycle. This confirms the thesis mechanism: spawn-time routing awareness eliminates the telemetry discovery window.
+1. **The coordination gap is smaller than hypothesised** — Slowstart's discovery delay costs 9.5 s of TTFT vs. Lifecycle (30.4 − 20.9 s). This is below the plan's ≥20 s threshold and weaker than expected.
 
 2. **Host's immediate round-robin wins on TTFT but catastrophically loses on service quality** — Host's 10.7 s TTFT is the fastest, but 2522 ms baseline p50 makes it unacceptable for any latency-sensitive workload.
 

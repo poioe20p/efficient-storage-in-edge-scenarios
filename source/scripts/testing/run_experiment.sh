@@ -248,12 +248,58 @@ cleanup_temp_controller_env() {
     fi
 }
 
+# ── Run status file ──────────────────────────────────────────────────────────
+_write_run_status() {
+    local status="$1"
+    local exit_code="${2:-}"
+    local phase="${3:-}"
+    local completed_at="null"
+    local ts
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")"
+
+    [ "$status" = "completed" ] || [ "$status" = "failed" ] && completed_at="\"$ts\""
+
+    # Ensure directory exists (safeguard for early failure)
+    mkdir -p "$(dirname "$RUN_STATUS_FILE")" 2>/dev/null || true
+
+    cat > "$RUN_STATUS_FILE" <<JSON
+{
+  "status": "${status}",
+  "run_label": "${RUN_LABEL:-}",
+  "run_id": "${RUN_ID}",
+  "started_at": "${RUN_STARTED_AT}",
+  "completed_at": ${completed_at},
+  "exit_code": ${exit_code:-null},
+  "current_phase": "${phase}"
+}
+JSON
+
+    cp "$RUN_STATUS_FILE" "$ACTIVE_RUN_FILE" 2>/dev/null || true
+
+    # Sentinel file — eliminates need for JSON parsing in failure handler
+    if [ "$status" = "completed" ]; then
+        touch "${RUN_DIR}/.run_completed" 2>/dev/null || true
+    fi
+}
+
+_write_run_status_failed() {
+    local code=$?
+    [ -z "${RUN_STATUS_FILE:-}" ] && return 0
+    [ -z "${RUN_DIR:-}" ] && return 0
+    # Don't overwrite a clean completion
+    [ -f "${RUN_DIR}/.run_completed" ] && return 0
+    _write_run_status "failed" "$code" "unknown"
+}
+
 prepare_controller_env_source
 
 readonly RUN_ID="${RUN_TIMESTAMP}${RUN_LABEL:+_${RUN_LABEL}}"
 readonly METRICS_ROOT="${SCRIPT_DIR}/metrics"
 readonly RUN_PARENT_DIR="${METRICS_ROOT}${BATCH_DIR:+/${BATCH_DIR}}"
 readonly RUN_DIR="${RUN_PARENT_DIR}/${RUN_ID}"
+readonly RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+readonly RUN_STATUS_FILE="${RUN_DIR}/run_status.json"
+readonly ACTIVE_RUN_FILE="${METRICS_ROOT}/active_run.json"
 readonly CONTROLLER_ENV_SNAPSHOT_OUTPUT="${RUN_DIR}/controller_env_snapshot.env"
 
 # Traffic generator config and output
@@ -295,6 +341,7 @@ FAULT_EVENTS_OUTPUT="${RUN_DIR}/experiment_fault_events.csv"
 prepare_run_outputs() {
     step "Preparing run output folder"
     mkdir -p "$RUN_DIR"
+    _write_run_status "running" "" "setup"
     [[ -f "$PHASES_CONFIG" ]] || die "Phase config not found: $PHASES_CONFIG"
     [[ -f "$CONTROLLER_ENV_SOURCE" ]] || die "Controller env not found: $CONTROLLER_ENV_SOURCE"
     if [[ -n "$FAULT_PLAN" ]]; then
@@ -630,7 +677,7 @@ echo " Dry-run     : ${DRY_RUN}"
 echo "======================================================"
 
 # Stop the run-scoped helpers on any exit (normal, error, or signal)
-trap 'stop_fault_injector; stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_sample_controller_stats; stop_collect_stats; cleanup_temp_controller_env' EXIT
+trap '_write_run_status_failed; stop_fault_injector; stop_capture_service_logs; stop_capture_controller_logs; stop_poll_container_events; stop_sample_controller_stats; stop_collect_stats; cleanup_temp_controller_env' EXIT
 
 prepare_run_outputs
 "$SKIP_CLIENTS"  || run_create_clients
@@ -668,3 +715,5 @@ fi
 echo "Controller logs: ${CONTROLLER_LOG_LAN1}"
 echo "               : ${CONTROLLER_LOG_LAN2}"
 echo "Service logs   : ${SERVICE_LOG_DIR}"
+
+_write_run_status "completed" 0 "idle"

@@ -117,22 +117,28 @@ Round-robin distributes warm-lease traffic across all candidates, which guarante
 
 ---
 
-## 4. Corrected v3 Lifecycle numbers (for reference)
+## 4. Corrected Cross-Mode Comparison (all modes, fixed extraction)
 
-All v3 Lifecycle metrics with the MAC-reuse-corrected extraction:
+| Mode | TTFT n | TTFT med | TTFT IQR | TFR med | Share med |
+|------|--------|----------|----------|---------|-----------|
+| Host | 34 | **10.9 s** | 10.3 s | 9.2 s | 0.113 |
+| Slowstart | 49 | **30.4 s** | 29.8 s | 23.9 s | 0.245 |
+| Lifecycle (v4) | 44 | **20.9 s** | 49.6 s | 17.4 s | 0.016 |
 
-| Metric | Original v3 | Corrected | Δ |
-|--------|------------|-----------|----|
-| TTFT n | 17 | 36 | +19 matches |
-| TTFT med | 30.6 s | **20.9 s** | −9.7 s |
-| TTFT Q1 | 20.5 s | 20.2 s | −0.3 s |
-| TTFT Q3 | 55.3 s | 31.0 s | −24.3 s |
-| TTFT IQR | 34.8 s | 10.8 s | −24.0 s |
-| TFR med | 15.8 s | 15.8 s | unchanged |
-| Share med | 0.111 | 0.111 | unchanged |
-| Coordination gap | 20.4 s | **30.1 s** | +9.7 s |
+**TTFT ranking**: Host (10.9) < Lifecycle (20.9) < Slowstart (30.4) ✅ matches plan prediction.
 
-The v3 results.md should be updated to reflect these corrected numbers.
+**Coordination gap**: Slowstart − Lifecycle = 30.4 − 20.9 = **9.5 s** ❌ below plan's ≥20 s threshold.
+
+### What changed from original v3
+
+| Mode | Original TTFT med | Corrected | Δ |
+|------|------------------|-----------|---|
+| Host | 10.7 s | 10.9 s | +0.2 s |
+| Slowstart | 51.0 s | **30.4 s** | −20.6 s |
+| Lifecycle | 30.6 s | **20.9 s** | −9.7 s |
+| Coordination gap | 20.4 s | **9.5 s** | −10.9 s |
+
+Both Slowstart and Lifecycle were inflated by the MAC-reuse extraction bug. The gap shrank because Slowstart was inflated more (20.6 s) than Lifecycle (9.7 s).
 
 ---
 

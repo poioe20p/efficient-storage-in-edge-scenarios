@@ -15,3 +15,8 @@ Disregard development cost, as it's not actually important.
 - **Phases file**: There is exactly ONE canonical phases JSON at `source/scripts/testing/phases.json`. When an experiment needs a different workload, EDIT this file in place. Never create `phases_<variant>.json` duplicates. The experiment run folder automatically captures a `phases_snapshot.json` copy.
 - **Controller env override**: There is exactly ONE canonical env override at `source/scripts/testing/controller_env_overrides/current_state_integrated.env`. When an experiment needs different thresholds/cooldowns/caps, EDIT this file in place. Never create `current_state_<variant>.env` duplicates. The run folder captures a `controller_env_snapshot.env` copy with base/override provenance comments.
 - If an experiment genuinely needs a DIFFERENT kind of config (e.g., tier1_hotspot enabled vs control), that's a separate configuration axis and a second env file is acceptable — but only if it serves a distinct, named configuration regime, not a per-experiment tweak.
+
+## Temporary Scripts — Clean Up
+
+- Temporary scripts created as tools for a one-time use (e.g., data extraction, one-shot analysis, ad-hoc fixes) must be deleted after they have served their purpose.
+- If a script proves reusable, keep it and give it a proper name and location (e.g., under `tools/`).

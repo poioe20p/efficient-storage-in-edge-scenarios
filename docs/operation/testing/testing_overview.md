@@ -93,6 +93,21 @@ artifacts:
 The single aggregate `client_requests.csv` remains the default contract; the
 `phase` column is the source of phase-scoped request analysis.
 
+### Run Completion Watchdog
+
+A polling watchdog (`tools/watch_run.py`) provides autonomous run-completion
+detection for the agent workflow:
+
+- `run_experiment.sh` writes `run_status.json` in the run folder at start
+  (`"status": "running"`) and at completion (`"status": "completed"`).
+- A copy is always written to `metrics/active_run.json` (well-known path).
+- The watchdog polls `active_run.json` via short-lived SSH connections
+  every 15s and exits when status changes to `"completed"` or `"failed"`.
+- Exit code 0 = completed, 1 = failed/timed out.
+- The `.run_completed` sentinel file prevents the EXIT trap from
+  overwriting "completed" with a spurious "failed" status.
+- Usage: `python3 tools/watch_run.py --host cloud-vm --run-label <label>`
+
 ---
 
 ## Golden Configuration

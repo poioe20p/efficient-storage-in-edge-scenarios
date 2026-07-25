@@ -121,15 +121,26 @@ If any gate fails, report the specific failure and wait for the user before laun
 
 1. Enter the cloud host with `ssh cloud-vm` and `cd ~/efficient-storage-in-edge-scenarios`.
 2. Launch the run with the command the plan specifies. For the standard prerequisite chain, use one combined `sudo -n make setup_network create_clients setup_test_data run_experiment ...` command unless the plan or user asks to split the steps.
-3. **Always launch with `run_in_terminal` using `mode=async`.** This is the default and non-negotiable for experiment runs. The async terminal runs the full pipeline in the background and fires an automatic completion notification when the run finishes — no polling, no human prompts, no "check" messages needed. The terminal completion notification (exit code + output) is the autonomous signal that the run is done.
-4. Treat interactive password prompts as a configuration failure. Do not wait for or request a sudo password; if `sudo -n` fails, stop and report that passwordless sudo is not configured for the required command path.
-5. Detect the new run folder under `source/scripts/testing/metrics/`.
-6. After launch, do NOT poll `current_phase.txt`, `client_requests.csv`, or any other run artifact. Wait for the terminal completion notification. The system will notify you automatically when the terminal exits.
-7. Unless an authorized checkpoint fires or the run has already clearly failed, do not send commands that stop, restart, reconfigure, or clean up the active run.
+3. **Phase 1 — Launch the run with nohup so it survives SSH disconnection.** Use `nohup` with output redirected to a log file:
+   ```
+   ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && nohup sudo -n make ... RUN_LABEL=<label> > /tmp/<label>.log 2>&1 &"
+   ```
+   The `nohup ... &` causes the SSH command to return immediately. The run continues in the background on the VM.
+4. **Phase 2 — Launch the watchdog (mode=async).** Back on the Windows host, launch the polling watchdog in an async terminal:
+   ```
+   python3 tools/watch_run.py --host cloud-vm --run-label <label> --poll-interval 15 --timeout 10800
+   ```
+   The watchdog polls the VM every 15s via short-lived SSH connections, reads `active_run.json`, and exits when the run completes. **The watchdog's terminal completion notification is the autonomous signal that the run is done.**
+5. On watchdog completion notification:
+   - Exit code 0 → run completed → proceed to post-run analysis
+   - Exit code 1 → run failed or timed out → investigate and report
+6. Detect the new run folder under `source/scripts/testing/metrics/`.
+7. **Do not** poll `current_phase.txt`, `client_requests.csv`, or other run artifacts during the run. The watchdog handles all status checks.
+8. Unless an authorized checkpoint fires or the run has already clearly failed, do not send commands that stop, restart, reconfigure, or clean up the active run.
 
 ## Live Monitoring
 
-- **Do not poll the run.** The `mode=async` terminal completion notification is the only monitoring signal needed. When the terminal exits, the system notifies you with the exit code and output — that is your trigger to process results.
+- **Rely on the watchdog for run completion detection.** The watchdog handles all status checks via short-lived SSH connections — no long-lived connection needed. When the watchdog exits (exit code 0 or 1), the system notifies you — that is your trigger to process results.
 - If the user explicitly asks for a mid-run status check, use read-only checks against the active run folder:
   - `current_phase.txt`
   - `resource_stats.csv`
