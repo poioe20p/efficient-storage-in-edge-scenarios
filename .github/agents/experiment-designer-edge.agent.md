@@ -42,30 +42,18 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 
 ## Required Plan Structure
 
-Author `experiment_plan.md` with these sections:
+Author `experiment_plan.md` following the canonical template at `docs/operation/testing/experiment/TEMPLATE_experiment_plan.md`. The template defines six required sections:
 
-1. **Intent** — what implemented change this evaluates and the single question it answers, in one short paragraph.
-2. **Hypothesis / Expected Outcome** — what you expect to see if the implementation works, stated concretely enough that the analyst can mark it met/missed/inconclusive.
-3. **RQ Linkage** *(optional)* — the thesis RQ this supports and the matching independent/dependent variables. Omit if not thesis-relevant.
-4. **Independent Variable & Held-Constant Set** — the one thing that varies across runs, and everything held constant (workload shape, thresholds, routing policy, telemetry mode, schema, window size).
-5. **Run Matrix** — each run as a row: run label, what changes for it, and its phase file. Define order when runs depend on each other.
-6. **Run Configuration** — exact launch settings per run, mapped to real `run_experiment.sh` knobs:
-   - `--phases-config` (which `phases*.json`), `--run-label`, `--batch-dir`
-   - `--clients-per-lan`, `--seed-devices`, `--seed-nodes`, skip flags (`--skip-clients/--skip-seed/--skip-snapshot`)
-   - `--fault-plan` only when synthetic failure is in scope; otherwise state explicitly that it is omitted
-   - any code/config toggle the run depends on, and whether images must be rebuilt
-   - Provide the concrete `sudo -n make ... run_experiment RUN_LABEL=<label> ...` or `run_experiment.sh` invocation per run.
-7. **Focus & Evidence** — the part the analyst must center on. Be explicit about which artifacts carry the answer and what each shows:
-   - **Latency files** — `client_requests.csv` (per-phase/LAN/endpoint p95/p99, failures) via `metrics_stats.py`
-   - **Resource files** — `resource_stats.csv`, `per_node_stats.csv` (CPU/RAM, balance, `server_count`/`storage_count`, phase), and other files inside the run folder.
-   - **Container lifecycle** — `container_events.csv` (spawn/stop, Tier 2 storage, Tier 1 selective-sync anchors)
-   - **Controller logs** — `controller_lan1.log`/`controller_lan2.log` (alerts, scale decisions, recovery markers, exceptions) and retained `elasticity_events.csv` / `node_lifecycle_timings.csv`
-   - **Phase/workload** — `phases_snapshot.json` for phase order, durations, request mix, cross-region ratios
-   - State the **primary** focus (e.g. "controller logs + latency files") vs secondary, so analysis effort is directed.
-8. **Metrics & Success Criteria** — the specific measurements and the thresholds/comparisons that decide whether each expectation is met. Prefer per-phase and per-plane (compute `VIP_SERVER` vs data `VIP_DATA_N*`) breakdowns over whole-run averages when relevant.
-9. **Checkpoints** *(optional)* — in-run triggers the runner may observe (phase/elapsed/symptom), the question each answers, and whether the runner may only report or also act.
-10. **Validity Threats & Limitations** — confounders, low-diversity risks, and what the run cannot prove.
-11. **Artifact Contract** — confirm the standard run-folder layout from `docs/operation/testing/testing_overview.md` plus any experiment-specific files, and note any `analysis/` outputs expected later.
+1. **Objective** — the overarching goal and the single question the experiment answers.
+2. **Motivation & Hypothesis** — what change was implemented, why it should work, the expected outcome, the independent variable, and the held-constant set.
+3. **Run Matrix** — table of runs with label, purpose, env override, and phase file.
+4. **Run Configuration** — exact launch commands per run mapped to real `run_experiment.sh` knobs.
+5. **Measurements & Success Criteria** — what artifacts carry the answer, numbered success criteria with thresholds.
+6. **Analysis Approach** — which comparisons matter, which tools to use, what patterns to look for.
+
+The **Appendix** captures prerequisites, checkpoints, validity threats, and the artifact contract — include only the subsections that this experiment needs.
+
+Always read the template first when authoring a new plan. Omit optional appendix subsections that add nothing for the experiment at hand.
 
 ## Working Style
 

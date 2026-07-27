@@ -92,6 +92,8 @@ Also include the original plan's hypothesis and the run-specific configuration m
 <Standard single-run analysis output: per-phase failure/throughput table, mechanism exercise check, criteria assessment against expectations above. Frame every finding as "was this expectation met?" rather than as an open-ended observation.>
 ```
 
+All `results.md` files MUST follow the canonical template at `docs/operation/testing/experiment/TEMPLATE_results.md`. The template enforces two key rules: (1) measurements are presented without judgment in the "Measurements" section, and (2) all judgment, interpretation, and root-cause analysis goes exclusively in the "Judgment" section. Always read the template before authoring or updating a results file.
+
 ### Changelog Sync
 
 After appending to `results.md`, update the `experiment_plan.md` changelog to reflect the changes made in this iteration. Append a row to the existing changelog table:

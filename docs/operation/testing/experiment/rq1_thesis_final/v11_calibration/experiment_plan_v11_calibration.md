@@ -155,12 +155,17 @@ show degradation, the config is dead regardless of Push.
 2. **Poll-30s #2** → only if #1 was promising
 3. **Push #1 and #2** → only after both Poll-30s runs confirm degradation
 
-**Poll-30s promising threshold** (vs v10 Poll-30s range: 61.8–65.7K, 2.9–4.7%):
+**Poll-30s promising threshold** (vs v10 Poll-30s ranges):
 
-| Signal | Threshold | Rationale |
-|--------|-----------|-----------|
-| Timeout ≥ 5% | Worse than ALL v10 Poll-30s runs | Storage cascade is amplifying timeouts |
-| OR Throughput ≤ 60K | Worse than ALL v10 Poll-30s runs | Storage cascade is reducing throughput |
+| Signal | Threshold | v10 P30 Range | Rationale |
+|--------|-----------|---------------|-----------|
+| Timeout ≥ 5% | Above all v10 P30 | 2.9–4.7% | Storage cascade amplifies timeouts |
+| Throughput ≤ 60K | Below all v10 P30 | 61.8–65.7K | Storage cascade reduces throughput |
+| p50 latency ≥ 80ms | Above all v10 P30 | 16.5–83.2ms | Blind-spot queuing inflates median |
+| p95 latency ≥ 18s | Above all v10 P30 | 16.4–17.8s | Blind-spot queuing inflates tail |
+| Latency stddev ↑ | Higher than v10 P30 | ~5.7–7.2s est. | Blind spot increases variance |
+
+**Any ONE of the five** triggers "promising" → run Poll-30s #2 to confirm.
 
 If Poll-30s #1 hits either threshold → run #2 to confirm.
 If Poll-30s #1 misses both → config is dead; skip to next config (saves 90+ min).
@@ -196,13 +201,15 @@ For each config, run all 4 runs (2 Push, 2 Poll-30s). After all 4 complete:
 |-----------|-----------|------------|-----------|
 | Throughput separation | P30 μ ≤ 80% of Push μ | Mean across replicates | Blind-spot throughput penalty |
 | Timeout rate separation | P30 μ ≥ 2× Push μ | Mean across replicates | Blind-spot timeout penalty |
+| p50 latency separation | P30 μ p50 ≥ 2× Push μ p50 | Mean across replicates | Median shifts under blind-spot queuing |
+| p95 latency separation | P30 μ p95 ≥ 1.5× Push μ p95 | Mean across replicates | Tail inflates under blind-spot queuing |
+| Latency variance | P30 σ > Push σ | Per-mode stddev | Blind spot increases latency dispersion |
 | Push sanity | Each Push run ≤ 10% timeout | Per-replicate | Config must not break Push |
 | G8 | All 4 runs PASS | Per-replicate | No spawns in cleanup gaps |
 
-**Winner condition: ALL 4 gates pass.** If any gate fails, proceed to next
-config. If a single Push run exceeds 10% timeout (not just the mean), the
-config is too aggressive — skip to the next config (don't waste runs on
-the remaining Poll-30s replicates).
+**Winner condition: ALL 7 gates pass.** If any gate fails, proceed to next
+config. If a single Push run exceeds 10% timeout, the config is too
+aggressive — skip to the next config.
 
 **If no config passes after T2**: the sweep has failed. Document v10 as the
 definitive finding — the throughput gap exists (−14%) but the timeout
@@ -348,6 +355,7 @@ Same as v10 §Metrics & Success Criteria, adapted to winning configuration.
 
 | Date | Change | Rationale |
 |------|--------|-----------|
-| 2026-07-25 | Reversed run order: Poll-30s first, Push only if Poll-30s shows degradation. Poll-30s promising threshold: timeout ≥5% OR throughput ≤60K (worse than all v10 Poll-30s). Saves up to 2 Push runs per failed config. | Running Push blindly wastes time when Poll-30s behavior is unknown. |
-| 2026-07-25 | Upgraded to n=2 per config (4 runs each). Added per-config rationale column explaining which part of the cascade each config amplifies. | v10 proved n=1 pilots unreliable (C2 false positive). |
-| 2026-07-25 | Plan authored | v10 showed gap exists directionally but timeout signal absent; v11 sweeps storage cascade parameters to amplify it |
+| 2026-07-26 | **Calibration complete. Winner: S2 + `--connect-timeout 5`.** See [results.md](./results.md). | G3 (p50) fails: Push serves 43% more requests, median higher — throughput artifact. |
+| 2026-07-26 | Added `--connect-timeout 5` to `traffic_generator.py`. G2 flipped from 0.9× → 2.9×. | Catches TCP accept-queue failures during blind spot. |
+| 2026-07-26 | Reversed run order: Poll-30s first. 5-signal evaluation, 7-gate criteria. | Running Push blindly wastes time; latency+stddev capture blind-spot mechanism. |
+| 2026-07-25 | Plan authored. n=2 per config. | v10 showed gap exists directionally but timeout signal absent. |

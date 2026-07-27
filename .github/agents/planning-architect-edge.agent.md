@@ -1,7 +1,7 @@
 ---
 description: "Use when: planning edge-platform changes before coding, evaluating approaches for SDN/Docker/MongoDB components, and comparing trade-offs for edge storage and scaling features. Triggers on: 'plan edge', 'design edge', 'edge approach', 'SDN plan', 'scaling plan', 'storage plan', 'telemetry plan', 'topology plan', 'VIP routing plan', 'elasticity plan', 'Docker plan', 'MongoDB plan'"
 name: "Edge Planning Architect"
-tools: [read, edit, search, web, execute, todo, agent]
+tools: [read, edit, search, web, execute, todo, agent, browser]
 argument-hint: "Describe the edge platform feature or component you want to plan..."
 model: deepseek-v4-pro
 reasoning: max
