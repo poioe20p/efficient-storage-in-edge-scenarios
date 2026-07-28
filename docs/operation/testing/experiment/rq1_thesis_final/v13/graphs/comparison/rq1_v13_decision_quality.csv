@@ -1,0 +1,8 @@
+phase,push_breached_pct,push_spawns,poll5_breached_pct,poll5_spawns,poll12_breached_pct,poll12_spawns,poll30_breached_pct,poll30_spawns
+baseline,11.1,2.0,25.0,2.3,19.4,2.3,19.4,0.3
+storage_storm,13.3,8.7,10.0,8.3,11.1,8.0,12.2,7.7
+tier1_hotspot,5.6,7.0,4.4,6.3,6.7,7.3,6.7,5.7
+cleanup_gap_2,3.0,0.7,4.5,0.7,2.3,0.0,2.3,0.0
+reverse_hotspot,5.6,7.0,2.2,8.0,4.4,6.3,3.3,5.3
+storage_storm_2,4.4,5.3,3.3,6.0,4.4,5.0,3.3,4.3
+demand_drop,3.3,0.3,3.3,0.7,3.3,0.3,2.2,0.3

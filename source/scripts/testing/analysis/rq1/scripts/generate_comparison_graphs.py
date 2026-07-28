@@ -51,9 +51,16 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
     ep_p95s: list[float] = []           # per-run weighted p95 endpoint latency (s)
     ep_per_phase_p95: dict[str, list[float]] = {}  # per-phase per-run p95
     ep_per_phase_p50: dict[str, list[float]] = {}  # per-phase per-run p50
+    throughputs: list[int] = []          # per-run total request count
+    tp_per_phase: dict[str, list[int]] = {}  # per-phase per-run request count
     total_requests: int = 0
     n_reaction_events: int = 0
     per_phase: dict[str, list[float]] = {}
+    compute_cpus: list[float] = []    # per-run mean compute CPU%
+    storage_cpus: list[float] = []    # per-run mean storage CPU%
+    degraded_20s: list[float] = []    # per-run % requests with latency > 20s
+    degraded_10s: list[float] = []    # per-run % requests with latency > 10s
+    degraded_5s: list[float] = []     # per-run % requests with latency > 5s
 
     for run_dir in run_dirs:
         # Reaction latency — collect per-event and per-run aggregates
@@ -72,6 +79,16 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         if ctrl_rows:
             cpus.append(np.mean([float(r.get("cpu_percent", 0) or 0) for r in ctrl_rows]))
             rams.append(np.mean([float(r.get("mem_usage_mb", 0) or 0) for r in ctrl_rows]))
+
+        # Per-node CPU by role — per-run means
+        node_rows = _safe_read_csv(run_dir / "per_node_stats.csv")
+        if node_rows:
+            comp_cpu = [float(r["cpu_percent"]) for r in node_rows if r.get("role", "") == "compute"]
+            stor_cpu = [float(r["cpu_percent"]) for r in node_rows if r.get("role", "") == "storage"]
+            if comp_cpu:
+                compute_cpus.append(np.mean(comp_cpu))
+            if stor_cpu:
+                storage_cpus.append(np.mean(stor_cpu))
 
         # Staleness — per-run max
         run_stales: list[float] = []
@@ -112,8 +129,21 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         if cr_rows:
             total = len(cr_rows)
             total_requests += total
+            throughputs.append(total)
             failed = sum(1 for r in cr_rows if r.get("http_status", "200") == "0")
             timeouts.append((failed / total) * 100 if total else 0)
+            # Severely degraded: latency > 20s (any status)
+            deg20 = sum(1 for r in cr_rows
+                        if float(r.get("latency_s", 0) or 0) > 20)
+            degraded_20s.append((deg20 / total) * 100 if total else 0)
+            # Moderately degraded: latency > 10s
+            deg10 = sum(1 for r in cr_rows
+                        if float(r.get("latency_s", 0) or 0) > 10)
+            degraded_10s.append((deg10 / total) * 100 if total else 0)
+            # Lightly degraded: latency > 5s
+            deg5 = sum(1 for r in cr_rows
+                       if float(r.get("latency_s", 0) or 0) > 5)
+            degraded_5s.append((deg5 / total) * 100 if total else 0)
 
             # Per-phase per-run
             phase_counts: dict[str, dict[str, int]] = {}
@@ -127,6 +157,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
             for ph, d in phase_counts.items():
                 rate = (d["fail"] / d["total"]) * 100 if d["total"] else 0
                 per_phase.setdefault(ph, []).append(rate)
+                tp_per_phase.setdefault(ph, []).append(d["total"])
 
     return {
         # means (for bar heights)
@@ -136,6 +167,9 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "ram_mean": np.mean(rams) if rams else 0,
         "staleness_max": np.mean(stales_per_run) if stales_per_run else 0,
         "timeout_mean": np.mean(timeouts) if timeouts else 0,
+        "degraded_20s_mean": np.mean(degraded_20s) if degraded_20s else 0,
+        "degraded_10s_mean": np.mean(degraded_10s) if degraded_10s else 0,
+        "degraded_5s_mean": np.mean(degraded_5s) if degraded_5s else 0,
         "ep_mean": np.mean(ep_means) if ep_means else 0,
         "ep_p50_mean": np.mean(ep_p50s) if ep_p50s else 0,
         "ep_p95_mean": np.mean(ep_p95s) if ep_p95s else 0,
@@ -154,8 +188,14 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "latency_max_values": lats_max_per_run,
         "cpu_values": cpus,
         "ram_values": rams,
+        "compute_cpu_values": compute_cpus,
+        "storage_cpu_values": storage_cpus,
         "staleness_values": stales_per_run,
         "timeout_values": timeouts,
+        "throughput_values": throughputs,
+        "degraded_20s_values": degraded_20s,
+        "degraded_10s_values": degraded_10s,
+        "degraded_5s_values": degraded_5s,
         "ep_mean_values": ep_means,
         "ep_p50_values": ep_p50s,
         "ep_p95_values": ep_p95s,
@@ -196,6 +236,17 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         "total_requests": total_requests,
         "n_reaction_events": n_reaction_events,
         "n_runs": len(run_dirs),
+        # throughput
+        "throughput_mean": np.mean(throughputs) if throughputs else 0,
+        "throughput_std": np.std(throughputs) if len(throughputs) > 1 else 0,
+        "throughput_per_phase": {ph: np.mean(counts) for ph, counts in tp_per_phase.items()},
+        "throughput_per_phase_std": {ph: np.std(counts) if len(counts) > 1 else 0
+                                      for ph, counts in tp_per_phase.items()},
+        # per-role CPU
+        "compute_cpu_mean": np.mean(compute_cpus) if compute_cpus else 0,
+        "compute_cpu_std": np.std(compute_cpus) if len(compute_cpus) > 1 else 0,
+        "storage_cpu_mean": np.mean(storage_cpus) if storage_cpus else 0,
+        "storage_cpu_std": np.std(storage_cpus) if len(storage_cpus) > 1 else 0,
     }
 
 
@@ -203,8 +254,8 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
 
 DQ_PHASE_ORDER = [
     "baseline", "storage_storm", "tier1_hotspot",
-    "inter_hotspot_cooldown", "reverse_hotspot",
-    "compute_spike", "demand_drop",
+    "cleanup_gap_2", "reverse_hotspot",
+    "storage_storm_2", "demand_drop",
 ]
 
 
@@ -328,7 +379,7 @@ def _plot_decision_quality_table(
              bbox=dict(boxstyle="round,pad=0.4", facecolor="#f5f5f5", edgecolor="#cccccc", alpha=0.8))
 
     fig.tight_layout(rect=[0.02, 0.10, 0.98, 0.93])
-    path = output_dir / "rq1_v8_decision_quality.png"
+    path = output_dir / "rq1_v13_decision_quality.png"
     fig.savefig(path, dpi=200)
     plt.close(fig)
     print(f"Wrote {path}")
@@ -339,7 +390,7 @@ def _write_decision_quality_csv(
     output_dir: Path,
 ) -> None:
     """Write cross-mode decision quality CSV."""
-    path = output_dir / "rq1_v8_decision_quality.csv"
+    path = output_dir / "rq1_v13_decision_quality.csv"
     with path.open("w", newline="", encoding="utf-8") as f:
         fieldnames = [
             "phase",
@@ -362,8 +413,8 @@ def _write_decision_quality_csv(
 
 PHASE_ORDER = [
     "baseline", "storage_storm", "tier1_hotspot",
-    "inter_hotspot_cooldown", "reverse_hotspot",
-    "compute_spike", "demand_drop",
+    "cleanup_gap_2", "reverse_hotspot",
+    "storage_storm_2", "demand_drop",
 ]
 MODE_COLORS = ["#2196F3", "#4CAF50", "#FF9800", "#F44336"]
 MODE_LABELS = ["Push", "Poll-5s", "Poll-12s", "Poll-30s"]
@@ -468,9 +519,9 @@ def generate_graphs(
     ax.set_ylim(0, max(d["n_reaction_events"] for d in data) + 5)
     _add_sample_footnote(fig, data, "total events across 3 runs", "n_reaction_events")
     plt.tight_layout(rect=[0, 0.06, 1, 0.90])
-    fig.savefig(output_dir / "rq1_v8_reaction_latency_mean.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_reaction_latency_mean.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_mean.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_reaction_latency_mean.png'}")
 
     # ── Graph 1b: Max Detected Reaction Latency (survivor-aware) ──
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -486,14 +537,55 @@ def generate_graphs(
                 fontsize=ANNO_SIZE - 1, fontstyle="italic", color="#666666")
     _add_sample_footnote(fig, data, "detected reaction events", "n_reaction_events")
     plt.tight_layout(rect=[0, 0.10, 1, 0.88])
-    fig.savefig(output_dir / "rq1_v8_reaction_latency_max.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_reaction_latency_max.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_max.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_reaction_latency_max.png'}")
     _add_sample_footnote(fig, data, "reaction events", "n_reaction_events")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v8_reaction_latency_max.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_reaction_latency_max.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_reaction_latency_max.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_reaction_latency_max.png'}")
+
+    # ── Graph 1b2: Overall Throughput ───────────────────────────
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _style_bar_ax(ax, x, MODE_LABELS, "Total Requests",
+                  f"{title_prefix} — Throughput by Telemetry Mode")
+    ax.bar(x, [d["throughput_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "throughput_values")
+    _add_bar_labels(ax, x, data, "throughput_mean", "{:.0f}", 0.02)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v13_throughput.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v13_throughput.png'}")
+
+    # ── Graph 1b3: Per-Phase Throughput ─────────────────────────
+    fig, ax = plt.subplots(figsize=FIG_PER_PHASE)
+    phase_x = np.arange(len(PHASE_ORDER))
+    width = 0.2
+    for i, (mode, d) in enumerate(zip(MODE_LABELS, data)):
+        values = [d["throughput_per_phase"].get(ph, 0) for ph in PHASE_ORDER]
+        stds = [d.get("throughput_per_phase_std", {}).get(ph, 0) for ph in PHASE_ORDER]
+        yerr_lower = [min(s, v) for v, s in zip(values, stds)]
+        ax.bar(phase_x + i * width, values, width, label=mode,
+               color=MODE_COLORS[i], edgecolor="black", alpha=BAR_ALPHA,
+               yerr=(yerr_lower, stds), capsize=3, error_kw={"linewidth": 1.2})
+    ax.set_xticks(phase_x + width * 1.5)
+    ax.set_xticklabels([p.replace("_", "\n") for p in PHASE_ORDER],
+                       fontsize=TICK_SIZE - 1)
+    ax.set_ylabel("Requests per Phase", fontsize=LABEL_SIZE)
+    ax.set_title(f"{title_prefix} — Per-Phase Throughput by Telemetry Mode",
+                 fontsize=TITLE_SIZE, fontweight="bold")
+    ax.legend(fontsize=TICK_SIZE - 1, framealpha=0.8)
+    ax.grid(axis="y", alpha=GRID_ALPHA, linestyle="--")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 0.94])
+    fig.savefig(output_dir / "rq1_v13_throughput_per_phase.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v13_throughput_per_phase.png'}")
 
     # ── Graph 1c: Median Endpoint Latency (p50, user-facing) ────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -505,9 +597,9 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "ep_p50_mean", "{:.3f}s", 0.02)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v8_endpoint_latency_p50.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_endpoint_latency_p50.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_p50.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_endpoint_latency_p50.png'}")
 
     # ── Graph 1d: p95 Endpoint Latency (user-facing HTTP tail) ───
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -519,9 +611,9 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "ep_p95_mean", "{:.2f}s", 0.05)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v8_endpoint_latency_p95.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_endpoint_latency_p95.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_p95.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_endpoint_latency_p95.png'}")
 
     # ── Graph 1e: Per-Phase p95 Endpoint Latency ─────────────────
     fig, ax = plt.subplots(figsize=FIG_PER_PHASE)
@@ -546,9 +638,9 @@ def generate_graphs(
     ax.spines["right"].set_visible(False)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 0.94])
-    fig.savefig(output_dir / "rq1_v8_endpoint_latency_per_phase_p95.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_endpoint_latency_per_phase_p95.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_per_phase_p95.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_endpoint_latency_per_phase_p95.png'}")
 
     # ── Graph 1f: Per-Phase p50 Endpoint Latency ─────────────────
     fig, ax = plt.subplots(figsize=FIG_PER_PHASE)
@@ -571,14 +663,9 @@ def generate_graphs(
     ax.spines["right"].set_visible(False)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 0.94])
-    fig.savefig(output_dir / "rq1_v8_endpoint_latency_per_phase_p50.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_endpoint_latency_per_phase_p50.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_per_phase_p50.png'}")
-    _add_sample_footnote(fig, data, "replicates", "n_runs")
-    plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v8_endpoint_latency_p95.png", dpi=150)
-    plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_endpoint_latency_p95.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_endpoint_latency_per_phase_p50.png'}")
 
     # ── Graph 2: Controller Overhead ─────────────────────────────
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=FIG_DOUBLE)
@@ -596,9 +683,37 @@ def generate_graphs(
     _add_bar_labels(ax2, x, data, "ram_mean", "{:.0f} MB", 2)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v8_overhead_comparison.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_overhead_comparison.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_overhead_comparison.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_overhead_comparison.png'}")
+
+    # ── Graph 2b: Compute Node CPU ──────────────────────────────
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _style_bar_ax(ax, x, MODE_LABELS, "CPU %",
+                  f"{title_prefix} — Avg Compute Node CPU by Telemetry Mode")
+    ax.bar(x, [d["compute_cpu_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "compute_cpu_values")
+    _add_bar_labels(ax, x, data, "compute_cpu_mean", "{:.1f}%", 0.02)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v13_compute_cpu.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v13_compute_cpu.png'}")
+
+    # ── Graph 2c: Storage Node CPU ──────────────────────────────
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _style_bar_ax(ax, x, MODE_LABELS, "CPU %",
+                  f"{title_prefix} — Avg Storage Node CPU by Telemetry Mode")
+    ax.bar(x, [d["storage_cpu_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "storage_cpu_values")
+    _add_bar_labels(ax, x, data, "storage_cpu_mean", "{:.1f}%", 0.02)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v13_storage_cpu.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v13_storage_cpu.png'}")
 
     # ── Graph 3: Staleness ───────────────────────────────────────
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -610,9 +725,9 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "staleness_max", "{:.1f}s", 0.3)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(output_dir / "rq1_v8_staleness_comparison.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_staleness_comparison.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_staleness_comparison.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_staleness_comparison.png'}")
 
     # ── Graph 4: Timeout Rate (merged — was two duplicate graphs) ─
     total_req_str = _format_total_requests(data)
@@ -625,9 +740,50 @@ def generate_graphs(
     _add_bar_labels(ax, x, data, "timeout_mean", "{:.1f}%", 2)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 0.97])
-    fig.savefig(output_dir / "rq1_v8_timeout_comparison.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_timeout_comparison.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_timeout_comparison.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_timeout_comparison.png'}")
+    # ── Graph 4b: Severely Degraded Requests (latency > 20s) ───
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _style_bar_ax(ax, x, MODE_LABELS, "% Requests with Latency > 20s",
+                  f"{title_prefix} — Severely Degraded Requests (latency > 20s) by Telemetry Mode")
+    ax.bar(x, [d["degraded_20s_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "degraded_20s_values")
+    _add_bar_labels(ax, x, data, "degraded_20s_mean", "{:.1f}%", 0.02)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v13_degraded_20s.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v13_degraded_20s.png'}")
+
+    # ── Graph 4c: Moderately Degraded Requests (latency > 10s) ──
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _style_bar_ax(ax, x, MODE_LABELS, "% Requests with Latency > 10s",
+                  f"{title_prefix} — Moderately Degraded Requests (latency > 10s) by Telemetry Mode")
+    ax.bar(x, [d["degraded_10s_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "degraded_10s_values")
+    _add_bar_labels(ax, x, data, "degraded_10s_mean", "{:.1f}%", 0.02)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v13_degraded_10s.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v13_degraded_10s.png'}")
+
+    # ── Graph 4d: Lightly Degraded Requests (latency > 5s) ──────
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _style_bar_ax(ax, x, MODE_LABELS, "% Requests with Latency > 5s",
+                  f"{title_prefix} — Degraded Requests (latency > 5s) by Telemetry Mode")
+    ax.bar(x, [d["degraded_5s_mean"] for d in data], color=MODE_COLORS,
+            edgecolor="black", alpha=BAR_ALPHA)
+    _add_scatter_dots(ax, x, data, "degraded_5s_values")
+    _add_bar_labels(ax, x, data, "degraded_5s_mean", "{:.1f}%", 0.02)
+    _add_sample_footnote(fig, data, "replicates", "n_runs")
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(output_dir / "rq1_v13_degraded_5s.png", dpi=150)
+    plt.close(fig)
+    print(f"Wrote {output_dir / 'rq1_v13_degraded_5s.png'}")
 
     # ── Graph 5: Per-Phase Timeout ───────────────────────────────
     fig, ax = plt.subplots(figsize=FIG_PER_PHASE)
@@ -654,9 +810,9 @@ def generate_graphs(
     ax.spines["right"].set_visible(False)
     _add_sample_footnote(fig, data, "replicates", "n_runs")
     plt.tight_layout(rect=[0, 0.06, 1, 0.94])
-    fig.savefig(output_dir / "rq1_v8_per_phase_timeout.png", dpi=150)
+    fig.savefig(output_dir / "rq1_v13_per_phase_timeout.png", dpi=150)
     plt.close(fig)
-    print(f"Wrote {output_dir / 'rq1_v8_per_phase_timeout.png'}")
+    print(f"Wrote {output_dir / 'rq1_v13_per_phase_timeout.png'}")
 
     # ── Graph 6 removed (was duplicate of Graph 4) ──────────────
     all_dq = [_collect_dq_for_mode(dirs) for dirs in all_dirs]

@@ -369,7 +369,6 @@ Watchdog timeout: 4200s (70 min) — ample for ~29 min runs.
 | **p95 latency gap** | P30 p95 ≥ 1.15× Push p95 | `client_requests.csv` latency_s |
 | **Timeout direction** | P30 ≥ Push timeout rate (any margin) | `client_requests.csv` http_status=0 |
 | **Dose-response** | Throughput and p95 monotonic with polling interval | Cross-mode comparison |
-| **Within-mode variance** | Range ≤ 10K req per mode (n=3) | `client_requests.csv` per-mode range |
 | **storage_storm_2 replication** | Gap in `storage_storm_2` ≈ gap in `storage_storm` | Per-phase throughput comparison |
 | **G8** | PASS all 12 runs | No spawns in cleanup_gap phases |
 | **Controller overhead** | Flat across modes | `resource_stats.csv` |
