@@ -1,0 +1,497 @@
+--- Page 1 ---
+
+sensors
+Article
+An SDN-Based Solution for Horizontal Auto-Scaling and Load
+Balancing of Transparent VNF Clusters
+Alejandro Llorens-Carrodeguas 1,*
+ , Irian Leyva-Pupo 1,*
+ , Cristina Cervelló-Pastor 1,*
+ and Luis Piñeiro 2
+and Shuaib Siddiqui 3
+/gid00030/gid00035/gid00032/gid00030/gid00038/gid00001/gid00033/gid00042/gid00045/gid00001
+/gid00048/gid00043/gid00031/gid00028/gid00047/gid00032/gid00046
+Citation: Llorens-Carrodeguas, A.;
+Leyva-Pupo, I.; Cervelló-Pastor, C.;
+Piñeiro, L.; Siddiqui, S. An
+SDN-Based Solution for Horizontal
+Auto-Scaling and Load Balancing of
+Transparent VNF Clusters. Sensors
+2021, 21, 8283. https://doi.org/
+10.3390/s21248283
+Academic Editor: Francisco J.
+González-Castaño
+Received: 5 November 2021
+Accepted: 8 December 2021
+Published: 11 December 2021
+Publisher’s Note: MDPI stays neutral
+with regard to jurisdictional claims in
+published maps and institutional afﬁl-
+iations.
+Copyright: © 2021 by the authors.
+Licensee MDPI, Basel, Switzerland.
+This article is an open access article
+distributed under the terms and
+conditions of the Creative Commons
+Attribution (CC BY) license (https://
+creativecommons.org/licenses/by/
+4.0/).
+1 Department of Network Engineering, Universitat Politècnica de Catalunya (UPC), 08860 Castelldefels, Spain
+2 Bequant, 28003 Madrid, Spain; lpineiro@bequant.com
+3 i2CAT Foundation, 08034 Barcelona, Spain; shuaib.siddiqui@i2cat.net
+* Correspondence: alejandro.llorens@entel.upc.edu (A.L.-C.); irian.leyva@entel.upc.edu (I.L.-P .);
+cristina@entel.upc.edu (C.C.-P .)
+Abstract: This paper studies the problem of the dynamic scaling and load balancing of transparent
+virtualized network functions (VNFs). It analyzes different particularities of this problem, such as
+loop avoidance when performing scaling-out actions, and bidirectional ﬂow afﬁnity. To address
+this problem, a software-deﬁned networking (SDN)-based solution is implemented consisting of
+two SDN controllers and two OpenFlow switches (OFSs). In this approach, the SDN controllers run
+the solution logic (i.e., monitoring, scaling, and load-balancing modules). According to the SDN
+controllers instructions, the OFSs are responsible for redirecting trafﬁc to and from the VNF clusters
+(i.e., load-balancing strategy). Several experiments were conducted to validate the feasibility of this
+proposed solution on a real testbed. Through connectivity tests, not only could end-to-end (E2E)
+trafﬁc be successfully achieved through the VNF cluster, but the bidirectional ﬂow afﬁnity strategy
+was also found to perform well because it could simultaneously create ﬂow rules in both switches.
+Moreover, the selected CPU-based load-balancing method guaranteed an average imbalance below
+10% while ensuring that new incoming trafﬁc was redirected to the least loaded instance without
+requiring packet modiﬁcation. Additionally, the designed monitoring function was able to detect
+failures in the set of active members in near real-time and active new instances in less than a minute.
+Likewise, the proposed auto-scaling module had a quick response to trafﬁc changes. Our solution
+showed that the use of SDN controllers along with OFS provides great ﬂexibility to implement
+different load-balancing, scaling, and monitoring strategies.
+Keywords: auto-scaling; bidirectional ﬂow afﬁnity; load balancing; NFV; SDN; transparent VNF
+1. Introduction
+Technologies such as network function virtualization (NFV) [1] and multi-access edge
+computing (MEC) play a key role in the realization of 5G and beyond networks. NFV
+decouples the network functions’ (NFs) logic from proprietary hardware and runs them
+as software applications on general-purpose hardware [2]. This technology is expected to
+not only reduce capital expenditure (CAPEX) and operational expenditure (OPEX), but
+also improve business agility by introducing new ways to design, orchestrate, deploy, and
+manage network services (NSs). Additionally, MEC [ 3] brings computing, storage, and
+networking resources closer to the users.
+The placement of applications and NFs, such as user plane functions (UPFs), at the
+network edge, provides signiﬁcant improvements in the end-to-end (E2E) response time
+and bandwidth consumption, thus reducing the occurrence of bottlenecks in the network
+backhaul [4]. However, the application of optimized placement strategies along with the
+use of acceleration solutions is required to meet stringent 5G requirements for ultra-high
+bandwidth and ultra-low latency (e.g., high throughput with 1–10 Gbps and less than 1 ms
+response time in the data plane). A common approach to boost UPF performance is to
+Sensors 2021, 21, 8283. https://doi.org/10.3390/s21248283 https://www.mdpi.com/journal/sensors
+
+--- Page 2 ---
+
+Sensors 2021, 21, 8283 2 of 23
+integrate the UPF software networking elements with hardware-assisted network interface
+controllers (NICs), such as ﬁeld-programmable gate arrays (FPGAs) [ 5]. An example
+of this is the solution design presented in [ 5], where UPF performance achieved more
+than 200 Gbps throughput with an average latency of 70 microseconds. This approach
+nevertheless restricts the number of available candidates for the deployment of UPFs
+due to their dependency on hardware capabilities (e.g., availability of FPGA-NICs). To
+overcome this limitation, edge applications and NFs can make use of hardware capabilities
+or virtualized accelerators available in remote locations (e.g., the cloud). However, the latter
+may produce network overheads, which may affect bandwidth-bounded applications [6].
+In this context, the combination of UPFs and virtualized trafﬁc accelerator capabilities at
+the edge [7] could help to reduce bandwidth congestion, packet loss and latency.
+Despite this potential solution, the deployment of virtual network functions (VNFs)
+at the edge poses several challenges due to the fact that they are more sensitive to trafﬁc
+variations and the limited resources of the MEC nodes [8]. When the allocated resources
+are insufﬁcient to meet the requested demands, the user’s perceived quality of service
+(QoS) degrades [9]. In contrast, if the assigned resources are over-provisioned, the service-
+associated costs increase. To make efﬁcient use of MEC resources while providing the
+high QoS that characterizes 5G networks and lowering the service provisioning cost, the
+dynamic placement readjustment of VNFs along with the scaling of their assigned resources
+(e.g., number of instances or capacity) based on their workloads or user’s trafﬁc demands
+is imperative.
+The virtualization of some traditional NFs such as trafﬁc accelerators or ﬁrewalls,
+which can be deployed in a bump-in-the-wire (BITW) manner to avoid altering the com-
+munication endpoints, would bring about extra difﬁculties. No modiﬁcation in the packet
+headers is allowed when redirecting trafﬁc to guarantee the standard functionality of a
+service (e.g., avoid service interruption) due to their transparent deployment. Scaling
+out BITW VNFs may cause occasional loops in the network and subsequent problems
+(e.g., slow and irregular connections and system failures). Additionally, bidirectional ﬂow
+afﬁnity during the ﬂows’ lifetime may also be required.
+Most of the literature addressing the problem of load balancing (LB) and auto-scaling
+of VNF clusters [10,11] neglects the aforementioned use case scenario and its particularities.
+To the best of our knowledge, we are the ﬁrst to tackle the problem of dynamic auto-scaling
+and load balancing of transparent VNFs while ensuring bidirectional ﬂow afﬁnity. In this
+regard, the key contributions of this paper can be summarized as follows:
+1. The design, implementation, and evaluation of a solution to make load balancing and
+auto-scaling decisions to manage a cluster of transparent VNFs.
+2. The proposed solution can not only distribute trafﬁc according to the selected LB
+strategy but also guarantee bidirectional ﬂow afﬁnity without packet modiﬁcation.
+3. An auto-scaling strategy is presented to manage the size of a transparent VNF cluster.
+4. The testbed of the proposed strategy in this research utilized real hardware unlike
+most works on this topic, which use simulation tools (e.g., Mininet) to assess the
+performances of their proposed strategies.
+The remainder of this paper is organized as follows. Section 2 introduces some works
+related to the load balancing and auto-scaling of VNFs. Section 3 gives some background
+on technologies, such as Open Source MANO and software-deﬁned networking (SDN). In
+Section 4, a solution is proposed for trafﬁc distribution and the auto-scaling of a cluster of
+transparent VNFs is presented, and Section 5 validates its effectiveness. Finally, Section 6
+concludes our work and presents future work directions.
+2. Related Work
+This section provides a review of the literature related to load-balancing and auto-
+scaling solutions in virtual environments.
+
+--- Page 3 ---
+
+Sensors 2021, 21, 8283 3 of 23
+2.1. SDN-Based Load Balancers
+Most SDN-based load-balancing studies focus their solutions on the designing of new
+methods to decide on the most suitable destination for a given trafﬁc ﬂow. In this manner,
+the authors of [ 12,13] propose SDN load-balancing algorithms to distribute requests to
+servers dynamically. Their proposed strategies select the most suitable server based on
+the real-time metrics of CPU utilization, memory utilization, and disk utilization. In [12],
+the least loaded server is selected to handle trafﬁc requests, whereas in [ 13] a dynamic
+weighted random selection algorithm (DWRS) is used. The DWRS gives higher weights to
+underutilized services, so the server with the least load has a higher probability of being
+chosen. Chen et al. [14] propose an SDN-based load-balancing solution to distribute trafﬁc
+among a server cluster. Clients’ requests are sent to a virtual IP address and the trafﬁc is
+then redirected to the selected server. Like traditional load balancers, Chen et al.’s solution
+implies using a virtual IP and modiﬁcations of packets for routing the trafﬁc to the servers.
+In [15], two OpenFlow-based mechanisms are presented for balancing multi-path TCP
+(MPTCP) trafﬁc to a pool of servers. Though the proposed solutions guarantee the selection
+of the same server for subﬂows belonging to the same MPTCP session, it is at the expense
+of packet modiﬁcation. Similarly, the solution of Ma et al. [10] relies on OpenFlow switches
+(OFSs) to reroute trafﬁc dynamically inside the network function chaining (NFC). The NFC
+management uses a unique pair of VLAN tags for each chain. By using the open-source
+PF_RING network socket [16], the proposed solution captures incoming packets and adds
+the VLAN tags. At any time, the control element can update the number of used VLAN
+tags for trafﬁc balancing.
+The authors of [17] propose a load-balancing mechanism to distribute trafﬁc ﬂows
+among switches by considering the equipment singularities. A local SDN controller guides
+a data plane scalability mechanism to monitor the network trafﬁc and used resources on the
+switches. This mechanism adjusts the number of active switches to meet network demands.
+Moreover, the load balancer conﬁgures the required ﬂow rules on target switches and
+relocates ﬂow rules to improve resource usage.
+Abdelltif et al. [18] propose an SDN-based load-balancing service to optimize resource
+utilization while reducing the user response time. The proposed mechanism comprises
+three application modules (i.e., service classiﬁcation, dynamic load balancing, and monitor-
+ing) that run on top of an SDN controller. The dynamic load balancing module distributes
+the incoming trafﬁc to the servers according to the service type. The feasibility of the
+proposed scheme is proved through experimental ﬁndings.
+2.2. Load Balancing and Auto-Scaling
+The authors of [19] provide insights into the network service descriptors (NSD) by
+addressing ﬁelds related to scaling actions. Hinojosa et al. highlight the importance
+of a proper NSD conﬁguration to ensure the appropriate scaling operations of VNFs.
+Additionally, they offer an overview of the different available scaling procedures in NFV
+and how to trigger them in an automated manner.
+In [20], an auto-scaling approach for 5G data plane (DP) VNFs based on throughput
+utilization is presented. This approach makes scale-out decisions based on the utilization
+threshold, while scale-in events are run periodically to remove empty DP functions. In-
+coming user requests are assigned to the DP with the highest throughput. Alawe et al. [11]
+present an algorithm based on control theory for the horizontal scaling and load balancing
+of 5G Access and Mobility Management Function (AMF). Additionally, scaling actions are
+triggered according to the trafﬁc load.
+The authors of [21] propose a threshold-based scaling mechanism that considers work-
+load variations of the evolved packet core (EPC) to perform scaling actions. Its proposal
+is formed by three modules: data collection, scaling decision, and scaling execution. To
+evaluate their horizontal scaling procedure, the authors deploy a set of clusters for different
+EPC elements. Each cluster contains a load balancer that uses a round-robin algorithm to
+distribute the trafﬁc among the cluster’s instances.
+
+--- Page 4 ---
+
+Sensors 2021, 21, 8283 4 of 23
+Dutta et al. [9] present a solution for the dynamic and automatic scaling of VNFs. Their
+main aim is to ensure efﬁcient resource utilization while improving the quality of experience
+(QoE) of the offered services. In their solution, the incoming trafﬁc is distributed to the pool
+members through an LB with a round-robin conﬁguration. However, this approach implies
+packet modiﬁcation since the LB works as a front-end service that reroutes incoming
+requests. Ma et al. [10] propose a generic solution for the horizontal scaling of VNFs. Their
+solution relies on two load balancers (a master and a salve) to distribute the trafﬁc in the
+uplink and downlink directions. Moreover, they also address the ﬂow afﬁnity problem
+when balancing trafﬁc among VNFs. To solve the problem, they use connection-aware
+trafﬁc load balancers based on a hashing function to maintain afﬁnity between connections
+and NFs. The authors of [22] demonstrate the importance of jointly considering instances
+of load balancing and auto-scaling of VNF. They highlight the necessity of designing these
+policies so that they are aware of one another to improve QoS and ensure a more efﬁcient
+use of resources.
+Lange et al. [23] proposes an architecture for VNF that exploits the beneﬁts of network
+softwarization and machine learning-based approaches to orchestrate and manage the
+life-cycle of VNFs. By monitoring the deployed VNF’s state and predicting its resources,
+the proposed solution can perform scaling actions in advance while load-balancing actions
+are leveraged to OpenStack load-balancing features. However, the auto-scaling of VNFs
+and load-balancing performance are not covered in the obtained results. Thus, further
+experiments are necessary in order to evaluate the overall feasibility of their proposal.
+Despite the proposed solutions, none of the aforementioned works address the issue of
+load balancing and auto-scaling transparent VNF clusters. Of these works, the most similar
+to this paper is [10], as it presents a solution to address both issues by taking into account
+bidirectional ﬂow afﬁnity. However, its solution implies packet modiﬁcation, which is
+not convenient for scenarios with BITW deployments. This type of deployment imposes
+additional challenges in terms of scalability.
+3. Background
+This section presents some background on NFV management and orchestrators, SDN,
+and OpenFlow switches. These elements are fundamental pillars for our solution imple-
+mentation.
+3.1. Open Source MANO
+NFV is considered a key enabler technology for addressing the stringent requirements
+of 5G and beyond networks [24–26]. Its agility and ﬂexibility to manage network resources
+and services support carriers in deploying a variety of verticals with different requirements
+while reducing costs. In this vein, the ETSI NFV Management and Orchestration (MANO)
+framework [27] provides a standard architecture, used as a reference by vendors and open
+source MANO projects for the monitoring and provisioning of VNFs [28]. The group of
+open source MANO includes several projects such as Open Network Automation Platform
+(ONAP) [29], Open Source MANO (OSM) [ 30], Open Baton [31], and Cloudify [32]. Of
+these projects, ONAP and OSM are the most prominent ones in both academic and industry
+sectors since big operators such as AT&T and Telefonica support their development [33].
+This paper adopts OSM as the NFV orchestrator (NFVO) and virtual network function
+manager (VNFM). It is responsible for the deployment of NSs and VNFs and monitoring
+the life-cycle management of VNFs. The selection of OSM was based on its maturity,
+performance, and comprehensive utilization [33]. Another criterion for this selection was
+its modular architecture formed by several elements, including Resource Orchestrator (RO),
+Lifecycle Management (LCM), Policy Manager (POL), and Monitoring (MON). Thus, our
+implementation could obtain information related to NSs and their associated metrics by
+directly communicating with the modules in charge of managing this information (i.e., RO
+and MON modules).
+
+--- Page 5 ---
+
+Sensors 2021, 21, 8283 5 of 23
+3.2. Software-Deﬁned Networking
+Along with the NFV paradigm, SDN is recognized as a crucial pillar in the devel-
+opment of 5G and beyond networks to fulﬁll their network requirements [ 24–26]. The
+SDN architecture is composed of three layers: application, control, and data [ 34]. The
+control plane is formed by the controller, which manages all the devices (e.g., routers and
+switches) in the data plane in a uniﬁed manner. Additionally, network applications, used
+by the controller, are implemented and executed in the application layer. One of SDN’s
+main features is the control and user plane separation (CUPS). The CUPS guarantees that
+the resources of each plane can be scaled independently. It also allows the placement of
+the user plane functions closer to users, thereby reducing network response times and
+bandwidth consumption. Moreover, the separation of these two planes allows the direct
+programmability of network policies, thus ensuring simplicity and versatility in network-
+ing conﬁgurations [34]. Additionally, SDN offers new methods to ﬂexibly instantiate NFs
+and services while reducing expenses and boosting performance. For instance, it allows
+the support for new protocols and the ability to adapt network resources and topology to
+changes in the conﬁguration and placement of NFs and services [35,36].
+The SDN concept is applied in a wide variety of solutions in which the controller is a
+key element in the control operations. In this regard, the architectural deployment of the
+controllers is crucial to guarantee that the performance of the overall network is adequate.
+Speciﬁcally, from an architectural point of view, SDN controllers can be classiﬁed into two
+groups: centralized and distributed. The centralized architecture is formed by a unique
+controller for the sake of simplicity. However, this design represents a bottleneck in the
+network and has scalability limitations when the network trafﬁc increases. By contrast,
+a distributed architecture improves network scalability, ﬂexibility, and reliability. For
+instance, this architecture avoids having a single point of failure since when one of its
+distributed controllers fails, another(s) can assume its functions and devices. Therefore,
+this design is more resilient to different kinds of disruptions. Furthermore, with the
+programmability of SDN, this process can be automated and conﬁgured according to the
+design and requirements of the network. Thus, the distributed architecture is capable of
+responding and adapting to new requirements and conditions.
+3.3. OpenFlow Switches
+An OFS consists of one or more ﬂow tables and a group table, which perform packet
+lookup and forwarding, and one or more OpenFlow channels to communicate with an ex-
+ternal controller. The switch communicates with the controller, and the controller manages
+the switch via the OpenFlow protocol [37]. The controller can add, update, and delete ﬂow
+entries from the switch ﬂow tables through the OF protocol. A ﬂow entry is formed by sev-
+eral ﬁelds such as match, counters, actions, and priority. Speciﬁcally, the match ﬁeld allows
+the creation of ﬂow entries according to various match criteria. For instance, it may be
+conﬁgured to match various packet header ﬁelds (e.g., source/destination IP/MAC/ports,
+protocol, VLAN ID), packet ingress port, or metadata value.
+When a ﬂow arrives at an OFS it veriﬁes, in its ﬂow tables, if there is already a deﬁned
+rule that matches the incoming ﬂow. If such a rule exists, then the speciﬁed actions are
+executed. A wide variety of instructions can be applied to ﬂow entries, such as packet
+forwarding (e.g., forward packet to a port) and packet modiﬁcation. In the case of several
+rules matching the ﬂow description, the rule with the highest priority order is applied. In
+contrast, if no match is found in any ﬂow tables, the switch can be conﬁgured to send the
+packet to its assigned controller or drop it.
+3.4. Flow Afﬁnity
+Utilizing ﬂow afﬁnity implies that packets belonging to the same ﬂow will undergo
+similar treatments along their paths (e.g., processed by the same set of network func-
+tions) [38,39]. In this study, we deﬁne bidirectional ﬂow afﬁnity as the property of process-
+ing packets associated with a speciﬁc ﬂow by the same network function, in both directions
+
+--- Page 6 ---
+
+Sensors 2021, 21, 8283 6 of 23
+of their data path (i.e., uplink and downlink). Trafﬁc ﬂows are identiﬁed by ﬁve parameters
+from the packet headers: source IP , destination IP , protocol, source port, and destination
+port. These parameters form a ﬁve-tuple, and by combining them, different hashing
+methods can be deﬁned. The three most popular combinations are: source-destination
+IP , source-destination IP + protocol, and source-destination IP + source-destination port +
+protocol.
+4. Solution Proposal
+In this section, after a brief overview of the problem of interest, the proposed solution
+for the management (i.e., balancing and horizontal auto-scaling) of a cluster of transparent
+VNFs is presented.
+4.1. Problem Description
+Network operators are virtualizing their physical network functions to align with new
+services requirements imposed by 5G networks and beyond. These NFs can be grouped
+into different categories according to their characteristics (i.e., by network functionalities
+and connectivity, network security, and network performance). Many of the NFs associated
+with network performance (e.g., trafﬁc shaping, rate limiting, and trafﬁc accelerators) are
+usually transparently placed between the access and internet network providers. In other
+words, they do not have a forwarding IP since they are placed as BITW functions and,
+thus, work in layer 2 of the OSI model. The virtualization of NFs offers ﬂexibility for the
+management of network resources since NFs can be scaled as their processed trafﬁc changes.
+Existing MANO frameworks (e.g., OSM) offer some scaling policies to automatically adjust
+VNF capacity to trafﬁc demands. However, the scale-out policy of MANO frameworks is
+characterized by the placement of new deployed functions in the same subnetwork as the
+original ones. Moreover, they do not allow for the modiﬁcation of previously launched
+NSs, for instance, the adding of new VNF instances or subnetworks. These limitations
+cause severe problems in the network when scaling transparent functions since network
+loops may appear.
+Load balancers are crucial to avoid overload and guarantee efﬁcient trafﬁc distribution
+to the pool members when more than one instance of a given type is deployed and forms a
+cluster. Additionally, load balancers enhance the availability and reliability of the network
+service by redirecting incoming requests to only healthy VNFs. Well-known MANO
+frameworks, such as OSM and ONAP , lack native load-balancing services. Thereby, they
+rely on speciﬁc virtual functions (e.g., HAProxy [40]) that need to be deployed along with
+the pool members to provide this feature. However, this solution requires the assignment
+of a virtual IP to the load balancer to redirect all the incoming trafﬁc to it. The latter is
+recommended when the pool entities are a ﬁnal service or the destination of the incoming
+trafﬁc. Otherwise, an extra function may need to be inserted in the ﬂow path to modify the
+header packets to reach their ﬁnal destination. A similar shortcoming has been found in
+virtual infrastructure management (VIM) technologies, such as OpenStack. Though these
+technologies provide load-balancing services (i.e., Octavia which is based on a neutron
+load-balancing mechanism (load balance as a service, LBaaS)), they are also aimed at
+ﬁnal services.
+Moreover, some VNF types, such as ﬁrewalls and intrusion detection systems, require
+that the same instance process all the fragments of a given ﬂow during the ﬂow lifetime.
+Other VNF types (e.g., TCP trafﬁc accelerators) may need to ensure bidirectional ﬂow
+afﬁnity to work properly.
+Under these circumstances, designing a mechanism for the efﬁcient management
+of transparent VNF clusters is critical. The envisioned solution must be able to dynam-
+ically scale cluster resources, balance the ﬂow trafﬁc between transparent VNFs, ensure
+bidirectional ﬂow afﬁnity, and avoid packet modiﬁcations and extra processing.
+
+--- Page 7 ---
+
+Sensors 2021, 21, 8283 7 of 23
+4.2. Design Architecture and Implementation
+Our proposed solution for the management of transparent clusters is formed by
+two redirector VNFs, one at each side of the cluster. The reason for placing redirector
+functions on both sides of the cluster (uplink and downlink directions) is to ensure the
+bidirectional ﬂow afﬁnity requirement (see Section 4.2.3). Each VNF redirector consists
+of an OFS and an SDN controller mainly responsible for load-balancing aspects. The
+SDN controllers work in an active-standby conﬁguration. The active controller replicates
+the network information to the standby one by using the data distribution service (DDS)
+method described in [ 41]. Since the DDS method is based on the publish/subscribe
+paradigm, the active controller will publish the discovered nodes and conﬁgured ﬂows
+through a data stream also known as a topic. Speciﬁcally, the used topic is composed of
+seven ﬁelds: Identiﬁer, NodeId, Port, SourceNode, SourceNodePort, DestinationNode, and
+DestinationNodePort. Using the identiﬁer ﬁeld, the active controller announces whether
+it will send a node or a ﬂow. In the case of the standby controller, it will be subscribed to
+the used topic, thus receiving the network information. This approach avoids the network
+discovery phase of the standby controller in the case of a failure in the active controller,
+thus reducing the service downtime and improving the fault tolerance of the system. The
+master controller is placed facing the access network to reduce response time, since most
+trafﬁc requests originate in the uplink direction. The use of two SDN controllers is not
+strictly necessary, but it is highly recommended to improve the robustness of the solution.
+Figure 1 provides a general overview of the proposed design as well as the interconnection
+mode among the solution elements.
+.
+.
+.
+VNF
+ 
+Pool
+Access 
+Network
+Internet
+ 
+Network
+Synchronization channel
+...
+VNF n
+VNF 
+2
+VNF 
+1
+SDN 
+Controller
+(
+Active
+)
+SDN 
+Controller
+(
+Standby
+)
+OF Protocol 
+(
+active channel
+)
+OF Protocol 
+(
+standby channel
+)
+OF 
+Switch
+OF 
+Switch
+Redirector 
+1
+Redirector 
+2
+Figure 1. A high-level view of the proposed solution.
+The envisioned VNF redirector application has a modular design, where each module
+performs a speciﬁc function (i.e., monitoring, auto-scaling, and load balancing). The logic
+of these functions runs on top of the SDN controllers, as shown in Figure 2. The monitoring
+module is in charge of checking the status of VNF instances as well as periodically collecting
+metrics. This information is used as input by the load balancing and auto-scaling blocks
+to perform their logic. The auto-scaling module is in charge of managing the cluster size.
+Speciﬁcally, it triggers scale-in and scale-out actions based on the status and load of the pool
+members. Furthermore, the load-balancing module is the core of the redirector application.
+It is responsible for selecting the VNF instance to which a trafﬁc request will be assigned
+for its processing. The selection of a VNF instance depends on the speciﬁed load-balancing
+strategy (e.g., least loaded CPU) and the status and capacity of the cluster’s members. Each
+
+--- Page 8 ---
+
+Sensors 2021, 21, 8283 8 of 23
+instance belonging to the VNF cluster is associated with a unique port in the OF switches.
+To simplify the solution complexity, a mirror conﬁguration, in which the same port in both
+switches is selected, is recommended.
+NFVI
+VNFs
+VNFM
+NFVO
+VIM
+SDN 
+Controller
+Redirector
+-
+VNF
+1
+OFS
+SDN 
+Controller
+Redirector
+-
+VNF
+2
+OFS
+X
+-
+VNF 
+Pool
+LB
+Auto
+-
+scale
+Monitor
+Figure 2. An overview of the solution components and its communication with the NFV entities.
+To improve the VNF redirector performance and allow faster packet processing in the
+load-balancing module, our design exploits the parallel processing capacity of multi-cores
+along with a multi-threaded technique, thus avoiding delay in its procedure due to the
+performance of other modules. The following subsections provide more insights into the
+operation mode of the VNF redirector’s modules.
+4.2.1. Monitoring Module
+Transparent VNFs are not compatible with well-known health monitor methods,
+such as PING, TLS-HELLO, UDP-CONNECT, and TCP-CONNECT, since they all require
+that their queries be directed to an IP address. A workaround could be the use of the
+management network to send the messages associated with one of these health methods.
+However, this implies additional load in the VNF cluster. To resolve this shortcoming,
+our solution uses information already available to other components (i.e., VNFM). The
+VNFM monitors the health status and performance (e.g., CPU and memory utilization)
+of VNF instances and network services to manage their life cycles. In the OSM MANO,
+its monitoring module has a feature (mon-collector) to collect the speciﬁed metrics in the
+VNF descriptors. The mon-collector polls the VIM, where the VNFs are deployed, to gather
+the desired metrics and stores them in its Prometheus time-series database (TSDB). To
+make this information available to the redirector application, our solution implements
+the monitoring module. This module communicates with the Prometheus TSDB and
+gathers VNF status and metrics. In this manner, the LB can be aware of the healthy and
+unhealthy instances and their available resources. This approach solves the limitation
+mentioned above and avoids overloading the cluster with frequent health polling through
+the management network.

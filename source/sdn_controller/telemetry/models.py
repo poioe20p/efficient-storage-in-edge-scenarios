@@ -102,6 +102,11 @@ class DomainSummary(BaseModel):
 class TelemetrySummary(BaseModel):
     network_id: str
     window_end: float
+    # RQ1 delivery-semantics identity: monotonic per-network window sequence.
+    # None for control-event mini-summaries (drain_complete, rs_secondary_ready).
+    window_seq: int | None = None
+    window_id: str | None = None      # f"{network_id}:{window_seq}"
+    overload: bool = False            # producer-side label (D3)
     servers: dict[str, ServerSummary]
     storage_servers: dict[str, StorageServerSummary] = {}
     domain_summary: DomainSummary | None = None  # absent in mini-summaries (drain_complete)

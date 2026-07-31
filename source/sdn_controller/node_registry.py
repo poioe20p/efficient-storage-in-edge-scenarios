@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 
 from .scaling_config import (
-    _TELEMETRY_TIMEOUT_WINDOWS,
+    _TELEMETRY_TIMEOUT_S,
     _NODE_BIRTH_GRACE_S,
     _STORAGE_PERSISTENT_RESERVE_ENABLED,
     _STORAGE_RESERVE_PENDING_WINDOWS,
@@ -76,7 +76,9 @@ class DynamicNodeRegistry:
     def __init__(self) -> None:
         self._dynamic_node_macs: set[str] = set()
         self._active: dict[str, NodeInfo] = {}     # mac → NodeInfo, insertion order = LIFO
-        self._absent_window_count: dict[str, int] = {}
+        # Time-based absence (Design B): monotonic last-seen per node, refreshed
+        # whenever a delivered window contains the node. Read by detect_absent.
+        self._last_seen_mono: dict[str, float] = {}
         self._birth_ts: dict[str, float] = {}
         # Persistent reserve — one slot per LAN, keyed by LAN number.
         self._reserve_slots: dict[int, StorageReserveSlot] = {}
@@ -99,7 +101,7 @@ class DynamicNodeRegistry:
                 )
                 continue
             self._dynamic_node_macs.discard(mac)
-            self._absent_window_count.pop(mac, None)
+            self._last_seen_mono.pop(mac, None)
             self._active.pop(mac, None)
             self._birth_ts.pop(mac, None)
             logger.info("[registry] removed MAC %s from tracking after cleanup (name=%s)", mac, name)
@@ -108,13 +110,21 @@ class DynamicNodeRegistry:
             self._dynamic_node_macs.add(info.mac)
             self._active[info.mac] = info
             self._birth_ts[info.mac] = time.monotonic()
+            self._last_seen_mono[info.mac] = time.monotonic()
             logger.info("[registry] tracking new dynamic %s node mac=%s name=%s",
                         info.node_type, info.mac, info.name)
 
     # ── Absence detection ────────────────────────────────────────────────
 
     def detect_absent(self, summary: TelemetrySummary) -> list[str]:
-        """Return MACs that exceeded TELEMETRY_TIMEOUT_WINDOWS consecutive absent windows."""
+        """Return MACs whose last reported presence is older than ``_TELEMETRY_TIMEOUT_S``.
+
+        Time-based (Design B): runs on the controller's fixed housekeeping
+        clock, independent of telemetry delivery cadence. Presence is refreshed
+        whenever a delivered window contains the node. Missing last-seen
+        defaults to now, so a freshly re-added node is treated as just-seen
+        (birth grace is a second protection layer).
+        """
         now = time.monotonic()
         timed_out: list[str] = []
         for mac in list(self._dynamic_node_macs):
@@ -124,15 +134,13 @@ class DynamicNodeRegistry:
 
             present = (mac in summary.servers) or (mac in summary.storage_servers)
             if present:
-                self._absent_window_count[mac] = 0
-            else:
-                self._absent_window_count[mac] = self._absent_window_count.get(mac, 0) + 1
-                count = self._absent_window_count[mac]
-                logger.debug("[registry] mac=%s absent for %d windows", mac, count)
-                if count >= _TELEMETRY_TIMEOUT_WINDOWS:
-                    logger.warning("[registry] mac=%s absent for %d windows — triggering removal", mac, count)
-                    self._absent_window_count[mac] = 0
-                    timed_out.append(mac)
+                self._last_seen_mono[mac] = now
+            elif now - self._last_seen_mono.get(mac, now) > _TELEMETRY_TIMEOUT_S:
+                logger.warning(
+                    "[registry] mac=%s not seen for %.0fs — triggering removal",
+                    mac, now - self._last_seen_mono.get(mac, now),
+                )
+                timed_out.append(mac)
         return timed_out
 
     # ── Queries ──────────────────────────────────────────────────────────
@@ -156,15 +164,19 @@ class DynamicNodeRegistry:
             if info.node_type == node_type and mac in self._dynamic_node_macs
         ]
 
-    def count_dynamic(self, node_type: str) -> int:
+    def count_dynamic(self, node_type: str, lan: int | None = None) -> int:
         """Count dynamic nodes of the given type.
 
         Reserved storage nodes (``standby_reserved=True``) are excluded —
         they do not count toward active storage thresholds.
+
+        When *lan* is provided, only nodes on that LAN are counted.
         """
         return sum(
             1 for info in self._active.values()
-            if info.node_type == node_type and not info.standby_reserved
+            if info.node_type == node_type
+            and not info.standby_reserved
+            and (lan is None or info.lan == lan)
         )
 
     def node_age_s(self, mac: str, now: float | None = None) -> float:
@@ -288,7 +300,7 @@ class DynamicNodeRegistry:
         Idempotent: safe to call multiple times for the same MAC.
         """
         self._dynamic_node_macs.discard(mac)
-        self._absent_window_count.pop(mac, None)
+        self._last_seen_mono.pop(mac, None)
         self._active.pop(mac, None)
         self._birth_ts.pop(mac, None)
         logger.info("[reserve] unregistered mac=%s from tracking", mac)
@@ -331,6 +343,7 @@ class DynamicNodeRegistry:
             self._active[slot.mac] = info
             self._dynamic_node_macs.add(slot.mac)
             self._birth_ts[slot.mac] = time.monotonic()
+            self._last_seen_mono[slot.mac] = time.monotonic()
             logger.info(
                 "[reserve] re-added mac=%s to _active after slot-based reconstruction",
                 slot.mac,
@@ -393,15 +406,24 @@ class DynamicNodeRegistry:
                 return
 
     def can_scale_down_storage(self, candidate_mac: str, lan: int) -> bool:
-        """Return True only if removing *candidate_mac* leaves a ready reserve.
+        """Return True only if removing *candidate_mac* is safe.
 
-        Ordinary storage scale-down is blocked unless the LAN has a
-        READY_RESERVED slot *after* the removal. A PREPARING reserve does
-        not satisfy the floor.
+        When more than 2 dynamic (non-reserved) storage nodes exist on the
+        LAN, scale-down is allowed without waiting for a READY_RESERVED slot.
+        Once down to ≤2 dynamic storage nodes, the original reserve-floor
+        guard is enforced to maintain resilience.
         """
-        slot = self._ensure_reserve_slot(lan)
-        if slot.state != "READY_RESERVED":
-            return False
+        # Count dynamic (non-reserved) storage nodes on this LAN
+        dyn_on_lan = sum(
+            1 for info in self._active.values()
+            if info.node_type == "storage"
+            and info.lan == lan
+            and not info.standby_reserved
+        )
+        if dyn_on_lan <= 2:
+            slot = self._ensure_reserve_slot(lan)
+            if slot.state != "READY_RESERVED":
+                return False
         info = self.get_node_info(candidate_mac)
         return info is not None and not info.standby_reserved
 

@@ -1,0 +1,41 @@
+{
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_s": 60,
+      "rate_per_client": 1.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.1,
+      "mix": {
+        "content_lookup": 0.6,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    },
+    {
+      "name": "data_bound_episode",
+      "duration_s": 180,
+      "rate_per_client": 5.0,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 1.0,
+      "mix": {
+        "content_lookup": 0.4,
+        "content_update": 0.25,
+        "content_aggregate": 0.25,
+        "feed_ranking": 0.1
+      }
+    },
+    {
+      "name": "cleanup_gap",
+      "duration_s": 180,
+      "rate_per_client": 0.5,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.05,
+      "mix": {
+        "content_lookup": 0.6,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
+    }
+  ]
+}

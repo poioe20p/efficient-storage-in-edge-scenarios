@@ -113,6 +113,13 @@ for alert in self._scaling_policy.evaluate_scale_up(...):
     self._elasticity.submit(alert)
 ```
 
+> Note: `evaluate_scale_up()` is the legacy `dual`-path facade. In RQ2 arms
+> (`SCALEUP_POLICY` ≠ `dual`) the mediator routes the selected storage action
+> through `PolicyGate.select()`; the reserve hook (this section) is executed in
+> the `dual` path only — in RQ2 arms it is inert because
+> `STORAGE_PERSISTENT_RESERVE_ENABLED=0`. See
+> `docs/research_questions/v2/rq2/rq2_preparation.md`.
+
 ### Scaling Policy Helper
 
 ```python

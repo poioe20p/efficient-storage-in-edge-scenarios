@@ -83,6 +83,28 @@ The elasticity manager calls `register_new_server_backend()` after spawning new
 edge-server containers, which adds the MAC to `VIP_SERVER`, seeds the backend
 IP, and creates a compute warm lease in one controller-side step.
 
+### RQ3 -- Readiness-Gated Compute Admission and Flow Isolation
+
+Since the RQ3 readiness-propagation feature, compute admission can be gated on
+a verified application-readiness event instead of the immediate
+`register_new_server_backend()` call. When `READINESS_PROPAGATION != "off"`
+(either the `direct` or `discovery` arm), a spawned compute backend is held
+`PendingBackend` in the readiness gate
+(`source/sdn_controller/readiness_gate.py`) until its `/ready` endpoint returns
+`200` (a real MongoDB round-trip) and only then admitted to the `VIP_SERVER`
+pool. With `READINESS_PROPAGATION=off` (the default) Thread 3 registers the
+backend immediately -- behavior is byte-identical to before.
+
+Flow-isolation mode (`VIP_FLOW_ISOLATION=1` on the controller plus
+`EDGE_FLOW_ISOLATION=1` on the edge server) forces one fresh backend-selection
+event per request: the edge server emits a `request_complete` control event
+after each response, and the controller deletes that client's `VIP_SERVER`
+DNAT+SNAT flow (exact match via the recorded `_vip_server_client_map` binding)
+so the next request re-triggers selection.
+
+See
+[RQ3 -- Readiness Propagation and Traffic Admission](../../research_questions/v2/rq3/rq3_preparation.md).
+
 ### Edge-Side VIP_DATA Epoch and Recovery Runtime
 
 Separate from the controller, each edge server (`app.py`) manages per-LAN epoch

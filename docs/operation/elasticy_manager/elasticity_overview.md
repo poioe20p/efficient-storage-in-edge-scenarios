@@ -31,7 +31,10 @@ Thread 2 (Observer/ZMQ)     Thread 3 (Elasticity Mgr)      Infrastructure
 - **Thread 2** (`ZmqTelemetrySource`) — subscribes to aggregator and peer
   topology ZMQ endpoints, receives `TelemetrySummary` updates, caches the most
   recent peer-domain summary, evaluates local thresholds, and posts typed
-  `Alert` objects to Thread 3's queue.
+  `Alert` objects to Thread 3's queue. In RQ2 arms (`SCALEUP_POLICY` ≠ `dual`)
+  a `PolicyGate` selects **at most one** scale-up action per window from a
+  declared bottleneck classification (see
+  [`rq2_preparation.md`](../../research_questions/v2/rq2/rq2_preparation.md)).
 - **Thread 3** (`ElasticityManager`) — a long-lived daemon thread blocking on a
   `queue.PriorityQueue`. Pops alerts in priority order (storage scale-up first)
   and dispatches them to the appropriate handler, which calls `NodeAdder` for
@@ -78,8 +81,22 @@ lives in
 
 ---
 
+## Compute Readiness Gate (RQ3)
+
+The compute spawn path now has an optional readiness gate
+(`ReadinessGate`, `source/sdn_controller/readiness_gate.py`), active only when
+`READINESS_PROPAGATION != "off"` (default `off`). When active, a spawned
+`edge_server` backend is held `PendingBackend` until its `/ready` endpoint
+returns `200`, which gates its `VIP_SERVER` admission; a backend that never
+becomes ready within `READINESS_PROBE_MAX_S` is abandoned and fully torn down
+(container, OVS veth/port, host entries, IP release). See
+[RQ3 — Readiness Propagation and Traffic Admission](../../research_questions/v2/rq3/rq3_preparation.md).
+
+---
+
 ## Implementation Plans
 
+- [RQ2 bottleneck-aware scaling action](../../research_questions/v2/rq2/rq2_preparation.md) — policy gate selecting one scale-up action from a declared bottleneck classification (compute-first / storage-first / bottleneck-aware arms), per-tier action budget, per-decision evidence log.
 - [Scale-down instrumentation](implementation/scale_down_instrumentation.md) — DEBUG/INFO observability for the scale-down decision path.
 - [Metric drivers investigation](implementation/plans/metric_drivers_investigation_plan.md) — umbrella investigation into what drives CPU / T_db / T_proc.
 - [Storage persistent reserve](implementation/storage_persistent_reserve/README.md) — phased implementation plan for a persistent same-LAN storage reserve that activates on first load or recovery and replenishes immediately after activation.

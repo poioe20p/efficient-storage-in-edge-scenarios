@@ -12,6 +12,7 @@ from os_ken.controller.handler import (
     set_ev_cls,
 )
 from os_ken.lib.packet import ethernet, ether_types, packet
+from os_ken.lib import hub
 from os_ken.ofproto import ofproto_v1_3
 from os_ken import cfg
 
@@ -22,10 +23,15 @@ from .selective_sync.state_publisher import CoordinatorStatePublisher
 from .telemetry.models import ServerSummary, TelemetrySummary
 from .telemetry.zmq_source import ZmqTelemetrySource
 from .telemetry.polling_source import PollingTelemetrySource
+from .telemetry.event_preserving_source import EventPreservingTelemetrySource
+from .telemetry.delayed_source import DelayedEventPreservingTelemetrySource
 from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
 from .scaling_policy import ScalingPolicy
+from .policy_gate import PolicyGate
 from .scaling_config import (
+    _ACTION_BUDGET_PER_TIER,
+    _CONTROL_TICK_S,
     _NODE_BIRTH_GRACE_S,
     _SCALE_DOWN_CANDIDATE_MAX_STALENESS_S,
     _STORAGE_PERSISTENT_RESERVE_ENABLED,
@@ -37,9 +43,18 @@ from .scaling_config import (
     _CROSS_REGION_BREACH_WINDOWS_N,
     _CROSS_REGION_DB_P95_THRESHOLD_MS,
     _MAX_CROSS_REGION_STORAGE,
+    _READINESS_PROPAGATION,
+    _READINESS_PROBE_TIMEOUT_S,
+    _READINESS_PROBE_MAX_S,
+    _READINESS_PROBE_RETRY_S,
+    _DISCOVERY_POLL_INTERVAL_S,
+    _EDGE_READY_PORT,
+    _ADMISSION_LOG_PATH,
+    _VIP_FLOW_ISOLATION,
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
+from .readiness_gate import ReadinessGate, PendingBackend
 
 import requests
 
@@ -93,10 +108,45 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         # Thread 3 — must be created before telemetry source
         self._elasticity = ElasticityManager(topology_mixin=self)
+
+        # ── RQ3 readiness gate (only when an RQ3 arm is selected) ──
+        # Injected into the elasticity manager BEFORE start() so a stray early
+        # alert can never take the `off` path.
+        if _READINESS_PROPAGATION != "off":
+            self._readiness_gate = ReadinessGate(
+                propagation=_READINESS_PROPAGATION,
+                probe_timeout_s=_READINESS_PROBE_TIMEOUT_S,
+                probe_max_s=_READINESS_PROBE_MAX_S,
+                probe_retry_s=_READINESS_PROBE_RETRY_S,
+                discovery_interval_s=_DISCOVERY_POLL_INTERVAL_S,
+                ready_port=_EDGE_READY_PORT,
+                admission_log_path=_ADMISSION_LOG_PATH,
+                on_admit=lambda pb: self._elasticity._admit_compute_backend(
+                    pb.mac, pb.ip, pb.name, pb.lan, pb.network_id,
+                    pb.spawn_started_mono_s, "readiness_gate",
+                ),
+                on_abandon=lambda pb: self._elasticity.submit_abandon(
+                    pb.mac, pb.ip, pb.name, pb.lan,
+                ),
+            )
+            self._elasticity.readiness_gate = self._readiness_gate
+            self._readiness_gate.start()
+            logger.info(
+                "RQ3 readiness gate active: propagation=%s probe_timeout=%.1fs "
+                "probe_max=%.1fs probe_retry=%.1fs discovery=%.1fs ready_port=%d "
+                "flow_isolation=%d",
+                _READINESS_PROPAGATION, _READINESS_PROBE_TIMEOUT_S,
+                _READINESS_PROBE_MAX_S, _READINESS_PROBE_RETRY_S,
+                _DISCOVERY_POLL_INTERVAL_S, _EDGE_READY_PORT, _VIP_FLOW_ISOLATION,
+            )
+        else:
+            self._readiness_gate = None
+
         self._elasticity.start()
 
         # ── Composed components (Thread 2 only) ──
         self._scaling_policy = ScalingPolicy()
+        self._policy_gate = PolicyGate()
         self._node_registry = DynamicNodeRegistry()
         self._control_events = ControlEventDispatcher()
 
@@ -122,39 +172,75 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._cross_region_reserve_prepare_attempts: int = 0
         self._last_summary: TelemetrySummary | None = None
 
-        # Thread 2 — telemetry source (ZMQ push or HTTP poll)
+        # Thread 2 — telemetry source (RQ1 delivery-mode selection)
         _telemetry_source_mode = os.environ.get("TELEMETRY_SOURCE", "zmq")
+        _http_endpoints = []
+        for _ep in _aggregator_endpoints:
+            # tcp://10.0.0.5:5556 → http://10.0.0.5:5558
+            _host_port = _ep.replace("tcp://", "")
+            _host, _ = _host_port.rsplit(":", 1)
+            _http_endpoints.append(f"http://{_host}:5558")
+
+        def _forward_control_and_topology(summary):
+            # Only control mini-summaries (window_seq None) pass through the
+            # ZMQ control channel. Empty real windows (window_seq set) arrive
+            # via the delivery source in their proper mode — forwarding them
+            # here would bypass DELAY_S and skip the delivery log.
+            if summary.window_seq is None:
+                self._on_telemetry_update(summary)
+
         if _telemetry_source_mode == "poll":
-            # ── HTTP polling for periodic TelemetrySummary ──────────────
-            _http_endpoints = []
-            for _ep in _aggregator_endpoints:
-                # tcp://10.0.0.5:5556 → http://10.0.0.5:5558
-                _host_port = _ep.replace("tcp://", "")
-                _host, _ = _host_port.rsplit(":", 1)
-                _http_endpoints.append(f"http://{_host}:5558")
             _poll_interval = float(os.environ.get("POLL_INTERVAL_S", "10"))
             self._telemetry = PollingTelemetrySource(
                 endpoints=_http_endpoints,
                 interval_s=_poll_interval,
                 on_update=self._on_telemetry_update,
             )
-            # ── ZMQ SUB for control events + topology (always push) ────
-            def _forward_control_and_topology(summary):
-                if not summary.servers and not summary.storage_servers:
-                    self._on_telemetry_update(summary)
+        elif _telemetry_source_mode == "event_preserving":
+            self._telemetry = EventPreservingTelemetrySource(
+                endpoints=_http_endpoints,
+                poll_interval_s=float(os.environ.get("EVENT_POLL_INTERVAL_S", "0.5")),
+                on_update=self._on_telemetry_update,
+            )
+        elif _telemetry_source_mode == "delayed_event_preserving":
+            self._telemetry = DelayedEventPreservingTelemetrySource(
+                endpoints=_http_endpoints,
+                delay_s=float(os.environ.get("DELAY_S", "30")),
+                poll_interval_s=float(os.environ.get("EVENT_POLL_INTERVAL_S", "0.5")),
+                on_update=self._on_telemetry_update,
+            )
+        elif _telemetry_source_mode == "zmq":
+            self._telemetry = ZmqTelemetrySource(
+                endpoints=_aggregator_endpoints + _peer_endpoints,
+                on_update=self._on_telemetry_update,
+                on_topology_update=self.on_topology_update,
+            )
+        else:
+            logger.error(
+                "unknown TELEMETRY_SOURCE=%s — falling back to poll",
+                _telemetry_source_mode,
+            )
+            self._telemetry = PollingTelemetrySource(
+                endpoints=_http_endpoints,
+                interval_s=float(os.environ.get("POLL_INTERVAL_S", "10")),
+                on_update=self._on_telemetry_update,
+            )
+
+        # All non-zmq modes keep a ZMQ SUB control channel for control events
+        # + topology — these urgent operational signals always arrive
+        # immediately, regardless of the telemetry delivery mode under test.
+        if _telemetry_source_mode != "zmq":
             self._control_zmq = ZmqTelemetrySource(
                 endpoints=_aggregator_endpoints + _peer_endpoints,
                 on_update=_forward_control_and_topology,
                 on_topology_update=self.on_topology_update,
             )
             self._control_zmq.start()
-        else:
-            self._telemetry = ZmqTelemetrySource(
-                endpoints=_aggregator_endpoints + _peer_endpoints,
-                on_update=self._on_telemetry_update,
-                on_topology_update=self.on_topology_update,
-            )
         self._telemetry.start()
+
+        # ── Design B housekeeping ticker (time-based, fixed clock) ──
+        self._last_scale_eval_seq: int | None = None
+        hub.spawn(self._housekeeping_loop)
 
         # ── Cross-region warm standby: init slot, defer pre-spawn ──
         if _CROSS_REGION_STORAGE_ENABLED and _CROSS_REGION_STORAGE_WARM:
@@ -249,6 +335,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             self._promote_storage_backend(info.mac, f"n{lan}")
             info.standby_reserved = False
             self._scaling_policy.record_storage_activation()
+            self._log_decision("reserve_activate", f"storage_lan{lan}", summary.window_id)
             logger.info("[reserve] activated lan=%d name=%s ip=%s mac=%s reason=%s",
                         lan, info.name, info.ip, info.mac, reason)
             # Immediately start preparing the next reserve.
@@ -350,12 +437,15 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
     def _on_telemetry_update(self, summary: TelemetrySummary) -> None:
         """Thread 2 callback — thin mediator that orchestrates composed components."""
-        self._last_summary = summary
         consumed_at = time.time()
         if summary.network_id != self._lan_id:
             logger.debug("ignoring telemetry for %s (this controller owns %s)",
                          summary.network_id, self._lan_id)
             return
+        # Only real windows (window_seq set) update the ticker's latest state;
+        # control mini-summaries (window_seq None) never do.
+        if summary.window_seq is not None:
+            self._last_summary = summary
 
         # 1. Sync node tracking (Thread 3 → Thread 2)
         self._node_registry.sync(self._elasticity)
@@ -366,6 +456,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             summary, self._node_registry, self._promote_storage_backend,
             on_reserve_ready_fn=self._on_reserve_ready,
         )
+        # RQ3 flow isolation: request_complete → per-client flow delete.
+        # Called alongside the other control-event handlers and BEFORE the
+        # mini-summary early-return below (request_complete arrives on control
+        # mini-summaries whose server dicts are empty). `self` mixes in
+        # VipRoutingMixin and provides delete_vip_server_client_flows.
+        self._control_events.process_flow_events(
+            summary, self, _VIP_FLOW_ISOLATION == 1, time.monotonic())
 
         # Mini-summaries (control event pass-throughs) have empty server dicts.
         if not summary.servers and not summary.storage_servers:
@@ -454,46 +551,14 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # ── Cross-region warm standby: admit on pressure ────────────
         self._evaluate_cross_region_activation(summary)
 
-        # 5. Absent node detection → alert submission
-        for mac in self._node_registry.detect_absent(summary):
-            if self._elasticity.has_pending_drain(mac):
-                logger.info("[scale-down] pending drain for mac=%s — submitting Phase B cleanup", mac)
-                self._elasticity.submit_cleanup(mac)
-            else:
-                # Check if the absent node is the reserve — handle as reserve loss.
-                info = self._node_registry.get_node_info(mac)
-                if info and info.standby_reserved:
-                    # 1. Clear the reserve slot first (while node is still in registry)
-                    #    so replenish can start on the next maintenance cycle.
-                    #    Pending activation is preserved for carry-forward.
-                    self._node_registry.mark_storage_reserve_lost(mac)
-                    # 2. Then unregister from tracking.
-                    self._node_registry.unregister_reserved_node(mac)
-                    # 3. Submit immediate-terminate cleanup to Thread 3.
-                    self._elasticity.submit_cleanup_reserve(
-                        CleanupReserveAlert(
-                            lan=info.lan,
-                            mac=info.mac,
-                            container_name=info.name,
-                            ip=info.ip or "",
-                            rs_name=info.rs_name or "",
-                            primary_container=info.primary_container or "",
-                            port=info.port or 27018,
-                        )
-                    )
-                    logger.info("[reserve] cleanup_submitted lan=%d mac=%s", info.lan, info.mac)
-                    # Do NOT retry preparation here — next-cycle maintenance will decide.
-                    continue
-                alert = self._node_registry.build_scale_down_alert(mac)
-                if alert:
-                    logger.info("[scale-down] submitting alert: %s", alert)
-                    self._elasticity.submit(alert)
+        # (Absent-node detection and scale-down evaluation moved to the
+        # Design-B housekeeping ticker — see _run_housekeeping.)
 
         ds = summary.domain_summary
 
         # 5. Scale-up evaluation
-        dynamic_storage_count = self._node_registry.count_dynamic("storage")
-        registry_dynamic_compute_count = self._node_registry.count_dynamic("compute")
+        dynamic_storage_count = self._node_registry.count_dynamic("storage", lan)
+        registry_dynamic_compute_count = self._node_registry.count_dynamic("compute", lan)
         pending_compute_drain_count = self._elasticity.pending_compute_drain_count()
         effective_dynamic_compute_count = max(
             0,
@@ -514,85 +579,306 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             if storage_blocked:
                 logger.debug("[scale-up] storage blocked by pending storage drain — skipping")
 
-            for alert in self._scaling_policy.evaluate_scale_up(
-                ds,
-                lan,
-                summary.network_id,
-                dynamic_storage_count,
-                effective_dynamic_compute_count,
-                peer_ds,
-                allow_compute=not compute_blocked,
-                allow_storage=not storage_blocked,
-            ):
-                # ── Storage persistent reserve: same-LAN DataAlert → activate reserve first ──
-                if isinstance(alert, DataAlert) and not getattr(alert, "cross_lan_rs", False):
-                    if self._handle_storage_reserve_trigger(summary, alert.lan, "load"):
-                        continue  # Reserve handled it — do not submit a raw DataAlert.
+            if self._policy_gate.mode == "dual":
+                # ── RQ1 legacy path — UNCHANGED ────────────────────────
+                for alert in self._scaling_policy.evaluate_scale_up(
+                    ds,
+                    lan,
+                    summary.network_id,
+                    dynamic_storage_count,
+                    effective_dynamic_compute_count,
+                    peer_ds,
+                    allow_compute=not compute_blocked,
+                    allow_storage=not storage_blocked,
+                ):
+                    # ── Storage persistent reserve: same-LAN DataAlert → activate reserve first ──
+                    if isinstance(alert, DataAlert) and not getattr(alert, "cross_lan_rs", False):
+                        if self._handle_storage_reserve_trigger(summary, alert.lan, "load"):
+                            continue  # Reserve handled it — do not submit a raw DataAlert.
 
-                # Dormant Tier 2 supersede hook. Drains any active Tier 1 for the
-                # same (owner_lan → consumer_lan) direction *before* the Tier 2
-                # alert lands. Today ``DataAlert`` is always same-LAN (adds a
-                # secondary to ``rs_net{lan}``) and leaves ``cross_lan_rs=False``,
-                # so this branch is never taken. See
-                # docs/operation/elasticy_manager/implementation/tier1_selective_sync/event_protocol.md §2.4.
-                if (isinstance(alert, DataAlert)
-                        and getattr(alert, "cross_lan_rs", False)
-                        and getattr(alert, "owner_lan", None) is not None):
-                    self._selective_sync_coordinator.drain(
-                        alert.owner_lan, reason="tier2_supersedes")
-                self._elasticity.submit(alert)
-                if (isinstance(alert, ComputeAlert)
-                        and self._elasticity.has_pending_compute_drain()):
-                    logger.info(
-                        "[scale-up] compute triggered with %d pending compute drain(s) — submitting lower-priority cancel",
-                        pending_compute_drain_count,
-                    )
-                    self._elasticity.submit_cancel_compute_drain()
-
-        if self._elasticity.is_busy():
-            logger.debug("[scale-down] elasticity manager is busy — skipping scaling evaluation")
-            return
-
-        # 6. Scale-down evaluation (with cooldown gating)
-        remaining = self._scaling_policy.compute_cooldown_remaining()
-        if remaining > 0:
-            logger.debug("[scale-down] compute within %.0fs cooldown — skipping", remaining)
-        else:
-            if self._scaling_policy.evaluate_scale_down_compute(ds):
-                node = self._pick_compute_scale_down_candidate()
-                if node:
-                    logger.info(
-                        "[scale-down] compute underutilisation — removing %s", node.name)
-                    alert = self._node_registry.build_scale_down_alert(node.mac)
-                    if alert:
-                        self._elasticity.submit(alert)
-                else:
-                    logger.info(
-                        "[scale-down] compute underutilisation but no graceful candidate is eligible — clearing current window"
-                    )
-                self._scaling_policy.clear_scale_down_compute_window()
-
-        remaining = self._scaling_policy.storage_cooldown_remaining()
-        if remaining > 0:
-            logger.debug("[scale-down] storage within %.0fs cooldown — skipping", remaining)
-        else:
-            if self._scaling_policy.evaluate_scale_down_storage(ds):
-                node = self._node_registry.find_last_dynamic("storage")
-                if node:
-                    # Reserve-floor guard: do not scale down below active+reserve floor.
-                    if not self._node_registry.can_scale_down_storage(node.mac, lan):
+                    # Dormant Tier 2 supersede hook. Drains any active Tier 1 for the
+                    # same (owner_lan → consumer_lan) direction *before* the Tier 2
+                    # alert lands. Today ``DataAlert`` is always same-LAN (adds a
+                    # secondary to ``rs_net{lan}``) and leaves ``cross_lan_rs=False``,
+                    # so this branch is never taken. See
+                    # docs/operation/elasticy_manager/implementation/tier1_selective_sync/event_protocol.md §2.4.
+                    if (isinstance(alert, DataAlert)
+                            and getattr(alert, "cross_lan_rs", False)
+                            and getattr(alert, "owner_lan", None) is not None):
+                        self._selective_sync_coordinator.drain(
+                            alert.owner_lan, reason="tier2_supersedes")
+                    self._elasticity.submit(alert)
+                    self._log_decision("scale_up", type(alert).__name__, summary.window_id)
+                    if (isinstance(alert, ComputeAlert)
+                            and self._elasticity.has_pending_compute_drain()):
                         logger.info(
-                            "[scale-down] storage underutilisation but reserve floor blocks removal of %s",
-                            node.name,
+                            "[scale-up] compute triggered with %d pending compute drain(s) — submitting lower-priority cancel",
+                            pending_compute_drain_count,
                         )
-                        self._scaling_policy.clear_scale_down_storage_window()
-                    else:
+                        self._elasticity.submit_cancel_compute_drain()
+                        self._log_decision("cancel", "compute_drain", summary.window_id)
+            else:
+                # ── RQ2 arms path ──────────────────────────────────────
+                # (`ds` is not None is guaranteed: `_on_telemetry_update` returns
+                #  early when `domain_summary is None`, as RQ1. Guard kept as
+                #  defense-in-depth.)
+                if ds is not None:
+                    compute_v = self._scaling_policy.evaluate_compute_scale_up(
+                        ds, effective_dynamic_compute_count, peer_ds,
+                        blocked=compute_blocked)
+                    storage_v = self._scaling_policy.evaluate_storage_scale_up(
+                        ds, dynamic_storage_count, blocked=storage_blocked)
+
+                    selected = list(self._policy_gate.select(compute_v, storage_v))
+                    selected = [t for t in selected
+                                if self._policy_gate.budget_available(t)]
+
+                    bottleneck_class = (self._policy_gate.classify(compute_v, storage_v)
+                                        if (compute_v.eligible or storage_v.eligible)
+                                        else "n/a")
+
+                    for tier in selected:
+                        if tier == "compute":
+                            self._scaling_policy.commit_compute_scale_up()
+                            self._policy_gate.consume_budget("compute")
+                            self._elasticity.submit(ComputeAlert(
+                                lan=lan, network_id=summary.network_id))
+                            if self._elasticity.has_pending_compute_drain():
+                                # cancel-compute-drain — keep RQ1's exact row so
+                                # the RQ2 decision log is a superset of RQ1 rows.
+                                self._elasticity.submit_cancel_compute_drain()
+                                self._log_decision("cancel", "compute_drain", summary.window_id)
+                        elif tier == "storage":
+                            # keep the existing reserve branch FIRST, as today:
+                            #   if self._handle_storage_reserve_trigger(summary, lan, "load"): continue
+                            # (defensive only — unreachable in RQ2 runs:
+                            #  STORAGE_PERSISTENT_RESERVE_ENABLED=0)
+                            self._scaling_policy.commit_storage_scale_up()
+                            self._policy_gate.consume_budget("storage")
+                            self._elasticity.submit(DataAlert(
+                                lan=lan, network_id=summary.network_id,
+                                rs_name=f"rs_net{lan}",
+                                primary_container=f"edge_storage_server_n{lan}"))
+
+                    reason = ("action" if selected
+                              else "budget_exhausted"
+                              if any((compute_v.fired and not self._policy_gate.budget_available("compute"),
+                                      storage_v.fired and not self._policy_gate.budget_available("storage")))
+                              else "none")
+
+                    self._log_decision(
+                        "scale_up",
+                        "ComputeAlert" if selected == ["compute"]
+                        else "DataAlert" if selected == ["storage"]
+                        else "none",
+                        window_id=summary.window_id,
+                        compute_score_norm=compute_v.score_norm,
+                        storage_score_norm=storage_v.score_norm,
+                        compute_threshold=compute_v.threshold,
+                        storage_threshold=storage_v.threshold,
+                        compute_fired=1 if compute_v.fired else 0,
+                        storage_fired=1 if storage_v.fired else 0,
+                        compute_eligible=1 if compute_v.eligible else 0,
+                        storage_eligible=1 if storage_v.eligible else 0,
+                        bottleneck_class=bottleneck_class,
+                        selected_action=selected[0] if selected else "none",
+                        rejected_action=("" if reason == "budget_exhausted"
+                                         else "storage" if selected == ["compute"] and storage_v.fired
+                                         else "compute" if selected == ["storage"] and compute_v.fired
+                                         else "storage" if not selected and storage_v.fired and not compute_v.fired
+                                         else "compute" if not selected and compute_v.fired and not storage_v.fired
+                                         else ""),
+                        compute_budget_used=self._policy_gate.budget_used("compute"),
+                        storage_budget_used=self._policy_gate.budget_used("storage"),
+                        budget_cap=_ACTION_BUDGET_PER_TIER,
+                        reason=reason,
+                    )
+
+        # (Scale-down evaluation moved to the Design-B housekeeping ticker —
+        # see _run_housekeeping, gated by is_busy() and cooldowns there.)
+
+    # ------------------------------------------------------------------
+    # Design B — time-based housekeeping (fixed clock)
+    # ------------------------------------------------------------------
+
+    def _housekeeping_loop(self) -> None:
+        """Fixed-clock periodic loop for time-based housekeeping.
+
+        Runs on the same eventlet hub as the telemetry/delivery loops. The body
+        must never block or yield (see _run_housekeeping) so it stays atomic
+        between greenthread yield points.
+        """
+        while True:
+            hub.sleep(_CONTROL_TICK_S)
+            self._run_housekeeping()
+
+    def _run_housekeeping(self) -> None:
+        """Absent-node detection + scale-down evaluation on the fixed clock.
+
+        Design-B semantics: the cadence is the fixed ``CONTROL_TICK_S`` clock,
+        identical across ALL delivery modes (including zmq). Scale-down evaluates
+        the latest delivered state, deduped per ``window_seq`` (at most once per
+        window, so the sliding-window sample count is never inflated). Windows
+        delivered between ticks are intentionally not individually evaluated —
+        scale-down is a time-based check of current state; with CONTROL_TICK_S =
+        WINDOW_S the steady-state cadence is one consideration per window.
+
+        Concurrency: performs no blocking I/O or sleeps. The ElasticityManager
+        calls here are the same ones the delivery callback already makes, so no
+        additional yield sources are introduced beyond the existing path.
+        """
+        try:
+            s = self._last_summary
+            if s is None or s.window_seq is None:
+                return
+
+            # ── Absent-node detection → alert submission ────────────────
+            for mac in self._node_registry.detect_absent(s):
+                if self._elasticity.has_pending_drain(mac):
+                    logger.info("[scale-down] pending drain for mac=%s — submitting Phase B cleanup", mac)
+                    self._elasticity.submit_cleanup(mac)
+                    self._log_decision("scale_down", "absent_cleanup", s.window_id)
+                else:
+                    # Check if the absent node is the reserve — handle as reserve loss.
+                    info = self._node_registry.get_node_info(mac)
+                    if info and info.standby_reserved:
+                        self._node_registry.mark_storage_reserve_lost(mac)
+                        self._node_registry.unregister_reserved_node(mac)
+                        self._elasticity.submit_cleanup_reserve(
+                            CleanupReserveAlert(
+                                lan=info.lan,
+                                mac=info.mac,
+                                container_name=info.name,
+                                ip=info.ip or "",
+                                rs_name=info.rs_name or "",
+                                primary_container=info.primary_container or "",
+                                port=info.port or 27018,
+                            )
+                        )
+                        self._log_decision("scale_down", "reserve_loss", s.window_id)
+                        logger.info("[reserve] cleanup_submitted lan=%d mac=%s", info.lan, info.mac)
+                        continue
+                    alert = self._node_registry.build_scale_down_alert(mac)
+                    if alert:
+                        logger.info("[scale-down] submitting alert: %s", alert)
+                        self._elasticity.submit(alert)
+                        self._log_decision("scale_down", "absent", s.window_id)
+
+            # ── Scale-down evaluation — once per delivered window_seq ───
+            if s.window_seq == self._last_scale_eval_seq:
+                return
+            self._last_scale_eval_seq = s.window_seq
+            ds = s.domain_summary
+            if ds is None:
+                return
+
+            if self._elasticity.is_busy():
+                logger.debug("[scale-down] elasticity manager is busy — skipping scaling evaluation")
+                return
+
+            remaining = self._scaling_policy.compute_cooldown_remaining()
+            if remaining > 0:
+                logger.debug("[scale-down] compute within %.0fs cooldown — skipping", remaining)
+            else:
+                if self._scaling_policy.evaluate_scale_down_compute(ds):
+                    node = self._pick_compute_scale_down_candidate()
+                    if node:
                         logger.info(
-                            "[scale-down] storage underutilisation — removing %s", node.name)
+                            "[scale-down] compute underutilisation — removing %s", node.name)
                         alert = self._node_registry.build_scale_down_alert(node.mac)
                         if alert:
                             self._elasticity.submit(alert)
-                self._scaling_policy.clear_scale_down_storage_window()
+                            self._log_decision("scale_down", "compute", s.window_id)
+                    else:
+                        logger.info(
+                            "[scale-down] compute underutilisation but no graceful candidate is eligible — clearing current window"
+                        )
+                    self._scaling_policy.clear_scale_down_compute_window()
+
+            remaining = self._scaling_policy.storage_cooldown_remaining()
+            if remaining > 0:
+                logger.debug("[scale-down] storage within %.0fs cooldown — skipping", remaining)
+            else:
+                if self._scaling_policy.evaluate_scale_down_storage(ds):
+                    node = self._node_registry.find_last_dynamic("storage")
+                    if node:
+                        # Reserve-floor guard: do not scale down below active+reserve floor.
+                        if not self._node_registry.can_scale_down_storage(node.mac, self._lan_num):
+                            logger.info(
+                                "[scale-down] storage underutilisation but reserve floor blocks removal of %s",
+                                node.name,
+                            )
+                            self._scaling_policy.clear_scale_down_storage_window()
+                        else:
+                            logger.info(
+                                "[scale-down] storage underutilisation — removing %s", node.name)
+                            alert = self._node_registry.build_scale_down_alert(node.mac)
+                            if alert:
+                                self._elasticity.submit(alert)
+                                self._log_decision("scale_down", "storage", s.window_id)
+                    self._scaling_policy.clear_scale_down_storage_window()
+        except Exception:
+            logger.exception("[housekeeping] tick failed — continuing")
+
+    def _log_decision(self, action_type: str, action: str,
+                      window_id: str | None = None, *,
+                      compute_score_norm: float | str = "",
+                      storage_score_norm: float | str = "",
+                      compute_threshold: float | str = "",
+                      storage_threshold: float | str = "",
+                      compute_fired: int | str = "",
+                      storage_fired: int | str = "",
+                      compute_eligible: int | str = "",
+                      storage_eligible: int | str = "",
+                      bottleneck_class: str = "",
+                      selected_action: str = "",
+                      rejected_action: str = "",
+                      compute_budget_used: int | str = "",
+                      storage_budget_used: int | str = "",
+                      budget_cap: int | str = "",
+                      reason: str = "") -> None:
+        """Append one structured capacity-action decision row (RQ2 CSV contract).
+
+        Format depends on the scaling mode (see rq2_preparation.md §2.4):
+        - dual (pre-RQ2): RQ1's exact format — header
+          ts,network_id,window_id,action_type,action + 5-column rows
+          (byte-identical to pre-RQ2).
+        - RQ2 arms: full 20-column format with evidence + decision columns.
+        Header written on first use. No blocking/yielding calls — safe from the
+        housekeeping greenthread.
+        """
+        path = os.environ.get("DECISION_LOG_PATH", "/tmp/decision_log.csv")
+        rq2 = self._policy_gate.mode != "dual"
+        try:
+            write_header = (not os.path.exists(path)) or os.path.getsize(path) == 0
+            with open(path, "a") as fh:
+                if write_header:
+                    if rq2:
+                        fh.write(
+                            "ts,network_id,window_id,action_type,action,"
+                            "compute_score_norm,storage_score_norm,compute_threshold,"
+                            "storage_threshold,compute_fired,storage_fired,"
+                            "compute_eligible,storage_eligible,bottleneck_class,"
+                            "selected_action,rejected_action,compute_budget_used,"
+                            "storage_budget_used,budget_cap,reason\n"
+                        )
+                    else:
+                        fh.write("ts,network_id,window_id,action_type,action\n")
+                if rq2:
+                    fh.write(
+                        f"{time.time():.3f},{self._lan_id},{window_id or ''},{action_type},{action},"
+                        f"{compute_score_norm},{storage_score_norm},{compute_threshold},"
+                        f"{storage_threshold},{compute_fired},{storage_fired},"
+                        f"{compute_eligible},{storage_eligible},{bottleneck_class},"
+                        f"{selected_action},{rejected_action},{compute_budget_used},"
+                        f"{storage_budget_used},{budget_cap},{reason}\n"
+                    )
+                else:
+                    fh.write(
+                        f"{time.time():.3f},{self._lan_id},{window_id or ''},{action_type},{action}\n"
+                    )
+        except OSError as exc:
+            logger.warning("decision log write failed: %s", exc)
 
     def _log_and_update_stats(self, summary: TelemetrySummary) -> None:
         """Print domain summary metrics and push per-server stats to Thread 1."""
@@ -764,6 +1050,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             vip_domain = f"n{self._lan_num}"
             self._promote_storage_backend(mac, vip_domain)
             self._cross_region_last_activation_ts = time.monotonic()
+            self._log_decision("scale_up", "cross_region_warm", summary.window_id)
             logger.info(
                 "[cross-region-reserve] ACTIVATED: mac=%s ip=%s name=%s vip=%s owner=%s",
                 mac, ip, name, vip_domain, slot.owner_lan,
@@ -800,6 +1087,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 owner_primary=peer_primary_host,
             )
             self._elasticity.submit(alert)
+            self._log_decision("scale_up", "cross_region_cold", summary.window_id)
             self._cross_region_last_activation_ts = time.monotonic()
             logger.info(
                 "[cross-region-cold] SPAWN submitted: consumer_lan=%d owner=%s rs=%s",

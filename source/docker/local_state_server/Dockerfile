@@ -24,6 +24,6 @@ RUN pip3 install --no-cache-dir pyzmq psutil
 
 COPY aggregator.py /aggregator.py
 
-EXPOSE 5555 5556
+EXPOSE 5555 5556 5558
 
 CMD ["python3", "/aggregator.py"]

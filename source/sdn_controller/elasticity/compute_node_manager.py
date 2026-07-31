@@ -100,6 +100,17 @@ class ComputeNodeAdder(_BaseNodeAdder):
         return NodeResult(True, name, ip, mac, timings, NodeOperationState.DONE,
                           stdout + stdout2, stderr + stderr2)
 
+    def remove_failed_container(self, name: str) -> None:
+        """Best-effort removal of a spawned-but-never-ready compute container.
+
+        RQ3 abandonment fallback, used only when veth discovery fails in
+        ``_abandon_compute_backend`` (the primary path reuses
+        ``initiate_drain`` + ``cleanup_compute_node`` for a full teardown).
+        Mirrors ``_cleanup_container`` (docker stop/rm/volume rm).
+        """
+        logger.warning("[node_remove] removing failed container %s (never ready)", name)
+        self._cleanup_container(name)
+
     def initiate_drain(self, lan: int, name: str, mac: str) -> PendingDrain | None:
         """Phase A: discover veth (requires running container), send drain signal.
 
@@ -222,6 +233,7 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "-e", f"CONTAINER_NAME={name}",
             "-e", "EDGE_MONGO_PRIMARY_LAN1=mongodb://10.0.0.4:27018/",
             "-e", "EDGE_MONGO_PRIMARY_LAN2=mongodb://10.0.1.4:27018/",
+            "-e", f"EDGE_FLOW_ISOLATION={os.environ.get('EDGE_FLOW_ISOLATION', '0')}",
             # Dynamic nodes inherit HEARTBEAT_ENABLED=false (the image default).
             # Lifecycle is handled by scale-down (graceful) + telemetry-window
             # absence timeout (failure). See

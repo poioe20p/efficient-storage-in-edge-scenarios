@@ -13,7 +13,7 @@ from telemetry import ZmqMetricSender, _get_server_mac
 log = logging.getLogger(__name__)
 
 
-SKIP_COUNTING_PATHS = frozenset({"/health", "/drain"})
+SKIP_COUNTING_PATHS = frozenset({"/health", "/drain", "/ready"})
 
 
 @dataclass
@@ -33,6 +33,13 @@ class EdgeServerProcessState:
     last_user_request_ts: float = field(default_factory=time.monotonic)
     active_requests_lock: threading.Lock = field(default_factory=threading.Lock)
     drain_monitor_thread: threading.Thread | None = None
+    # RQ3 readiness: False until a real MongoDB round-trip succeeds (set by
+    # app.py's readiness probe). /ready returns 200 iff this is True.
+    app_ready: bool = False
+
+    def mark_app_ready(self) -> None:
+        self.app_ready = True
+        log.info("EdgeServerProcessState marked application-ready")
 
     def __post_init__(self) -> None:
         self.local_request_state = LocalRequestState(

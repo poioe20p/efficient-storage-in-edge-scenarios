@@ -22,14 +22,14 @@ TelemetrySummary (ZMQ)
     │
     ▼
 _on_telemetry_update()                    [main_n*.py — Thread 2 mediator]
-    ├─ evaluate scale-up                  [ScalingPolicy.evaluate_scale_up()]
-    │   ├─ check storage scale-up cooldown
+    ├─ evaluate scale-up                  [ScalingPolicy.evaluate_storage_scale_up()
+    │   ├─ check storage scale-up cooldown  → ScaleUpVerdict]
     │   ├─ check storage cap
     │   ├─ compute tail-aware latency signal
     │   ├─ compute storage degradation score
     │   ├─ compute diminishing-increment threshold
     │   ├─ append to sliding window
-    │   └─ if window_hits >= REQUIRED → return DataAlert(lan, network_id, rs_name, primary_container)
+    │   └─ if window_hits >= REQUIRED → fired=True (fire timestamp set)
     │
     ▼
 self._elasticity.submit(DataAlert)         [Thread 2 → Thread 3 queue — priority 1]
@@ -43,6 +43,12 @@ _loop() pops alert → _handle_data()       [Thread 3]
     ├─ TopologyMixin.register_backend_ip() [IP→MAC seeded; VIP deferred]
     └─ [sidecar async] _rs_self_join() → _wait_for_ready() → emits rs_secondary_ready
 ```
+
+**RQ2 policy gate:** in RQ2 arms (`SCALEUP_POLICY` ≠ `dual`) the storage verdict
+is passed to `PolicyGate.select()`, which emits **at most one** action per
+window; the legacy `evaluate_scale_up()` facade is used only by the `dual` path.
+See
+[`rq2_preparation.md`](../../../research_questions/v2/rq2/rq2_preparation.md).
 
 A dormant Tier 2 supersede hook exists in the mediator: if `DataAlert` is
 cross-LAN (`cross_lan_rs=True`), it drains any active Tier 1 for the same

@@ -17,6 +17,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional, Protocol
 
+from ..readiness_gate import PendingBackend
+from ..scaling_config import _EDGE_READY_PORT
+
 from .node_common import IpAllocator, NodeInfo, RemovalResult, log_ready_timing
 from .compute_node_manager import ComputeNodeAdder, PendingDrain
 from .storage_node_manager import StorageNodeAdder
@@ -119,6 +122,19 @@ class CleanupComputeAlert:
     """Phase B trigger: submitted when drain_complete ZMQ event arrives (or
     telemetry timeout fallback).  Causes Thread 3 to run OVS teardown."""
     mac: str
+
+
+@dataclass(frozen=True)
+class AbandonComputeBackendAlert:
+    """RQ3: teardown a spawned-but-never-ready compute backend (never admitted).
+
+    Runs in Thread 3 (so the readiness-gate worker thread is never blocked and
+    ``_busy`` is set during the teardown). See readiness_gate.py.
+    """
+    mac: str
+    ip: str
+    container_name: str
+    lan: int
 
 
 @dataclass(frozen=True)
@@ -251,6 +267,7 @@ _PRIORITY_PREPARE_STANDBY_STORAGE    = 4   # Reserve preparation (same-tier as c
 _PRIORITY_COMPUTE_ALERT              = 4
 _PRIORITY_CLEANUP_RESERVE            = 5   # Reserve immediate-terminate cleanup
 _PRIORITY_CLEANUP_COMPUTE            = 5
+_PRIORITY_ABANDON_COMPUTE            = 5   # RQ3 never-ready backend teardown
 _PRIORITY_CLEANUP_SELECTIVE          = 6   # Tier 1 Phase B
 _PRIORITY_CANCEL_COMPUTE_DRAIN       = 7
 _PRIORITY_SCALEDOWN_DATA             = 8
@@ -270,6 +287,7 @@ _ALERT_PRIORITY: dict[type, int] = {
     CleanupReserveAlert:            _PRIORITY_CLEANUP_RESERVE,
     ComputeAlert:                   _PRIORITY_COMPUTE_ALERT,
     CleanupComputeAlert:            _PRIORITY_CLEANUP_COMPUTE,
+    AbandonComputeBackendAlert:     _PRIORITY_ABANDON_COMPUTE,
     CleanupSelectiveAlert:          _PRIORITY_CLEANUP_SELECTIVE,
     CancelComputeDrainAlert:        _PRIORITY_CANCEL_COMPUTE_DRAIN,
     ScaleDownDataAlert:             _PRIORITY_SCALEDOWN_DATA,
@@ -322,6 +340,9 @@ class ElasticityManager:
         self._coordinator = selective_sync_coordinator
         self._broadcast_tier1_manifest_fn = broadcast_tier1_manifest
         self._topo    = topology_mixin          # TopologyMixin reference
+        # RQ3 readiness gate — injected by the mediator (T7). None → pre-RQ3
+        # behavior (immediate register_new_server_backend in _handle_compute).
+        self.readiness_gate = None
         self._operation_log: list[dict] = []    # audit trail (operation history)
         self._lock    = threading.Lock()
         self._ip_allocs: dict[int, IpAllocator] = {}   # keyed by LAN number
@@ -395,6 +416,12 @@ class ElasticityManager:
     def submit_cleanup_reserve(self, alert: CleanupReserveAlert) -> None:
         """Enqueue a reserve-specific immediate-terminate cleanup."""
         self.submit(alert)
+
+    def submit_abandon(self, mac: str, ip: str, container_name: str, lan: int) -> None:
+        """RQ3: enqueue a full teardown for a spawned-but-never-ready backend."""
+        self.submit(AbandonComputeBackendAlert(
+            mac=mac, ip=ip, container_name=container_name, lan=lan,
+        ))
 
     def drain_reserve_prepare_failures(self, lan: int) -> list[ReservePrepareFailed]:
         """Atomically drain and return queued reserve-prepare failures for *lan*.
@@ -506,6 +533,8 @@ class ElasticityManager:
                         self._handle_scale_down_data(alert)
                     elif isinstance(alert, CleanupComputeAlert):
                         self._handle_cleanup_compute(alert)
+                    elif isinstance(alert, AbandonComputeBackendAlert):
+                        self._handle_abandon_compute(alert)
                     elif isinstance(alert, CancelComputeDrainAlert):
                         self._handle_cancel_compute_drain(alert)
                     elif isinstance(alert, SelectiveSyncAlert):
@@ -535,6 +564,7 @@ class ElasticityManager:
         name = self._next_name("edge_server", alert.network_id)
         ip, mac = self._get_allocator(alert.lan).allocate()
         spawn_started_monotonic_s = time.monotonic()
+        spawn_start_wall_s = time.time()
         logger.info("[elasticity] compute: spawning %s on LAN %d (ip=%s mac=%s)", name, alert.lan, ip, mac)
 
         result = self._compute_adder.add_edge_server(lan=alert.lan, name=name, ip=ip, mac=mac)
@@ -547,28 +577,26 @@ class ElasticityManager:
             effective_mac = result.mac or mac
             effective_ip  = result.ip or ip
             if effective_mac:
-
-                self._topo.register_new_server_backend(effective_mac, effective_ip)
-                log_ready_timing(
-                    name,
-                    "compute",
-                    "vip_backend_registered",
-                    time.monotonic() - spawn_started_monotonic_s,
-                )
-                logger.info(
-                    "[elasticity] compute: %s online  ip=%s  mac=%s",
-                    name, effective_ip, effective_mac,
-                )
-                # Notify Thread 2 so it can track this MAC for scale-down
-                info = NodeInfo(
-                    mac=effective_mac, lan=alert.lan, network_id=alert.network_id,
-                    name=name, ip=effective_ip, node_type="compute",
-                    spawn_started_monotonic_s=spawn_started_monotonic_s,
-                    ready_logged=True,
-                )
-                with self._addition_complete_lock:
-                    self._addition_complete_infos.append(info)
+                if self.readiness_gate is None:
+                    # ── current behavior — UNCHANGED (byte-identical) ──
+                    self._admit_compute_backend(
+                        effective_mac, effective_ip, name,
+                        alert.lan, alert.network_id,
+                        spawn_started_monotonic_s, "vip_backend_registered",
+                    )
+                else:
+                    # ── RQ3 arms: hand off to the readiness gate (no
+                    #    registration yet — admission is gated on /ready). ──
+                    self.readiness_gate.enqueue(PendingBackend(
+                        mac=effective_mac, ip=effective_ip, name=name,
+                        lan=alert.lan, network_id=alert.network_id,
+                        ready_port=_EDGE_READY_PORT,
+                        spawn_started_wall_s=spawn_start_wall_s,
+                        spawn_complete_wall_s=time.time(),
+                        spawn_started_mono_s=spawn_started_monotonic_s,
+                    ))
             else:
+                # ── PRESERVED in all modes — MAC-missing warning ──
                 logger.warning(
                     "[elasticity] compute: %s online at %s but MAC not available in script output",
                     name, result.ip,
@@ -576,6 +604,83 @@ class ElasticityManager:
         else:
             self._get_allocator(alert.lan).release(ip)
             logger.error("[elasticity] compute: failed to spawn %s", name)
+
+    def _admit_compute_backend(
+        self, effective_mac, effective_ip, name, lan, network_id,
+        spawn_started_monotonic_s, source: str,
+    ) -> None:
+        """Register a compute backend into the VIP_SERVER pool.
+
+        Shared by the pre-RQ3 ``off`` path (called directly, source
+        ``vip_backend_registered``) and the RQ3 readiness gate (called from the
+        gate worker thread on verified readiness, source ``readiness_gate``).
+        """
+        self._topo.register_new_server_backend(effective_mac, effective_ip)
+        # Never raise AFTER registration: once registered the backend is
+        # considered admitted — a failure in the timing line or NodeInfo
+        # bookkeeping must not cause a re-admit or an abandon.
+        try:
+            log_ready_timing(
+                name, "compute", source,
+                time.monotonic() - spawn_started_monotonic_s,
+            )
+        except Exception:
+            logger.exception("[elasticity] log_ready_timing failed for %s", name)
+        logger.info(
+            "[elasticity] compute: %s online  ip=%s  mac=%s",
+            name, effective_ip, effective_mac,
+        )
+        # Notify Thread 2 so it can track this MAC for scale-down
+        try:
+            info = NodeInfo(
+                mac=effective_mac, lan=lan, network_id=network_id,
+                name=name, ip=effective_ip, node_type="compute",
+                spawn_started_monotonic_s=spawn_started_monotonic_s,
+                ready_logged=True,
+            )
+            with self._addition_complete_lock:
+                self._addition_complete_infos.append(info)
+        except Exception:
+            logger.exception("[elasticity] NodeInfo bookkeeping failed for %s", name)
+
+    def _abandon_compute_backend(self, effective_mac, effective_ip, name, lan) -> None:
+        """Tear down a spawned-but-never-ready compute backend (RQ3).
+
+        Reuses the existing full compute teardown (Phase A drain discovery +
+        Phase B cleanup) so the OVS veth/port and host-attachment entries are
+        removed too — not just the container. Best-effort and exception-safe.
+        """
+        try:
+            pending = self._compute_adder.initiate_drain(lan, name, effective_mac)
+            if pending is not None:
+                pending.ip = effective_ip
+                self._set_pending_drain(effective_mac, pending)
+                self.submit_cleanup(effective_mac)   # Phase B: full teardown + IP release
+            else:
+                # Veth discovery failed — bare container removal + IP release.
+                self._compute_adder.remove_failed_container(name)
+                self._get_allocator(lan).release(effective_ip)
+        except Exception:
+            logger.exception(
+                "[elasticity] abandon teardown failed for %s — attempting cleanup",
+                name,
+            )
+            try:
+                self._compute_adder.remove_failed_container(name)
+            except Exception:
+                pass
+            try:
+                self._get_allocator(lan).release(effective_ip)
+            except Exception:
+                pass
+            try:
+                self._pop_pending_drain(effective_mac)
+            except Exception:
+                pass
+        logger.error(
+            "[elasticity] compute: %s abandoned (never ready) — teardown submitted",
+            name,
+        )
 
     def _handle_data(self, alert: DataAlert) -> None:
         # Seed host: if owner_primary is set (cross-region), use it directly.
@@ -909,6 +1014,15 @@ class ElasticityManager:
             logger.info("[elasticity] cleanup_compute done: container=%s", pending.container_name)
         else:
             logger.error("[elasticity] cleanup_compute FAILED: container=%s", pending.container_name)
+
+    def _handle_abandon_compute(self, alert: AbandonComputeBackendAlert) -> None:
+        """RQ3: full teardown of a spawned-but-never-ready compute backend.
+
+        Runs in Thread 3 (busy=True) so the readiness-gate worker thread is not
+        blocked and concurrent scale operations are gated by is_busy().
+        """
+        self._abandon_compute_backend(
+            alert.mac, alert.ip, alert.container_name, alert.lan)
 
     def _handle_cancel_compute_drain(self, alert: CancelComputeDrainAlert) -> None:
         """Cancel one pending compute drain and re-admit the node to the VIP pool."""

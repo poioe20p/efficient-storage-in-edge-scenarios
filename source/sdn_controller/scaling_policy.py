@@ -10,6 +10,8 @@ Thread safety: all methods are called exclusively from Thread 2.
 import logging
 import time
 from collections import deque
+from dataclasses import dataclass
+from typing import Literal
 
 from .scaling_config import (
     _W_STORAGE_CPU, _W_T_DB,
@@ -41,6 +43,26 @@ from .telemetry.models import DomainSummary
 logger = logging.getLogger('os_ken.scaling_policy')
 
 
+@dataclass(frozen=True)
+class ScaleUpVerdict:
+    """Per-window per-tier scale-up evaluation result (identical in all RQ2 arms).
+
+    ``eligible``: not busy/blocked, not at cap, scale-up cooldown elapsed.
+    ``fired``:    eligible AND the sliding window reached REQUIRED hits (the
+                  scale-up window was advanced and cleared).
+    ``score_norm`` / ``score`` / ``threshold`` are evidence, computed on every
+    call regardless of eligibility — this is what makes the RQ2 decision log a
+    continuous evidence series (see rq2_preparation.md).
+    """
+
+    tier: Literal["compute", "storage"]
+    eligible: bool
+    fired: bool
+    score_norm: float
+    score: float
+    threshold: float
+
+
 class ScalingPolicy:
     """Decides whether to scale up or down based on DomainSummary metrics.
 
@@ -57,6 +79,10 @@ class ScalingPolicy:
         # Cooldown timestamps (initialised to -inf → no cooldown at startup)
         self._last_storage_scale_up_ts: float = float('-inf')
         self._last_compute_scale_up_ts: float = float('-inf')
+        # RQ2 fire timestamps — drive the scale-DOWN cooldown (D7). A tier that
+        # fires but is policy-suppressed still protects itself from scale-down.
+        self._last_storage_scale_up_fired_ts: float = float('-inf')
+        self._last_compute_scale_up_fired_ts: float = float('-inf')
         # Previous armed state — used to detect the False → True rising edge
         self._prev_scale_down_compute_armed: bool = False
         self._prev_scale_down_storage_armed: bool = False
@@ -110,10 +136,12 @@ class ScalingPolicy:
     # ── Cooldown queries ─────────────────────────────────────────────────
 
     def compute_cooldown_remaining(self) -> float:
-        return max(0.0, _SCALEDOWN_COMPUTE_COOLDOWN_S - (time.monotonic() - self._last_compute_scale_up_ts))
+        """Scale-DOWN cooldown — keyed on the last compute scale-up FIRE (D7)."""
+        return max(0.0, _SCALEDOWN_COMPUTE_COOLDOWN_S - (time.monotonic() - self._last_compute_scale_up_fired_ts))
 
     def storage_cooldown_remaining(self) -> float:
-        return max(0.0, _SCALEDOWN_STORAGE_COOLDOWN_S - (time.monotonic() - self._last_storage_scale_up_ts))
+        """Scale-DOWN cooldown — keyed on the last storage scale-up FIRE (D7)."""
+        return max(0.0, _SCALEDOWN_STORAGE_COOLDOWN_S - (time.monotonic() - self._last_storage_scale_up_fired_ts))
 
     def compute_scaleup_cooldown_remaining(self) -> float:
         return max(0.0, _SCALEUP_COMPUTE_COOLDOWN_S - (time.monotonic() - self._last_compute_scale_up_ts))
@@ -126,10 +154,10 @@ class ScalingPolicy:
 
         Called by the mediator after a reserved storage node is consumed
         into active service. This is the same cross-direction reset that a
-        normal ``DataAlert`` submission would trigger inside
-        ``_evaluate_storage_scale_up``.
+        normal storage scale-up commit (``commit_storage_scale_up``) applies.
         """
         self._last_storage_scale_up_ts = time.monotonic()
+        self._last_storage_scale_up_fired_ts = time.monotonic()
         self.clear_scale_down_storage_window()
 
     # ── Scale-up evaluation ──────────────────────────────────────────────
@@ -141,30 +169,35 @@ class ScalingPolicy:
                           *,
                           allow_compute: bool = True,
                           allow_storage: bool = True) -> list[ComputeAlert | DataAlert]:
-        """Evaluate Compute and Storage scale-up. Returns list of alerts to submit."""
+        """Dual (pre-RQ2) path: both tiers may fire and submit independently.
+
+        Uses the same per-tier verdict evaluation as the RQ2 arms, but every
+        fire is submitted (fire == commit), so the scale-up cooldown timestamp
+        and cross-direction reset advance exactly as pre-RQ2 — RQ1 behavior is
+        preserved byte-for-byte. RQ1 decision-logging happens in the mediator.
+        """
         alerts: list[ComputeAlert | DataAlert] = []
 
         # ── Compute ──
         if allow_compute:
-            remaining = self.compute_scaleup_cooldown_remaining()
-            if remaining > 0:
-                logger.debug("[scale-up] compute within %.0fs scale-up cooldown — skipping", remaining)
-            else:
-                compute_alert = self._evaluate_compute_scale_up(
-                    ds, lan, network_id, dynamic_compute_count, peer_ds
-                )
-                if compute_alert:
-                    alerts.append(compute_alert)
+            v = self.evaluate_compute_scale_up(
+                ds, dynamic_compute_count, peer_ds, blocked=False)
+            if v.fired:
+                self.commit_compute_scale_up()
+                alerts.append(ComputeAlert(lan=lan, network_id=network_id))
 
         # ── Storage (with its own scale-up cooldown) ──
         if allow_storage:
-            remaining = self.storage_scaleup_cooldown_remaining()
-            if remaining > 0:
-                logger.debug("[scale-up] storage within %.0fs scale-up cooldown — skipping", remaining)
-            else:
-                storage_alert = self._evaluate_storage_scale_up(ds, lan, network_id, dynamic_storage_count)
-                if storage_alert:
-                    alerts.append(storage_alert)
+            v = self.evaluate_storage_scale_up(
+                ds, dynamic_storage_count, blocked=False)
+            if v.fired:
+                self.commit_storage_scale_up()
+                alerts.append(DataAlert(
+                    lan=lan,
+                    network_id=network_id,
+                    rs_name=f"rs_net{lan}",
+                    primary_container=f"edge_storage_server_n{lan}",
+                ))
 
         return alerts
 
@@ -182,17 +215,19 @@ class ScalingPolicy:
             return _SCALEUP_COMPUTE_PEER_RELIEF, peer_score
         return 0.0, peer_score
 
-    def _evaluate_compute_scale_up(self, ds: DomainSummary, lan: int,
-                                   network_id: str,
-                                   dynamic_compute_count: int,
-                                   peer_ds: DomainSummary | None) -> ComputeAlert | None:
-        if dynamic_compute_count >= _MAX_DYNAMIC_COMPUTE:
-            logger.debug(
-                "[scale-up] compute cap reached (%d/%d) — skipping",
-                dynamic_compute_count, _MAX_DYNAMIC_COMPUTE,
-            )
-            return None
+    def evaluate_compute_scale_up(self, ds: DomainSummary,
+                                  dynamic_compute_count: int,
+                                  peer_ds: DomainSummary | None = None,
+                                  *,
+                                  blocked: bool = False) -> ScaleUpVerdict:
+        """Evaluate compute scale-up for one window → ScaleUpVerdict.
 
+        Identical evaluation mechanics in every RQ2 arm (D2): evidence is always
+        computed; the sliding window advances only when eligible (not blocked /
+        at cap / in scale-up cooldown). On fire only the scale-DOWN-cooldown
+        timestamp and the scale-up window clear are set here — the scale-UP
+        cooldown timestamp is set by ``commit_compute_scale_up`` on submission.
+        """
         compute_latency_ms = self.compute_latency_signal(ds)
         compute_score = self.degradation_score(
             ds.average_cpu_percent, compute_latency_ms,
@@ -200,7 +235,6 @@ class ScalingPolicy:
             _CPU_FLOOR, _CPU_SPAN,
             _T_PROC_FLOOR, _T_PROC_SPAN,
         )
-
         base_threshold = min(
             _SCALEUP_COMPUTE_BASE_THRESHOLD
             + dynamic_compute_count * _SCALEUP_COMPUTE_THRESHOLD_INCREMENT,
@@ -211,6 +245,21 @@ class ScalingPolicy:
             base_threshold + peer_relief,
             _SCALEUP_COMPUTE_MAX_THRESHOLD,
         )
+        score_norm = min(1.0, compute_score / (_W_CPU + _W_T_PROC))
+
+        if (blocked
+                or dynamic_compute_count >= _MAX_DYNAMIC_COMPUTE
+                or self.compute_scaleup_cooldown_remaining() > 0):
+            if dynamic_compute_count >= _MAX_DYNAMIC_COMPUTE:
+                logger.debug(
+                    "[scale-up] compute cap reached (%d/%d) — not eligible",
+                    dynamic_compute_count, _MAX_DYNAMIC_COMPUTE,
+                )
+            return ScaleUpVerdict(
+                tier="compute", eligible=False, fired=False,
+                score_norm=score_norm, score=compute_score,
+                threshold=effective_threshold,
+            )
 
         above = compute_score >= effective_threshold
         self._scale_up_compute_window.append(above)
@@ -219,44 +268,45 @@ class ScalingPolicy:
         window_size = len(self._scale_up_compute_window)
         logger.debug(
             "[scale-up] compute score=%.2f (τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d) "
-            "cpu=%.1f%% T_proc=%.1fms T_proc_signal=%.1fms window=%d/%d on %s",
+            "cpu=%.1f%% T_proc=%.1fms T_proc_signal=%.1fms window=%d/%d",
             compute_score, effective_threshold, base_threshold, peer_relief,
             peer_score_display, dynamic_compute_count,
             ds.average_cpu_percent, ds.avg_time_proc_ms, compute_latency_ms,
             window_hits, window_size,
-            network_id,
         )
         if window_hits >= _SCALE_UP_REQUIRED:
             logger.info(
-                "[scale-up] compute triggered: %d/%d windows ≥ %.2f "
-                "(τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d, last score=%.2f, cpu=%.1f%%, T_proc=%.1fms, T_proc_signal=%.1fms) on %s",
-                window_hits,
-                window_size,
-                effective_threshold,
-                effective_threshold,
-                base_threshold,
-                peer_relief,
-                peer_score_display,
-                dynamic_compute_count,
-                compute_score,
-                ds.average_cpu_percent, ds.avg_time_proc_ms, compute_latency_ms, network_id,
+                "[scale-up] compute fired: %d/%d windows ≥ %.2f "
+                "(τ_eff=%.2f, τ_base=%.2f, peer_relief=%.2f, peer_score=%s, dyn=%d, last score=%.2f, cpu=%.1f%%, T_proc=%.1fms)",
+                window_hits, window_size, effective_threshold,
+                effective_threshold, base_threshold, peer_relief,
+                peer_score_display, dynamic_compute_count,
+                compute_score, ds.average_cpu_percent, ds.avg_time_proc_ms,
             )
+            self._last_compute_scale_up_fired_ts = time.monotonic()
             self._scale_up_compute_window.clear()
-            self._scale_down_compute_window.clear()  # cross-direction reset
-            self._last_compute_scale_up_ts = time.monotonic()
-            return ComputeAlert(lan=lan, network_id=network_id)
-        return None
-
-    def _evaluate_storage_scale_up(self, ds: DomainSummary, lan: int,
-                                   network_id: str,
-                                   dynamic_storage_count: int) -> DataAlert | None:
-        if dynamic_storage_count >= _MAX_DYNAMIC_STORAGE:
-            logger.debug(
-                "[scale-up] storage cap reached (%d/%d) — skipping",
-                dynamic_storage_count, _MAX_DYNAMIC_STORAGE,
+            return ScaleUpVerdict(
+                tier="compute", eligible=True, fired=True,
+                score_norm=score_norm, score=compute_score,
+                threshold=effective_threshold,
             )
-            return None
+        return ScaleUpVerdict(
+            tier="compute", eligible=True, fired=False,
+            score_norm=score_norm, score=compute_score,
+            threshold=effective_threshold,
+        )
 
+    def evaluate_storage_scale_up(self, ds: DomainSummary,
+                                  dynamic_storage_count: int,
+                                  *,
+                                  blocked: bool = False) -> ScaleUpVerdict:
+        """Evaluate storage scale-up for one window → ScaleUpVerdict.
+
+        Same contract as ``evaluate_compute_scale_up`` (D2): evidence always
+        computed, window advances only when eligible, fire sets the fire
+        timestamp (D7) and clears the scale-up window (commit is handled by the
+        mediator / dual facade).
+        """
         storage_latency_ms = self.storage_latency_signal(ds)
         storage_score = self.degradation_score(
             ds.avg_storage_cpu_percent, storage_latency_ms,
@@ -274,38 +324,74 @@ class ScalingPolicy:
             _SCALEUP_STORAGE_BASE_THRESHOLD + cumulative,
             _SCALEUP_STORAGE_MAX_THRESHOLD,
         )
+        score_norm = min(1.0, storage_score / (_W_STORAGE_CPU + _W_T_DB))
+
+        if (blocked
+                or dynamic_storage_count >= _MAX_DYNAMIC_STORAGE
+                or self.storage_scaleup_cooldown_remaining() > 0):
+            if dynamic_storage_count >= _MAX_DYNAMIC_STORAGE:
+                logger.debug(
+                    "[scale-up] storage cap reached (%d/%d) — not eligible",
+                    dynamic_storage_count, _MAX_DYNAMIC_STORAGE,
+                )
+            return ScaleUpVerdict(
+                tier="storage", eligible=False, fired=False,
+                score_norm=score_norm, score=storage_score,
+                threshold=effective_threshold,
+            )
+
         above = storage_score >= effective_threshold
         self._scale_up_storage_window.append(above)
         logger.debug(
             "[scale-up] storage score=%.2f (τ_eff=%.2f, base=%.2f +Σdim(%d)=%.3f) "
-            "cpu_s=%.1f%% T_db_avg=%.1fms T_db_p95=%.1fms signal=%.1fms  window=%d/%d on %s",
+            "cpu_s=%.1f%% T_db_avg=%.1fms T_db_p95=%.1fms signal=%.1fms  window=%d/%d",
             storage_score, effective_threshold,
             _SCALEUP_STORAGE_BASE_THRESHOLD, dynamic_storage_count, cumulative,
             ds.avg_storage_cpu_percent, ds.avg_time_db_ms, ds.p95_time_db_ms, storage_latency_ms,
             sum(self._scale_up_storage_window), len(self._scale_up_storage_window),
-            network_id,
         )
         if sum(self._scale_up_storage_window) >= _SCALEUP_STORAGE_REQUIRED:
             logger.info(
-                "[scale-up] storage triggered: %d/%d windows ≥ %.2f "
-                "(eff_τ=%.2f, dyn_nodes=%d, Σdim=%.3f, last score=%.2f, cpu_s=%.1f%%, T_db_avg=%.1fms, T_db_p95=%.1fms, signal=%.1fms) on %s",
+                "[scale-up] storage fired: %d/%d windows ≥ %.2f "
+                "(eff_τ=%.2f, dyn_nodes=%d, Σdim=%.3f, last score=%.2f, cpu_s=%.1f%%, T_db_avg=%.1fms, T_db_p95=%.1fms)",
                 sum(self._scale_up_storage_window),
                 len(self._scale_up_storage_window),
                 effective_threshold, effective_threshold, dynamic_storage_count,
                 cumulative, storage_score,
-                ds.avg_storage_cpu_percent, ds.avg_time_db_ms, ds.p95_time_db_ms, storage_latency_ms,
-                network_id,
+                ds.avg_storage_cpu_percent, ds.avg_time_db_ms, ds.p95_time_db_ms,
             )
+            self._last_storage_scale_up_fired_ts = time.monotonic()
             self._scale_up_storage_window.clear()
-            self._scale_down_storage_window.clear()  # cross-direction reset
-            self._last_storage_scale_up_ts = time.monotonic()
-            return DataAlert(
-                lan=lan,
-                network_id=network_id,
-                rs_name=f"rs_net{lan}",
-                primary_container=f"edge_storage_server_n{lan}",
+            return ScaleUpVerdict(
+                tier="storage", eligible=True, fired=True,
+                score_norm=score_norm, score=storage_score,
+                threshold=effective_threshold,
             )
-        return None
+        return ScaleUpVerdict(
+            tier="storage", eligible=True, fired=False,
+            score_norm=score_norm, score=storage_score,
+            threshold=effective_threshold,
+        )
+
+    # ── RQ2 commit (actual scaling only) ────────────────────────────────
+
+    def commit_compute_scale_up(self) -> None:
+        """Commit a compute scale-up — only on actual submission.
+
+        Advances the scale-UP cooldown timestamp and performs the
+        cross-direction scale-down window reset (D2).
+        """
+        self._last_compute_scale_up_ts = time.monotonic()
+        self.clear_scale_down_compute_window()
+
+    def commit_storage_scale_up(self) -> None:
+        """Commit a storage scale-up — only on actual submission.
+
+        Advances the scale-UP cooldown timestamp and performs the
+        cross-direction scale-down window reset (D2).
+        """
+        self._last_storage_scale_up_ts = time.monotonic()
+        self.clear_scale_down_storage_window()
 
     # ── Scale-down evaluation ────────────────────────────────────────────
 

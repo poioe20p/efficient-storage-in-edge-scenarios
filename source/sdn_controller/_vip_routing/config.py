@@ -16,6 +16,24 @@ class WarmLease:
     started_ts: float
     expires_ts: float
 
+
+@dataclass(frozen=True)
+class ClientVipBinding:
+    """Recorded VIP_SERVER client→backend flow mapping (RQ3 flow isolation).
+
+    Captured when ``install_vip_dnat_snat`` installs a VIP_SERVER DNAT/SNAT
+    pair, so ``delete_vip_server_client_flows`` can delete the EXACT pair on
+    the next request's ``request_complete`` control event. ``snat_eth_src`` is
+    the exact ``eth_src`` used on the SNAT rule (backend MAC or router MAC).
+    """
+    client_mac: str
+    client_ip: str
+    backend_mac: str
+    backend_ip: str
+    vip_ip: str
+    vip_mac: str
+    snat_eth_src: str
+
 # --- Backend-selection policy mode (RQ2) ---
 _BACKEND_SELECTION_POLICY = os.environ.get(
     "BACKEND_SELECTION_POLICY", "topology_lifecycle"

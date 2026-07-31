@@ -1,0 +1,254 @@
+"""readiness_gate.py — RQ3 compute-backend readiness gate.
+
+Gates ``VIP_SERVER`` pool admission on a verified application-readiness event
+(``/ready``), under two switchable propagation modes:
+
+  - ``direct``:    probe immediately on enqueue and re-probe every
+                   ``READINESS_PROBE_RETRY_S``; admit on 200 (direct lifecycle
+                   notification).
+  - ``discovery``: probe only on the ``DISCOVERY_POLL_INTERVAL_S`` cadence;
+                   admit when a discovery pass observes 200 (periodic
+                   discovery).
+
+The gate is active only when ``READINESS_PROPAGATION != "off"`` (constructed
+in ``main_n*.py``). When off, no gate exists and Thread 3 registers backends
+immediately (pre-RQ3 behavior, byte-identical).
+
+Owns a native worker daemon thread (blocking HTTP probes). See
+``docs/research_questions/v2/rq3/rq3_preparation.md``.
+"""
+
+from __future__ import annotations
+
+import csv
+import logging
+import os
+import threading
+import time
+from dataclasses import dataclass
+from typing import Callable
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PendingBackend:
+    """A spawned-but-not-yet-admitted compute backend awaiting readiness."""
+    mac: str
+    ip: str
+    name: str
+    lan: int
+    network_id: str                 # controller LAN id: "lan1" / "lan2"
+    ready_port: int = 5000          # EDGE_READY_PORT (must equal edge BIND_PORT)
+    spawn_started_wall_s: float = 0.0     # time.time() at spawn start
+    spawn_complete_wall_s: float = 0.0    # time.time() when add_edge_server returned
+    spawn_started_mono_s: float = 0.0     # time.monotonic() at spawn start (timing line)
+    probe_first_wall_s: float | None = None
+    app_ready_wall_s: float | None = None
+    admitted_wall_s: float | None = None
+
+
+class ReadinessGate:
+    """Probe pending compute backends and admit them on verified readiness.
+
+    Native worker daemon thread (blocking HTTP probes). ``direct`` mode wakes on
+    enqueue and re-probes on the retry cadence; ``discovery`` mode wakes on the
+    scan cadence and ignores notify wakes.
+    """
+
+    def __init__(
+        self,
+        propagation: str,
+        probe_timeout_s: float,
+        probe_max_s: float,
+        probe_retry_s: float,
+        discovery_interval_s: float,
+        ready_port: int,
+        admission_log_path: str,
+        on_admit: Callable[[PendingBackend], None],
+        on_abandon: Callable[[PendingBackend], None],
+    ) -> None:
+        self._propagation = propagation            # "direct" | "discovery"
+        self._probe_timeout_s = probe_timeout_s
+        self._probe_max_s = probe_max_s
+        self._probe_retry_s = probe_retry_s
+        self._discovery_interval_s = discovery_interval_s
+        self._ready_port = ready_port
+        self._admission_log_path = admission_log_path
+        self._on_admit = on_admit
+        self._on_abandon = on_abandon
+
+        self._pending: list[PendingBackend] = []
+        self._wake = threading.Condition()
+        self._last_scan_mono: float = float("-inf")
+        self._csv_lock = threading.Lock()
+
+        self._thread = threading.Thread(
+            target=self._worker, name="readiness-gate", daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+        logger.info(
+            "[readiness] gate started propagation=%s probe_timeout=%.1fs "
+            "probe_max=%.1fs probe_retry=%.1fs discovery=%.1fs ready_port=%d",
+            self._propagation, self._probe_timeout_s, self._probe_max_s,
+            self._probe_retry_s, self._discovery_interval_s, self._ready_port,
+        )
+
+    def enqueue(self, pb: PendingBackend) -> None:
+        with self._wake:
+            self._pending.append(pb)
+            if self._propagation == "direct":
+                # Direct lifecycle notification: wake the worker immediately.
+                self._wake.notify_all()
+        logger.info(
+            "[readiness] enqueued pending backend name=%s mac=%s ip=%s lan=%d",
+            pb.name, pb.mac, pb.ip, pb.lan,
+        )
+
+    # ------------------------------------------------------------------
+    # Worker loop (native daemon thread)
+    # ------------------------------------------------------------------
+
+    def _worker(self) -> None:
+        while True:
+            try:
+                with self._wake:
+                    if self._propagation == "direct":
+                        # Wake on enqueue (notify) or re-probe on the retry
+                        # cadence. Idle wake-ups on an empty registry are
+                        # harmless (1 wake/s).
+                        self._wake.wait(self._probe_retry_s)
+                    else:
+                        # Discovery: wait on the cadence; ignore notify wakes.
+                        self._wake.wait(self._discovery_interval_s)
+                        while (time.monotonic() - self._last_scan_mono
+                               < self._discovery_interval_s):
+                            remaining = (self._discovery_interval_s
+                                         - (time.monotonic()
+                                            - self._last_scan_mono))
+                            self._wake.wait(max(0.0, remaining))
+                    pending = list(self._pending)
+                self._scan(pending)
+                # Stamp AFTER the scan (discovery cadence measured from the END
+                # of the previous scan) so a slow serial scan does not collapse
+                # into back-to-back scans. Only the worker thread touches this.
+                self._last_scan_mono = time.monotonic()
+            except Exception:
+                logger.exception("[readiness] worker pass failed — continuing")
+
+    def _scan(self, pending: list[PendingBackend]) -> None:
+        now_wall = time.time()
+        admitted: list[PendingBackend] = []
+        abandoned: list[PendingBackend] = []
+        for pb in pending:
+            if pb.admitted_wall_s is not None:
+                continue
+            if now_wall - pb.spawn_complete_wall_s > self._probe_max_s:
+                # Only drop from the registry once teardown was successfully
+                # enqueued (on_abandon); otherwise retry next pass.
+                if self._try_abandon(pb):
+                    abandoned.append(pb)
+                continue
+            self._probe_one(pb)
+            if pb.app_ready_wall_s is not None and pb.admitted_wall_s is None:
+                pb.admitted_wall_s = time.time()
+                try:
+                    self._on_admit(pb)
+                except Exception:
+                    logger.exception(
+                        "[readiness] on_admit failed for %s — retrying next pass",
+                        pb.name,
+                    )
+                    pb.admitted_wall_s = None
+                    continue
+                # Write the admitted row immediately after registration so a
+                # later removal failure cannot drop the backend without a row.
+                self._write_admission_row(pb, result="admitted")
+                admitted.append(pb)
+
+        if admitted or abandoned:
+            admitted_macs = {pb.mac for pb in admitted}
+            abandoned_macs = {pb.mac for pb in abandoned}
+            with self._wake:
+                self._pending = [
+                    p for p in self._pending
+                    if p.mac not in admitted_macs and p.mac not in abandoned_macs
+                ]
+
+    def _try_abandon(self, pb: PendingBackend) -> bool:
+        """Enqueue teardown + write the abandoned row; False → retry next pass."""
+        try:
+            self._on_abandon(pb)
+        except Exception:
+            logger.exception("[readiness] on_abandon failed for %s — retrying", pb.name)
+            return False
+        # A never-admitted backend must not report app_ready (§2.4 contract).
+        pb.app_ready_wall_s = None
+        self._write_admission_row(pb, result="abandoned")
+        logger.error("[readiness] abandoned never-ready backend name=%s mac=%s",
+                     pb.name, pb.mac)
+        return True
+
+    def _probe_one(self, pb: PendingBackend) -> None:
+        if pb.probe_first_wall_s is None:
+            pb.probe_first_wall_s = time.time()
+        url = f"http://{pb.ip}:{pb.ready_port}/ready"
+        try:
+            resp = requests.get(url, timeout=self._probe_timeout_s)
+            if resp.status_code == 200:
+                if pb.app_ready_wall_s is None:   # first observation of readiness
+                    pb.app_ready_wall_s = time.time()
+                logger.info("[readiness] /ready OK name=%s ip=%s", pb.name, pb.ip)
+            else:
+                logger.debug("[readiness] /ready %d name=%s", resp.status_code, pb.name)
+        except Exception as exc:  # connection refused / timeout — not ready yet
+            logger.debug("[readiness] /ready probe failed name=%s err=%s", pb.name, exc)
+
+    # ------------------------------------------------------------------
+    # Admission log (per controller / per LAN)
+    # ------------------------------------------------------------------
+
+    _ADMISSION_COLUMNS = [
+        "ts", "network_id", "lan", "container", "mac", "ip", "mode",
+        "result", "spawn_started_ts", "spawn_complete_ts", "probe_first_ts",
+        "app_ready_ts", "admitted_ts",
+    ]
+
+    def _write_admission_row(self, pb: PendingBackend, *, result: str) -> None:
+        row = [
+            f"{time.time():.3f}",
+            pb.network_id,
+            str(pb.lan),
+            pb.name,
+            pb.mac,
+            pb.ip,
+            self._propagation,
+            result,
+            _fmt_ts(pb.spawn_started_wall_s),
+            _fmt_ts(pb.spawn_complete_wall_s),
+            _fmt_ts(pb.probe_first_wall_s),
+            _fmt_ts(pb.app_ready_wall_s),
+            _fmt_ts(pb.admitted_wall_s),
+        ]
+        try:
+            with self._csv_lock:
+                write_header = (
+                    not os.path.exists(self._admission_log_path)
+                    or os.path.getsize(self._admission_log_path) == 0
+                )
+                with open(self._admission_log_path, "a", newline="") as fh:
+                    writer = csv.writer(fh)
+                    if write_header:
+                        writer.writerow(self._ADMISSION_COLUMNS)
+                    writer.writerow(row)
+        except Exception:
+            logger.exception("[readiness] failed to write admission log row for %s",
+                             pb.name)
+
+
+def _fmt_ts(v: float | None) -> str:
+    return f"{v:.3f}" if v is not None else ""

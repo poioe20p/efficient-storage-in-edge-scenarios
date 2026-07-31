@@ -20,6 +20,17 @@ def register_control_plane_routes(app: Flask, process_state) -> None:
     def health():
         return jsonify({"status": "ok"}), 200
 
+    @app.route("/ready", methods=["GET"])
+    def ready():
+        """RQ3 application-readiness probe: 200 iff the app is ready to serve.
+
+        ``app_ready`` is set True only after a real MongoDB round-trip
+        succeeds (see app.py's readiness probe). Returns 503 before that.
+        """
+        if process_state.app_ready:
+            return jsonify({"status": "ready"}), 200
+        return jsonify({"status": "starting"}), 503
+
     @app.route("/drain", methods=["POST"])
     def drain():
         """Change the local drain state.

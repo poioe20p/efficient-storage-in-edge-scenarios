@@ -5,8 +5,8 @@
 One aggregator container runs per network. It collects raw events from all
 producers on that network via ZMQ PULL, buffers them into time windows, reduces
 them into per-server and domain-level summaries, publishes the summaries
-via ZMQ PUB (push), and caches them in memory for HTTP retrieval (poll).
-See § 13 for the HTTP cache endpoint.
+via ZMQ PUB (push), persists every window to a durable window log, and serves
+the log over HTTP (poll + RQ1 delivery modes). See § 12 and § 13.
 
 ## 2. Current File
 
@@ -84,6 +84,10 @@ Extracted control events are published immediately as a **mini-summary**:
 The controller processes these on arrival without waiting for the next window
 close. Control-event frames are **not** buffered into the window.
 
+`request_complete` (RQ3 flow isolation) is now a whitelisted control-event type
+and is forwarded the same way in control mini-summaries. See
+[RQ3 — Readiness Propagation and Traffic Admission](../../../research_questions/v2/rq3/rq3_preparation.md).
+
 ## 6. Windowed Aggregation
 
 Every `WINDOW_S` seconds (default 10), the publish loop:
@@ -98,7 +102,12 @@ Every `WINDOW_S` seconds (default 10), the publish loop:
 8. Computes domain summary (§ 10).
 9. Publishes the `TelemetrySummary` JSON frame on the PUB socket (§ 12).
 
-If the window is empty or contains no valid events, the publish is skipped.
+Every `WINDOW_S` interval is a window with a monotonic `window_seq`
+(`window_id = f"{NETWORK_ID}:{window_seq}"`). Since 2026-07-31 (RQ1 delivery
+semantics) **every window is always published** — a window with no valid
+events still closes with `servers={}`, `storage_servers={}`,
+`domain_summary=None`, `overload=False`, and its `window_seq`, so the window
+universe stays contiguous for the analyzer.
 
 ## 7. HTTP Server Summaries
 
@@ -218,6 +227,9 @@ Every published frame is a JSON object matching the `TelemetrySummary` model:
 {
   "network_id":      str,
   "window_end":      float,
+  "window_seq":      int | null,     # monotonic; None for control mini-summaries
+  "window_id":       str | null,     # f"{NETWORK_ID}:{window_seq}"
+  "overload":        bool,           # producer-side label (RQ1, see below)
   "servers":         dict[str, ServerSummary],
   "storage_servers": dict[str, StorageServerSummary],
   "control_events":  list[dict],
@@ -225,8 +237,9 @@ Every published frame is a JSON object matching the `TelemetrySummary` model:
 }
 ```
 
-Mini-summaries (control events) have empty `servers` / `storage_servers` and
-no `domain_summary`. Full window summaries have `control_events: []`.
+Mini-summaries (control events) have empty `servers` / `storage_servers`, no
+`domain_summary`, and `window_seq=None`. Full window summaries — including
+empty windows — have `control_events: []` and a set `window_seq`.
 
 ### Failure Handling
 
@@ -235,37 +248,68 @@ no `domain_summary`. Full window summaries have `control_events: []`.
   `server_mac` and dropped. The rest of the window is processed normally.
 - **Unsupported control event types** — logged and dropped from the
   `control_events` list.
-- **Empty window** — publish skipped entirely.
+- **Empty window** — always published (RQ1): a fully-idle window still closes
+  as a real window with a `window_seq` (see § 6). Never skipped.
 - **ZMQ send failures** — not explicitly caught; `send_json` may raise
   `zmq.Again` if no subscribers are connected (PUB socket semantics), but the
   aggregator does not retry — the next window's summary will carry fresh data.
 
-## 13. HTTP Cache Endpoint (Polling Controllers)
+### Overload Labelling (RQ1)
 
-Since 2026-06-11 the aggregator also serves the latest full-window summary
-over HTTP for polling controllers.
+Since 2026-07-31 each real window carries a producer-side `overload: bool`
+label computed at publish time — only when `domain_summary` is not None
+(empty windows are always `overload=False`):
 
-### Endpoint
-
+```python
+error_rate = (statistics.mean(s.error_rate for s in servers.values())
+              if servers else 0.0)
+overload = (domain_summary["average_cpu_percent"] >= OVERLOAD_CPU_PCT
+            or domain_summary["peak_time_total_ms"] >= OVERLOAD_PEAK_LATENCY_MS
+            or error_rate >= OVERLOAD_ERROR_RATE)
 ```
-GET http://<aggregator_ip>:5558/latest_summary
-```
 
-The port is configurable via ``SUMMARY_CACHE_PORT`` (default ``5558``).
+Thresholds are pre-registered per run via `OVERLOAD_CPU_PCT` (default `5.0`),
+`OVERLOAD_PEAK_LATENCY_MS` (default `1000`), and `OVERLOAD_ERROR_RATE` (default
+`0.05`, a fraction) — identical across arms/runs. This is a documented proxy,
+**not** a replication of the controller's internal `degradation_score`.
 
-### Behaviour
+## 13. HTTP Window-Log Server (Polling & RQ1 Delivery Modes)
 
-- **Returns** the most recent full-window ``TelemetrySummary`` JSON, cached
-  in ``_latest_summary`` after every ZMQ publish.
-- **Returns ``{}``** before the first window closes (no summary available).
-- **Mini-summaries** (control events) are **never** cached or served — only
-  full window summaries.
-- The endpoint is served by a daemon-threaded ``http.server.HTTPServer``;
-  it cannot block the ZMQ receive or publish loops.
+Since 2026-06-11 the aggregator serves telemetry over HTTP on port
+`SUMMARY_CACHE_PORT` (default `5558`). Since 2026-07-31 (RQ1 delivery
+semantics) the server is a `ThreadingHTTPServer` backed by the durable window
+log, not just the latest-summary cache.
+
+### Endpoints
+
+- `GET /latest_summary` — most recent full-window `TelemetrySummary` JSON
+  (cached after every publish); `{}` before the first window closes.
+- `GET /window?seq=N` — `200` with the window; `404 {"error":"not_found","seq":N}`
+  if unknown; `410 {"error":"aged_out","seq":N,"first_available_seq":X}` if the
+  seq has fallen out of the in-memory ring.
+- `GET /windows?after_seq=N&limit=K` — `200 {"windows":[...],"next_after_seq":M,"truncated":bool}`
+  (default `limit` 100); `410 {"error":"aged_out","after_seq":N,"first_available_seq":X}`.
+- `POST /ack` — body `{"window_id":…,"window_seq":N,"delivered_at":ts}` →
+  `200 {"ok":true}`; appends to the **separate** `ack_log.jsonl`.
+
+### Window Log (Durable JSONL)
+
+- Every published window is appended to `WINDOW_LOG_PATH` (default
+  `/tmp/window_log.jsonl`) **and** an in-memory ring of size
+  `WINDOW_LOG_RETENTION` (default `10000`), guarded by a lock shared with the
+  publish loop, HTTP handler threads, and boot load.
+- On boot the JSONL tail is reloaded into the ring and `window_seq` resumes
+  from the last seq in the file (0 if none) — **restart-continuous**, so a
+  consumer's `last_seq` stays valid across an aggregator restart.
+- `GET /window` and `GET /windows` replay from this log; seqs older than the
+  ring's first entry answer `410 aged_out` with `first_available_seq`.
+- Control mini-summaries are **never** logged or served — only real windows.
 
 ### Controller Usage
 
-Polling controllers send ``GET /latest_summary`` to both aggregators
-concurrently at a configurable interval (``POLL_INTERVAL_S``, default 10 s).
-See ``source/sdn_controller/telemetry/polling_source.py`` and
-``docs/operation/telemetry/implementation/rq1_polling_mechanism/``.
+Polling controllers send `GET /latest_summary` to both aggregators
+concurrently at a configurable interval (`POLL_INTERVAL_S`, default 10 s);
+RQ1 event-preserving sources pull `GET /windows?after_seq=…` and ack via
+`POST /ack`. See `source/sdn_controller/telemetry/polling_source.py`,
+`event_preserving_source.py`, `delayed_source.py`, and
+`docs/operation/telemetry/implementation/rq1_delivery_semantics/rq1_delivery_semantics_plan.md`.

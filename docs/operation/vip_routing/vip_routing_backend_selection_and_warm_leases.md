@@ -315,6 +315,17 @@ backend spawn, directly parallel to RQ1's telemetry-delivery cadence
 comparison (push vs. poll). RQ1 tests the coordination gap in monitoring;
 RQ2 tests the same phenomenon in routing.
 
+### RQ3 Operating Point
+
+RQ3 runs pin `BACKEND_SELECTION_POLICY=topology_host` and
+`VIP_WARM_SERVER_SECONDS=0` in **both** arms (`direct` / `discovery`): no
+warm-lease consumption and no slow-start ramp, with a newly admitted backend
+strongly preferred by WSM through its best-case (`0.0`) unknown stats.
+Backend admission itself goes through the readiness gate -- the spawned backend
+is held `PendingBackend` until `/ready` returns `200` before it joins the pool.
+See
+[RQ3 -- Readiness Propagation and Traffic Admission](../../research_questions/v2/rq3/rq3_preparation.md).
+
 ## 11. Slowstart Penalty Ramp (topology_slowstart)
 
 When `BACKEND_SELECTION_POLICY=topology_slowstart`, the WSM cost function adds

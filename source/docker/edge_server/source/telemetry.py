@@ -167,6 +167,7 @@ class ZmqMetricSender(MetricSender):
     def __init__(self) -> None:
         addr = os.environ.get("AGGREGATOR_PULL_ADDR", "") or _aggregator_addr_from_lan()
         self._sock: zmq.Socket | None = None
+        self._send_lock = threading.Lock()
         if addr:
             ctx = zmq.Context.instance()
             self._sock = ctx.socket(zmq.PUSH)
@@ -175,10 +176,14 @@ class ZmqMetricSender(MetricSender):
     def send(self, event: dict) -> None:
         if self._sock is None:
             return
-        try:
-            self._sock.send_json(event, zmq.NOBLOCK)
-        except zmq.Again:
-            pass
+        # ZMQ sockets are not thread-safe; the telemetry publisher thread, the
+        # drain-monitor thread, and (RQ3) per-request request_complete threads
+        # all share this sender — serialize sends (RQ3 flow isolation).
+        with self._send_lock:
+            try:
+                self._sock.send_json(event, zmq.NOBLOCK)
+            except zmq.Again:
+                pass
 
 
 def _heartbeat_loop(

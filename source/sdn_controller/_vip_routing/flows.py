@@ -3,8 +3,10 @@
 from .config import (
     _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
     _ROUTER_OVS_PORT, _ROUTER_MAC,
+    ClientVipBinding,
     logger,
 )
+from ..scaling_config import _VIP_FLOW_ISOLATION
 
 
 # Flow cookies for VIP_DATA forward rules, keyed by domain.
@@ -195,6 +197,49 @@ def _delete_flow_by_cookie(controller, datapath, cookie):
     datapath.send_msg(mod)
 
 
+def delete_vip_server_client_flows(controller, datapath, binding: ClientVipBinding):
+    """Delete the exact VIP_SERVER DNAT+SNAT pair for one client+backend (RQ3).
+
+    Uses the recorded binding for an EXACT match so it never matches the
+    never-expiring ``VIP_DATA`` reply rule (``tcp_src=27018``) or another
+    backend's ``VIP_SERVER`` SNAT rule. After deletion the priority-100 punt
+    rule resumes → the next SYN triggers a fresh ``select_server()``.
+    """
+    parser = datapath.ofproto_parser
+    ofproto = datapath.ofproto
+
+    dnat_match = parser.OFPMatch(
+        eth_type=0x0800,
+        eth_src=binding.client_mac,
+        eth_dst=binding.vip_mac,
+        ipv4_src=binding.client_ip,
+        ipv4_dst=binding.vip_ip,
+        ip_proto=6,
+    )
+    snat_match = parser.OFPMatch(
+        eth_type=0x0800,
+        eth_src=binding.snat_eth_src,
+        eth_dst=binding.client_mac,
+        ipv4_src=binding.backend_ip,
+        ipv4_dst=binding.client_ip,
+        ip_proto=6,
+    )
+    for match in (dnat_match, snat_match):
+        mod = parser.OFPFlowMod(
+            datapath=datapath,
+            table_id=ofproto.OFPTT_ALL,
+            command=ofproto.OFPFC_DELETE,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            match=match,
+        )
+        datapath.send_msg(mod)
+    logger.debug(
+        "vip_server: flow delete issued — client=%s vip=%s backend=%s",
+        binding.client_ip, binding.vip_ip, binding.backend_ip,
+    )
+
+
 def delete_vip_data_forward_rule(controller, datapath, domain):
     """Delete the forward rule for a VIP_DATA domain.
 
@@ -330,6 +375,36 @@ def install_vip_dnat_snat(
         idle_timeout=idle_timeout if idle_timeout is not None else _VIP_IDLE_TIMEOUT,
         hard_timeout=hard_timeout if hard_timeout is not None else _VIP_HARD_TIMEOUT,
     )
+
+    # ── RQ3 flow isolation: record the client→backend binding ──
+    # Active ONLY when VIP_FLOW_ISOLATION=1 (RQ3 arms). When off (default) this
+    # block is skipped entirely → canonical/RQ1/RQ2 runs are byte-identical
+    # (no _vip_server_client_map writes, no re-selection flow deletes).
+    # On re-selection for a client that already has a binding, first delete the
+    # old exact DNAT+SNAT pair (on every datapath) so the previous backend's
+    # SNAT rule does not linger with a different match.
+    if _VIP_FLOW_ISOLATION:
+        with controller._warm_lock:
+            old = controller._vip_server_client_map.get(client_mac)
+            if old is not None and (old.backend_mac != real_backend_mac
+                                    or old.vip_ip != vip_ip):
+                try:
+                    for _dp in controller.datapaths:
+                        delete_vip_server_client_flows(controller, _dp, old)
+                except Exception:
+                    logger.exception(
+                        "vip_server: failed to delete old binding for client=%s",
+                        client_mac,
+                    )
+            controller._vip_server_client_map[client_mac] = ClientVipBinding(
+                client_mac=client_mac,
+                client_ip=client_ip,
+                backend_mac=real_backend_mac,
+                backend_ip=real_backend_ip,
+                vip_ip=vip_ip,
+                vip_mac=vip_mac,
+                snat_eth_src=snat_eth_src,
+            )
 
     logger.info(
         "dnat/snat installed: vip=%s -> real=%s (idle=%ds hard=%ds)",

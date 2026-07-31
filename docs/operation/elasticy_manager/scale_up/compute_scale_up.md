@@ -21,13 +21,13 @@ TelemetrySummary (ZMQ)
     ▼
 _on_telemetry_update()                    [main_n*.py — Thread 2 mediator]
     ├─ sync node registry
-    ├─ evaluate scale-up                  [ScalingPolicy.evaluate_scale_up()]
-    │   ├─ check cooldown
+    ├─ evaluate scale-up                  [ScalingPolicy.evaluate_compute_scale_up()
+    │   ├─ check cooldown                    → ScaleUpVerdict]
     │   ├─ check cap
     │   ├─ compute degradation score
     │   ├─ compute adaptive threshold + peer relief
     │   ├─ append to sliding window
-    │   └─ if window_hits >= REQUIRED → return ComputeAlert(lan, network_id)
+    │   └─ if window_hits >= REQUIRED → fired=True (fire timestamp set)
     │
     ▼
 self._elasticity.submit(ComputeAlert)     [Thread 2 → Thread 3 queue]
@@ -42,6 +42,12 @@ _loop() pops alert → _handle_compute()    [Thread 3]
         └─ VIP web pool + warm lease (created unconditionally;
            consumed only when BACKEND_SELECTION_POLICY=topology_lifecycle)
 ```
+
+**RQ2 policy gate:** in RQ2 arms (`SCALEUP_POLICY` ≠ `dual`) the compute verdict
+is passed to `PolicyGate.select()`, which emits **at most one** action per
+window (compute, storage, or none); the legacy `evaluate_scale_up()` facade is
+used only by the `dual` path. See
+[`rq2_preparation.md`](../../../research_questions/v2/rq2/rq2_preparation.md).
 
 The mediator (`main_n*.py`) also checks: if a `ComputeAlert` was submitted
 and pending compute drains exist, a lower-priority `CancelComputeDrainAlert`

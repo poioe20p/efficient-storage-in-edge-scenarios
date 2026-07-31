@@ -195,9 +195,12 @@ _curl_warn_shown = False
 async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None = None) -> tuple:
     """Execute curl inside a network namespace.
 
-    Returns ``(http_status, latency_s, backend_id)``.
+    Returns ``(http_status, latency_s, backend_id, source_port)``.
     *backend_id* is the value of the ``X-Backend-ID`` response header, or
     ``"unknown"`` if the header is absent (e.g. connection failure).
+    *source_port* is the curl local source port (``%{local_port}``), used by
+    ``rq3_flow_validation.py`` Check D to verify one fresh TCP connection per
+    request (RQ3 flow isolation).
 
     When *body* is not None the request is sent as POST with
     ``Content-Type: application/json``.
@@ -208,7 +211,7 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
     cmd = [
         "ip", "netns", "exec", ns,
         "curl", "-s", "-o", "/dev/null", "-D", "-",
-        "-w", "\n%{http_code} %{time_total}",
+        "-w", "\n%{http_code} %{time_total} %{local_port}",
         "--max-time", curl_max_time,
     ]
     if body is not None:
@@ -217,7 +220,7 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
 
     if dry_run:
         print(f"[DRY-RUN] {' '.join(cmd)}")
-        return 200, 0.0, "dry_run"
+        return 200, 0.0, "dry_run", 0
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -250,9 +253,9 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
     last_line = output.split("\n")[-1].strip() if output else ""
     parts = last_line.split()
 
-    if len(parts) == 2:
+    if len(parts) == 3:
         try:
-            return int(parts[0]), float(parts[1]), backend_id
+            return int(parts[0]), float(parts[1]), backend_id, int(parts[2])
         except ValueError:
             pass
 
@@ -264,7 +267,7 @@ async def exec_curl(ns: str, url: str, dry_run: bool = False, body: str | None =
         print(f"         stdout={output[:200]!r}")
         print(f"         stderr={err!r}")
 
-    return 0, 0.0, backend_id
+    return 0, 0.0, backend_id, 0
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +314,8 @@ async def client_loop(
             sent_at = datetime.now(timezone.utc).isoformat()
             phase_name = phase.name
 
-            http_status, latency_s, backend_id = await exec_curl(ns, url, dry_run, body)
+            http_status, latency_s, backend_id, source_port = await exec_curl(
+                ns, url, dry_run, body)
 
             row = [
                 sent_at,
@@ -326,6 +330,7 @@ async def client_loop(
                 round(latency_s, 4),
                 datetime.now(timezone.utc).isoformat(),
                 backend_id,
+                source_port,
             ]
             async with csv_lock:
                 for csv_writer, csv_file in csv_targets:
@@ -363,7 +368,8 @@ async def client_loop(
             )
         sent_at = datetime.now(timezone.utc).isoformat()
         phase_name = phase.name
-        http_status, latency_s, backend_id = await exec_curl(ns, url, dry_run, body)
+        http_status, latency_s, backend_id, source_port = await exec_curl(
+            ns, url, dry_run, body)
         request_count += 1
 
         row = [
@@ -379,6 +385,7 @@ async def client_loop(
             round(latency_s, 4),
             datetime.now(timezone.utc).isoformat(),
             backend_id,
+            source_port,
         ]
         async with csv_lock:
             for csv_writer, csv_file in csv_targets:
@@ -450,7 +457,7 @@ async def run(args):
     header = [
         "sent_at", "phase", "client_ns", "client_lan", "endpoint",
         "content_id", "user_id", "target_region", "http_status", "latency_s",
-        "completed_at", "backend_id",
+        "completed_at", "backend_id", "source_port",
     ]
 
     aggregate_file = open(args.output, "w", newline="")

@@ -653,6 +653,69 @@ generate_policy_state() {
 }
 
 # ---------------------------------------------------------------------------
+# RQ1 telemetry delivery-semantics artifacts (Step 8b)
+# ---------------------------------------------------------------------------
+# Copies the durable window universe, delivery log, decision log, and producer
+# acks out of the containers BEFORE any external cleanup runs. Also snapshots
+# the aggregator env vars (aggregator-side only — separate from the controller
+# env snapshot so attribute-to-container is unambiguous).
+collect_rq1_artifacts() {
+    step "Collecting RQ1 telemetry delivery artifacts"
+    # Read the actual artifact paths from each container (respects any run-level
+    # env override), falling back to the documented defaults.
+    local _wl1 _wl2 _al1 _al2 _dl1 _dl2 _dec1 _dec2
+    _wl1="$(docker exec aggregator_n1 printenv WINDOW_LOG_PATH 2>/dev/null || echo /tmp/window_log.jsonl)"
+    _wl2="$(docker exec aggregator_n2 printenv WINDOW_LOG_PATH 2>/dev/null || echo /tmp/window_log.jsonl)"
+    _al1="$(docker exec aggregator_n1 printenv ACK_LOG_PATH 2>/dev/null || echo /tmp/ack_log.jsonl)"
+    _al2="$(docker exec aggregator_n2 printenv ACK_LOG_PATH 2>/dev/null || echo /tmp/ack_log.jsonl)"
+    _dl1="$(docker exec osken printenv DELIVERY_LOG_PATH 2>/dev/null || echo /tmp/telemetry_delivery_log.csv)"
+    _dl2="$(docker exec osken_2 printenv DELIVERY_LOG_PATH 2>/dev/null || echo /tmp/telemetry_delivery_log.csv)"
+    _dec1="$(docker exec osken printenv DECISION_LOG_PATH 2>/dev/null || echo /tmp/decision_log.csv)"
+    _dec2="$(docker exec osken_2 printenv DECISION_LOG_PATH 2>/dev/null || echo /tmp/decision_log.csv)"
+
+    docker cp "aggregator_n1:${_wl1}"  "${RUN_DIR}/window_log_lan1.jsonl"       2>/dev/null || echo "  WARNING: window_log_lan1 unavailable" >&2
+    docker cp "aggregator_n2:${_wl2}"  "${RUN_DIR}/window_log_lan2.jsonl"       2>/dev/null || echo "  WARNING: window_log_lan2 unavailable" >&2
+    docker cp "aggregator_n1:${_al1}"  "${RUN_DIR}/ack_log_lan1.jsonl"          2>/dev/null || echo "  WARNING: ack_log_lan1 unavailable" >&2
+    docker cp "aggregator_n2:${_al2}"  "${RUN_DIR}/ack_log_lan2.jsonl"          2>/dev/null || echo "  WARNING: ack_log_lan2 unavailable" >&2
+    docker cp "osken:${_dl1}"          "${RUN_DIR}/telemetry_delivery_log_lan1.csv" 2>/dev/null || echo "  WARNING: telemetry_delivery_log_lan1 unavailable" >&2
+    docker cp "osken_2:${_dl2}"        "${RUN_DIR}/telemetry_delivery_log_lan2.csv" 2>/dev/null || echo "  WARNING: telemetry_delivery_log_lan2 unavailable" >&2
+    docker cp "osken:${_dec1}"         "${RUN_DIR}/decision_log_lan1.csv"       2>/dev/null || echo "  WARNING: decision_log_lan1 unavailable" >&2
+    docker cp "osken_2:${_dec2}"       "${RUN_DIR}/decision_log_lan2.csv"       2>/dev/null || echo "  WARNING: decision_log_lan2 unavailable" >&2
+
+    # Aggregator env snapshot — per container so a run-level override on one
+    # aggregator is not misrepresented by the other's values.
+    {
+        echo "# Aggregator env snapshot (per container) — RQ1 telemetry delivery"
+        for _v in WINDOW_S OVERLOAD_CPU_PCT OVERLOAD_PEAK_LATENCY_MS OVERLOAD_ERROR_RATE \
+                   WINDOW_LOG_RETENTION WINDOW_LOG_PATH ACK_LOG_PATH; do
+            _v1="$(docker exec aggregator_n1 printenv "$_v" 2>/dev/null || true)"
+            _v2="$(docker exec aggregator_n2 printenv "$_v" 2>/dev/null || true)"
+            echo "${_v}_n1=${_v1}"
+            echo "${_v}_n2=${_v2}"
+        done
+    } > "${RUN_DIR}/aggregator_env_snapshot.env"
+    echo "  Aggregator env : ${RUN_DIR}/aggregator_env_snapshot.env"
+}
+
+# ---------------------------------------------------------------------------
+# RQ3 readiness-propagation artifacts (admission logs, per controller)
+# ---------------------------------------------------------------------------
+# Copies the RQ3 admission log out of each controller BEFORE any external
+# cleanup runs. Non-RQ3 runs produce no admission log → warning only.
+collect_rq3_artifacts() {
+    step "Collecting RQ3 readiness-propagation artifacts"
+    local _adm1 _adm2
+    _adm1="$(docker exec osken printenv ADMISSION_LOG_PATH 2>/dev/null || echo /tmp/admission_log.csv)"
+    _adm2="$(docker exec osken_2 printenv ADMISSION_LOG_PATH 2>/dev/null || echo /tmp/admission_log.csv)"
+
+    docker cp "osken:${_adm1}"   "${RUN_DIR}/admission_log_lan1.csv" 2>/dev/null \
+        || echo "  WARNING: admission_log_lan1 unavailable (non-RQ3 run?)" >&2
+    docker cp "osken_2:${_adm2}" "${RUN_DIR}/admission_log_lan2.csv" 2>/dev/null \
+        || echo "  WARNING: admission_log_lan2 unavailable (non-RQ3 run?)" >&2
+    echo "  Admission logs : ${RUN_DIR}/admission_log_lan1.csv, ${RUN_DIR}/admission_log_lan2.csv"
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -699,6 +762,8 @@ stop_collect_stats
 # Post-run artifact reconstruction
 generate_elasticity_events
 generate_policy_state
+collect_rq1_artifacts
+collect_rq3_artifacts
 
 step "Experiment complete"
 echo "Results          : ${METRICS_OUTPUT}"
@@ -715,5 +780,9 @@ fi
 echo "Controller logs: ${CONTROLLER_LOG_LAN1}"
 echo "               : ${CONTROLLER_LOG_LAN2}"
 echo "Service logs   : ${SERVICE_LOG_DIR}"
+echo "RQ1 window log : ${RUN_DIR}/window_log_lan1.jsonl, ${RUN_DIR}/window_log_lan2.jsonl"
+echo "RQ1 delivery   : ${RUN_DIR}/telemetry_delivery_log_lan1.csv, ${RUN_DIR}/telemetry_delivery_log_lan2.csv"
+echo "RQ1 decisions  : ${RUN_DIR}/decision_log_lan1.csv, ${RUN_DIR}/decision_log_lan2.csv"
+echo "RQ3 admission  : ${RUN_DIR}/admission_log_lan1.csv, ${RUN_DIR}/admission_log_lan2.csv"
 
 _write_run_status "completed" 0 "idle"

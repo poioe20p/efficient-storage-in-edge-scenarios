@@ -2,6 +2,16 @@ Revised §1.1 Structure — 9 Paragraphs
 
 Understood. You want a properly developed introduction, not a compressed one. Here's a 9-paragraph structure that follows your funnel logic, with each paragraph doing exactly one job and citing the right papers. Each ¶ is roughly the size of your existing traffic paragraph (5–7 lines).
 
+> **Framing note (2026-07-31):** ¶9 (Central Claim) updated to the current
+> three-interface thesis framing (`tese/Notes/thesis_overview.md`): the three
+> links are now **telemetry delivery semantics** (RQ1), **bottleneck-aware
+> capacity-action selection** (RQ2), and **readiness propagation / traffic
+> admission** (RQ3). The earlier "trigger quality / telemetry freshness /
+> backend selection" labels are superseded. ¶8 (coordination gap) is retained
+> as background motivation, consistent with `global_literature_review.md`.
+> Tiered data placement is a held-constant platform capability, not a claimed
+> contribution.
+
 ¶1 — Internet Traffic Growth (The Hook)
 Job: Establish the scale. Global internet traffic surpassed 7 EB in 2025, more than double since 2020. This is your opening data point — concrete, cited, visual (Figure 1.1). Keep it factual, not interpretative.
 
@@ -19,16 +29,16 @@ Flag: The writing guide says "DO NOT mention IoT." I think mentioning IoT in a l
 ¶3 — Cloud as the Default Deployment Model
 Job: These applications are overwhelmingly deployed on cloud infrastructure. Cloud provides abundant compute and storage resources, economies of scale, global reach, and operational maturity. This is the status quo — the unexamined default for application deployment. You're establishing the baseline that edge computing will be contrasted against.
 
-Citation needed: Armbrust et al. (2010) — "A View of Cloud Computing," Communications of the ACM. Canonical reference. Not in your .bib. DOI: 10.1145/1721654.1721672
+Citation: Armbrust et al. (2010) — "A View of Cloud Computing," Communications of the ACM. Canonical reference. In references.bib as `Armbrust2010ViewCloudComputing`. DOI: 10.1145/1721654.1721672
 
 Alternative: Buyya et al. (2009), "Cloud computing and emerging IT platforms," Future Generation Computer Systems. DOI: 10.1016/j.future.2008.12.001. Older but still well-cited. Armbrust is the better choice.
 
 ¶4 — The Latency Problem: Why Cloud Isn't Enough
 Job: Despite cloud's resource abundance, some applications have latency constraints that a centralized cloud model cannot satisfy — the physical distance between cloud data centers and end users imposes a fundamental lower bound on response time. Interactive web services, real-time content personalization, and data-intensive applications are particularly affected. This tension — abundant resources but high latency — is what motivated the emergence of fog and edge computing paradigms.
 
-Citation needed: Satyanarayanan (2017) — "The Emergence of Edge Computing," IEEE Computer. DOI: 10.1109/MC.2017.9. The authoritative voice on why edge exists. Not in your .bib.
+Citation: Satyanarayanan (2017) — "The Emergence of Edge Computing," IEEE Computer. DOI: 10.1109/MC.2017.9. The authoritative voice on why edge exists. In references.bib as `Satyanarayanan2017EmergenceEdgeComputing`.
 
-Also: Shi et al. (2016) — "Edge Computing: Vision and Challenges," IEEE Internet of Things Journal. DOI: 10.1109/JIOT.2016.2579198. Not in your .bib.
+Also: Shi et al. (2016) — "Edge Computing: Vision and Challenges," IEEE Internet of Things Journal. DOI: 10.1109/JIOT.2016.2579198. In references.bib as `Shi2016EdgeComputingVisionChallenges`.
 
 These two together are the canonical pair. Satyanarayanan gives you the conceptual argument (distance = latency); Shi gives you the structured survey.
 
@@ -116,26 +126,32 @@ and called for at the survey level by Yaseen
 \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork} — but
 never isolated, measured, or varied as an independent experimental
 variable. No paper across the literature argues for this separation or
-against co-location: it is the unexamined default.
+against co-location: it is the unexamined default. Within this gap, this
+thesis isolates three specific links in the demand-to-capacity chain — how
+demand evidence is delivered to the controller, which capacity action is
+chosen in response, and when ready capacity is admitted to traffic.
 
 ¶9 — Central Claim and Honest Scope
 
-This thesis experimentally examines three links in the detection→delivery→
-action chain — trigger quality (what signals are monitored), telemetry
-freshness (how fast those signals arrive), and backend selection (how
-quickly new capacity receives traffic) — characterising how each
-independently affects service quality during demand shifts in a stateful
-service deployed across two geo-distributed sites. An SDN controller serves
-as the experimental apparatus: by co-locating monitoring, routing, and
-scaling in a single process with shared data structures, it eliminates
-the propagation delays that confound separated architectures and enables
-each link to be varied while the others are held constant. The thesis does
-not claim that SDN is superior to Kubernetes or any specific orchestration
-platform; does not claim that the coordination gap matters equally for all
-workloads or at all deployment scales; and does not claim that the
-mechanisms demonstrated — the Double-VIP traffic model, the MongoDB
-replica-set tiering — generalise beyond the tested infrastructure. It
-claims only that the coordination gap is a measurable, previously
-uncharacterised phenomenon, and that varying each link independently
-within a unified control point reveals which dimensions matter and under
-what conditions.
+This thesis experimentally examines three links in the demand-to-capacity
+chain — telemetry delivery semantics (how demand evidence reaches the
+controller, and whether intermediate evidence is preserved), capacity-action
+selection (whether the controller scales compute or storage in response to
+the observed bottleneck), and readiness propagation (how quickly a ready
+backend is admitted to traffic and becomes usable capacity) —
+characterising how each independently affects service quality during demand
+shifts in a stateful service deployed across two geo-distributed sites. An
+SDN controller serves as the experimental apparatus: by co-locating
+monitoring, routing, and scaling in a single process with shared data
+structures, it makes each of the three interfaces independently controllable,
+so each link can be varied while the others are held constant. The thesis
+does not claim that SDN is superior to Kubernetes or any specific
+orchestration platform; does not claim that these interfaces matter equally
+for all workloads or at all deployment scales; and does not claim that the
+platform mechanisms — the Double-VIP traffic model, tiered data placement
+and Tier 1 selective synchronisation — generalise beyond the tested
+infrastructure (they are held constant as platform capabilities, not part of
+the claimed contribution). It claims only that the three interfaces are
+measurable, previously uncharacterised links in the demand-to-capacity path,
+and that varying each independently within a unified control point reveals
+which dimensions matter and under what conditions.

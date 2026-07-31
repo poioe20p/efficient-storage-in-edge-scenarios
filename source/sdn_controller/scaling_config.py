@@ -98,6 +98,79 @@ _SCALEUP_STORAGE_COOLDOWN_S   = float(os.environ.get("SCALEUP_STORAGE_COOLDOWN_S
 # Birth grace — skip absent-node detection for newly spawned nodes
 _NODE_BIRTH_GRACE_S = float(os.environ.get("NODE_BIRTH_GRACE_S", "60"))
 
+# ── RQ1 Design B housekeeping clock ───────────────────────────────────
+# Time-based housekeeping (absent-node detection, scale-down evaluation)
+# runs on this fixed internal ticker instead of on telemetry arrival.
+_CONTROL_TICK_S = float(os.environ.get("CONTROL_TICK_S", "10"))
+# Time-based absence timeout — comfortably above the longest heartbeat so
+# idle-but-alive nodes are not falsely flagged absent. Scales with the
+# housekeeping clock (semantic change from per-window counts).
+_TELEMETRY_TIMEOUT_S = max(
+    _TELEMETRY_TIMEOUT_WINDOWS * _CONTROL_TICK_S,
+    3.0 * float(os.environ.get("HEARTBEAT_INTERVAL_S", "60")),
+)
+
+# ── RQ2 bottleneck policy gate ─────────────────────────────────────────
+# SCALEUP_POLICY selects the scale-up selection policy:
+#   "dual"                 → pre-RQ2 behavior (both tiers may fire + submit
+#                            independently, no budget, RQ1 decision log) —
+#                            DEFAULT. Keeps canonical / RQ1 runs byte-identical.
+#   "fixed_compute_first"  → RQ2 arm: always compute, never storage.
+#   "fixed_storage_first"  → RQ2 arm: always storage, never compute.
+#   "bottleneck_aware"     → RQ2 arm: classify the bottleneck from tier-specific
+#                            telemetry and select the matching tier.
+# Unknown value → log error + fall back to "dual" (deliberate, documented).
+_SCALEUP_POLICY = os.environ.get("SCALEUP_POLICY", "dual")
+
+# RQ2 action budget: hard ceiling on scale-up (spawn) submissions per tier per
+# controller (per LAN). 0 disables enforcement (dual). Scale-down does not
+# consume budget. See docs/research_questions/v2/rq2/rq2_preparation.md.
+_ACTION_BUDGET_PER_TIER = int(os.environ.get("ACTION_BUDGET_PER_TIER", "4"))
+
+# RQ2 bottleneck classifier margin (D3): |compute_score_norm - storage_score_norm|
+# <= margin → classify as storage (documented tie-break; storage is the
+# higher-urgency tier). Pre-registered per run, identical across arms.
+_BOTTLENECK_CLASSIFY_MARGIN = float(
+    os.environ.get("BOTTLENECK_CLASSIFY_MARGIN", "0.05")
+)
+
+# ── RQ3 readiness-propagation gate ─────────────────────────────────
+# READINESS_PROPAGATION selects compute-backend admission timing:
+#   "off"       → current pre-RQ3 behavior: register into the VIP_SERVER pool
+#                 immediately after spawn (no probe, no admission log, no
+#                 readiness worker thread) — DEFAULT. Canonical / RQ1 / RQ2
+#                 runs byte-identical.
+#   "direct"    → RQ3 arm: probe /ready immediately + every
+#                 READINESS_PROBE_RETRY_S; admit on 200 (direct lifecycle
+#                 notification).
+#   "discovery" → RQ3 arm: probe /ready only on DISCOVERY_POLL_INTERVAL_S
+#                 cadence; admit when a discovery pass sees 200 (periodic
+#                 discovery).
+# Unknown value → log error + fall back to "off" (deliberate, documented).
+_READINESS_PROPAGATION = os.environ.get("READINESS_PROPAGATION", "off")
+
+# Per-attempt /ready HTTP timeout (seconds).
+_READINESS_PROBE_TIMEOUT_S = float(os.environ.get("READINESS_PROBE_TIMEOUT_S", "5.0"))
+# Abandon a pending backend that is not ready within this many seconds of
+# spawn completion (full teardown + IP release). Must exceed
+# DISCOVERY_POLL_INTERVAL_S and app startup time.
+_READINESS_PROBE_MAX_S = float(os.environ.get("READINESS_PROBE_MAX_S", "120.0"))
+# direct-mode probe retry interval (seconds). Must be << DISCOVERY_POLL_INTERVAL_S.
+_READINESS_PROBE_RETRY_S = float(os.environ.get("READINESS_PROBE_RETRY_S", "1.0"))
+# discovery-mode scan cadence (seconds). Pre-registered per run.
+_DISCOVERY_POLL_INTERVAL_S = float(os.environ.get("DISCOVERY_POLL_INTERVAL_S", "10.0"))
+# Edge-server /ready port. Must equal the edge server's BIND_PORT (5000) in RQ3 runs.
+_EDGE_READY_PORT = int(os.environ.get("EDGE_READY_PORT", "5000"))
+# RQ3 admission log (per controller / per LAN). Written only when the gate is active.
+_ADMISSION_LOG_PATH = os.environ.get("ADMISSION_LOG_PATH", "/tmp/admission_log.csv")
+# Flow-isolation mode: 1 = delete a client's VIP_SERVER flows after each
+# response (one fresh backend-selection event per request). RQ3 measurement
+# instrumentation; 0 elsewhere.
+_VIP_FLOW_ISOLATION = int(os.environ.get("VIP_FLOW_ISOLATION", "0"))
+# Misconfiguration guard: warn (once) if flow isolation is enabled but no
+# request_complete events have arrived within this many seconds of startup.
+_FLOW_ISOLATION_WARMUP_S = float(os.environ.get("FLOW_ISOLATION_WARMUP_S", "120.0"))
+
 # ── Storage persistent reserve ─────────────────────────────────────────
 # 1 = maintain one ready same-LAN storage reserve per LAN; 0 = off.
 _STORAGE_PERSISTENT_RESERVE_ENABLED = int(

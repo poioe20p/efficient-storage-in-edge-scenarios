@@ -4,8 +4,9 @@ import statistics
 import threading
 import time
 import logging
-from collections import Counter
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import urllib.parse
+from collections import Counter, deque
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import zmq
 
@@ -29,7 +30,9 @@ _WRITE_OPS = frozenset({
 # The controller re-trims after merging across edges via SS_HOT_DOC_LIMIT.
 SS_TOP_DOCS_PER_EDGE = int(os.environ.get("SS_TOP_DOCS_PER_EDGE", "30"))
 
-_CONTROL_EVENT_TYPES = frozenset({"drain_complete", "rs_secondary_ready"})
+_CONTROL_EVENT_TYPES = frozenset(
+    {"drain_complete", "rs_secondary_ready", "request_complete"}
+)
 _HTTP_REQUIRED_KEYS = frozenset({
     "server_id",
     "time_total_ms",
@@ -64,6 +67,136 @@ logger.info("PUB socket bound to %s", _pub_addr)
 
 _buffer: list = []
 _lock = threading.Lock()
+
+# ── RQ1 window log / sequence numbering ────────────────────────────────
+# Every WINDOW_S interval is a window with a monotonic window_seq. Windows
+# (including empty ones) are always published, persisted to a durable JSONL,
+# and served over HTTP for replay / ordered delivery.
+WINDOW_LOG_RETENTION = int(os.environ.get("WINDOW_LOG_RETENTION", "10000"))
+WINDOW_LOG_PATH = os.environ.get("WINDOW_LOG_PATH", "/tmp/window_log.jsonl")
+ACK_LOG_PATH = os.environ.get("ACK_LOG_PATH", "/tmp/ack_log.jsonl")
+# Overload label (D3) — pre-registered thresholds, identical across RQ1 arms.
+OVERLOAD_CPU_PCT = float(os.environ.get("OVERLOAD_CPU_PCT", "5.0"))
+OVERLOAD_PEAK_LATENCY_MS = float(os.environ.get("OVERLOAD_PEAK_LATENCY_MS", "1000"))
+OVERLOAD_ERROR_RATE = float(os.environ.get("OVERLOAD_ERROR_RATE", "0.05"))
+
+_window_seq: int = 0
+_window_log: deque = deque(maxlen=WINDOW_LOG_RETENTION)
+_log_lock = threading.Lock()
+
+
+def _load_window_log_tail() -> None:
+    """Resume seq + in-memory ring from the durable JSONL on boot.
+
+    Makes window_seq restart-continuous so consumers' last_seq stays valid
+    across aggregator restarts (--restart=on-failure).
+    """
+    global _window_seq
+    if not os.path.exists(WINDOW_LOG_PATH):
+        return
+    try:
+        with open(WINDOW_LOG_PATH, "r") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                with _log_lock:
+                    _window_log.append(rec)
+                if isinstance(rec.get("window_seq"), int):
+                    _window_seq = max(_window_seq, rec["window_seq"])
+    except OSError as exc:
+        logger.warning("could not load window log tail: %s", exc)
+
+
+def _append_window_record(rec: dict) -> None:
+    with _log_lock:
+        _window_log.append(rec)
+        try:
+            with open(WINDOW_LOG_PATH, "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+        except OSError as exc:
+            logger.warning("window log append failed: %s", exc)
+
+
+def _append_ack_record(rec: dict) -> None:
+    # Guarded by _log_lock: concurrent ThreadingHTTPServer handler threads write
+    # the ack log; O_APPEND alone does not make multi-part writes atomic.
+    with _log_lock:
+        try:
+            with open(ACK_LOG_PATH, "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+        except OSError as exc:
+            logger.warning("ack log append failed: %s", exc)
+
+
+def _compute_overload(summary: dict) -> bool:
+    ds = summary.get("domain_summary")
+    if ds is None:
+        return False
+    error_rates = [s.get("error_rate", 0.0) for s in summary.get("servers", {}).values()]
+    error_rate = statistics.mean(error_rates) if error_rates else 0.0
+    return (
+        ds.get("average_cpu_percent", 0.0) >= OVERLOAD_CPU_PCT
+        or ds.get("peak_time_total_ms", 0.0) >= OVERLOAD_PEAK_LATENCY_MS
+        or error_rate >= OVERLOAD_ERROR_RATE
+    )
+
+
+def _publish_window(summary: dict) -> None:
+    global _window_seq
+    _window_seq += 1
+    summary["window_seq"] = _window_seq
+    summary["window_id"] = f"{NETWORK_ID}:{_window_seq}"
+    summary["overload"] = _compute_overload(summary)
+    ds = summary.get("domain_summary") or {}
+    logger.info(
+        "Publishing window seq=%d network_id=%s total_requests=%d avg_cpu=%.1f%% peak_total_ms=%.1f overload=%s",
+        _window_seq,
+        summary.get("network_id"),
+        ds.get("total_requests", 0),
+        ds.get("average_cpu_percent", 0.0),
+        ds.get("peak_time_total_ms", 0.0),
+        summary["overload"],
+    )
+    logger.debug("Full summary: %s", summary)
+    _append_window_record(summary)
+    pub.send_json(summary)
+    _latest_summary[NETWORK_ID] = summary   # cache for HTTP polling
+
+
+def _get_window_record(seq: int) -> dict | None:
+    with _log_lock:
+        for rec in reversed(_window_log):
+            if rec.get("window_seq") == seq:
+                return rec
+    return None
+
+
+def _first_available_seq() -> int | None:
+    with _log_lock:
+        if not _window_log:
+            return None
+        return _window_log[0].get("window_seq")
+
+
+def _get_windows_after(after_seq: int, limit: int) -> dict:
+    with _log_lock:
+        recs = [
+            r for r in _window_log
+            if isinstance(r.get("window_seq"), int) and r["window_seq"] > after_seq
+        ]
+    if not recs:
+        return {"windows": [], "next_after_seq": after_seq, "truncated": False}
+    out = recs[:limit]
+    return {
+        "windows": out,
+        "next_after_seq": out[-1]["window_seq"],
+        "truncated": len(recs) > limit,
+    }
 
 
 def _is_http_event(event: dict) -> bool:
@@ -194,10 +327,6 @@ def _publish_loop() -> None:
             if sid and ts > last_seen.get(sid, 0.0):
                 last_seen[sid] = ts
 
-        if not window:
-            logger.debug("Window empty, skipping publish")
-            continue
-
         http_events  = [e for e in window if _is_http_event(e)]
         mongo_events = [e for e in window if _is_mongo_event(e)]
         heartbeats   = [e for e in window if _is_heartbeat_event(e)]
@@ -209,7 +338,18 @@ def _publish_loop() -> None:
         if malformed_events:
             _log_malformed_events(malformed_events)
         if not (http_events or mongo_events or heartbeats or ss_events):
-            logger.debug("Window contained no valid telemetry events, skipping publish")
+            # Always-publish (RQ1): a fully-idle window is still a window and
+            # must carry a window_seq so the delivery contract stays contiguous
+            # and the window universe is complete for the analyzer.
+            logger.debug("Window contained no valid telemetry events — publishing empty window")
+            _publish_window({
+                "network_id":      NETWORK_ID,
+                "window_end":      time.time(),
+                "servers":         {},
+                "storage_servers": {},
+                "domain_summary":  None,
+                "control_events":  [],
+            })
             continue
 
         # ── Per-server HTTP stats ─────────────────────────────────────────────
@@ -490,16 +630,7 @@ def _publish_loop() -> None:
                 "request_lease_outcomes_per_lan": request_lease_outcomes_per_lan,
             },
         }
-        logger.info(
-            "Publishing summary: network_id=%s total_requests=%d avg_cpu=%.1f%% peak_total_ms=%.1f",
-            NETWORK_ID,
-            summary["domain_summary"]["total_requests"],
-            summary["domain_summary"]["average_cpu_percent"],
-            summary["domain_summary"]["peak_time_total_ms"],
-        )
-        logger.debug("Full summary: %s", summary)
-        pub.send_json(summary)
-        _latest_summary[NETWORK_ID] = summary   # cache for HTTP polling
+        _publish_window(summary)
 
 
 threading.Thread(target=_receive_loop, daemon=True).start()
@@ -508,25 +639,89 @@ threading.Thread(target=_receive_loop, daemon=True).start()
 _CACHE_PORT = int(os.environ.get("SUMMARY_CACHE_PORT", "5558"))
 
 class _SummaryHandler(BaseHTTPRequestHandler):
+    def _send_json(self, obj: dict, status: int = 200) -> None:
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
-        if self.path == "/latest_summary":
-            summary = _latest_summary.get(NETWORK_ID, {})
-            body = json.dumps(summary).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        query = urllib.parse.parse_qs(parsed.query)
+
+        if path == "/latest_summary":
+            self._send_json(_latest_summary.get(NETWORK_ID, {}))
+            return
+
+        if path == "/window":
+            try:
+                seq = int(query.get("seq", [""])[0])
+            except ValueError:
+                self._send_json({"error": "bad_request", "seq": query.get("seq", [""])[0]}, status=400)
+                return
+            rec = _get_window_record(seq)
+            if rec is None:
+                first = _first_available_seq()
+                if first is not None and seq < first:
+                    self._send_json({"error": "aged_out", "seq": seq, "first_available_seq": first}, status=410)
+                else:
+                    self._send_json({"error": "not_found", "seq": seq}, status=404)
+            else:
+                self._send_json(rec)
+            return
+
+        if path == "/windows":
+            try:
+                after_seq = int(query.get("after_seq", ["0"])[0])
+            except ValueError:
+                self._send_json({"error": "bad_request", "after_seq": query.get("after_seq", [""])[0]}, status=400)
+                return
+            limit = 100
+            if query.get("limit"):
+                try:
+                    limit = int(query["limit"][0])
+                except ValueError:
+                    limit = 100
+            if limit <= 0:
+                limit = 1
+            result = _get_windows_after(after_seq, limit)
+            # A consumer behind the retained range gets the retained windows in
+            # order PLUS an aged_out_from marker (not a bare 410), so it can
+            # record the missed range and keep advancing without spinning on
+            # ``after_seq < first`` forever.
+            first = _first_available_seq()
+            if first is not None and after_seq < first:
+                result["aged_out_from"] = first
+            self._send_json(result)
+            return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self) -> None:
+        if self.path == "/ack":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                data = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, json.JSONDecodeError):
+                self._send_json({"error": "bad_request"}, status=400)
+                return
+            _append_ack_record(data)
+            self._send_json({"ok": True})
+            return
+        self.send_response(404)
+        self.end_headers()
 
     # Suppress stderr logging of each request (noisy at 1 s polling).
     def log_message(self, format, *args):
         logger.debug("HTTP %s", format % args)
 
 
-_cache_server = HTTPServer(("0.0.0.0", _CACHE_PORT), _SummaryHandler)
+_load_window_log_tail()
+_cache_server = ThreadingHTTPServer(("0.0.0.0", _CACHE_PORT), _SummaryHandler)
 _cache_thread = threading.Thread(target=_cache_server.serve_forever, daemon=True)
 _cache_thread.start()
 logger.info("Summary cache HTTP server listening on port %s", _CACHE_PORT)

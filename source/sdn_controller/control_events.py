@@ -13,6 +13,7 @@ from typing import Callable
 from .elasticity.elasticity import ElasticityManager
 from .elasticity.node_common import log_ready_timing
 from .node_registry import DynamicNodeRegistry
+from .scaling_config import _FLOW_ISOLATION_WARMUP_S
 from .telemetry.models import TelemetrySummary
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,41 @@ logger = logging.getLogger(__name__)
 class ControlEventDispatcher:
     """Dispatches ZMQ control events and telemetry-based VIP promotions.
 
-    Stateless — all state is read from the node registry and topology mixin.
+    Stateless apart from the RQ3 flow-isolation counters (Thread 2 only);
+    all other state is read from the node registry and topology mixin.
     """
+
+    def __init__(self) -> None:
+        # RQ3 flow-isolation counters / guard state (Thread 2 only).
+        self._request_complete_count: int = 0
+        self._flow_guard_warned: bool = False
+
+    def process_flow_events(self, summary, vip_routing, enabled, uptime_s) -> None:
+        """Handle request_complete control events (RQ3 flow isolation).
+
+        Deletes the client's VIP_SERVER flow pair so the next request triggers
+        a fresh backend-selection event. No-op unless *enabled*
+        (``VIP_FLOW_ISOLATION=1``). Misconfiguration guard: warn exactly once
+        if enabled and no request_complete events have arrived after
+        ``FLOW_ISOLATION_WARMUP_S`` of controller uptime.
+        """
+        if not enabled:
+            return
+        for event in summary.control_events:
+            if event.get("event_type") == "request_complete":
+                self._request_complete_count += 1
+                client_ip = event.get("client_ip")
+                if client_ip:
+                    vip_routing.delete_vip_server_client_flows(client_ip)
+        if (self._request_complete_count == 0
+                and not self._flow_guard_warned
+                and uptime_s > _FLOW_ISOLATION_WARMUP_S):
+            self._flow_guard_warned = True
+            logger.warning(
+                "[control] VIP_FLOW_ISOLATION=1 but no request_complete events "
+                "received after %.0fs — check EDGE_FLOW_ISOLATION=1 on edge "
+                "containers", _FLOW_ISOLATION_WARMUP_S,
+            )
 
     def _log_storage_ready(self, info, source: str) -> None:
         if info.ready_logged or info.spawn_started_monotonic_s <= 0:

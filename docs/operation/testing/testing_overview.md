@@ -89,9 +89,17 @@ artifacts:
 | 10 | `controller_env_snapshot.env` | captured from the running controller | Exact thresholds, weights, cooldowns, and caps used by the run |
 | 11 | `phases_snapshot.json` | copied from phases config | Phase configuration used for the run |
 | 12 | `service_logs/` | `capture_service_logs.py` | Edge and storage container logs during the run |
+| 13 | `admission_log_lan1.csv` | controller `ADMISSION_LOG_PATH` (via `collect_rq3_artifacts`) | RQ3 per-node spawn/app-ready/admitted timing for LAN 1 |
+| 14 | `admission_log_lan2.csv` | controller `ADMISSION_LOG_PATH` (via `collect_rq3_artifacts`) | RQ3 per-node spawn/app-ready/admitted timing for LAN 2 |
 
 The single aggregate `client_requests.csv` remains the default contract; the
 `phase` column is the source of phase-scoped request analysis.
+
+RQ3 runs launch with the `rq3_direct.env` / `rq3_discovery.env` controller env
+overrides (`source/scripts/testing/controller_env_overrides/`); the controller
+auto-propagates `EDGE_FLOW_ISOLATION=1` to spawned edge containers so they emit
+`request_complete` for flow isolation. See
+[RQ3 — Readiness Propagation and Traffic Admission](../../research_questions/v2/rq3/rq3_preparation.md).
 
 ### Run Completion Watchdog
 

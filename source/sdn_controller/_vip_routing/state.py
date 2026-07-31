@@ -8,9 +8,13 @@ controller object.
 import logging
 import time
 
-from .config import WarmLease, logger
+from .config import WarmLease, ClientVipBinding, logger
 from . import flows
-from ..scaling_config import _VIP_WARM_SERVER_SECONDS, _VIP_WARM_STORAGE_SECONDS
+from ..scaling_config import (
+    _VIP_WARM_SERVER_SECONDS,
+    _VIP_WARM_STORAGE_SECONDS,
+    _VIP_FLOW_ISOLATION,
+)
 
 # Re-export for convenience (used by selection.py)
 __all__ = [
@@ -23,6 +27,7 @@ __all__ = [
     "register_new_server_backend",
     "unregister_server_backend",
     "unregister_storage_backend",
+    "delete_vip_server_client_flows",
     "update_server_stats",
     "update_storage_stats",
 ]
@@ -62,6 +67,11 @@ def init_vip_routing_state(controller) -> None:
     # Per-backend discovery timestamps for slow-start ramp (RQ2).
     # Keyed by MAC; populated when a backend first appears in telemetry.
     controller._backend_discovery_ts: dict[str, float] = {}  # mac -> first_telemetry_ts
+
+    # RQ3 flow isolation: recorded VIP_SERVER client→backend bindings.
+    # Guarded by _warm_lock (Thread 1 writes on selection, Thread 2 deletes
+    # on request_complete). Keyed by client_mac.
+    controller._vip_server_client_map: dict[str, ClientVipBinding] = {}
 
     from .config import (
         _W_CPU, _W_RAM, _W_REQUESTS, _W_HOPS,
@@ -152,6 +162,54 @@ def unregister_server_backend(controller, mac: str) -> None:
     controller.remove_server_mac(mac)
     clear_server_backend_warm(controller, mac)
     controller._backend_discovery_ts.pop(mac, None)
+    # RQ3 flow isolation: drop any client binding that pointed at this backend
+    # (its MAC/IP identity is allocator-recycled). Only relevant when the
+    # binding map is active (VIP_FLOW_ISOLATION=1).
+    if _VIP_FLOW_ISOLATION:
+        with controller._warm_lock:
+            stale = [c for c, b in controller._vip_server_client_map.items()
+                     if b.backend_mac == mac]
+            for c in stale:
+                controller._vip_server_client_map.pop(c, None)
+
+
+def delete_vip_server_client_flows(controller, client_ip: str) -> None:
+    """Delete a client's VIP_SERVER DNAT+SNAT flows (RQ3 flow isolation).
+
+    Resolves the client MAC from ARP-learned state and deletes the exact
+    recorded DNAT/SNAT pair (from ``_vip_server_client_map``) so the next
+    request from that client triggers a fresh backend selection. Handles this
+    controller's own per-LAN ``VIP_SERVER`` only (cross-network server flows
+    are out of scope for RQ3).
+    """
+    client_mac = controller._ip_to_mac.get(client_ip)
+    if client_mac is None:
+        logger.debug(
+            "vip_server: flow delete for unknown client ip=%s — skipping", client_ip,
+        )
+        return
+    with controller._warm_lock:
+        binding = controller._vip_server_client_map.get(client_mac)
+    if binding is None:
+        logger.debug(
+            "vip_server: no binding for client ip=%s — skipping", client_ip,
+        )
+        return
+    for datapath in controller.datapaths:
+        try:
+            flows.delete_vip_server_client_flows(controller, datapath, binding)
+        except Exception:
+            logger.exception(
+                "vip_server: failed to delete flows for client=%s", client_ip,
+            )
+    # Distinct log for the analyzer (Check C): request_complete-driven deletes.
+    logger.info("vip_server: request_complete: client flows deleted — client=%s",
+                client_ip)
+    # Pop only if the binding is still the one we deleted — a concurrent
+    # Thread-1 re-selection may have installed a newer binding meanwhile.
+    with controller._warm_lock:
+        if controller._vip_server_client_map.get(client_mac) is binding:
+            controller._vip_server_client_map.pop(client_mac, None)
 
 
 def unregister_storage_backend(controller, mac: str, domain: str) -> None:

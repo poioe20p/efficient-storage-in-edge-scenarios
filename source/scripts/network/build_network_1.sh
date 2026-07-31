@@ -111,6 +111,7 @@ docker run -dit --name edge_server_n1 --network none --restart=on-failure \
   -e LOG_LEVEL=INFO \
   -e HEARTBEAT_ENABLED=true \
   -e FEED_INTEGRITY_WORK_FACTOR=${FEED_INTEGRITY_WORK_FACTOR:-200} \
+  -e EDGE_FLOW_ISOLATION=${EDGE_FLOW_ISOLATION:-0} \
   edge_server
 
 echo "Starting edge_storage_server_n1 container..."
@@ -133,6 +134,12 @@ docker run -dit --name aggregator_n1 --network none --restart=on-failure \
   -e PUB_ADDR=tcp://0.0.0.0:5556 \
   -e WINDOW_S=10 \
   -e LOG_LEVEL=DEBUG \
+  -e OVERLOAD_CPU_PCT="${OVERLOAD_CPU_PCT:-5.0}" \
+  -e OVERLOAD_PEAK_LATENCY_MS="${OVERLOAD_PEAK_LATENCY_MS:-1000}" \
+  -e OVERLOAD_ERROR_RATE="${OVERLOAD_ERROR_RATE:-0.05}" \
+  -e WINDOW_LOG_RETENTION="${WINDOW_LOG_RETENTION:-10000}" \
+  -e WINDOW_LOG_PATH="${WINDOW_LOG_PATH:-/tmp/window_log.jsonl}" \
+  -e ACK_LOG_PATH="${ACK_LOG_PATH:-/tmp/ack_log.jsonl}" \
   local_state_server
 
 # If any docker run fails, abort early.

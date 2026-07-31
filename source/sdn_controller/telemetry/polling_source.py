@@ -1,15 +1,18 @@
-"""Polling telemetry source — polls aggregator HTTP cache endpoints.
+"""Polling telemetry source (RQ1 latest-state arm) — polls aggregator HTTP cache.
 
-Used for RQ1 delivery-cadence evaluation. Implements the same
-TelemetryEventSource ABC as ZmqTelemetrySource so the controller is
+Deduplicates by ``window_seq`` and records every observed window (including
+empty ones) in the delivery log. Implements the same TelemetryEventSource ABC
+as the ZMQ/event-preserving/delayed sources so the controller is
 transport-agnostic.
 """
 
 import logging
+import time
 
 import requests
 from os_ken.lib import hub
 
+from .delivery_log import DeliveryLog
 from .models import TelemetrySummary
 from .source import TelemetryEventSource
 
@@ -19,9 +22,11 @@ logger = logging.getLogger("os_ken.telemetry.polling_source")
 class PollingTelemetrySource(TelemetryEventSource):
     """Polls aggregator /latest_summary endpoints at a fixed interval.
 
-    Deduplicates by window_end so the controller's _on_telemetry_update is
+    Deduplicates by window_seq so the controller's _on_telemetry_update is
     only called when a genuinely new summary is available — not on every
-    poll iteration.
+    poll iteration. Every observed window (incl. empty) is passed to
+    on_update and recorded in the delivery log; only non-empty windows are
+    cached (empty ones would corrupt WSM cost inputs).
     """
 
     def __init__(
@@ -44,8 +49,12 @@ class PollingTelemetrySource(TelemetryEventSource):
         self._on_update = on_update
         self._on_topology_update = on_topology_update
         self._latest: dict[str, TelemetrySummary] = {} # network_id -> latest summary
-        # Dedup: only fire on_update when window_end advances.
-        self._last_window_end: dict[str, float] = {} # network_id -> last seen window_end
+        # Dedup: only fire on_update when window_seq advances (robust to an
+        # aggregator restart resuming window_seq from its durable JSONL, which
+        # could otherwise move window_end backwards).
+        self._last_window_seq: dict[str, int] = {} # network_id -> last seen window_seq
+        # RQ1 delivery log — records every observed window (incl. empty).
+        self._delivery_log = DeliveryLog(mode="latest_state")
 
     # ------------------------------------------------------------------
     # TelemetryEventSource interface
@@ -92,33 +101,47 @@ class PollingTelemetrySource(TelemetryEventSource):
             logger.exception("poll failed for %s", url)
             return
 
-        # Mini-summaries (control-event pass-throughs) have empty
-        # servers/storage_servers. Do not cache them — they would corrupt
-        # WSM cost inputs. This matches ZmqTelemetrySource behavior.
-        if not summary.servers and not summary.storage_servers:
-            logger.debug("skipping mini-summary from %s", url)
-            return
+        # Control mini-summaries (window_seq None) are delivered over the ZMQ
+        # control channel in all modes, not through the polling source.
+        try:
+            if summary.window_seq is None:
+                logger.debug("skipping control mini-summary from %s", url)
+                return
 
-        network_id = summary.network_id
-        prev = self._last_window_end.get(network_id, 0.0)
+            network_id = summary.network_id
+            prev_seq = self._last_window_seq.get(network_id, 0)
+            if summary.window_seq <= prev_seq:
+                logger.debug(
+                    "duplicate summary network=%s seq=%s (last=%s), skipping",
+                    network_id,
+                    summary.window_seq,
+                    prev_seq,
+                )
+                return
+            self._last_window_seq[network_id] = summary.window_seq
 
-        if summary.window_end > prev:
-            # New window — cache and notify.
-            self._last_window_end[network_id] = summary.window_end
-            self._latest[network_id] = summary
+            # Delivery log — every observed window (incl. empty) is a delivered
+            # window from the latest-state consumer's perspective. Missed
+            # windows are computed by the ANALYZER (window universe vs this
+            # log), never by the source.
+            self._delivery_log.record(
+                network_id, summary.window_seq, summary.window_id,
+                summary.window_end, time.time(), mode="latest_state",
+            )
+
+            # Pass every observed window (incl. empty) to the controller so
+            # ``_last_summary`` advances through empties in ALL modes (keeps the
+            # Design-B ticker's absent-node detection consistent across arms).
+            # Cache only non-empty windows — empty ones would corrupt WSM inputs.
+            if summary.servers or summary.storage_servers:
+                self._latest[network_id] = summary
             if self._on_update is not None:
                 self._on_update(summary)
             logger.debug(
-                "new summary network=%s window_end=%.3f",
+                "new summary network=%s seq=%s window_end=%.3f",
                 network_id,
+                summary.window_seq,
                 summary.window_end,
             )
-        else:
-            # Same window as last poll — skip to avoid re-triggering
-            # controller logic with identical data.
-            logger.debug(
-                "duplicate summary network=%s window_end=%.3f (last=%.3f), skipping",
-                network_id,
-                summary.window_end,
-                prev,
-            )
+        except Exception:
+            logger.exception("observed-window processing failed for %s — continuing", url)
