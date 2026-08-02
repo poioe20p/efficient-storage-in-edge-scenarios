@@ -1,13 +1,16 @@
 # Thesis Structure — Restructure Blueprint for `tese/main.tex`
 
-> **Status:** 2026-07-31 · draft blueprint (no file edited yet).
-> **Why:** `main.tex` still carries the **pre-reframe** structure: old RQ set
+> **Status:** 2026-07-31 (blueprint) · **2026-08-01 update:** comment-level
+> alignment of `main.tex` is **DONE** (all `%` TODO/note comments updated to the new
+> RQ framing; your prose untouched; section headings unchanged but flagged with
+> in-file `% NOTE` for renaming). The **content rewrite** of each chapter is still
+> pending and happens only after explicit approval, chapter by chapter.
+> **Why:** `main.tex` carried the **pre-reframe** structure: old RQ set
 > (RQ1 telemetry freshness, RQ2 backend selection, RQ3 trigger composition), the
 > "detection→delivery→action" narrative, and the unmeasured ~74 s coordination tax.
 > The approved framing is `tese/Notes/thesis_overview.md` (Telemetry, Scaling,
-> and Traffic Admission). This document is the blueprint for restructuring
-> `main.tex`; **edits to `main.tex` happen only after explicit approval, chapter
-> by chapter.**
+> and Traffic Admission). This document is the blueprint for the **content**
+> restructuring of `main.tex`.
 >
 > Companion: `tese/Notes/purpose_evidence_map.md` (the evidence for each claim,
 > with verbatim quotes).
@@ -107,7 +110,7 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | §2.5 Load Balancing on SDN (`sec:lit_sdn_lb`) → **RQ3** | **Re-cast.** Evidence: Wang et al. (synchronisation-before-inclusion), Pierro & Ullah (service-discovery-latency symptom), Pourghebleh/Achir (SD freshness), the **"same gap, three names"** table (monitoring/SD/LB). End with the RQ3 gap statement. |
 | §2.6 Resource Orchestration on SDN (`sec:lit_sdn_orchestration`) | Keep; frame as the *platform rationale*: co-location as the answer to "structurally unaskable" (purpose map P6; §6.2 closest-attempts table). |
 | §2.7 Summary & Research Gaps (`sec:lit_synthesis`) | **Rewrite.** Replace the old ~74 s synthesis with: (a) **updated gap matrix** — columns must change to the NEW interface dimensions: *telemetry delivery semantics varied? / scaling-action type varied? / readiness→admission varied? / co-located & independently tunable?* (re-derive from `global_literature_review.md` §7, which still uses old columns); (b) the interface-gap statement (purpose map P4/P5); (c) explicitly *not* a summed penalty. |
-| §2.8 Edge Storage corpus (18 papers, 2026-07-31) | **New related-work block.** Full verdicts in `global_literature_review.md` §10. Must-cites: Ferreira et al. 2024 (edge-DB survey — no elasticity axis; the RQ2 DB-side citation), SEND 2021 (co-location adjacency — must be delimited), Wei & Wang 2023 (old-idea ancestor — self-declared static), Lujic et al. 2017 + Zhao et al. 2021 (forecasting boundary for C5), Malazi et al. 2022 (nearest RQ2 neighbor — "dynamic" = re-placement, not tier selection), plus the placement/review works that reinforce the static-placement premise. No paper in the corpus threatens RQ1/RQ3; RQ2 requires the 3-claim rewording in purpose map I2. |
+| §2.8 Edge Storage related work (2026-08-01, corpus trimmed) | **New related-work block.** Full verdicts in `global_literature_review.md` §10. The edge-storage papers now live in `02_action_selection_rq2/` (Ferreira et al. 2024 — edge-DB survey, the RQ2 DB-side citation; SEND 2021 — co-location adjacency, must be delimited; Malazi et al. 2022 — nearest RQ2 neighbour, "dynamic" = re-placement, not tier selection) and `99_reference/` (Wei & Wang 2023 — old-idea ancestor, self-declared static; Lujic et al. 2017 — forecasting boundary). No paper in the corpus threatens RQ1/RQ3; RQ2 requires the 3-claim rewording in purpose map I2. |
 
 ### Chapter 3 — Architecture and Design (`ch:system_architecture`)
 
@@ -186,19 +189,21 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 
 ## 4. Must-fix hygiene list in `main.tex` (independent of framing)
 
-- Incomplete sentence in §1.1: *"Despite the advantages edge computing also faces,
-  some difficulties regarding resource scarcity, reliability and "* — finish or remove.
-- Stale commented-out paragraph block in §1.1 (the "Orchestrating edge web
-  services…" comment) — remove or promote deliberately.
-- TODO comments referencing **old** RQs in §1.3, §5, §6 — replace with new RQs.
-- Old numbers "74 s / 84 s / 31 s / 43 s" in §2.7 and §6.6 — remove or reframe
-  as measured-segments-only (see 0.2).
-- Old backend-selection mode names (`topology_host`, `topology_slowstart`,
-  `topology_lifecycle`) in §3/§4/§5/§6 — replace with readiness-propagation
-  (direct/discovery) framing.
-- Typos spotted: "surprassed" → surpassed, "highliting" → highlighting,
-  "arrise" → arise, "complitment" → complement, "arquitecture" → architecture
-  (ch.3), "infraestructure" → infrastructure (ch.4), "encapsulating" fine.
+Status: **comments DONE (2026-08-01)**; prose/heading items still open.
+
+- [ ] Incomplete sentence in §1.1: *"Despite the advantages edge computing also faces,
+  some difficulties regarding resource scarcity, reliability and "* — finish or remove. *(prose — pending)*
+- [x] Stale commented-out paragraph block in §1.1 (the "Orchestrating edge web
+  services…" comment) — replaced with a superseded-framing note (2026-08-01). *(comment — done)*
+- [x] TODO comments referencing **old** RQs in §1.3, §5, §6 — replaced with new RQs. *(comments — done)*
+- [x] Old numbers "74 s / 84 s / 31 s / 43 s" in §2.7 and §6.6 comments — removed/reframed
+  as measured-segments-only in comments. *(comments — done; content rewrite pending)*
+- [ ] Old backend-selection mode names (`topology_host`, `topology_slowstart`,
+  `topology_lifecycle`) — flagged in comments as the RQ3 apparatus; **section headings**
+  still carry old RQ labels and await your rename decision. *(headings — pending)*
+- [ ] Typos spotted in **prose** (needs your go-ahead): "surprassed" → surpassed,
+  "highliting" → highlighting, "arrise" → arise, "complitment" → complement,
+  "arquitecture" → architecture (ch.3), "infraestructure" → infrastructure (ch.4).
 
 ---
 
@@ -214,8 +219,9 @@ Each section is re-cast around the interface it informs (see purpose map P5).
    extensions.
 5. Results **Ch.6** filled in as new RQ campaigns produce measured segments; the
    old campaigns remain calibration-only.
-6. Update dependent docs that still reference old RQs/framing (e.g. the six
-   domain READMEs, `docs/research_questions/*`, `.github/skills/rq*-cross-mode-comparison`)
+6. Update dependent docs that still reference old RQs/framing (e.g. the
+   `tese/literature_review/` folder READMEs — already reorganised 2026-08-01 into
+   RQ folders — plus `docs/research_questions/*`, `.github/skills/rq*-cross-mode-comparison`)
    as the manuscript lands — each is a separate change set.
 
 ---
@@ -224,6 +230,7 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 
 - Framing + RQs + evaluation principles + scope: `tese/Notes/thesis_overview.md` (§1–§10).
 - Evidence/quotes per purpose step: `tese/Notes/purpose_evidence_map.md`.
-- Gap forms + old matrix: `tese/literature_review/global_literature_review.md` (§1–§7).
-- Demand profile: `docs/operation/testing/experiment/v2/rq1_experiment/phases_rq1_delivery.json`.
+- Gap forms + old matrix: `tese/literature_review/global_literature_review.md` (§1–§7; banner flags superseded framing).
+- Corpus (RQ-mapped): `tese/literature_review/README.md` and the folder READMEs.
+- Demand profile: `source/scripts/testing/phases_override/phases_stress_plateau.json` (control group, 2026-08-01).
 - New RQ implementation plans: `docs/research_questions/v2/rq{1,2,3}/rq*_preparation.md`.

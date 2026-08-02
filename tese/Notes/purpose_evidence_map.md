@@ -1,10 +1,19 @@
 # Purpose Evidence Map — Why This Thesis, and the Evidence Behind Each Claim
 
-> **Status:** 2026-07-31. Companion to `thesis_overview.md` (framing) and
-> `../literature_review/global_literature_review.md` (evidence corpus).
-> **Quote source:** all verbatim quotes below come from
+> **Status:** 2026-07-31; refreshed 2026-08-01 (corpus reorganisation).
+> Companion to `thesis_overview.md` (framing) and
+> `../literature_review/global_literature_review.md` (evidence ledger).
+> **Quote source:** all verbatim quotes below come from the evidence ledger
 > `tese/literature_review/global_literature_review.md`; section numbers (§) refer to it.
-> **Full BibTeX:** `tese/references.bib`.
+> **BibTeX:** `tese/references.bib` — populated **as citations are used**, not
+> pre-populated; add entries at first citation.
+>
+> **Corpus note (2026-08-01):** `tese/literature_review/` was reorganised into
+> RQ/context folders (see its `README.md`), and the ledger carries a banner flagging
+> its own “coordination gap” framing as superseded. Sources marked **(no PDF)**
+> below — Wang (SDNFV), Podolskiy, Ghorab, Pierro & Ullah, Sofia, Caiza &
+> Campoverde, Zhang & Guo, Usman — are cited in the ledger but not stored in the
+> corpus: verify the primary source before quoting.
 >
 > **Purpose:** map every step of the thesis's argument — *why it matters* →
 > *what the gap is* → *what the thesis does* — to concrete, quotable evidence,
@@ -211,7 +220,7 @@ action itself** (sync bandwidth/overload), and scopes honestly: cold, same-LAN
 |---|---|---|
 | **Wang et al.** (SDNFV) | "After synchronization completes, the proxy notifies LB-C to include the instance in session allocation." — the spawn→inclusion delay is documented, never varied. | `DOCUMENTED` |
 | **Pierro & Ullah** | "service discovery latency" named among orchestration-overhead symptoms. | `SYMPTOM` |
-| **Pourghebleh et al.** (2020) / **Achir et al.** (2022) | SD field: "the freshness of the data still remains a problem"; the most comprehensive SD taxonomy (60+ papers) has **no category for discovery timing or registry freshness**. | `DOCUMENTED` / `TAXONOMY-GAP` |
+| **Pourghebleh et al.** (2020) / **Achir et al.** (2022) | SD field: “the freshness of the data still remains a problem” (one CoAP mechanism in Pourghebleh); Achir's taxonomy of 87 approaches has **no category for discovery timing or registry freshness**. | `DOCUMENTED` / `TAXONOMY-GAP` |
 | **The same gap, three names** (strongest cross-domain evidence) | Monitoring calls it "visibility gaps" (knowledge of *load*); SD calls it "freshness still a problem" (knowledge of *existence*); LB calls it "synchronisation-before-inclusion" (knowledge of *readiness*) — three fields, one phenomenon, no cross-citation. | `DOCUMENTED` (synthesis) |
 | SDN-LB literature in general | Asks "given available backend state, which backend?" — treats pool availability/readiness as established fact. | `TAXONOMY-GAP` |
 
@@ -289,19 +298,19 @@ answer (details in conversation notes; the thesis must contain this reasoning).*
    premised on variability — Lorido-Botrán et al. 2014). The thesis *adopts* the
    premise; it does not re-establish it.
 2. **Existence in the apparatus** → the imposed phases profile, quantified
-   (from `docs/operation/testing/experiment/v2/rq1_experiment/phases_rq1_delivery.json`):
+   (from `source/scripts/testing/phases_override/phases_stress_plateau.json` —
+   the control group's workload, 2026-08-01 rebase):
 
    | Phase | dur (s) | rate/client | client frac | **aggregate** | mix note |
    |---|---|---|---|---|---|
    | baseline | 60 | 1.0 | 0.10 | **0.10** | lookup .60 / ranking .25 / pressure .15 |
-   | overload_surge | 150 | 5.0 | 1.00 | **5.00** | lookup .80; +update/aggregate ops |
-   | drain_1 | 60 | 0.5 | 0.05 | 0.025 | service mix |
-   | demand_drop | 150 | 0.3 | 0.05 | 0.015 | quiescent |
-   | tail | 60 | 0.5 | 0.05 | 0.025 | quiescent |
+   | compute_plateau | 600 | 5.0 | 1.00 | **5.00** | feed .40 / pressure .30 / lookup .20 |
+   | recovery_gap | 120 | 0.5 | 0.05 | 0.025 | baseline service mix |
+   | demand_drop | 420 | 1.0 | 0.10 | 0.10 | baseline service mix |
 
    Derived properties to *report* (not assert): **peak-to-baseline ≈ 50×**;
-   **composition shift** (the surge is differently-shaped traffic, enabling RQ2);
-   **duty cycle** (surge ≈ 31% of run, long recovery tail); **step transitions**
+   **composition shift** (the plateau is differently-shaped traffic, enabling RQ2);
+   **duty cycle** (plateau ≈ 50% of run, sustained); **step transitions**
    (harsher than real ramps — state it, or add a ramp axis); **spatial dimension
    absent** (`cross_region_ratio = 0.0` — temporal + compositional variability only).
 3. **Importance** → (a) *logical*: the interface treatments vary only the recovery
@@ -339,7 +348,8 @@ workload-level, validity.
 - Evidence corpus with forms/gap matrix: `tese/literature_review/global_literature_review.md`
   (§1 three-layer default; §2 Form 1; §3 Form 2; §4 Form 3; §5 Form 4 incl. the
   "same gap, three names" table; §6 Form 5; §7 summary + gap matrix).
-- Per-domain State of the Art and paper analysis: the six domain READMEs under
-  `tese/literature_review/`.
-- BibTeX: `tese/references.bib` (all papers above have entries).
-- Imposed demand profile: `docs/operation/testing/experiment/v2/rq1_experiment/phases_rq1_delivery.json`.
+- Per-folder State of the Art and paper analysis: the RQ/context folder READMEs
+  under `tese/literature_review/` (index: `tese/literature_review/README.md`).
+- BibTeX: `tese/references.bib` (populated as citations are used — add entries at
+  first citation).
+- Imposed demand profile: `source/scripts/testing/phases_override/phases_stress_plateau.json` (control group, 2026-08-01).

@@ -258,6 +258,12 @@ Rules:
 | `source/scripts/testing/controller_env_overrides/rq2_compute_first.env` | Full RQ2 regime, `SCALEUP_POLICY=fixed_compute_first` |
 | `source/scripts/testing/controller_env_overrides/rq2_storage_first.env` | Full RQ2 regime, `SCALEUP_POLICY=fixed_storage_first` |
 | `source/scripts/testing/controller_env_overrides/rq2_bottleneck_aware.env` | Full RQ2 regime, `SCALEUP_POLICY=bottleneck_aware` |
+
+> **2026-08-02 supersession (experiment-plan authoring):** the **authoritative**
+> copies of these three env files now live at
+> `docs/operation/testing/experiment/v2/rq2/env/` (rebase: caps 6/6 + budget 4
+> + Q6 scale-down calibration). The `controller_env_overrides/` copies listed
+> above are **superseded** — do not use them for runs (kept for provenance).
 | `docs/research_questions/v2/rq2/rq2_bottleneck_validation.py` | Induced-episode validation from raw `window_log.jsonl` signals (independent of the controller's classifier) |
 | `docs/research_questions/v2/rq2/rq2_decision_analysis.py` | Join decision+window+delivery logs → per-run decision/action table + counterbalance check |
 | `docs/research_questions/v2/rq2/rq2_relief_analysis.py` | Time-to-recover + relief-in-targeted-tier from the decision log's per-window evidence series |

@@ -101,9 +101,11 @@
 % If you get told that the Introduction and/or Conclusion should be un-numbered chapters, use \chapter* instead of \chapter (add an asterisk). The same can be done for sections with \section*, \subsection*, and \subsubsection*.
 % =====================================================================
 \chapter{Introduction}\label{ch:introduction}
-%Orchestrating edge web services means dealing with coordination delays between routing/load balancing,
-%auto-scaling and monitoring infraestructure due to their independent control loops. This has been shown to negatively impact the overall infrastructure and even QoS 
-%due to the unaccounted effects each module has on each other.
+% Superseded framing note (2026-08-01): the thesis is no longer framed around a generic
+% "coordination delay between independent control loops". Current framing (thesis_overview.md):
+% controlled characterization of three control-loop interfaces in a stateful edge service —
+% telemetry delivery semantics (RQ1), bottleneck-aware compute/storage action selection (RQ2),
+% and readiness propagation to traffic admission (RQ3). Intro plan: tese/miscelineous/context_motivation.md.
 Studies have shown that edge web services encompassing routing, monitoring and auto-scaling can suffer from coordination 
 delays that arrise from the independent control loops through which each module operates. This accumulation of handoff delays
 between components degrades service quality and can reduce orchestration reliability.
@@ -116,7 +118,9 @@ chapters of the thesis are presented in \ref{sec:document_structure}.
 
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
 % TODO: Geo-distributed deployment + stateful web services. Multi-Region Content Discovery
-% Platform as experimental workload. Coordination-gap observation as motivation.
+% Platform as experimental workload. Motivation = three control-loop interfaces (telemetry
+% delivery / action selection / readiness propagation). Full 9-paragraph plan in
+% tese/miscelineous/context_motivation.md.
 In the year 2025 global internet traffic surprassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
 corresponds to a more than double increase in the amount of internet traffic generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
  \parencite{ITU2025InternetTraffic}.
@@ -139,15 +143,18 @@ the foundational layer that supports modern applications and services.
 
 But at the same time, a growing percentage of global internet traffic comes from mobile devices, which now represent the main gateway to internet 
 access \parencite{Gaudiaut2026MobileTrafficShare}. This ongoing shift underscores that the majority of internet access comes from the network edge, far from the cloud data centers, evidencing the importance of edge computing as an extension or
-alternative to cloud computing as it enables geo-distributed deployements of applications and services. As presented in \parencite{Cao2020OverviewEdgeComputingResearch}, \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings the computational resources to the network edge which and therefore closer to the end-users and
+alternative to cloud computing as it enables geo-distributed deployements of applications and services. As presented in \parencite{Cao2020OverviewEdgeComputingResearch}, \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings
+the computational resources to the network edge which and therefore closer to the end-users and
 end-products allowing for much lower latency in provisioning services and applications to users.
-Beyond lower latency, edge computing with the geo-distributed deployments empowers the reduction of bandwidth pressure on the core network. Because as data can be processed and stored locally, at the edge, 
-for quicker responses, only a subset of it is sent to the cloud \parencite{Cao2020OverviewEdgeComputingResearch}, freeing up backbone available bandwidth.
+Beyond lower latency, edge computing's inherent geo-distributed servers dispersed geographically and close to users relieves bandwidth pressure on the core networ, since data can be processed and stored locally, at the edge, 
+for quicker responses, only a subset of it is sent to the cloud \parencite{Cao2020OverviewEdgeComputingResearch}, freeing up backbone available bandwidth. 
 
-Despite the advantages edge computing also faces, some difficulties regarding resource scarcity, reliability and 
+Despite the advantages edge computing also faces, difficulties regarding resource scarcity and managment complexity
 
 On the flip side, edge computing is not a replacement for cloud computing \parencite{Cao2020OverviewEdgeComputingResearch}, rather a complitment or extension as cloud computing can be understood as the persistent computing and storage layer to be
-% use tese\literature_review\Edge Platform\An_Overview_on_Edge_Computing_Research.pdf and  tese\literature_review\Resource Orchestration on SDN\Resource optimization in edge and SDN-based edge computing - a comprehensive study.pdf (go to the challenges section)
+% use tese\literature_review\04_context_edge\An_Overview_on_Edge_Computing_Research.pdf
+% NOTE (2026-08-01): the second file (Nain et al. resource-optimization study) is NOT in the
+% corpus — acquire or re-verify before citing (see literature_review README "not in corpus").
 
 % there's a huge platora of services and applicatons that present latency and processing requirements that are more suited towards edge computing over cloud computing.
 %Because despite the cloud being abundant in computing and storage resources, it suffers from higher latency due to the distance to it's users. In constrant, edge computing brings the resoruces closer to the end user thus reduncing latency and also reduces backbone traffic
@@ -162,10 +169,11 @@ On the flip side, edge computing is not a replacement for cloud computing \paren
 % TODO: The 6 objectives from the thesis proposal.
 
 \section{Research Questions}\label{sec:research_questions}
-% TODO: RQ3 (Trigger Quality — degradation_score vs. cpu_only), RQ1 (Telemetry
-% Freshness — push vs. poll at 5s/12s/30s), RQ2 (Backend Selection — host/slowstart/lifecycle).
-% Detection→delivery→action chain. Baselines encode architectural properties of separated
-% systems (CPU-only threshold, Poll-30s, discovery-time slowstart).
+% TODO (current framing, thesis_overview.md §6): RQ1 — telemetry delivery semantics
+% (event-preserving vs delayed event-preserving vs latest-state); RQ2 — bottleneck-aware action
+% selection (compute vs storage scale-out from the observed bottleneck); RQ3 — readiness
+% propagation (direct lifecycle notification vs periodic discovery). Demand → usable-capacity
+% chain. Each RQ holds the other two interfaces constant.
 
 \section{Research Methodology}\label{sec:research_methodology}
 % TODO: Design Science Research Methodology (DSRM) — Peffers et al. (2007-8),
@@ -183,69 +191,57 @@ On the flip side, edge computing is not a replacement for cloud computing \paren
 
 \section{Review Methodology}\label{sec:review_method}
 % TODO: Databases, search terms, time range, inclusion/exclusion criteria.
+% Corpus: 42 unique papers, RQ-mapped under tese/literature_review/ (index README).
 
 \section{The Unexamined Default: Three-Layer Separation}\label{sec:lit_three_layer_separation}
-% TODO: Every major orchestration architecture (Kubernetes, NFV MANO, MEC) separates
-% monitoring, routing, and scaling into independent components. Table: K8s (Prometheus→
-% AlertManager, kube-proxy, HPA), NFV MANO (OSM MON, SDN+HAProxy, OSM POL→LCM),
-% MEC (InfluxDB, SDN switches, K8s scheduler). This separation is not presented as a
-% design choice — it is the unexamined default. Consequence: coordination gap (30–120 s
-% total latency for a 10 s container boot). Documented (Wang et al.), observed as side
-% effect (Pierro & Ullah), called for (Yaseen, 2025) — but never isolated or measured.
+% TODO (background motivation only — superseded-framing caution, 2026-08-01): K8s / NFV MANO /
+% MEC separate monitoring, routing, and scaling into independent components (table: K8s
+% Prometheus→AlertManager / kube-proxy / HPA; OSM MON / SDN+HAProxy / OSM POL→LCM; MEC InfluxDB /
+% SDN / scheduler). Keep corpus-bounded ("within the reviewed corpus") and do NOT present a
+% universal "coordination gap" as the thesis's claim (global_literature_review.md carries a
+% superseded-framing banner; see thesis_overview.md). Evidence here is background: Wang (SDNFV)
+% documents spawn→LB-inclusion delay; Pierro & Ullah observe throughput drop; Yaseen calls for
+% monitoring integrated with control — none isolated or varied these as independent variables.
 
 \section{Auto Scaling}\label{sec:lit_auto_scaling}
-% TODO: Domain survey — what it studies (when and by how much to scale: HyMetricScaler,
-% Toka et al. 2021, De Silva et al. 2026, PAHPA), what it ignores (monitoring freshness,
-% LB discovery timing, trigger composition treated as givens), strongest gap evidence
-% (Ghorab et al. 2020 call for joint LB+scaling; Pierro & Ullah observe throughput
-% decreasing with more pods — symptom of coordination gap treated as side effect).
-% Finding: no auto-scaling paper varies monitoring freshness, LB discovery timing, or
-% trigger composition as independent experimental variables.
+% TODO (RQ2 — bottleneck-aware action selection; folder 02): what it studies (when/how many to
+% scale: Qu et al. 2018 taxonomy; Toka 2021; SynScale 2026), what it leaves as a given (the
+% capacity-action type — compute vs storage — and the telemetry feeding the decision). Closest
+% RQ2 precedent: Li et al. 2020 (compute + data provisioning, forecast-driven). Finding
+% (corpus-bounded): no reviewed auto-scaling paper selects compute vs storage scale-out from a
+% live observed bottleneck.
 
 \section{Load Balancing on SDN}\label{sec:lit_sdn_lb}
-% TODO: Domain survey — what it studies (algorithm design: 30 metrics taxonomised across
-% 41 papers — Alrammahi & Bhaya 2022; 120+ papers surveyed — Belgaum et al. 2020,
-% Mawale & Wankhade 2025), what it ignores (zero metrics concern data freshness; "periodically"
-% appears everywhere — Caiza & Campoverde 2024, Zhang & Guo 2014 — without asking what
-% happens if the period changes), strongest gap evidence (Caiza & Campoverde use WSM —
-% same approach as this thesis — but bury the freshness question in an adverb).
-% Finding: no SDN LB paper varies metric collection cadence, compares push vs. pull,
-% or evaluates LB under a changing backend pool.
+% TODO (RQ3 — readiness propagation; folder 03): what it studies (backend-selection algorithms
+% given available server state: Neghabi 2018; Belgaum 2020), what it treats as a given (pool
+% availability/readiness and the readiness→admission pipeline). Evidence: Wang (SDNFV) documents
+% spawn→LB-inclusion delay without varying it; Foglets / Shard Manager mechanise readiness but
+% never compare direct notification vs periodic discovery. Finding (corpus-bounded): no reviewed
+% SDN-LB study isolates ready-backend → routing-admission propagation with selection held fixed.
 
 \section{Monitoring \& Telemetry}\label{sec:lit_monitoring}
-% TODO: Domain survey — what it studies (monitoring as end in itself: AdapPF bandwidth
-% optimisation, Acala aggregation, Zhou & Yong custom metrics, PAHPA real-time correction),
-% what it ignores (consumer of telemetry always out of scope; monitoring→decision interface
-% is one-way pipe), strongest gap evidence (AdapPF only paper varying scrape interval with
-% downstream effect — but framed as bandwidth saving; Yaseen 2025 calls for monitoring
-% "tightly integrated with network control and automation" — call unanswered).
-% Finding: no monitoring paper varies delivery cadence as a spectrum, measures downstream
-% effect on both scaling and LB quality, or co-locates monitoring with scaling/routing.
+% TODO (RQ1 — telemetry delivery semantics; folder 01): what it studies (AdapPF varies scrape
+% interval → scheduling accuracy, framed as bandwidth saving; Acala aggregation; Zhou & Yong
+% metric choice; Yaseen survey calling for monitoring integrated with control), what it leaves
+% open (delay-but-complete vs latest-state delivery semantics). Finding (corpus-bounded): no
+% reviewed monitoring paper distinguishes delayed event-preserving from latest-state delivery,
+% nor traces either through a stateful service's scaling + admission path.
 
 \section{Resource Orchestration on SDN}\label{sec:lit_sdn_orchestration}
-% TODO: Domain survey — what it studies (resource allocation: Zehra & Shah 2017; InterCloud:
-% Aliyu et al. 2017; edge optimisation: Nain et al. 2024 — 29pp survey; IIoT: Okwuibe
-% et al. 2020; cross-layer: Rafiee et al. 2024), what it ignores (SDN always the network
-% layer, never the orchestration platform; compute is K8s' job, monitoring is InfluxDB's
-% job — separation is architectural, not accidental), strongest gap evidence (Okwuibe
-% et al.: Docker+SDN+edge+MongoDB — closest stack — but orchestration split across 3
-% systems; Nain et al.: "does not consider load balancing, resource allocation, and
-% computational offloading together"; Breitbach et al.: n-replication Tier 0→1→2 at
-% application layer, no SDN integration).
-% Finding: no paper co-locates monitoring, routing, and scaling in a single SDN controller.
+% TODO (context + boundaries; folders 04/05): orchestration context (Okwuibe 2020 — closest
+% Docker+SDN+edge+MongoDB stack, split across SDN/K8s/InfluxDB; Peng 2019; Wang 2019
+% network-centric survey) and geo-distributed boundary/counterexamples (OneEdge, mck8s, Kurma
+% coordinate via centralization). Finding (corpus-bounded): within the reviewed corpus, no study
+% co-locates and independently varies the three interfaces; do NOT claim no coordinated control
+% plane exists (OneEdge/mck8s/Kurma are counterexamples).
 
 \section{Summary and Research Gaps}\label{sec:lit_synthesis}
-% TODO: (1) Cross-dimensional gap matrix — present the table from global_literature_review.md
-% §3 showing every reviewed paper against four dimensions (monitoring freshness varied?,
-% LB discovery timing varied?, trigger composition varied?, components co-located?) — this
-% thesis is the only row where all four are addressed. (2) Why the gap matters: Wang et al.
-% document it, Pierro & Ullah observe symptoms, Yaseen calls for integration — three
-% independent observations never connected. (3) Compound coordination tax: ~74 s
-% (43 s projected delivery + 31 s measured action); ~10 s provisioning constant across
-% architectures. Total separated latency: ~84 s vs. ~10 s unified. 31 s empirically
-% confirmed (RQ2, n=9); 43 s awaits RQ1 confirmation. (4) Gap: no existing work isolates
-% the detection→delivery→action
-% chain for independent experimental characterization.
+% TODO (summary + gap, current framing): present the three-interface gap table from
+% thesis_overview.md §4 (telemetry→decision, decision→capacity action, ready backend→traffic).
+% Keep claims corpus-bounded ("within the reviewed corpus…"). The old "compound coordination
+% tax" (~74 s / ~84 s) synthesis is SUPERSEDED — thesis_overview.md §7 forbids summing unmatched
+% per-interface results; report per-interface effects and synthesize only matched measurements
+% under a common workload/event schema.
 
 
 
@@ -254,8 +250,9 @@ This chapter presents the design of the proposed cross layer sdn orchestration a
 the research gaps explored in the ~\ref{ch:literature_review} and brings to the fold the need for an architecture that allows for each mentioned
 component to be independently managed and tested.
 \section{Design Requirements}\label{sec:design_requirements}
-% TODO: Cross-layer orchestration; single control point; tiered data gravity;
-% decoupled compute/data scaling; domain-agnostic observability.
+% TODO: Cross-layer orchestration; single control point; decoupled compute/data scaling;
+% domain-agnostic observability. NOTE (2026-08-01): tiered data placement / data gravity is a
+% HELD-CONSTANT platform capability, not a claimed contribution (thesis_overview.md §2, §9).
 
 \section{Architecture}\label{sec:architecture_overview}
 % TODO: Component diagram. Two geo-distributed networks + WAN. OVS, edge servers, storage servers.
@@ -265,20 +262,25 @@ component to be independently managed and tested.
 
 \subsection{Services}\label{sec:elastic_compute}
 % TODO: Compute scaling — T_proc threshold; edge server containers;
-% VIP_SERVER pool registration. Three backend selection policy modes:
-% topology_host (no ramp-up, cold-start WSM), topology_slowstart (invisible
-% until discovery, graduated ramp), topology_lifecycle (spawn-time warm lease).
+% VIP_SERVER pool registration. Backend-selection policy modes are the RQ3 apparatus:
+% topology_host (no ramp-up, cold-start WSM), topology_slowstart ≈ periodic discovery
+% (invisible until discovery, graduated ramp), topology_lifecycle ≈ direct registration
+% (spawn-time warm lease). RQ3 compares the readiness-propagation mechanism, not the
+% selection function (thesis_overview.md §6-RQ3).
 
 \subsection{Data}\label{sec:elastic_data}
 % TODO: Data scaling — T_dados threshold; Tier 0 → Tier 2 transitions;
 % MongoDB rs.add()/rs.remove(); Tier 1 Selective Sync (design, honest scope).
+% NOTE (2026-08-01): storage scale-out is the RQ2 capacity action (cold same-LAN rs.add/remove
+% only); Tier 1 / prepared reserves / cross-region placement are held constant or disabled.
 
 \section{Monitoring and Decision Engine}\label{sec:monitoring_decision}
 % TODO: Telemetry pipeline (ZMQ PUSH → Aggregator → summaries → Controller);
-% push (ZMQ) and poll (HTTP) delivery. Degradation score: weighted combination
-% of CPU saturation (40\%) and processing latency (60\%); latency dominates for
-% stateful services (I/O drives T_proc before CPU saturates). CPU-only threshold
-% (w_cpu=1.0, w_lat=0.0) as industry-default alternative. Threshold evaluation;
+% push (ZMQ) and poll (HTTP) delivery = RQ1 delivery-semantics apparatus (event-preserving vs
+% latest-state; requires durable sequence-numbered window log per thesis_overview.md §6-RQ1).
+% Degradation score: weighted combination of CPU saturation (40\%) and processing latency (60\%);
+% latency dominates for stateful services (I/O drives T_proc before CPU saturates). CPU-only
+% threshold (w_cpu=1.0, w_lat=0.0) as industry-default alternative. Threshold evaluation;
 % sliding window; alert submission.
 
 \section{Control Workflow}\label{sec:control_workflow}
@@ -298,7 +300,8 @@ component to be independently managed and tested.
 \subsection{Services}\label{sec:impl_compute}
 % TODO: Edge server (Python/Flask); container lifecycle (build, start, health check,
 % OVS wiring, drain, removal); VIP_SERVER registration. BACKEND_SELECTION_POLICY
-% env var (topology_host / topology_slowstart / topology_lifecycle).
+% env var (topology_host / topology_slowstart / topology_lifecycle) = RQ3 propagation
+% mechanism; requires a compute readiness probe + pending-backend registry (thesis_overview.md §6-RQ3).
 
 \subsection{Data}\label{sec:impl_data}
 % TODO: MongoDB replica sets; programmatic rs.add()/rs.remove(); VIP_DATA routing;
@@ -310,7 +313,8 @@ component to be independently managed and tested.
 % (domain + debug + per-node CSVs); telemetry source abstraction
 % (ZmqTelemetrySource, PollingTelemetrySource). Degradation score with
 % configurable weights via SCALEUP_W_CPU / SCALEUP_W_T_PROC env vars;
-% ElasticityManager.
+% ElasticityManager. RQ2 requires a bottleneck-classification gate that logs episode label,
+% evidence, selected/rejected action, and action budget (thesis_overview.md §6-RQ2).
 
 \section{Control Workflow}\label{sec:impl_control}
 % TODO: OS-Ken/Ryu controller; 3 greenthreads; shared data structures;
@@ -327,10 +331,11 @@ component to be independently managed and tested.
 \chapter{Evaluation Methodology}\label{ch:methodology}
 
 \section{Experimental Objectives}\label{sec:experimental_objectives}
-% TODO: Overall aim — characterize the coordination gap by varying each link in the
-% detection→delivery→action chain independently: trigger quality (RQ3), telemetry
-% freshness (RQ1), and backend selection (RQ2) — measuring how each affects service
-% quality during demand shifts. DSRM framing (Peffers et al., 2007-8; Hevner et al., 2004).
+% TODO: Overall aim — characterize how the three control-loop interfaces affect the
+% demand→usable-capacity chain independently: telemetry delivery semantics (RQ1),
+% bottleneck-aware action selection (RQ2), and readiness propagation to traffic (RQ3) —
+% measuring how each affects service quality during demand shifts. DSRM framing (Peffers et al.,
+% 2007-8; Hevner et al., 2004).
 
 \section{Evaluation Scenarios}\label{sec:evaluation_scenarios}
 % TODO: Within-system, single-variable manipulation. Comparison strategy:
@@ -338,12 +343,13 @@ component to be independently managed and tested.
 % Each RQ holds the other pillars constant. 10-phase workload.
 
 \section{Performance Metrics}\label{sec:performance_metrics}
-% TODO: Reaction latency (spawn_done − breach_window_end, segmented:
-% breach-detection + provisioning); service quality (p95/p99 latency, failure rate);
-% control overhead (CPU%, RSS); load redistribution (time-to-equilibrium, ramp shape);
-% detection accuracy (false positive/negative rate for RQ3). Independent breach detector.
-% Per-RQ locks: RQ1 holds golden trigger + topology_lifecycle; RQ2 holds push telemetry
-% + golden trigger; RQ3 holds push telemetry + topology_lifecycle.
+% TODO: Reaction latency (time from demand shift → usable capacity, segmented per RQ); service
+% quality (p50/p95/p99 latency, failure rate, offered vs completed requests); control overhead
+% (CPU%, RSS). Per-RQ outcomes: RQ1 — completed/missed windows, info age, delivery delay; RQ2 —
+% time to recover bottleneck-specific pressure, node-minutes, action relief; RQ3 — ready→admitted,
+% admitted→first-flow, first-flow→first-success, useful initial request share. Independent
+% breach detector. Per-RQ locks: RQ1 holds scaling+routing policy fixed; RQ2 holds telemetry
+% delivery+routing fixed; RQ3 holds telemetry delivery+selection fixed (thesis_overview.md §6).
 
 \section{Experimental Procedure with Results Statistical Analysis}\label{sec:experiment_procedure}
 % TODO: Pre-run → setup → run → post-run → copy-back → cross-run comparison.
@@ -353,32 +359,27 @@ component to be independently managed and tested.
 
 
 \chapter{Experimental Results}\label{ch:results}
-% Section order follows detection→delivery→action chain: RQ3 → RQ1 → RQ2 → Synthesis.
+% Section order follows the demand→usable-capacity chain: RQ1 → RQ2 → RQ3 → Synthesis.
 
-\section{Trigger Quality — Overload Detection (RQ3)}\label{sec:results_rq3_trigger}
-% TODO: Breach detection time: spawn_start_ts − breach_window_end across
-% degradation_score vs. cpu_only modes. False positive rate (spawns during baseline /
-% total spawns). False negative rate (spawns missed during stress phases). Service
-% quality during transitions: per-phase p50/p95 latency, timeout rate, completed
-% request volume. Key finding (projected): CPU-only may never fire at realistic resource-constrained
-% CPU levels (2–8\%) for I/O-bound stateful services.
+\section{Telemetry Delivery Semantics (RQ1)}\label{sec:results_rq1_delivery}
+% TODO (RQ1): completed/missed overload windows; information age and delivery delay; time from
+% demand shift → scaling decision and → usable capacity; offered/completed requests; latency
+% distributions and failure rate; controller/telemetry overhead. Compare event-preserving vs
+% delayed event-preserving vs latest-state delivery (thesis_overview.md §6-RQ1).
 
-\section{Telemetry Freshness — Delivery Cadence (RQ1)}\label{sec:results_rq1_telemetry}
-% TODO: Reaction latency across delivery cadences (Push, Poll-5s, Poll-12s,
-% Poll-30s). Breach-detection segment vs. provisioning segment. Decision staleness
-% (consumed_at − window_end) — confirms all modes sub-second; mechanism is missed
-% windows, not data staleness. Service quality (p95/p99, failure rate) per cadence.
-% Control-plane overhead per mode. Scaling outcome description: per-phase table
-% comparing breached windows vs. spawns completed.
+\section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
+% TODO (RQ2): time to recover bottleneck-specific pressure; time to usable capacity; p50/p95/p99
+% latency; failures and completed offered demand; compute and storage node-minutes; number of
+% scale actions; relief in the targeted tier. Compare compute-first/storage-first fixed-priority
+% vs bottleneck-aware selection under validated compute-bound and data-access-bound episodes
+% (thesis_overview.md §6-RQ2).
 
-\section{Backend Selection — Routing Awareness (RQ2)}\label{sec:results_rq2_backend}
-% TODO: Load redistribution time: spawn_done_ts → equilibrium (±10\% of per-backend
-% mean) across topology_host (no ramp-up), topology_slowstart (discovery-time ramp),
-% topology_lifecycle (spawn-time warm lease). Transition-window service quality:
-% p95/p99 latency and failure rate in compute_spike phase. Per-mode redistribution
-% profile: request share over time, ramp shape. Key finding (empirically confirmed,
-% n=9): discovery-time slowstart imposes ~31 s action penalty — new capacity sits
-% idle for one full telemetry window.
+\section{Readiness Propagation and Traffic Admission (RQ3)}\label{sec:results_rq3_readiness}
+% TODO (RQ3): backend-ready → routing-admitted delay; admitted → first-flow delay; first-flow →
+% first-successful-response delay; useful initial request share; transition-window latency and
+% failures; time from scale decision to usable capacity. Direct lifecycle notification vs periodic
+% discovery, selection function held fixed (thesis_overview.md §6-RQ3). Supporting calibration
+% evidence: old RQ2 slowstart ≈ periodic discovery, ~31 s idle-capacity penalty (n=9).
 
 \section{Network Performance}\label{sec:results_network}
 % TODO: Control-plane overhead (CPU%, RSS); cross-LAN latency;
@@ -390,18 +391,12 @@ component to be independently managed and tested.
 % Resource allocation efficiency: does the system deploy resources only when
 % justified? Storage and compute node counts across phases.
 
-\section{Discussion — The Compound Coordination Gap}\label{sec:discussion}
-% TODO: Reconstruct the compound coordination tax from RQ3→RQ1→RQ2 results.
-% Table: Fully separated (CPU-only: never/late | Poll-30s: +~43 s projected |
-% Slowstart: +31 s measured | Provisioning: ~10 s | Total: ~84 s or unbounded)
-% vs. Fully unified (Degradation score: early | Push: ~0 s | Lifecycle: ~0 s |
-% Provisioning: ~10 s | Total: ~10 s + early detection lead). Coordination tax:
-% ~74 s (43 s delivery + 31 s action). First experimental quantification of
-% phenomenon documented by Wang et al., observed by Pierro & Ullah, called for
-% by Yaseen (2025). Which link matters most? Sharpest trade-offs? What's negligible?
-% Implications for geo-distributed system designers. Data placement strategies (Tier 0/1/2)
-% as infrastructurecontext: unified architecture enables tiered data gravity;
-% experimental characterization of data locality trade-offs deferred to future work.
+\section{Discussion: Synthesis Across Interfaces}\label{sec:discussion}
+% TODO: synthesize per-interface effects (RQ1/RQ2/RQ3) measured under a common workload, resource
+% configuration, and event schema. Which interface matters most under which conditions? Sharpest
+% trade-offs? What is negligible? Implications for stateful edge-service designers.
+% Data-placement strategies (Tier 0/1/2) remain held-constant platform context; experimental
+% characterization of data-locality trade-offs is deferred to future work.
 
 
 
@@ -414,11 +409,12 @@ component to be independently managed and tested.
 % TODO: Restate 5 contributions with evidence from results.
 
 \section{Limitations}\label{sec:limitations}
-% TODO: Controlled testbed; simulated workload; single window size;
-% Tier 1 partial; statistical power (n=3 per condition); RQ1 and RQ3 results
-% projected/designed — experimental confirmation pending (RQ2 empirically confirmed,
-% n=9); MongoDB-specific mechanisms (Double-VIP); compound coordination delay
-% synthesized from per-link results, not tested as single experiment.
+% TODO: Controlled testbed; emulated (not real) WAN; single host; single window size;
+% statistical power (n=3 per condition); RQ1/RQ2/RQ3 rely on required extensions and are
+% designed, not fully measured (thesis_overview.md §6); the old RQ2 slowstart result (~31 s,
+% n=9) is supporting calibration evidence for RQ3's periodic-discovery condition, not final
+% evidence; MongoDB-specific mechanisms (Double-VIP); no end-to-end coordination penalty is
+% claimed — per-interface results are synthesized only under a matched schema.
 
 \section{Future Research Directions}\label{sec:future_work}
 % TODO: Compound coordination delay injection experiment (emulate full separation

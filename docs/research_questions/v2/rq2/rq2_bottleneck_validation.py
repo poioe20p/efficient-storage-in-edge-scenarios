@@ -23,7 +23,7 @@ import argparse
 import json
 import os
 import sys
-from statistics import mean
+from statistics import median
 
 _RQ2_ARMS = {"fixed_compute_first", "fixed_storage_first", "bottleneck_aware"}
 _EPISODE_SUBSTR = "episode"
@@ -100,7 +100,12 @@ def _validate_lan(run_dir: str, lan: int, episode_label: str,
           and w.get("domain_summary")]
     if not ep:
         return None
-    agg = {k: mean(_signals(w)[k] for w in ep) for k in
+    # MEDIAN (not mean): the per-window db_ms signal is contaminated by a few
+    # dynamic-server lifecycle/spawn-removal transients (the scale action's own
+    # replica-sync cost), which can reach hundreds of ms and would dominate an
+    # arithmetic mean. The median measures the SUSTAINED induced bottleneck and
+    # is consistent with the platform's robust-percentile practice (RQ1).
+    agg = {k: median(_signals(w)[k] for w in ep) for k in
            ("proc_ms", "cpu_pct", "db_ms", "storage_cpu_pct")}
     n = len(ep)
     # Verdict on the PRIMARY latency axis only. avg_time_proc_ms is pure

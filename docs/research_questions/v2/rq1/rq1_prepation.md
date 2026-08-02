@@ -366,7 +366,7 @@ no image build changes beyond `EXPOSE 5558`.
   per-arm regime files `env/rq1_event_preserving.env` / `env/rq1_delayed.env` /
   `env/rq1_latest_state.env` (which also set the capacity overrides and
   `SCALEDOWN_COMPUTE_COOLDOWN_S=60`); see
-  `docs/operation/testing/experiment/v2/rq1_experiment/experiment_plan.md`.
+  `docs/operation/testing/experiment/v2/rq1/experiment_plan.md`.
 - **TELEMETRY_SOURCE pass-through:** `build_network_setup.sh` no longer forces
   `-e TELEMETRY_SOURCE="${TELEMETRY_SOURCE:-zmq}"`; it passes the var only when
   set on the shell (`${TELEMETRY_SOURCE:+-e …}`), so the controller env file is

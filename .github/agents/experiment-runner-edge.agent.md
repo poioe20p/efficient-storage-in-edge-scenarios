@@ -1,7 +1,7 @@
 ---
 description: "Use when: running and managing experiment runs in the cloud VM by following an experiment plan in docs/operation/testing/experiment/. Enters the host with 'ssh cloud-vm', launches runs from source/scripts/testing with non-interactive sudo ('sudo -n'), waits with passive monitoring, follows the plan's per-run steps and checkpoints through read-only checks, and makes only the scoped between-run edits the plan allows. All experiment commands run inside the cloud VM at ~/efficient-storage-in-edge-scenarios, not on the Windows host."
 name: "Edge Experiment Runner"
-tools: [read, search, execute, edit, todo]
+tools: [read, search, execute, edit, todo, agent]
 argument-hint: "Name the experiment plan in docs/operation/testing/experiment/ and the run to execute (plus any per-run delta)."
 agents: []
 model: deepseek-v4-flash
@@ -53,23 +53,29 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
    ```powershell
    ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && git diff -- <path>"
    ```
+
    If the cloud VM diff differs from the local diff (or the cloud VM has no diff but local does), a sync is required.
 
 ### Step B — Sync files
 
 Use `scp` to copy each modified source file (or whole directories when many files changed):
+
 ```powershell
 scp <local-path> cloud-vm:~/efficient-storage-in-edge-scenarios/<remote-path>
 ```
+
 For deleted files, remove them on the cloud VM:
+
 ```powershell
 ssh cloud-vm "rm ~/efficient-storage-in-edge-scenarios/<path>"
 ```
+
 For the edge server specifically, the three source files under `source/docker/edge_server/source/` are the most critical — always verify these individually.
 
 ### Step C — Verify sync correctness
 
 After syncing, verify each critical file on the cloud VM contains (or lacks) the expected patterns. Do NOT assume `scp` succeeded silently. Examples:
+
 ```powershell
 # Verify breaker removed
 ssh cloud-vm "grep -c 'CircuitBreaker\|CircuitOpenError' ~/efficient-storage-in-edge-scenarios/source/docker/edge_server/source/vip_data_mongo_runtime.py"
@@ -100,6 +106,7 @@ ssh cloud-vm "grep 'circuit_cooldown_s' ~/efficient-storage-in-edge-scenarios/so
 ### Step E — Final pre-launch gate
 
 Only proceed to launch when ALL of the following are true:
+
 - [ ] Local working tree changes identified and categorized
 - [ ] All runtime source files synced to cloud VM
 - [ ] Each synced file verified (content check, not just exit code)
@@ -125,11 +132,13 @@ If any gate fails, report the specific failure and wait for the user before laun
    ```
    ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && nohup sudo -n make ... RUN_LABEL=<label> > /tmp/<label>.log 2>&1 &"
    ```
+
    The `nohup ... &` causes the SSH command to return immediately. The run continues in the background on the VM.
 4. **Phase 2 — Launch the watchdog (mode=async).** Back on the Windows host, launch the polling watchdog in an async terminal:
    ```
    python3 tools/watch_run.py --host cloud-vm --run-label <label> --poll-interval 15 --timeout 10800
    ```
+
    The watchdog polls the VM every 15s via short-lived SSH connections, reads `active_run.json`, and exits when the run completes. **The watchdog's terminal completion notification is the autonomous signal that the run is done.**
 5. On watchdog completion notification:
    - Exit code 0 → run completed → proceed to post-run analysis

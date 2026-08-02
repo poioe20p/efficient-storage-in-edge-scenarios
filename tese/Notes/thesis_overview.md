@@ -254,10 +254,14 @@ It does not claim:
 
 | Document | Relationship |
 | --- | --- |
-| `tese/literature_review/Auto Scaling/README.md` | Auto-scaling state of the art and the bottleneck-to-action gap. |
-| `tese/literature_review/Load Balancing on SDN/README.md` | SDN load-balancing state of the art and the readiness-propagation gap. |
-| `tese/literature_review/Monitoring & Telemetry/README.md` | Telemetry state of the art and the delivery-semantics gap. |
-| `tese/literature_review/Resource Orchestration on SDN/README.md` | Edge orchestration context and integration boundaries. |
+| `tese/literature_review/README.md` | Corpus index: RQ → folder mapping and the core citation set. |
+| `tese/literature_review/01_telemetry_rq1/README.md` | Telemetry state of the art and the delivery-semantics gap (RQ1). |
+| `tese/literature_review/02_action_selection_rq2/README.md` | Auto-scaling and edge-storage state of the art and the bottleneck-to-action gap (RQ2). |
+| `tese/literature_review/03_readiness_admission_rq3/README.md` | SDN load-balancing and service-discovery state of the art and the readiness-propagation gap (RQ3). |
+| `tese/literature_review/04_context_edge/README.md` | Edge framing and platform context (introduction). |
+| `tese/literature_review/05_context_orchestration/README.md` | Edge orchestration context and integration/scope boundaries. |
+| `tese/literature_review/99_reference/README.md` | Background/reserve sources; not core evidence. |
+| `tese/literature_review/global_literature_review.md` | Evidence ledger (synthesis + gap matrix); §1–§7 framing is superseded — see its banner. |
 | `docs/operation/system_mechanisms.md` | Verified platform architecture and current mechanisms. |
 | `docs/research_questions/` | Prior RQ documents and campaigns using the superseded framing. Replacement RQ definitions, measurement contracts, and experiment designs must be created before final thesis evaluation. |
 | `tese/chapters/` | Thesis chapters; claims in the manuscript must not exceed this overview. |
