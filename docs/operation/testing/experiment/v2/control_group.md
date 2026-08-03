@@ -31,7 +31,7 @@
 | Workload phase file | `phases_stress_plateau.json` (sustained 600 s plateau **rate 5.0 — locked**, `demand_drop` 420 s) |
 | Scalable env | `current_state_integrated.env` (caps **3/3** active dynamic per LAN, storage scale-down **30 s + 3/5 windows** — control-group retune 2026-08-01; **median latency signals** — control-group reset 2026-08-03) |
 | No-scale env | `ablation_noscale.env` |
-| Latency signal statistic | **`LATENCY_SIGNAL_MODE=median`** (both arms — control-group reset 2026-08-03; see [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md)) |
+| Latency signal statistic | **`LATENCY_SIGNAL_MODE=median` + COMPOSITE storage signal** (storage CPU 0.60 / median latency 0.40, CPU-aware scale-down — G0-v4, validated 2026-08-03; see [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md) §6) |
 | Hardware sim | `STORAGE_CPUS=0.08  EDGE_CPUS=0.15  WAN_RTT_MS=185  RANDOM_SEED=42` |
 | Scale | `CLIENTS=24  CONTENT_ITEMS=3000  USERS=100  DATA_SEED=42  CURL_MAX_TIME=30` |
 | RQ flags | none (defaults: `TELEMETRY_SOURCE=zmq`, `SCALEUP_POLICY=dual`, `READINESS_PROPAGATION=off`, `VIP_FLOW_ISOLATION=0`, `EDGE_FLOW_ISOLATION=0`) |
@@ -58,62 +58,50 @@ storage reclaim completes **in-window** (RQ3 v7 precedent).
 | Group | Value |
 |---|---|
 | Features (scalable) | `STORAGE_PERSISTENT_RESERVE_ENABLED=1`, `SS_ENABLED=1`, `MAX_DYNAMIC_COMPUTE=3`, `MAX_DYNAMIC_STORAGE=3` (active per LAN; reserve standby extra) |
-| Signal statistic | `LATENCY_SIGNAL_MODE=median` (both arms, control-group reset 2026-08-03) — ALL latency decision signals (scale-up + scale-down, compute + storage) use the window median; CPU signals stay mean (bounded 0–100%) |
+| Signal statistic | `LATENCY_SIGNAL_MODE=median` (both arms, control-group reset 2026-08-03) — ALL latency decision signals use the window median; CPU stays mean (bounded). Storage scale-up is **COMPOSITE** (G0-v4): `W_STORAGE_CPU=0.60`/`W_T_DB=0.40`; storage CPU floor 10/span 30; scale-down is CPU-aware (`STORAGE_SCALE_DOWN_CPU_AWARE=1`, `TAU_STORAGE_CPU_DOWN=22`) |
 | Features (no-scale) | reserve + both dynamic caps = 0; `SS_ENABLED=1` |
 | Compute scale-up | base threshold `0.18`, `W_CPU=0.60` `W_T_PROC=0.40`, CPU floor 10 / span 40, T_proc floor 25 / span 50 (base `osken-controller.env`), cooldown `45 s` (base `osken-controller.env`); no `peer relief` key — see `current_state_integrated.env` |
-| Storage scale-up | base threshold `0.35`, `W_T_DB=1.0`, T_db floor **10** / span **50** (median-era re-anchor 2026-08-03, crossing 27.5 ms), cooldown `120 s` |
-| Scale-down | compute `SCALEDOWN_COMPUTE_COOLDOWN_S=180`, `SCALE_DOWN_COMPUTE_REQUIRED=9`; storage **`SCALEDOWN_STORAGE_COOLDOWN_S=30`**, **`SCALE_DOWN_STORAGE_WINDOW_SIZE=5`**, **`SCALE_DOWN_STORAGE_REQUIRED=3`** (fast reclaim — retune 2026-08-01); `TAU_DB_DOWN_MS=8` (median-era re-anchor 2026-08-03) |
+| Storage scale-up | **COMPOSITE (G0-v4):** `W_STORAGE_CPU=0.60` / `W_T_DB=0.40`, storage CPU floor **10** / span **30**, T_db floor **10** / span **50** (latency crossing 27.5 ms), τ `0.35`, cooldown `120 s` |
+| Scale-down | compute `SCALEDOWN_COMPUTE_COOLDOWN_S=180`, `SCALE_DOWN_COMPUTE_REQUIRED=9`; storage **`SCALEDOWN_STORAGE_COOLDOWN_S=30`**, **`SCALE_DOWN_STORAGE_WINDOW_SIZE=5`**, **`SCALE_DOWN_STORAGE_REQUIRED=3`** (fast reclaim — retune 2026-08-01); `TAU_DB_DOWN_MS=8` + **CPU-aware gate** (`STORAGE_SCALE_DOWN_CPU_AWARE=1`, `TAU_STORAGE_CPU_DOWN=22`) — G0-v4 |
 | WSM weights (base) | compute `W_CPU 0.3 / W_RAM 0.1 / W_REQUESTS 0.2 / W_HOPS 0.28`; storage `W_STORAGE_CPU 0.2 / W_RAM 0.1 / W_CONNECTIONS 0.2 / W_LAG 0.2 / W_HOPS 0.3` |
 | VIP | `VIP_IDLE_TIMEOUT=30`, `VIP_HARD_TIMEOUT=60` |
 
-## 5. Scale vs No-Scale — metric tables (validated at plateau rate 5.0)
+## 5. Scale vs No-Scale — metric tables (validated at plateau rate 5.0, median-era composite — 2026-08-03)
 
 > CPU% is **quota-relative** (100% = the `EDGE_CPUS=0.15` cap). Load-phase
-> metrics pool the `compute_plateau` windows of the **retune validation pair**
-> (`cgr_scalable` / `cgr_noscale`, 2026-08-01). Retained evidence:
-> `source/scripts/testing/metrics/20260801_142015_cgr_scalable` and
-> `.../20260801_145132_cgr_noscale`.
+> metrics pool the `compute_plateau` windows of the **median-era validated pair**
+> (`cgr_v3_scalable` / `cgr_v3_noscale`, 2026-08-03, composite G0-v4 config).
+> Retained evidence: `source/scripts/testing/metrics/20260803_043244_cgr_v3_scalable`
+> and `.../20260803_073050_cgr_v3_noscale`.
 
-> **⚠️ Mean-era tables (2026-08-03 reset caveat):** the §5 numbers below were
-> produced on **2026-08-01 under G0-v2 mean-based latency signals**. On
-> 2026-08-03 the control was reset to median signals (`LATENCY_SIGNAL_MODE=median`,
-> see [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md)); these
-> tables are **not** a description of the current control until the median-era
-> re-validation pair (`cgr_scalable` / `cgr_noscale`) completes.
+> **Note:** the 2026-08-01 mean-era tables were superseded on 2026-08-03 by the
+> median-era composite control (G0-v4). The composite reproduces the mean-era
+> envelope (see [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md) §6).
 
 ### 5.1 Service quality (user-facing)
 | Metric | Scalable | No-scale | Effect |
 |---|---|---|---|
-| total requests | **23,523** | 11,714 | **×2.0** more demand served |
-| error % | **1.31** | 2.77 | scalable strictly better (inversion gone) |
-| p50 latency | **69.6 ms** | 472.4 ms | **×6.8** lower |
-| p95 latency | **4.38 s** | 7.10 s | −38% |
-| p99 latency | 30.0 s* | 30.0 s* | *`feed_ranking` 30 s tail (3.3% vs 6.9% of that endpoint) |
+| total requests | **21,460** | 10,372 | **×2.1** more demand served |
+| error % (plateau) | **2.00** | 3.99 | scalable better |
+| p50 latency (plateau) | **74 ms** | 662 ms | **×8.9** lower |
+| p95 latency (plateau) | **4.33 s** | 8.38 s | −48% |
 
 ### 5.2 Resource / tier health (load phases pooled)
 | Metric | Scalable | No-scale |
 |---|---|---|
-| compute CPU (quota-rel) | 58.5% (across 2.2 nodes) | **68.0%** (1 node) |
-| storage CPU | 31.9% | **49.9%** |
-| DB latency | **167 ms** | 346 ms (×2.1) |
-| avg servers | 2.18 | 0.98 |
-| avg storage | 3.31 | 0.98 |
-| peak servers (transient) | 4 (absent→respawn overlap) | 1 |
-| peak storage (incl. reserve) | 5 (≈4 active + 1 reserve) | 1 |
+| storage CPU (quota-rel) | **31.2%** | 50.9% |
+| DB latency (median T_db) | **4.6 ms** | 177 ms (×38) |
+| avg servers | 2.0 | 1.0 |
+| avg storage | 3.0 | 1.0 |
+| peak storage (incl. reserve) | 5 | 1 |
 
 ### 5.3 Mechanism (per LAN)
 | Metric | Scalable | No-scale |
 |---|---|---|
 | compute adds (per LAN) | 3–4 | 0 |
-| reserve activations (per LAN) | 4–5 | 0 |
-| storage adds (per LAN) | 4–5 | 0 |
-| **storage removed in-window (per LAN)** | **3 (in `demand_drop`)** | 0 |
-
-### 5.4 Reclaim (retune — the fix for v1g)
-| Run | storage adds/LAN | storage removed in-window/LAN | when |
-|---|---|---|---|
-| **retune scalable** | 4–5 | **3** | `demand_drop` (v1g: 0) |
-| retune no-scale | 0 | 0 | — |
+| storage adds incl. reserve (per LAN) | 4–7 | 0 |
+| **storage reclaimed in `demand_drop`** | **st 3.0 → 2.0 (in-window)** | 0 |
+| scale-down | fast reclaim 30 s + 3/5, CPU-aware gate | — |
 
 → The sustained plateau + 420 s `demand_drop` + 30 s storage scale-down means
 storage capacity is now **reclaimed in-window** after demand drops (the v1g run
@@ -173,4 +161,4 @@ grew to 8/LAN with zero reclaim).
 | 2026-08-01 | Retuned control-group config: caps 3/3, storage scale-down 30 s + 3/5 windows, `demand_drop` 420 s; validation run `cgr_*` pending | v1g grew storage to 8/LAN with zero in-window reclaim — unacceptable for the edge scenario; see `control_group_retune/experiment_plan.md` |
 | 2026-08-01 | **Validated** retune (`cgr_scalable`/`cgr_noscale`): storage reclaimed 3/LAN in-window, err% 1.31% vs 2.77%, caps soft +1 (reserve). §5 tables now at rate 5.0 | Control-group pair passed gates; retuned config is the recommended scale-vs-no-scale control for RQ1/RQ2/RQ3 |
 | 2026-08-03 | **Control-group reset (mean→median signal):** scalable + no-scale arms now set `LATENCY_SIGNAL_MODE=median` — ALL latency decision signals (scale-up + scale-down, compute + storage) use the window median; CPU stays mean (bounded). RQ1 stays mean-based (`LATENCY_SIGNAL_MODE=mean`) so archived RQ1 results remain byte-identical. See [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md) | Mean-based latency signals let one slow request dominate the decision in low-volume windows (RQ2 compute-bound evidence); median is robust |
-| 2026-08-03 | **Retune (median-era re-anchor):** storage `SCALEUP_T_DB_FLOOR` 60→10, `SCALEUP_T_DB_SPAN` 250→50 (crossing 27.5 ms), `TAU_DB_DOWN_MS` 150→8 (three-zone: <8 reclaim / 8-27.5 hold / ≥27.5 scale-up). Storage-only — compute is CPU-driven, unaffected. RQ1 keeps mean-scale 60/250. **Verification failed** (v2 run: plateau error 17.18%, concurrent storage 2.0, in-plateau churn persists — pure-latency median range too narrow) → **composite storage signal under test** (storage CPU + median latency, run matrix 2026-08-03). See [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md) §6 | Median-era plateau T_db ≈15 ms vs mean ≈650 ms; TAU=150 churned storage in-plateau (9 removals, 12.2% error vs mean-era 1.31%); the re-anchor alone could not reproduce the envelope, so a composite (CPU+bounded, robust) signal is being validated |
+| 2026-08-03 | **Matrix complete — composite wins (G0-v4):** run matrix (`cgr_v3_scalable` A-composite 2.00% err / `cgr_v4_scalable` B-narrow 3.29% / `cgr_v3_noscale` 3.99%; concurrent storage 3.0) — composite (storage CPU 0.60 / median latency 0.40, CPU-aware scale-down) folded into `current_state_integrated.env` + RQ2 envs; §5 tables rebuilt | Storage CPU is bounded and differentiates load (plateau 44% vs demand_drop 18%); the composite reproduces the mean-era envelope (2.0% err, 3.0 concurrent, storage CPU 31.2% ≈ mean-era 31.9%) where the pure-latency median could not |

@@ -1,6 +1,7 @@
 # Finding — Mean vs Median Latency Decision Signal (2026-08-03)
 
-> **Status:** ⚙️ **Fix implemented (code + config) · Re-validation running** · **Date:** 2026-08-03
+> **Status:** ✅ **Resolved (2026-08-03)** — median latency signals + COMPOSITE storage signal (G0-v4) validated: reproduces the mean-era envelope (run matrix §6)
+> **Date:** 2026-08-03
 > **Scope:** All latency-based controller decision signals (scale-up + scale-down,
 > compute + storage). Gated by `LATENCY_SIGNAL_MODE` (default `mean`).
 > **Impacted config:** [`current_state_integrated.env`](../../../../source/scripts/testing/controller_env_overrides/current_state_integrated.env)
@@ -177,20 +178,30 @@ quantifies the need for the re-anchor and the TAU correction.
   the median latency's plateau-vs-demand_drop range is only ~1.4 ms, so no
   pure-latency TAU can both protect the plateau AND reclaim in demand_drop.
 
-**Composite redesign (run matrix, 2026-08-03):** the storage signal adds a
-storage-CPU component (bounded 0-100%, robust) — storage CPU differentiates
-cleanly (plateau p50 44-47% vs demand_drop ~18%).
-- Arm A composite (`cgr_matrix_composite.env`, temporary): `W_STORAGE_CPU=0.6 /
-  W_T_DB=0.4`, CPU floor 10/span 30, latency 10/50, τ=0.35, CPU-aware scale-down
-  (stCpu<22 AND med_db<8) — plateau protected, demand_drop reclaims.
-- Arm B narrow pure-latency (`cgr_matrix_narrow.env`, temporary): floor 5/span
-  15 (crossing 10.25 ms), TAU=3 — expected fragile (1.4 ms range), tested as
-  contrast.
-- Baseline C: already measured (12-17% error).
-Winner is folded into `current_state_integrated.env`; temporary envs deleted.
+**Composite redesign — VALIDATED (run matrix, 2026-08-03):** the storage signal
+adds a storage-CPU component (bounded 0-100%, robust) — storage CPU
+differentiates cleanly (plateau p50 44-47% vs demand_drop ~18%).
+- **Arm A composite (WINNER — folded into `current_state_integrated.env` +
+  RQ2 arm envs as G0-v4):** `W_STORAGE_CPU=0.6/W_T_DB=0.4`, CPU floor 10/span 30,
+  latency 10/50, τ=0.35, CPU-aware scale-down (stCpu<22 AND med_db<8).
+- Arm B narrow pure-latency (contrast): floor 5/span 15 (crossing 10.25 ms),
+  TAU=3.
+
+Matrix results (plateau, `phases_stress_plateau.json`):
+
+| Run | error% | p50 | concurrent storage |
+|---|---|---|---|
+| A composite | **2.00%** | 74 ms | 3.0 |
+| B narrow | 3.29% | 75 ms | 3.0 |
+| no-scale | 3.99% | 662 ms | 1.0 |
+
+Arm A reproduces the mean-era envelope (1.31% err, 3.31 concurrent, storage CPU
+31.2% ≈ mean-era 31.9%) and is robust (CPU-aware scale-down); Arm B's TAU=3
+margin is only ~1.4 ms (fragile across replicates). Temporary matrix envs
+deleted.
 Offline analyzer note: `cli_scale_down.py` still hardcodes mean-era thresholds
-(TAU_STORAGE_CPU_DOWN=65 / TAU_DB_DOWN_MS=100); matrix validation uses
-`tools/control_run_trajectory.py` + `tools/run_service_quality.py` instead.
+(TAU_STORAGE_CPU_DOWN=65 / TAU_DB_DOWN_MS=100); validation uses
+`tools/control_run_trajectory.py` + `tools/run_service_quality.py`.
 
 ## 7. Out of scope (flagged, not changed)
 
