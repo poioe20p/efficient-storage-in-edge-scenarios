@@ -120,27 +120,50 @@ description of the current control until re-validated. Re-validation pair:
 - `cgr_scalable` (median scalable arm) and `cgr_noscale` (median no-scale arm),
   per the [control-group retune plan](control_group_retune/experiment_plan.md)
   run matrix (gates G1–G6).
-- Run folders: `source/scripts/testing/metrics/20260803_*_cgr_*` (pending).
+- Median-era run folder: `source/scripts/testing/metrics/20260803_001705_cgr_scalable`
+  (in progress; plateau + recovery captured).
 
-## 6. Threshold retune (fork 2)
+## 6. Threshold retune (fork 2) — implemented 2026-08-03
 
-Median < mean under right-skew, so flipping the signal **systematically lowers**
-the observed latency signal. Thresholds calibrated on the mean — storage
-scale-up `τ_base=0.35` + `T_DB floor 60/span 250`, compute `τ_base=0.18` +
-`T_proc floor 25/span 50`, scale-down `TAU_PROC_DOWN_MS=40` /
-`TAU_DB_DOWN_MS=150` — may shift the operating point (expected: fewer
-mean-inflated scale-ups, faster reclaims).
+**Retune intent:** re-anchor the storage latency normalization to the median
+statistic's scale so the median-era control reproduces the mean-era operating
+envelope (same mechanism exercise: storage adds ~4-5/LAN cap-bounded, reserve
+activations, in-window reclaim) while staying robust to the tail outliers that
+contaminated the mean.
 
-**Protocol (evidence-driven):**
-1. Run the median-era control pair (§5) with the current thresholds.
-2. From `resource_stats.csv` / `window_log.jsonl`, extract the median-era
-   signal distributions (by phase: plateau / recovery_gap / demand_drop).
-3. Retune floors/spans/τ so the median signal crosses the same operating
-   points the mean did (or the retuned points the evidence supports).
-4. Update `current_state_integrated.env`, RQ2 arm envs, and this doc with the
-   new values + the evidence table.
+**Evidence (median-era control run `20260803_001705_cgr_scalable`, resource_stats.csv):**
 
-**Status:** pending the §5 runs.
+| Phase | median T_db p25 | p50 | p75 | p90 |
+|---|---|---|---|---|
+| compute_plateau | 4.8 | 15.4 | 206 | 3293 |
+| recovery_gap | 0.0 | 2.6 | 610 | 12015 |
+| demand_drop (early) | — | 82.6 | — | — |
+
+- Plateau median T_db ≈ 15 ms vs mean-era ≈ 650 ms → the mean-era normalization
+  (floor 60 / span 250; crossing 147.5 ms) under-fires storage under the median
+  (storage reached 2-3/LAN vs the mean-era ~4-5 adds/LAN).
+- demand_drop median ≈ 82 ms → `TAU_DB_DOWN_MS` must stay > 82 ms to reclaim
+  in-window; **150 ms is retained** (same margin as mean-era).
+- Compute is **unaffected**: the compute score is CPU-dominated (`W_CPU=0.60`);
+  the proc-latency component sits below floor in both eras. Verified score≥τ
+  fraction 0.983 mean vs 0.983 median.
+
+**Decision (storage-only re-anchor):**
+
+| Knob | Mean-era | Median-era (new) | Crossing |
+|---|---|---|---|
+| `SCALEUP_T_DB_FLOOR` | 60 | **10** ms | — |
+| `SCALEUP_T_DB_SPAN` | 250 | **50** ms | 10 + 0.35×50 = **27.5 ms** |
+| `TAU_DB_DOWN_MS` | 150 | **150** (retained) | demand_drop median ≈ 82 ms |
+| τ_base storage | 0.35 | 0.35 (unchanged) | — |
+
+Applied to `current_state_integrated.env`, `ablation_noscale.env`, and the RQ2
+arm envs. RQ1 keeps mean-scale thresholds (60/250) with the mean signal.
+
+**Verification:** the retuned config is validated by a re-run of the control
+pair (`cgr_scalable`/`cgr_noscale`) with the new thresholds — expected: storage
+reaches ~3 active + reserve (~4-5 adds/LAN), in-window reclaim in demand_drop,
+compute 3-4/LAN, service metrics comparable to the mean-era §5 tables.
 
 ## 7. Out of scope (flagged, not changed)
 
