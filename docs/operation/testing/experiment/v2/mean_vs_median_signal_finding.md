@@ -137,13 +137,18 @@ contaminated the mean.
 |---|---|---|---|---|
 | compute_plateau | 4.8 | 15.4 | 206 | 3293 |
 | recovery_gap | 0.0 | 2.6 | 610 | 12015 |
-| demand_drop (early) | — | 82.6 | — | — |
+| demand_drop (settled) | 2.5 | 2.6 | 2.7 | 3.9 |
 
 - Plateau median T_db ≈ 15 ms vs mean-era ≈ 650 ms → the mean-era normalization
   (floor 60 / span 250; crossing 147.5 ms) under-fires storage under the median
-  (storage reached 2-3/LAN vs the mean-era ~4-5 adds/LAN).
-- demand_drop median ≈ 82 ms → `TAU_DB_DOWN_MS` must stay > 82 ms to reclaim
-  in-window; **150 ms is retained** (same margin as mean-era).
+  (concurrent storage p50 2.0 vs mean-era 3.31).
+- demand_drop median settles at **2.6 ms** (the 82 ms reading was a 2-window
+  transient). The first median-era run (old thresholds) showed `TAU_DB_DOWN_MS=150`
+  arms scale-down almost constantly under the median (plateau median 15 ms << 150)
+  → 9 in-plateau storage removals + churn → **12.2% plateau error vs mean-era
+  1.31%**. `TAU_DB_DOWN_MS` is therefore **re-anchored to 8 ms** (below the
+  plateau median → plateau is protected; above the demand_drop median → reclaim
+  still fires in-window).
 - Compute is **unaffected**: the compute score is CPU-dominated (`W_CPU=0.60`);
   the proc-latency component sits below floor in both eras. Verified score≥τ
   fraction 0.983 mean vs 0.983 median.
@@ -154,16 +159,23 @@ contaminated the mean.
 |---|---|---|---|
 | `SCALEUP_T_DB_FLOOR` | 60 | **10** ms | — |
 | `SCALEUP_T_DB_SPAN` | 250 | **50** ms | 10 + 0.35×50 = **27.5 ms** |
-| `TAU_DB_DOWN_MS` | 150 | **150** (retained) | demand_drop median ≈ 82 ms |
+| `TAU_DB_DOWN_MS` | 150 | **8** ms | demand_drop median 2.6 ms; plateau median 15.4 ms sits in the 8-27.5 ms hold zone |
 | τ_base storage | 0.35 | 0.35 (unchanged) | — |
 
 Applied to `current_state_integrated.env`, `ablation_noscale.env`, and the RQ2
 arm envs. RQ1 keeps mean-scale thresholds (60/250) with the mean signal.
 
+**First median-era run (old thresholds) result** (`20260803_001705_cgr_scalable`):
+storage adds 5/LAN + compute 3-4/LAN + in-window reclaim exercised, but
+concurrent storage p50 2.0 (vs mean-era 3.31), 9 in-plateau removals (churn),
+and **plateau error% 12.18% vs mean-era 1.31%** (p50 120 ms vs 69.6 ms). This
+quantifies the need for the re-anchor and the TAU correction.
+
 **Verification:** the retuned config is validated by a re-run of the control
-pair (`cgr_scalable`/`cgr_noscale`) with the new thresholds — expected: storage
-reaches ~3 active + reserve (~4-5 adds/LAN), in-window reclaim in demand_drop,
-compute 3-4/LAN, service metrics comparable to the mean-era §5 tables.
+pair (`cgr_v2_scalable`/`cgr_v2_noscale`) with the new thresholds — expected:
+storage reaches ~3 active + reserve (~4-5 adds/LAN) with no in-plateau churn,
+in-window reclaim in demand_drop, compute 3-4/LAN, service metrics comparable
+to the mean-era §5 tables (error% ≤ ~3%, p50 well below no-scale).
 
 ## 7. Out of scope (flagged, not changed)
 
