@@ -171,11 +171,26 @@ concurrent storage p50 2.0 (vs mean-era 3.31), 9 in-plateau removals (churn),
 and **plateau error% 12.18% vs mean-era 1.31%** (p50 120 ms vs 69.6 ms). This
 quantifies the need for the re-anchor and the TAU correction.
 
-**Verification:** the retuned config is validated by a re-run of the control
-pair (`cgr_v2_scalable`/`cgr_v2_noscale`) with the new thresholds — expected:
-storage reaches ~3 active + reserve (~4-5 adds/LAN) with no in-plateau churn,
-in-window reclaim in demand_drop, compute 3-4/LAN, service metrics comparable
-to the mean-era §5 tables (error% ≤ ~3%, p50 well below no-scale).
+**Verification (v2 retuned 10/50/8, `20260803_033001_cgr_v2_scalable`) — FAILED
+  to reproduce the envelope:** plateau error% **17.18%** (worse), concurrent
+  storage p50 still **2.0**, 7 in-plateau removals (churn persists). Root cause:
+  the median latency's plateau-vs-demand_drop range is only ~1.4 ms, so no
+  pure-latency TAU can both protect the plateau AND reclaim in demand_drop.
+
+**Composite redesign (run matrix, 2026-08-03):** the storage signal adds a
+storage-CPU component (bounded 0-100%, robust) — storage CPU differentiates
+cleanly (plateau p50 44-47% vs demand_drop ~18%).
+- Arm A composite (`cgr_matrix_composite.env`, temporary): `W_STORAGE_CPU=0.6 /
+  W_T_DB=0.4`, CPU floor 10/span 30, latency 10/50, τ=0.35, CPU-aware scale-down
+  (stCpu<22 AND med_db<8) — plateau protected, demand_drop reclaims.
+- Arm B narrow pure-latency (`cgr_matrix_narrow.env`, temporary): floor 5/span
+  15 (crossing 10.25 ms), TAU=3 — expected fragile (1.4 ms range), tested as
+  contrast.
+- Baseline C: already measured (12-17% error).
+Winner is folded into `current_state_integrated.env`; temporary envs deleted.
+Offline analyzer note: `cli_scale_down.py` still hardcodes mean-era thresholds
+(TAU_STORAGE_CPU_DOWN=65 / TAU_DB_DOWN_MS=100); matrix validation uses
+`tools/control_run_trajectory.py` + `tools/run_service_quality.py` instead.
 
 ## 7. Out of scope (flagged, not changed)
 
