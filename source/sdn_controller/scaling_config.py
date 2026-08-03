@@ -78,6 +78,17 @@ _MAX_DYNAMIC_COMPUTE = int(os.environ.get("MAX_DYNAMIC_COMPUTE", "4"))
 #              mean when the aggregator did not publish a median.
 _LATENCY_SIGNAL_MODE = os.environ.get("LATENCY_SIGNAL_MODE", "mean").strip().lower()
 
+# CPU-aware storage scale-down gate (control group / RQ2+ composite signal).
+# When enabled, storage scale-down additionally requires the storage CPU to be
+# idle (below _TAU_STORAGE_CPU_DOWN), protecting the plateau from teardown when
+# the median latency alone is low (the median's plateau-vs-demand_drop range is
+# only ~1.4 ms in the control workload — see
+# docs/operation/testing/experiment/v2/mean_vs_median_signal_finding.md §6).
+# Default OFF → pure latency scale-down, RQ1 byte-identical.
+_STORAGE_SCALE_DOWN_CPU_AWARE = os.environ.get(
+    "STORAGE_SCALE_DOWN_CPU_AWARE", "0"
+).strip().lower() in ("1", "true", "yes")
+
 # Scale-down thresholds — mirrored against the scale-up *_FLOOR values so
 # scale-up and scale-down cannot disagree about a window's health (a window
 # below the floor is healthy by construction). Calibrated for container-level

@@ -37,6 +37,7 @@ from .scaling_config import (
     _SCALEUP_STORAGE_COOLDOWN_S,
     _MAX_DYNAMIC_STORAGE, _MAX_DYNAMIC_COMPUTE,
     _LATENCY_SIGNAL_MODE,
+    _STORAGE_SCALE_DOWN_CPU_AWARE,
 )
 from .elasticity.elasticity import ComputeAlert, DataAlert
 from .telemetry.models import DomainSummary
@@ -453,7 +454,13 @@ class ScalingPolicy:
             )
             return False
 
-        below = db_signal < _TAU_DB_DOWN_MS
+        # CPU-aware gate (control group / RQ2+ composite): when
+        # STORAGE_SCALE_DOWN_CPU_AWARE=1 the tier must ALSO be CPU-idle — the
+        # median latency alone has too little plateau/demand_drop range to
+        # protect the plateau (see mean_vs_median_signal_finding.md §6).
+        cpu_ok = (not _STORAGE_SCALE_DOWN_CPU_AWARE
+                  or ds.avg_storage_cpu_percent < _TAU_STORAGE_CPU_DOWN)
+        below = db_signal < _TAU_DB_DOWN_MS and cpu_ok
         self._scale_down_storage_window.append(below)
         hits = sum(self._scale_down_storage_window)
         armed = hits >= _SCALE_DOWN_STORAGE_REQUIRED
