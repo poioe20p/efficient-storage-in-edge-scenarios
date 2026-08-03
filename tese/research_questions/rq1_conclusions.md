@@ -63,3 +63,38 @@ The naive "plateau → first scale-up decision" latency is **not a valid delay-s
 - Capstone: `docs/operation/testing/experiment/v2/rq1/post_run_analysis.md`
 - Graph suite (25 graphs): `docs/operation/testing/experiment/v2/rq1/graphs/comparison/`
 - Implementation: `docs/research_questions/v2/rq1/rq1_prepation.md`
+- Signal-statistic provenance / mean-vs-median evidence: `docs/operation/testing/experiment/v2/mean_vs_median_signal_finding.md` (see §9 caveat)
+
+## 9. Caveat — signal-statistic provenance (mean vs median / composite)
+
+The RQ1 campaign was evaluated with the controller's **legacy mean-based**
+decision signals. All RQ1 arm env files pin `LATENCY_SIGNAL_MODE=mean` and keep
+the legacy mean-based, latency-only storage signal (`W_STORAGE_CPU=0 /
+W_T_DB=1.0`, T_db floor 60 / span 250). This pinning is a **deliberate gate
+(2026-08-03)**: the mean→median robustness fix and the composite storage signal
+(storage CPU + median latency, control G0-v4) are control-group / RQ2+ only and
+are gated away from RQ1. RQ1's controller decisions and its analysis inputs
+(window-log metadata, delivery/decision/ack logs, `client_requests`) are
+therefore **unaffected** — the archived RQ1 results remain valid and
+reproducible, and the A/B/C comparison is internally consistent (the same
+mean-based scaling ran under every arm).
+
+What this caveat means for interpretation:
+
+1. **RQ1 measures delivery semantics, not scaling precision.** The mean-based
+   scaling is a supporting platform element, uniform across arms. RQ1's findings
+   (completeness-vs-info-age, delay-vs-loss, overhead) concern the observation
+   interface, not scaling optimality.
+2. **RQ1's absolute storage-scaling behaviour is the legacy (tail-inflated)
+   mean behaviour.** The mean-based storage signal was demonstrated (2026-08-03)
+   to mis-provision under right-skewed tail latency (the mean is tail-inflated,
+   `med/mean ≈ 0.01` in the control plateau; pure-latency median control
+   attempts measured 12–17% plateau error). Any thesis claim that *storage
+   scaling is robust* must cite the control group / RQ2+ (composite G0-v4), not
+   RQ1's storage behaviour.
+3. **Reproducibility provenance.** RQ1 is pinned to the 2026-08-01 mean-based
+   control revision; the current control is G0-v4 (composite). Anyone
+   re-deriving RQ1's env files from `current_state_integrated.env` must restore
+   the mean pins (`LATENCY_SIGNAL_MODE=mean`, mean-scale storage thresholds) to
+   keep RQ1 comparable. Full evidence chain:
+   `docs/operation/testing/experiment/v2/mean_vs_median_signal_finding.md`.
