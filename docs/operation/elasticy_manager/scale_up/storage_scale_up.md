@@ -25,7 +25,7 @@ _on_telemetry_update()                    [main_n*.py — Thread 2 mediator]
     ├─ evaluate scale-up                  [ScalingPolicy.evaluate_storage_scale_up()
     │   ├─ check storage scale-up cooldown  → ScaleUpVerdict]
     │   ├─ check storage cap
-    │   ├─ compute tail-aware latency signal
+    │   ├─ compute composite (CPU + median-latency) storage signal
     │   ├─ compute storage degradation score
     │   ├─ compute diminishing-increment threshold
     │   ├─ append to sliding window
@@ -111,11 +111,17 @@ Source: [`source/sdn_controller/node_registry.py`](../../../source/sdn_controlle
 
 ## 3. Storage Degradation Score
 
-The weighted degradation score is per-LAN and CPU-dominant, because scaling
-storage directly reduces CPU contention on the storage tier:
+The weighted degradation score is per-LAN and uses the **composite** signal
+(control-group G0-v4, validated 2026-08-03): storage CPU (**mean** — bounded,
+no outlier contamination) plus **median** DB latency. Storage CPU is the
+primary signal because it differentiates load cleanly (plateau p50 44–47 % vs
+demand_drop ~18 %); the median latency keeps the signal robust to the 30 s
+tail. See "Decision-Signal Statistics" in
+[`elasticity_overview.md`](../elasticity_overview.md) and the
+[finding doc](../../../testing/experiment/v2/mean_vs_median_signal_finding.md).
 
 $$
-\text{score} = 0.7 \cdot \text{cpu\_component} + 0.3 \cdot \text{lat\_component}
+\text{score} = 0.6 \cdot \text{cpu\_component} + 0.4 \cdot \text{lat\_component}
 $$
 
 Each component is normalised and clamped to $[0, 1]$:
@@ -124,17 +130,16 @@ $$
 \text{component} = \min\!\left(1.0,\ \frac{\max(0,\ \text{value} - \text{floor})}{\text{span}}\right)
 $$
 
-| Component | Weight | Input metric                            | Floor |  Span  | Saturation |
-| --------- | :----: | --------------------------------------- | :----: | :----: | :--------: |
-| CPU       |  0.7  | `avg_storage_cpu_percent`             |  5 %  |   10   |    15 %    |
-| Latency   |  0.3  | `max(avg_time_db_ms, p95_time_db_ms)` | 150 ms | 600 ms |   750 ms   |
+| Component | Weight | Input metric | Floor | Span | Saturation |
+| --------- | :----: | ------------ | :---: | :---: | :--------: |
+| CPU       |  0.60  | `avg_storage_cpu_percent` (mean) | 10 % | 30 | 40 % |
+| Latency   |  0.40  | `median_time_db_ms` (median) | 10 ms | 50 ms | 60 ms |
 
-### Tail-Aware Latency Signal
-
-The latency input is **not** the simple domain average. Thread 2 scores
-storage against `max(avg_time_db_ms, p95_time_db_ms)` — the tail-aware signal.
-This means sustained p95 growth can trigger Tier 2 before the mean fully
-rises, providing predictive scale-up for latency-sensitive workloads.
+> **Superseded (2026-08-03):** the legacy tail-aware signal
+> `max(avg_time_db_ms, p95_time_db_ms)` (weights 0.7/0.3, floor 150 ms / span
+> 600 ms) is no longer used — both the mean and p95 are tail-contaminated
+> (mean/median ≈ 100× in the plateau), and a pure-latency median lacks the
+> dynamic range to drive provisioning (12–17 % plateau error in verification).
 
 ---
 
@@ -165,6 +170,9 @@ Where $n$ = number of active dynamic storage nodes in that LAN.
 |    3    |    0.050 (min)    |      0.200      |       **0.45**       |
 |    4    |       0.050       |      0.250      |       **0.50**       |
 | 5 (cap) |       0.050       |      0.300      |       **0.55**       |
+
+> Control-group G0-v4 sets `SCALEUP_STORAGE_BASE_THRESHOLD=0.35` (the table
+> shows the code default 0.25).
 
 ### Sliding Window
 

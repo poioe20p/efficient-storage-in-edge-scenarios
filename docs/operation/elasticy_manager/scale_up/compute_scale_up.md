@@ -67,13 +67,18 @@ $$\text{component} = \min\!\left(1.0,\ \frac{\max(0,\ \text{value} - \text{floor
 
 | Component | Weight | Input metric | Floor | Span | Saturation |
 |-----------|:------:|-------------|:-----:|:----:|:----------:|
-| CPU | 0.40 | `average_cpu_percent` | 5 % | 10 | 15 % |
-| Latency | 0.60 | `avg_time_proc_ms` | 20 ms | 80 | 100 ms |
+| CPU | 0.60 | `average_cpu_percent` (mean) | 10 % | 40 | 50 % |
+| Latency | 0.40 | `median_time_proc_ms` (median) | 25 ms | 50 | 75 ms |
 
-The latency component dominates (0.60 vs 0.40) because processing latency is
-the primary user-facing signal. Components saturate at 1.0 so a single extreme
-window cannot dominate the sliding-window hit count — sustained badness is
-expressed via the window-size/required ratio instead.
+*(Control-group G0-v4 override. Code defaults: W_CPU 0.40 / W_T_PROC 0.60,
+CPU floor 5/span 10, T_proc floor 20/span 80.)*
+
+The latency component uses the **median** processing latency (the *typical*
+request's experience) while CPU uses the **mean** (bounded utilization) — see
+"Decision-Signal Statistics" in
+[`elasticity_overview.md`](../elasticity_overview.md). Components saturate at
+1.0 so a single extreme window cannot dominate the sliding-window hit count —
+sustained badness is expressed via the window-size/required ratio instead.
 
 ---
 
@@ -88,7 +93,7 @@ $$\tau_{\text{base}} = \min(\text{BASE} + n_{\text{dynamic}} \cdot \text{INCREME
 
 | Symbol | Env var | Default |
 |--------|---------|:-------:|
-| BASE | `SCALEUP_COMPUTE_BASE_THRESHOLD` | 0.45 |
+| BASE | `SCALEUP_COMPUTE_BASE_THRESHOLD` | 0.45 (control G0-v4: **0.18**) |
 | INCREMENT | `SCALEUP_COMPUTE_THRESHOLD_INCREMENT` | 0.10 |
 | MAX | `SCALEUP_COMPUTE_MAX_THRESHOLD` | 0.85 |
 

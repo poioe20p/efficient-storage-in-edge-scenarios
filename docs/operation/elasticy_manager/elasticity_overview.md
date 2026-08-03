@@ -81,6 +81,39 @@ lives in
 
 ---
 
+## Decision-Signal Statistics: Mean vs Median (and the Composite)
+
+> Design principle, validated 2026-08-03 — full evidence chain in
+> [`docs/operation/testing/experiment/v2/mean_vs_median_signal_finding.md`](../testing/experiment/v2/mean_vs_median_signal_finding.md).
+
+Every `ScalingPolicy` decision signal consumes **one statistic** of a
+per-window metric. The statistic is chosen by the **nature of the metric's
+distribution**:
+
+| Metric | Distribution | Statistic | Why |
+|---|---|---|---|
+| **Latency** (`T_db`, `T_proc`) | right-skewed, **unbounded** outliers (30 s `CURL_MAX_TIME` tail, cold reads; measured `med/mean ≈ 0.01` in the plateau — mean ~650 ms vs median ~4–16 ms) | **median** (`median_time_*_ms`) | median = the *typical request's* experience. In low-volume windows one slow request can move the mean by orders of magnitude → false "degraded" windows |
+| **CPU** (compute, storage) | **bounded [0, 100%]** — an unbounded sample is physically impossible | **mean** (`average_*_cpu_percent`) | mean = average utilization over the window, which is exactly what determines queuing/saturation; no outlier can contaminate it |
+
+The statistic is selected by `LATENCY_SIGNAL_MODE` — `mean` (legacy, RQ1,
+byte-identical) or `median` (control group / RQ2+), with a fallback to the mean
+when a pre-median aggregator does not publish the median.
+
+**Why a pure-latency median is insufficient for the storage tier:** the median
+has too little dynamic range in the control workload (plateau p25 ~4 ms vs
+demand_drop ~2.6 ms → ~1.4 ms of separation), so a pure-latency `TAU` either
+churns the plateau or fails to reclaim in `demand_drop` (measured: 12–17 %
+plateau error vs mean-era 1.31 %). The storage tier therefore uses a
+**composite signal** (control G0-v4): storage CPU (**mean** — bounded,
+differentiates load: plateau p50 44–47 % vs demand_drop ~18 %) + median DB
+latency, and a **CPU-aware scale-down gate** (`STORAGE_SCALE_DOWN_CPU_AWARE=1`
+→ below = storage CPU < 22 % AND median DB < 8 ms). This reproduces the
+mean-era envelope (2.0 % error, 3.0 concurrent storage, storage CPU 31.2 % ≈
+mean-era 31.9 %) and is documented per mechanism in
+[`scale_up/`](scale_up/), [`scale_down/`](scale_down/).
+
+---
+
 ## Compute Readiness Gate (RQ3)
 
 The compute spawn path now has an optional readiness gate

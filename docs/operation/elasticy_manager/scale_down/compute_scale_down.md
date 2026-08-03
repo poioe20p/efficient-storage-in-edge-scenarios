@@ -30,6 +30,13 @@ as "idle". This prevents false positives from data-bound latency spikes.
 
 Both conditions must hold for the window to count.
 
+> The latency input is the **median** processing latency
+> (`median_time_proc_ms` when `LATENCY_SIGNAL_MODE=median`); CPU stays the mean
+> — see "Decision-Signal Statistics" in
+> [`elasticity_overview.md`](../elasticity_overview.md). Control-group G0-v4
+> overrides: `SCALE_DOWN_COMPUTE_REQUIRED=9` (9-of-12) and
+> `SCALEDOWN_COMPUTE_COOLDOWN_S=180`.
+
 ### Sliding Window
 
 | Parameter                          | Default | Meaning                    |

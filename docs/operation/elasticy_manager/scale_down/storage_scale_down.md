@@ -16,39 +16,48 @@ Source: [`source/sdn_controller/scaling_policy.py`](../../../source/sdn_controll
 
 ## 2. Idle Detection
 
-Storage scale-down uses an **AND-gate** sliding window — both storage CPU and
-DB latency must be below their respective thresholds simultaneously for a
-window to count as "idle".
+Storage scale-down uses an **AND-gate** sliding window — DB latency and
+(optionally, in the composite control config) storage CPU must both be below
+their thresholds for a window to count as "idle". The DB latency input is the
+**median** (`median_time_db_ms` when `LATENCY_SIGNAL_MODE=median`) — the
+*typical* request's DB time, robust to the 30 s tail that inflated the legacy
+mean/p95. See "Decision-Signal Statistics" in
+[`elasticity_overview.md`](../elasticity_overview.md).
 
-### Thresholds
+### Thresholds (control-group G0-v4 override)
 
 | Metric | Threshold | Meaning |
 |--------|:---------:|---------|
-| `avg_storage_cpu_percent` | `< TAU_STORAGE_CPU_DOWN` (15 %) | Storage CPU is low |
-| `avg_time_db_ms` | `< TAU_DB_DOWN_MS` (150 ms) | DB latency is low |
+| `median_time_db_ms` | `< TAU_DB_DOWN_MS` (8 ms) | Typical DB latency is low (demand_drop median ≈ 2.6 ms) |
+| `avg_storage_cpu_percent` | `< TAU_STORAGE_CPU_DOWN` (22 %, only when `STORAGE_SCALE_DOWN_CPU_AWARE=1`) | Storage CPU is idle |
 
-Both conditions must hold for the window to count.
+The CPU gate (`STORAGE_SCALE_DOWN_CPU_AWARE=1` in the control group) protects
+the plateau from teardown: the plateau's storage CPU (≈ 30–44 %) stays above
+22 % so `below` is False there, while `demand_drop` (≈ 18 %) reclaims. With
+the gate off (default, RQ1), the predicate is pure median-latency
+(`db < TAU_DB_DOWN_MS`), byte-identical to the legacy behaviour.
 
-### Sliding Window
+### Sliding Window (control-group overrides)
 
-| Parameter | Default | Meaning |
-|-----------|:-------:|---------|
-| `SCALE_DOWN_STORAGE_WINDOW_SIZE` | 12 | Window size |
-| `SCALE_DOWN_STORAGE_REQUIRED` | 7 | Idle windows needed to arm |
+| Parameter | Default | Control (G0-v4) | Meaning |
+|-----------|:-------:|:---------------:|---------|
+| `SCALE_DOWN_STORAGE_WINDOW_SIZE` | 12 | 5 | Window size |
+| `SCALE_DOWN_STORAGE_REQUIRED` | 7 | 3 | Idle windows needed to arm |
+| `SCALEDOWN_STORAGE_COOLDOWN_S` | 120 | 30 | Fast reclaim |
 
 ### Timeout Ceiling
 
-If `avg_time_db_ms > SCALE_DOWN_DB_TIMEOUT_CEILING_MS` (default 5000 ms),
-the window is treated as **indeterminate** and skipped — neither incrementing
-nor resetting the idle count. This prevents RS elections or connectivity
-timeouts from poisoning the signal.
+If the DB latency signal exceeds `SCALE_DOWN_DB_TIMEOUT_CEILING_MS` (default
+5000 ms), the window is treated as **indeterminate** and skipped — neither
+incrementing nor resetting the idle count. This prevents RS elections or
+connectivity timeouts from poisoning the signal.
 
 ### Instrumentation
 
 Each evaluation emits a single DEBUG line:
 
 ```
-[scale-down] storage eval: stCpu=5.2/15 db=80/150 below=True hits=5/7 armed=False
+[scale-down] storage eval: stCpu=5.2/22 db=2.1/8 below=True hits=2/3 armed=False
 ```
 
 A one-shot INFO line fires on the rising edge of `armed`.
