@@ -36,6 +36,7 @@ from .scaling_config import (
     _SCALEDOWN_STORAGE_COOLDOWN_S, _SCALEDOWN_COMPUTE_COOLDOWN_S,
     _SCALEUP_STORAGE_COOLDOWN_S,
     _MAX_DYNAMIC_STORAGE, _MAX_DYNAMIC_COMPUTE,
+    _LATENCY_SIGNAL_MODE,
 )
 from .elasticity.elasticity import ComputeAlert, DataAlert
 from .telemetry.models import DomainSummary
@@ -125,12 +126,20 @@ class ScalingPolicy:
 
     @staticmethod
     def compute_latency_signal(ds: DomainSummary) -> float:
-        """Mean proc latency — avoids timeout-censored p95 contamination."""
+        """Compute latency signal — window MEDIAN when LATENCY_SIGNAL_MODE=median,
+        else mean (legacy / RQ1). Falls back to the mean when the aggregator
+        did not publish a median (pre-median aggregators)."""
+        if _LATENCY_SIGNAL_MODE == "median" and ds.median_time_proc_ms is not None:
+            return ds.median_time_proc_ms
         return ds.avg_time_proc_ms
 
     @staticmethod
     def storage_latency_signal(ds: DomainSummary) -> float:
-        """Mean DB latency — avoids timeout-censored p95 contamination."""
+        """Storage latency signal — window MEDIAN when LATENCY_SIGNAL_MODE=median,
+        else mean (legacy / RQ1). Falls back to the mean when the aggregator
+        did not publish a median (pre-median aggregators)."""
+        if _LATENCY_SIGNAL_MODE == "median" and ds.median_time_db_ms is not None:
+            return ds.median_time_db_ms
         return ds.avg_time_db_ms
 
     # ── Cooldown queries ─────────────────────────────────────────────────
@@ -396,16 +405,21 @@ class ScalingPolicy:
     # ── Scale-down evaluation ────────────────────────────────────────────
 
     def evaluate_scale_down_compute(self, ds: DomainSummary) -> bool:
-        """Returns True if compute underutilisation threshold met."""
-        if ds.avg_time_proc_ms > _SCALE_DOWN_PROC_TIMEOUT_CEILING_MS:
+        """Returns True if compute underutilisation threshold met.
+
+        Uses the same latency signal as scale-up (compute_latency_signal) so
+        the ceiling / below-TAU checks are consistent with the decision signal.
+        """
+        proc_signal = self.compute_latency_signal(ds)
+        if proc_signal > _SCALE_DOWN_PROC_TIMEOUT_CEILING_MS:
             logger.debug(
                 "[scale-down] compute eval: proc=%.1f exceeds ceiling (%.0f) — window skipped",
-                ds.avg_time_proc_ms, _SCALE_DOWN_PROC_TIMEOUT_CEILING_MS,
+                proc_signal, _SCALE_DOWN_PROC_TIMEOUT_CEILING_MS,
             )
             return False
 
         below = (ds.average_cpu_percent < _TAU_CPU_DOWN
-                 and ds.avg_time_proc_ms < _TAU_PROC_DOWN_MS)
+                 and proc_signal < _TAU_PROC_DOWN_MS)
         self._scale_down_compute_window.append(below)
         hits = sum(self._scale_down_compute_window)
         armed = hits >= _SCALE_DOWN_COMPUTE_REQUIRED
@@ -413,28 +427,33 @@ class ScalingPolicy:
         logger.debug(
             "[scale-down] compute eval: cpu=%.1f/%.0f proc=%.1f/%.1f below=%s hits=%d/%d armed=%s",
             ds.average_cpu_percent, _TAU_CPU_DOWN,
-            ds.avg_time_proc_ms, _TAU_PROC_DOWN_MS,
+            proc_signal, _TAU_PROC_DOWN_MS,
             below, hits, _SCALE_DOWN_COMPUTE_REQUIRED, armed,
         )
         if armed and not self._prev_scale_down_compute_armed:
             logger.info(
                 "[scale-down] compute ARMED: hits=%d/%d cpu=%.1f proc=%.1f",
                 hits, _SCALE_DOWN_COMPUTE_REQUIRED,
-                ds.average_cpu_percent, ds.avg_time_proc_ms,
+                ds.average_cpu_percent, proc_signal,
             )
         self._prev_scale_down_compute_armed = armed
         return armed
 
     def evaluate_scale_down_storage(self, ds: DomainSummary) -> bool:
-        """Returns True if storage underutilisation threshold met."""
-        if ds.avg_time_db_ms > _SCALE_DOWN_DB_TIMEOUT_CEILING_MS:
+        """Returns True if storage underutilisation threshold met.
+
+        Uses the same latency signal as scale-up (storage_latency_signal) so
+        the ceiling / below-TAU checks are consistent with the decision signal.
+        """
+        db_signal = self.storage_latency_signal(ds)
+        if db_signal > _SCALE_DOWN_DB_TIMEOUT_CEILING_MS:
             logger.info(
                 "[scale-down] storage eval: db=%.1f exceeds ceiling (%.0f) — window skipped",
-                ds.avg_time_db_ms, _SCALE_DOWN_DB_TIMEOUT_CEILING_MS,
+                db_signal, _SCALE_DOWN_DB_TIMEOUT_CEILING_MS,
             )
             return False
 
-        below = ds.avg_time_db_ms < _TAU_DB_DOWN_MS
+        below = db_signal < _TAU_DB_DOWN_MS
         self._scale_down_storage_window.append(below)
         hits = sum(self._scale_down_storage_window)
         armed = hits >= _SCALE_DOWN_STORAGE_REQUIRED
@@ -442,14 +461,14 @@ class ScalingPolicy:
         logger.info(
             "[scale-down] storage eval: stCpu=%.1f/%.0f db=%.1f/%.0f below=%s hits=%d/%d armed=%s",
             ds.avg_storage_cpu_percent, _TAU_STORAGE_CPU_DOWN,
-            ds.avg_time_db_ms, _TAU_DB_DOWN_MS,
+            db_signal, _TAU_DB_DOWN_MS,
             below, hits, _SCALE_DOWN_STORAGE_REQUIRED, armed,
         )
         if armed and not self._prev_scale_down_storage_armed:
             logger.info(
                 "[scale-down] storage ARMED: hits=%d/%d stCpu=%.1f db=%.1f",
                 hits, _SCALE_DOWN_STORAGE_REQUIRED,
-                ds.avg_storage_cpu_percent, ds.avg_time_db_ms,
+                ds.avg_storage_cpu_percent, db_signal,
             )
         self._prev_scale_down_storage_armed = armed
         return armed

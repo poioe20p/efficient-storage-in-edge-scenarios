@@ -67,6 +67,17 @@ _SCALEUP_STORAGE_REQUIRED            = int(os.environ.get("SCALEUP_STORAGE_REQUI
 _MAX_DYNAMIC_STORAGE = int(os.environ.get("MAX_DYNAMIC_STORAGE", "5"))
 _MAX_DYNAMIC_COMPUTE = int(os.environ.get("MAX_DYNAMIC_COMPUTE", "4"))
 
+# ── Latency signal statistic ──────────────────────────────────────────
+# Which per-window latency statistic feeds the decision signals (scale-up
+# score and scale-down below/ceiling checks). Latency is right-skewed with
+# unbounded outliers, so "median" is robust while "mean" can be dominated by a
+# single slow request in a low-volume window — see
+# docs/operation/testing/experiment/v2/mean_vs_median_signal_finding.md.
+#   "mean"   → avg_time_* (legacy; default — keeps RQ1 byte-identical).
+#   "median" → median_time_* (control group / RQ2+, robust). Falls back to the
+#              mean when the aggregator did not publish a median.
+_LATENCY_SIGNAL_MODE = os.environ.get("LATENCY_SIGNAL_MODE", "mean").strip().lower()
+
 # Scale-down thresholds — mirrored against the scale-up *_FLOOR values so
 # scale-up and scale-down cannot disagree about a window's health (a window
 # below the floor is healthy by construction). Calibrated for container-level

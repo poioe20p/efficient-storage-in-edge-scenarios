@@ -84,6 +84,12 @@ class DomainSummary(BaseModel):
     total_requests: int
     avg_time_proc_ms: float
     avg_time_db_ms: float
+    # Median latency signals — published by the aggregator in every
+    # domain_summary (source/docker/local_state_server/aggregator.py). Optional
+    # so pre-median aggregators (RQ1 era) still validate; the signal functions
+    # fall back to the mean when absent. Drives LATENCY_SIGNAL_MODE=median.
+    median_time_proc_ms: float | None = None
+    median_time_db_ms: float | None = None
     p95_time_proc_ms: float = 0.0
     p95_time_db_ms: float = 0.0
     average_cpu_percent: float

@@ -37,6 +37,12 @@ from tier1_stats import TIER1_ALL_COLUMNS, build_tier1_row, peer_lan
 # elasticity reasoning.  Keep small and focused on scale-up/scale-down inputs.
 # Tier 1 columns added so basic lifecycle status (coord_state_owner_lan,
 # tier1_lifecycle_active_count) is visible without the debug CSV.
+# NOTE (2026-08-03): avg_time_proc_ms / avg_time_db_ms carry the AGGREGATOR's
+# MEDIAN (domain.median_time_*), not the mean — a historical misnomer kept for
+# tooling compatibility. In LATENCY_SIGNAL_MODE=median the controller decides on
+# the same median, so these columns mirror the decision signal.
+# storage_latency_signal_ms also mirrors the decision signal (median, with a
+# mean-of-node-means fallback for pre-median aggregators).
 MAIN_FIELDNAMES = [
     "timestamp",
     "phase",
@@ -154,8 +160,17 @@ def _domain_p95_time_db_ms(storage: dict) -> float | None:
     return _domain_p95(vals) if vals else None
 
 
-def _storage_latency_signal_ms(storage: dict) -> float | None:
-    """Composite storage latency signal: mean of per-node avg_time_db_ms."""
+def _storage_latency_signal_ms(domain: dict, storage: dict) -> float | None:
+    """Composite storage latency signal — mirrors the controller's decision signal.
+
+    Median mode (control group / RQ2+): the aggregator's domain-level
+    median_time_db_ms — the exact value scaling_policy.storage_latency_signal
+    uses with LATENCY_SIGNAL_MODE=median. Legacy fallback (pre-median
+    aggregators, RQ1 era): mean of per-node avg_time_db_ms.
+    """
+    med = domain.get("median_time_db_ms")
+    if med is not None:
+        return float(med)
     vals = [float(s.get("avg_time_db_ms", 0)) for s in storage.values()
             if s.get("avg_time_db_ms") is not None]
     return statistics.mean(vals) if vals else None
@@ -485,7 +500,7 @@ def main():
                     "avg_storage_cpu_percent":   _domain_avg_cpu(storage_servers) or domain.get("median_storage_cpu_percent", ""),
                     "avg_time_db_ms":            domain.get("median_time_db_ms", ""),
                     "p95_time_db_ms":            _domain_p95_time_db_ms(storage_servers) or "",
-                    "storage_latency_signal_ms": _storage_latency_signal_ms(storage_servers) or "",
+                    "storage_latency_signal_ms": _storage_latency_signal_ms(domain, storage_servers) or "",
                     "server_count":              server_count,
                     "storage_count":             storage_count,
                     "avg_repl_lag_ms":           avg_repl_lag,

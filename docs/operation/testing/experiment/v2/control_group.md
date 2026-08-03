@@ -29,8 +29,9 @@
 | Item | Value |
 |---|---|
 | Workload phase file | `phases_stress_plateau.json` (sustained 600 s plateau **rate 5.0 — locked**, `demand_drop` 420 s) |
-| Scalable env | `current_state_integrated.env` (caps **3/3** active dynamic per LAN, storage scale-down **30 s + 3/5 windows** — control-group retune 2026-08-01) |
+| Scalable env | `current_state_integrated.env` (caps **3/3** active dynamic per LAN, storage scale-down **30 s + 3/5 windows** — control-group retune 2026-08-01; **median latency signals** — control-group reset 2026-08-03) |
 | No-scale env | `ablation_noscale.env` |
+| Latency signal statistic | **`LATENCY_SIGNAL_MODE=median`** (both arms — control-group reset 2026-08-03; see [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md)) |
 | Hardware sim | `STORAGE_CPUS=0.08  EDGE_CPUS=0.15  WAN_RTT_MS=185  RANDOM_SEED=42` |
 | Scale | `CLIENTS=24  CONTENT_ITEMS=3000  USERS=100  DATA_SEED=42  CURL_MAX_TIME=30` |
 | RQ flags | none (defaults: `TELEMETRY_SOURCE=zmq`, `SCALEUP_POLICY=dual`, `READINESS_PROPAGATION=off`, `VIP_FLOW_ISOLATION=0`, `EDGE_FLOW_ISOLATION=0`) |
@@ -57,6 +58,7 @@ storage reclaim completes **in-window** (RQ3 v7 precedent).
 | Group | Value |
 |---|---|
 | Features (scalable) | `STORAGE_PERSISTENT_RESERVE_ENABLED=1`, `SS_ENABLED=1`, `MAX_DYNAMIC_COMPUTE=3`, `MAX_DYNAMIC_STORAGE=3` (active per LAN; reserve standby extra) |
+| Signal statistic | `LATENCY_SIGNAL_MODE=median` (both arms, control-group reset 2026-08-03) — ALL latency decision signals (scale-up + scale-down, compute + storage) use the window median; CPU signals stay mean (bounded 0–100%) |
 | Features (no-scale) | reserve + both dynamic caps = 0; `SS_ENABLED=1` |
 | Compute scale-up | base threshold `0.18`, `W_CPU=0.60` `W_T_PROC=0.40`, CPU floor 10 / span 40, T_proc floor 25 / span 50 (base `osken-controller.env`), cooldown `45 s` (base `osken-controller.env`); no `peer relief` key — see `current_state_integrated.env` |
 | Storage scale-up | base threshold `0.35`, `W_T_DB=1.0`, T_db floor 60 / span 250, cooldown `120 s` |
@@ -71,6 +73,13 @@ storage reclaim completes **in-window** (RQ3 v7 precedent).
 > (`cgr_scalable` / `cgr_noscale`, 2026-08-01). Retained evidence:
 > `source/scripts/testing/metrics/20260801_142015_cgr_scalable` and
 > `.../20260801_145132_cgr_noscale`.
+
+> **⚠️ Mean-era tables (2026-08-03 reset caveat):** the §5 numbers below were
+> produced on **2026-08-01 under G0-v2 mean-based latency signals**. On
+> 2026-08-03 the control was reset to median signals (`LATENCY_SIGNAL_MODE=median`,
+> see [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md)); these
+> tables are **not** a description of the current control until the median-era
+> re-validation pair (`cgr_scalable` / `cgr_noscale`) completes.
 
 ### 5.1 Service quality (user-facing)
 | Metric | Scalable | No-scale | Effect |
@@ -163,3 +172,4 @@ grew to 8/LAN with zero reclaim).
 | 2026-08-01 | Created control-group reference from plateau runs (rate 6.0 evidence); moved to experiment-folder level; locked plateau rate = 5.0 | Define the generic scale-vs-no-scale control for RQ1/RQ2/RQ3; record config + thresholds |
 | 2026-08-01 | Retuned control-group config: caps 3/3, storage scale-down 30 s + 3/5 windows, `demand_drop` 420 s; validation run `cgr_*` pending | v1g grew storage to 8/LAN with zero in-window reclaim — unacceptable for the edge scenario; see `control_group_retune/experiment_plan.md` |
 | 2026-08-01 | **Validated** retune (`cgr_scalable`/`cgr_noscale`): storage reclaimed 3/LAN in-window, err% 1.31% vs 2.77%, caps soft +1 (reserve). §5 tables now at rate 5.0 | Control-group pair passed gates; retuned config is the recommended scale-vs-no-scale control for RQ1/RQ2/RQ3 |
+| 2026-08-03 | **Control-group reset (mean→median signal):** scalable + no-scale arms now set `LATENCY_SIGNAL_MODE=median` — ALL latency decision signals (scale-up + scale-down, compute + storage) use the window median; CPU stays mean (bounded). §5 tables are mean-era → median-era `cgr_*` re-validation pending (threshold retune follows its evidence). See [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md) | Mean-based latency signals let one slow request dominate the decision in low-volume windows (RQ2 compute-bound evidence); median is robust. RQ1 stays mean-based (`LATENCY_SIGNAL_MODE=mean`) so archived RQ1 results remain byte-identical |
