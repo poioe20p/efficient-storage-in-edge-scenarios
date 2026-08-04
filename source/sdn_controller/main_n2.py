@@ -449,8 +449,17 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         """Thread 2 callback — thin mediator that orchestrates composed components."""
         consumed_at = time.time()
         if summary.network_id != self._lan_id:
+            # Peer-LAN summaries are NOT used for this controller's scaling or
+            # control decisions (it owns its own LAN), but their server/storage
+            # stats MUST still merge into the WSM pools: the selection pools
+            # include cross-LAN candidates (topology._server_macs = local | peer),
+            # and without the peer stats those candidates are permanently 0/0 and
+            # win every WSM cost, forcing cross-LAN routing. Merging the stats
+            # lets the hops term correctly favour the local edge.
             logger.debug("ignoring telemetry for %s (this controller owns %s)",
                          summary.network_id, self._lan_id)
+            self.update_server_stats(summary.servers)
+            self.update_storage_stats(summary.storage_servers)
             return
         # Only real windows (window_seq set) update the ticker's latest state;
         # control mini-summaries (window_seq None) never do.
@@ -572,7 +581,8 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # 5. Scale-up evaluation
         dynamic_storage_count = self._node_registry.count_dynamic("storage", lan)
         registry_dynamic_compute_count = self._node_registry.count_dynamic("compute", lan)
-        pending_compute_drain_count = self._elasticity.pending_compute_drain_count()
+        pending_compute_drain_count = self._elasticity.pending_compute_drain_count(
+            exclude_reason="absent")
         effective_dynamic_compute_count = max(
             0,
             registry_dynamic_compute_count - pending_compute_drain_count,
@@ -777,7 +787,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                         self._log_decision("scale_down", "reserve_loss", s.window_id)
                         logger.info("[reserve] cleanup_submitted lan=%d mac=%s", info.lan, info.mac)
                         continue
-                    alert = self._node_registry.build_scale_down_alert(mac)
+                    alert = self._node_registry.build_scale_down_alert(mac, reason="absent")
                     if alert:
                         logger.info("[scale-down] submitting alert: %s", alert)
                         self._elasticity.submit(alert)

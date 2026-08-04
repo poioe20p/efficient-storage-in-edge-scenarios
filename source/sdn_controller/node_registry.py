@@ -429,7 +429,7 @@ class DynamicNodeRegistry:
 
     # ── Alert building ───────────────────────────────────────────────────
 
-    def build_scale_down_alert(self, mac: str) -> ScaleDownComputeAlert | ScaleDownDataAlert | ScaleDownSelectiveAlert | None:
+    def build_scale_down_alert(self, mac: str, reason: str = "scale_down") -> ScaleDownComputeAlert | ScaleDownDataAlert | ScaleDownSelectiveAlert | None:
         """Build the appropriate scale-down alert from NodeInfo. Returns None if MAC not tracked.
 
         Reserved nodes (``standby_reserved=True``) do NOT produce ordinary
@@ -453,6 +453,7 @@ class DynamicNodeRegistry:
                 container_name=info.name,
                 mac=mac,
                 ip=info.ip,
+                reason=reason,
             )
         elif info.node_type == "selective_storage":
             return ScaleDownSelectiveAlert(

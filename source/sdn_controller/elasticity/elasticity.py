@@ -102,6 +102,7 @@ class ScaleDownComputeAlert:
     container_name: str
     mac:            str
     ip:             str
+    reason:         str = "scale_down"   # "scale_down" | "absent" (absent-cleanup holds its slot)
 
 
 @dataclass(frozen=True)
@@ -477,12 +478,18 @@ class ElasticityManager:
             for pending in self._pending_drain_snapshot()
         )
 
-    def pending_compute_drain_count(self) -> int:
-        """Count pending compute drains without changing lifecycle registry state."""
+    def pending_compute_drain_count(self, exclude_reason: str | None = None) -> int:
+        """Count pending compute drains without changing lifecycle registry state.
+
+        ``exclude_reason`` (e.g. "absent") skips drains tagged with that reason so
+        an absent-cleanup keeps its budget slot until Phase B completes —
+        preventing the absent→respawn overlap (transient budget+1 overshoot).
+        """
         return sum(
             1
             for pending in self._pending_drain_snapshot()
             if pending.node_type == "compute"
+            and (exclude_reason is None or pending.reason != exclude_reason)
         )
 
     def consume_addition_completions(self) -> list[NodeInfo]:
@@ -974,6 +981,7 @@ class ElasticityManager:
             return
 
         pending.ip = alert.ip
+        pending.reason = alert.reason
         self._set_pending_drain(alert.mac, pending)
         self._record({"type": "scale_down_compute_phase_a", "alert": alert, "pending": pending})
 
@@ -1384,11 +1392,11 @@ class ElasticityManager:
         with self._lock:
             if mac is not None:
                 pending = self._pending_drains.get(mac)
-                if pending and pending.node_type == "compute":
+                if pending and pending.node_type == "compute" and pending.reason != "absent":
                     return pending
                 return None
             for pending in self._pending_drains.values():
-                if pending.node_type == "compute":
+                if pending.node_type == "compute" and pending.reason != "absent":
                     return pending
         return None
 

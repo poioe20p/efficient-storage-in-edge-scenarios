@@ -49,6 +49,7 @@ class PendingDrain:
     ip:             str  = ""      # for IP release in Phase B cleanup
     node_type:      str  = "compute"   # "compute" | "selective_storage"
     owner_lan:      str | None = None   # selective only; source LAN whose data is mirrored
+    reason:         str  = "scale_down"  # "scale_down" | "absent" (absent-cleanup holds its slot)
 
 
 class ComputeNodeAdder(_BaseNodeAdder):
