@@ -5,6 +5,40 @@ from dataclasses import dataclass
 
 from compute import TREND_WINDOW_SIZE
 
+# ── Read preference for the VIP read path (data-path fix, 2026-08-03) ────────
+# The edge's epoch (read) client connects to the VIP with directConnection=True
+# and default readPreference=primary. When the VIP's per-edge flow DNATs the
+# connection to a storage SECONDARY, primary-pref reads are rejected server-side
+# with NotPrimaryOrSecondary (code 13436) — storage scale-out produced ~zero
+# usable read capacity. secondaryPreferred declares secondaryOk so secondaries
+# serve reads. Config-gated via EDGE_MONGO_READ_PREFERENCE — default
+# secondaryPreferred is the go-to read path (2026-08-03); "primary" is the
+# explicit pre-fix opt-out. See
+# docs/operation/testing/experiment/v2/read_preference_data_path_finding.md.
+# NOTE (probe 2026-08-03): these MUST be mode STRINGS, not pymongo
+# ReadPreference instances. pymongo 4.17's MongoClient validation
+# (common.validate_read_preference_mode) rejects _ServerMode instances with
+# "... is not a valid read preference" and accepts the string form, so the
+# probe's reads all failed client-side with ValueError before ever reaching
+# the DB. See read_preference_data_path_finding.md.
+_READ_PREF_MAP = {
+    "primary": "primary",
+    "secondarypreferred": "secondaryPreferred",
+    "secondary": "secondary",
+}
+
+
+def resolve_mongo_read_preference() -> str:
+    """Map the EDGE_MONGO_READ_PREFERENCE string (lowercased, underscores
+    stripped) to a pymongo read-preference mode string. Unknown values fall
+    back to "secondaryPreferred" (the default go-to read path, 2026-08-03);
+    set EDGE_MONGO_READ_PREFERENCE=primary for the pre-fix opt-out. Kept in
+    the config module so both the VIP epoch client and the Tier1 manifest
+    client can import it without a circular dependency."""
+    key = (os.environ.get("EDGE_MONGO_READ_PREFERENCE", "secondaryPreferred").strip()
+           .lower().replace("_", ""))
+    return _READ_PREF_MAP.get(key, "secondaryPreferred")
+
 
 @dataclass(frozen=True)
 class EdgeServerConfig:
@@ -28,6 +62,8 @@ class EdgeServerConfig:
     mongo_retry_backoff_ms: int
     mongo_retry_max_attempts: int
     mongo_server_selection_timeout_ms: int
+    mongo_read_preference: str
+    mongo_max_pool_size: int
     mongo_primary_lan1: str
     mongo_primary_lan2: str
 
@@ -97,6 +133,22 @@ class EdgeServerConfig:
             ),
             mongo_server_selection_timeout_ms=int(
                 os.environ.get("MONGO_SERVER_SELECTION_TIMEOUT_MS", "3000")
+            ),
+            # Read preference for the VIP-based read path (epoch client).
+            # Default "secondaryPreferred" (the go-to path, 2026-08-03) lets
+            # the VIP's per-edge flows be served by storage secondaries.
+            # "primary" is the explicit pre-fix opt-out. See
+            # docs/operation/testing/experiment/v2/read_preference_data_path_finding.md.
+            mongo_read_preference=os.environ.get(
+                "EDGE_MONGO_READ_PREFERENCE", "secondaryPreferred"
+            ),
+            # MongoDB connection-pool size for the VIP read path (Approach B,
+            # 2026-08-03). Default 1 = one connection per edge, pinned to one
+            # storage backend (pre-fix behavior; RQ1/RQ3 byte-identical).
+            # >1 fans an edge's connections out across storage backends when
+            # the controller runs with VIP_DATA_PER_CONNECTION_FLOWS=1.
+            mongo_max_pool_size=int(
+                os.environ.get("EDGE_MONGO_MAX_POOL_SIZE", "1")
             ),
             mongo_primary_lan1=os.environ.get(
                 "EDGE_MONGO_PRIMARY_LAN1", "mongodb://10.0.0.4:27018/"

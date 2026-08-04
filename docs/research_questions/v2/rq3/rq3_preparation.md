@@ -9,6 +9,25 @@
 > artifact collection in `run_experiment.sh`; and on RQ2's `PolicyGate`,
 > `_SCALEUP_POLICY`, and mode-aware `_log_decision`.
 > **Date:** 2026-07-31.
+> **RQ3 v2 sync (2026-08-04):** the mechanism here is implemented. The v2
+> evaluation design (`docs/operation/testing/experiment/v2/rq3/rq3_v2_rework_plan.md`,
+> approach A) extends the **direct** arm to be genuinely event-driven — the
+> edge emits an `app_ready` control event (`EDGE_APP_READY_EVENT=1`) at the
+> readiness flip; the controller admits on the event (no probe before
+> admission) with an event-absence safety net (`READINESS_EVENT_FALLBACK_S=5`),
+> and the admission log records `admit_source` (`event` | `probe_fallback` |
+> `probe`). **D3 invariant break (recorded):** under event-driven `direct`,
+> `app_ready_ts` is an **event** observation time, not a probe observation, so
+> the "`app_ready_observed → admitted` ≈ 0 in both arms" invariant applies to
+> `discovery` only. **T12.4 superseded:** the cross-arm `spawn_complete →
+> app_ready_observed` overlap check is dropped as a statistic — replaced by the
+> post-admission confirming `/ready` probe + the `admit_source` event-fraction
+> gate (see the v2 plan §2.2/§2.4). **§5 measurement contract updated:** the
+> headline is the gap-window pool `timeout_rate` differential
+> (`[spawn_started, min(admitted, spike_end)]`), and useful initial share is
+> pool-wide over `[spawn_started, admitted + TRANSITION_WINDOW_S]` — not the
+> new backend's post-admission window only. The v2 campaign runs on
+> `cloud-vm-rq3` under the open-loop driver.
 
 This plan implements the RQ3 required extension: a **compute readiness gate**
 that gates `VIP_SERVER` pool admission on a verified **application-readiness

@@ -1,0 +1,4 @@
+RQ2 node-minutes — run 20260804_051137_rq2_sf_db_3 (policy=fixed_storage_first)
+  compute node-minutes : 0.00
+  storage node-minutes : 108.14
+  per 1000 recorded req: compute=0.000 storage=3.396 (recorded_requests=31840; includes failures — refine with a status column when the schema is known)

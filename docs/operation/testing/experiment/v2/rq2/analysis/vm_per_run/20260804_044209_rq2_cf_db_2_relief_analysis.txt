@@ -1,0 +1,4 @@
+RQ2 relief analysis — run 20260804_044209_rq2_cf_db_2 (policy=fixed_compute_first)
+  actions            : 8
+  recovered in-tier  : 5/8
+  median recovery_s  : 39.5

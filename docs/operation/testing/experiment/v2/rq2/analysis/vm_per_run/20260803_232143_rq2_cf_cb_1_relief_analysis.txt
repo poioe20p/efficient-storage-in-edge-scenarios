@@ -1,0 +1,3 @@
+﻿RQ2 relief analysis ù run 20260803_232143_rq2_cf_cb_1 (policy=fixed_compute_first)
+  actions            : 8
+  recovered in-tier  : 0/8

@@ -17,6 +17,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from ..client_status import is_completed
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -291,6 +293,8 @@ def main():
     per_run_lat: dict[str, dict[str, dict[str, list[float]]]] = \
         defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for r in all_requests:
+        if not is_completed(r):
+            continue
         mode = r.get("mode", "")
         run_label = r.get("run", "")
         phase = r.get("phase", "")

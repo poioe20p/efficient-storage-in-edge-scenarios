@@ -33,7 +33,8 @@ def main() -> None:
     order = ["baseline", "compute_plateau", "recovery_gap", "demand_drop"]
     print(f"{'phase':16s} {'n':>4s} {'reqs_p50':>8s} {'medTdb_p25':>10s} "
           f"{'medTdb_p50':>10s} {'medTdb_p75':>10s} {'medTdb_p90':>10s} "
-          f"{'medTproc':>8s} {'st_p50':>6s} {'st_max':>6s} {'sv_p50':>6s} {'sv_max':>6s}")
+          f"{'medTproc':>8s} {'stCpu_p50':>9s} {'stCpu_p90':>9s} "
+          f"{'st_p50':>6s} {'st_max':>6s} {'sv_p50':>6s} {'sv_max':>6s}")
     for ph in order + [k for k in sorted(by) if k not in order]:
         g = by.get(ph, [])
         if not g:
@@ -41,11 +42,13 @@ def main() -> None:
         reqs = [float(r["total_requests"]) for r in g if r.get("total_requests")]
         med_db = [float(r["avg_time_db_ms"]) for r in g if r.get("avg_time_db_ms")]
         med_proc = [float(r["avg_time_proc_ms"]) for r in g if r.get("avg_time_proc_ms")]
+        st_cpu = [float(r["avg_storage_cpu_percent"]) for r in g if r.get("avg_storage_cpu_percent")]
         st = [int(float(r["storage_count"])) for r in g if r.get("storage_count")]
         sv = [int(float(r["server_count"])) for r in g if r.get("server_count")]
         print(f"{ph:16s} {len(g):4d} {q(reqs, 0.5):8.0f} {q(med_db, 0.25):10.1f} "
               f"{q(med_db, 0.5):10.1f} {q(med_db, 0.75):10.1f} {q(med_db, 0.9):10.1f} "
               f"{q(med_proc, 0.5):8.1f} "
+              f"{q(st_cpu, 0.5):9.1f} {q(st_cpu, 0.9):9.1f} "
               f"{q(st, 0.5):6.1f} {max(st):6d} {q(sv, 0.5):6.1f} {max(sv):6d}")
 
 

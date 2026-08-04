@@ -2,6 +2,7 @@
 
 from .config import (
     _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
+    _VIP_DATA_PER_CONNECTION,
     _ROUTER_OVS_PORT, _ROUTER_MAC,
     ClientVipBinding,
     logger,
@@ -34,15 +35,27 @@ def install_vip_data_forward_rule(
     client_mac, client_ip,
     backend_ip, backend_mac, backend_port,
     is_cross_network=False,
+    client_src_port=None,
 ):
-    """Install/update a per-client forward rule for a VIP_DATA domain.
+    """Install/update a per-client or per-connection forward rule for VIP_DATA.
 
-    The match is scoped to one client (eth_src / ipv4_src), preserving the
+    Default (client_src_port is None, ``VIP_DATA_PER_CONNECTION_FLOWS=0``):
+    the match is scoped to one client (eth_src / ipv4_src), preserving the
     per-client WSM load distribution from the current static-NAT design.
 
+    Per-connection (client_src_port is not None, ``VIP_DATA_PER_CONNECTION_FLOWS=1``):
+    the match also carries ``tcp_src`` so a pooled edge client
+    (``EDGE_MONGO_MAX_POOL_SIZE>1``) fans its connections out to different
+    storage backends.  These flows are installed on the connection SYN only
+    and never idle/hard-expire, so an established connection is NEVER
+    re-pinned to a different backend mid-stream (which would DNAT an
+    already-committed conntrack connection to a new backend port and break
+    it).  They are cleaned by the domain-cookie bulk delete on
+    unregister_storage_backend.
+
     Uses ct(commit, nat(dst=backend_ip)) so OVS tracks each connection
-    independently.  Multiple per-client forward rules share the same
-    domain cookie — they can be bulk-deleted on unregister_storage_backend.
+    independently.  Multiple per-client/per-connection forward rules share
+    the same domain cookie — bulk-deleted on unregister_storage_backend.
 
     Cross-network: when the backend is on the peer LAN, eth_dst must be
     the router's MAC so the router accepts the frame for L3 forwarding.
@@ -50,16 +63,30 @@ def install_vip_data_forward_rule(
     parser = datapath.ofproto_parser
     ofproto = datapath.ofproto
 
-    # Per-client match — preserves per-client WSM load distribution
-    match = parser.OFPMatch(
-        eth_type=0x0800,
-        eth_src=client_mac,
-        eth_dst=vip_mac,
-        ipv4_src=client_ip,
-        ipv4_dst=vip_ip,
-        ip_proto=6,           # TCP
-        tcp_dst=27018,        # MongoDB
-    )
+    per_connection = _VIP_DATA_PER_CONNECTION and client_src_port is not None
+
+    if per_connection:
+        match = parser.OFPMatch(
+            eth_type=0x0800,
+            eth_src=client_mac,
+            eth_dst=vip_mac,
+            ipv4_src=client_ip,
+            ipv4_dst=vip_ip,
+            ip_proto=6,           # TCP
+            tcp_src=client_src_port,   # MongoDB client ephemeral port
+            tcp_dst=27018,        # MongoDB
+        )
+    else:
+        # Per-client match — preserves per-client WSM load distribution
+        match = parser.OFPMatch(
+            eth_type=0x0800,
+            eth_src=client_mac,
+            eth_dst=vip_mac,
+            ipv4_src=client_ip,
+            ipv4_dst=vip_ip,
+            ip_proto=6,           # TCP
+            tcp_dst=27018,        # MongoDB
+        )
 
     # Destination MAC: router MAC for cross-network, backend MAC for local
     dnat_eth_dst = (_ROUTER_MAC if is_cross_network and _ROUTER_MAC
@@ -89,24 +116,43 @@ def install_vip_data_forward_rule(
         parser.OFPActionOutput(backend_port),
     ]
 
-    # NOTE: No delete-before-install.  When this client re-selects (e.g.
-    # after idle timeout or backend unregister), the new rule has the same
-    # match (eth_src + ipv4_src + VIP fields) and OVS overwrites the old
-    # one automatically via the same-priority/same-match rule.
+    if per_connection:
+        # Per-connection flows idle-expire like per-client ones (so a closed
+        # connection's flow clears and its port can be re-pinned correctly),
+        # but NEVER hard-expire: an active established connection must not be
+        # forcibly re-pinned mid-stream.  On idle expiry, the next packet
+        # packet-ins and the controller re-installs to the SAME backend via
+        # the binding map (see ingress._handle_vip_data) — never a fresh
+        # select.  Cleanup also happens via the domain-cookie bulk delete on
+        # unregister_storage_backend.
+        idle_timeout = 10
+        hard_timeout = 0
+    else:
+        # NOTE: No delete-before-install.  When this client re-selects (e.g.
+        # after idle timeout or backend unregister), the new rule has the same
+        # match (eth_src + ipv4_src + VIP fields) and OVS overwrites the old
+        # one automatically via the same-priority/same-match rule.
+        idle_timeout = 10                          # 10s (down from 30s)
+        hard_timeout = 120                         # unchanged
+
     controller._install_flow(
         datapath,
         priority=200,
         match=match,
         actions=actions,
-        idle_timeout=10,                          # 10s (down from 30s)
-        hard_timeout=120,                         # unchanged
+        idle_timeout=idle_timeout,
+        hard_timeout=hard_timeout,
         cookie=_COOKIE_VIP_DATA_FWD[domain],
     )
 
+    mode = "per-connection" if per_connection else "per-client"
     logger.info(
-        "vip_data(%s): per-client forward rule installed — client=%s vip=%s "
-        "backend=%s (idle=10s hard=120s cookie=0x%x)",
-        domain, client_ip, vip_ip, backend_ip, _COOKIE_VIP_DATA_FWD[domain],
+        "vip_data(%s): %s forward rule installed — client=%s:%s vip=%s "
+        "backend=%s (idle=%ss hard=%ss cookie=0x%x)",
+        domain, mode, client_ip,
+        client_src_port if per_connection else "*",
+        vip_ip, backend_ip, idle_timeout, hard_timeout,
+        _COOKIE_VIP_DATA_FWD[domain],
     )
 
 

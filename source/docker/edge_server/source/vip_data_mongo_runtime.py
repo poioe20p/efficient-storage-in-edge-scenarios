@@ -16,7 +16,7 @@ from pymongo.cursor import Cursor
 from pymongo.errors import AutoReconnect, PyMongoError
 from werkzeug.exceptions import BadRequest
 
-from edge_server_config import CONFIG
+from edge_server_config import CONFIG, resolve_mongo_read_preference
 from platform_cache import _owner_lan
 
 # ── Write client (direct to primary) ──────────────────────────────────────────
@@ -203,21 +203,23 @@ def _get_or_create_epoch_client(lan: str, epoch: _MongoEpoch) -> MongoClient:
         url = f"mongodb://{epoch.vip_ip}:{DB_PORT}/"
         epoch.client = MongoClient(
             url,
-            maxPoolSize=1,
+            maxPoolSize=CONFIG.mongo_max_pool_size,
             maxIdleTimeMS=MAX_IDLE_MS,
             serverSelectionTimeoutMS=CONFIG.mongo_server_selection_timeout_ms,
             socketTimeoutMS=15000,
             directConnection=True,
+            readPreference=resolve_mongo_read_preference(),
         )
         epoch.client_created_at = time.monotonic()
         log.info(
             "Created MongoClient for %s epoch=%s mode=%s via %s "
-            "(maxIdleTimeMS=%d)",
+            "(maxIdleTimeMS=%d readPref=%s)",
             lan,
             epoch.epoch_id,
             epoch.mode,
             url,
             MAX_IDLE_MS,
+            CONFIG.mongo_read_preference,
         )
         return epoch.client
 

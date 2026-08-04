@@ -34,8 +34,8 @@ def run(run_dir: Path) -> None:
         print("[cli_endpoint_breakdown] matplotlib not installed — install via analysis/requirements.txt")
         return
 
+    from .client_status import is_completed, is_failure
     from .loader import load_run
-    from .simple_metrics import is_failure
 
     r = load_run(run_dir)
     out_dir = run_dir / "analysis"
@@ -56,12 +56,13 @@ def run(run_dir: Path) -> None:
         endpoint = str(row.get("endpoint", "unknown"))
         endpoints_seen.add(endpoint)
 
-        lat_s = _safe_float(row.get("latency_s"), 0.0)
-        failed = is_failure(row.get("http_status"))
+        failed = is_failure(row)
 
         entry = data[phase][endpoint]
-        entry["latencies_ms"].append(lat_s * 1000.0)
         entry["total"] += 1
+        if is_completed(row):
+            lat_s = _safe_float(row.get("latency_s"), 0.0)
+            entry["latencies_ms"].append(lat_s * 1000.0)
         if failed:
             entry["failures"] += 1
 

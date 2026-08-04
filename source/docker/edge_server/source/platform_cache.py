@@ -34,6 +34,8 @@ from flask import g
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
+from edge_server_config import resolve_mongo_read_preference
+
 log = logging.getLogger(__name__)
 
 
@@ -97,6 +99,12 @@ def set_tier1_manifest(owner_lan: str, host: str | None,
                 maxPoolSize=1,
                 serverSelectionTimeoutMS=1000,
                 directConnection=True,
+                # Same data-path fix as the VIP epoch client: with
+                # directConnection=True and default readPreference=primary,
+                # reads to a storage secondary are rejected (code 13436).
+                # secondaryPreferred lets Tier1 hot-doc reads be served by
+                # secondaries. See edge_server_config.resolve_mongo_read_preference.
+                readPreference=resolve_mongo_read_preference(),
             )
             _TIER1_REGISTRY[owner_lan] = (
                 client,

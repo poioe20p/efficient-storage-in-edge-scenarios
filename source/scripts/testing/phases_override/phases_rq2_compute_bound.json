@@ -15,7 +15,7 @@
     {
       "name": "compute_bound_episode",
       "duration_s": 600,
-      "rate_per_client": 8.0,
+      "rate_per_client": 3.0,
       "cross_region_ratio": 0.0,
       "hotspot_direction": "",
       "client_fraction": 1.0,

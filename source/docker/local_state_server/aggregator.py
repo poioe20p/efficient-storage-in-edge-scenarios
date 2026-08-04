@@ -31,7 +31,7 @@ _WRITE_OPS = frozenset({
 SS_TOP_DOCS_PER_EDGE = int(os.environ.get("SS_TOP_DOCS_PER_EDGE", "30"))
 
 _CONTROL_EVENT_TYPES = frozenset(
-    {"drain_complete", "rs_secondary_ready", "request_complete"}
+    {"drain_complete", "rs_secondary_ready", "request_complete", "app_ready"}
 )
 _HTTP_REQUIRED_KEYS = frozenset({
     "server_id",

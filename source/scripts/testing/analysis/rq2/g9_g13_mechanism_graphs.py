@@ -29,6 +29,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+try:  # package-module invocation (python -m ...)
+    from ..client_status import is_completed
+except ImportError:  # plain-script invocation (python3 path/to/file.py)
+    def is_completed(row, header=None):  # type: ignore
+        if "status" not in row:
+            return True
+        return str(row.get("status", "") or "").strip().lower() == "completed"
+
 MODE_ORDER = ["topology_host", "topology_slowstart", "topology_lifecycle"]
 MODE_LABEL = {"topology_host": "Host", "topology_slowstart": "Slowstart", "topology_lifecycle": "Lifecycle"}
 MODE_COLORS = {"topology_host": "#2196F3", "topology_slowstart": "#FF9800", "topology_lifecycle": "#4CAF50"}
@@ -226,6 +234,8 @@ def main():
     phase_p95 = {m: {p: [] for p in PHASE_ORDER} for m in MODE_ORDER}
 
     for row in all_clients:
+        if not is_completed(row):
+            continue
         mode = row["_mode"]
         phase = row.get("phase", "")
         lat = sf(row.get("latency_s", ""))

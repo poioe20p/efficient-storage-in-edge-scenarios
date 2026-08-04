@@ -4,6 +4,84 @@ Part of [`experiment_plan.md`](experiment_plan.md). Defines the measurement
 contract, the graph inventory, and the analysis tooling contract for the RQ1
 delivery-semantics campaign.
 
+> **RQ1 v2 (final evidence):** this document's v2 contract (§0) supersedes the
+> v1 framing for v2 runs. v1 folders remain the supporting record and keep the
+> archived `results.md` numbers.
+
+## 0. RQ1 v2 contract — full 2×2 factorial
+
+Authoritative spec: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md).
+
+### 0.1 Arms
+
+| Arm | Source | Freshness | Completeness |
+| --- | --- | --- | --- |
+| A | `event_preserving` | sub-second | complete (frac ≈ 1.0) |
+| B | `delayed_event_preserving` | +30 s | complete |
+| C | `poll` (latest_state) | poll-30 (stale-lossy) | ≈ 1/3 |
+| D | `sampled_push` (`SAMPLE_EVERY=3`) | sub-second | ≈ 1/3 |
+
+### 0.2 Status-aware row contract (`client_requests.csv`)
+
+- `status` column (14th): `completed | timeout | dropped | canceled`.
+- `timeout` → `http_status="000"`, `latency_s` = elapsed to timeout.
+- `dropped`/`canceled` → `http_status=""`, `latency_s=""`.
+- **Failure = completed & `http_status != 200`** (only 200 is success for this
+  edge service; 3xx/4xx under VIP misrouting are failures, not successes).
+- `timeout_rate` = timeout / (offered − canceled − dropped); **canceled rows
+  (phase-boundary drain artifacts) and dropped rows (client-side admission —
+  they never reach the service and can never time out) are excluded from the
+  denominator** and reported separately; `failure_rate` = failure / completed.
+- Offered = all rows. Timeout/dropped/canceled NEVER enter latency percentiles
+  or failure; they are reported separately (censoring flag at the cap).
+- Delivery-log `mode` set includes `sampled_push` (Arm D).
+
+### 0.3 Phase attribution (v2 rule)
+
+- Client-side metrics: the generator `phase` label (authoritative).
+- Decision/window-side boundaries: **derived from the generator labels**
+  (min/max `sent_at` per phase). The open-loop supervisor shifts every later
+  phase by the phase-boundary drains and workers progress independently, so
+  contiguous anchoring is wrong; label-derived boundaries are correct.
+- Validation: phases must start in schedule order (monotonic min `sent_at`) —
+  violation hard-fails the run (`--skip-phase-validation` for legacy folders).
+  A phase span beyond nominal + 2 drains + 2 windows is an informational
+  warning (the open-loop supervisor is time-bounded per phase, so the v1
+  plateau-overrun artifact is structurally impossible under open-loop).
+
+### 0.4 Pre-registered statistics (n=5; effect-size, no alpha claim)
+
+Primary attribution pairs (factorial edges — Mann–Whitney U exact/normal +
+Cliff's delta):
+
+- **delay:** A–B (`ep` vs `delayed`), D–C (`sp` vs `ls`)
+- **loss:** A–D (`ep` vs `sp`), B–C (`delayed` vs `ls`)
+
+Headline tradeoff (Cliff's delta only, no significance claim): B–D (`delayed`
+vs `sp`), A–C (`ep` vs `ls`).
+
+Metrics: usable-capacity latency, `timeout_rate`, `failure_rate`
+(completed-only), time-to-recover (scale-down from `recovery_gap` start),
+info-age at decision. ≥ 3 defined runs/cell to test; no censored value enters
+MWU; latency percentiles descriptive-only with a censoring flag. Implemented
+in `docs/research_questions/v2/rq1/rq1v2_p3_01_stats.py`.
+
+### 0.5 Reporting rules
+
+- Offered vs completed recorded separately (per phase).
+- Scale-down claims reported from `decision_log` **and** `container_events`
+  jointly (bounded claim; no controller change). `rq1v2_p3_01_stats.py`
+  reports `scale_down_latency_s` (decision-log, pre-registered primary)
+  alongside `removal_latency_s` (container_events first dynamic-compute
+  removal) as the joint cross-check.
+- C8: cross-arm comparison on non-surge `timeout_rate` + `failure_rate` under
+  equal offered load (may honestly be a null).
+- **Arm C lan2 asymmetry:** `rq1v2_p4_01_lan2_asymmetry.py` (per-run per-LAN
+  plateau rates, load distribution, per-backend counts, per-LAN delivery
+  counts). Pre-flight: run against the open-loop calibration runs to check
+  whether the v1 asymmetry reproduces before blocks start. Full root-cause:
+  after the campaign. No Arm C quality claim until resolved or bounded.
+
 ## 1. Artifact contract (per run, per LAN)
 
 Collected by `run_experiment.sh` → `collect_rq1_artifacts()` into the run folder:
@@ -47,11 +125,14 @@ must honor them):
   `first/last_request_ts` come from `client_requests.csv` and are rounded to the
   `WINDOW_S` boundary. Windows outside this range are excluded from
   delivered-fraction and missed-overload computations.
-- **Phase transitions:** `phases_snapshot.json` gives durations only. Phase
-  boundaries are anchored to the traffic window start: `phase_i_start =
-  traffic_start + sum(durations of phases before i)`, where `traffic_start` is
-  the rounded-down first client request ts. Reaction-latency metrics use these
-  derived boundaries.
+- **Phase transitions:** `phases_snapshot.json` gives durations only. **v1
+  rule:** boundaries anchored to the traffic window start (`phase_i_start =
+  traffic_start + sum(durations before i)`). **v2 rule (§0.3):** boundaries are
+  derived from the generator `phase` label (min `sent_at` per phase) because
+  the open-loop supervisor shifts later phases by the phase-boundary drains
+  and workers progress independently; contiguous anchoring is wrong under
+  open-loop. Reaction-latency metrics use the derived boundaries; the order
+  validation (§0.3) hard-fails corrupt runs.
 - **Overload episode (per-episode visibility, arm C):** consecutive overload
   windows with at most one intervening non-overload window form one episode. An
   episode is "visible" if any delivered window inside it (or within one
@@ -127,15 +208,21 @@ misaligned — plateau overrun; see `results.md` deep-verification note).
 
 ## 6. Tooling contract (**implemented**)
 
-Implemented at this experiment folder's `analysis/` subfolder
-(`docs/operation/testing/experiment/v2/rq1/analysis/`), per the
-user-directed v2/rq1 placement. Smoke-tested on synthetic runs (2026-07-31).
+The analyzer + comparison scripts live at this experiment folder's
+`analysis/` subfolder (`docs/operation/testing/experiment/v2/rq1/analysis/`),
+per the user-directed v2/rq1 placement; the pre-registered statistics script
+lives at `docs/research_questions/v2/rq1/` (canonical per-RQ location).
+Analyzer + comparison smoke-tested on synthetic runs (2026-07-31); stats
+script smoke-tested on synthetic runs (2026-08-04).
 
-- **`rq1_delivery_per_run.py`** (CLI: `<run_folder>`)
+- **`rq1_delivery_per_run.py`** (CLI: `<run_folder>`; `--skip-phase-validation`
+  for legacy v1 folders with the known plateau overrun)
   - Inputs: the four RQ1 artifacts + `client_requests.csv`, `container_events.csv`,
-    `controller_stats.csv`, `phases_snapshot.json`, env snapshots.
-  - Implements the analysis rules in §2b (universe bounds, phase anchoring,
-    episode definition).
+    `controller_stats.csv`, `phases_snapshot.json`, env snapshots,
+    `open_loop_schedule.json` (drain provenance, optional).
+  - Implements the analysis rules in §2b + the v2 rules in §0.2–§0.3
+    (status-aware service quality, generator-label phase derivation +
+    validation).
   - Outputs per run (into `<run_folder>/analysis/rq1_delivery/`):
     - `delivery_integrity.csv` — per LAN: arm, universe, delivered, delivered_frac,
       overload_total, overload_delivered, overload_missed, in_delay_at_end,
@@ -152,11 +239,18 @@ user-directed v2/rq1 placement. Smoke-tested on synthetic runs (2026-07-31).
       phase_start, scale_up_first_ts, scale_down_first_ts, usable_capacity_ts,
       decision_latency_s, capacity_latency_s, scale_down_latency_s`;
       `scale_down_latency_s` is carried **only on the `recovery_gap` row** and
-      measured from `recovery_gap` start (== end of `compute_plateau`), using
-      the first cooldown-gated scale-down after the plateau (A/B land in
-      `recovery_gap`, C in `demand_drop`);
-    - `phase_service_quality.csv` — per phase per LAN: p50/p95/p99, failure,
-      completed;
+      measured from `recovery_gap` start (the generator-derived first
+      `recovery_gap` request under the v2 label-derived boundaries — note it
+      is NOT generally the same timestamp as `compute_plateau` end under
+      open-loop drains/worker stagger), using the first cooldown-gated
+      scale-down after the plateau (A/B land in `recovery_gap`, C in
+      `demand_drop`);
+    - `phase_service_quality.csv` — per phase per LAN (v2 columns): `offered`,
+      `completed`, p50/p95/p99 (completed+ok only), `failure_count`,
+      `failure_rate` (completed-only), `timeout_count`, `timeout_rate`
+      (timeout/(offered−canceled−dropped)), `dropped_count`, `canceled_count`
+      (status columns blank for legacy runs, which keep the v1 failure-rate
+      denominator of all rows);
     - `overhead.csv` — per controller container: mean CPU%, mean RSS;
     - `run_meta.csv` — arm, window_s, delay_s, bounds, phase names.
   - Failure behavior: exits cleanly with a message if a required artifact
@@ -165,9 +259,20 @@ user-directed v2/rq1 placement. Smoke-tested on synthetic runs (2026-07-31).
     optional artifacts (`ack_log`, `container_events.csv`,
     `controller_stats.csv`) degrade gracefully.
 - **`rq1_delivery_comparison.py`** (CLI:
-  `--run-dirs-ep/--run-dirs-delayed/--run-dirs-ls`, `--output-dir`)
+  `--run-dirs-ep/--run-dirs-delayed/--run-dirs-ls/--run-dirs-sp`, `--output-dir`)
   - Groups runs by arm, aggregates the per-run CSVs, renders the §5 graph suite
-    with per-replicate variance.
+    with per-replicate variance. Timeout graphs are status-aware
+    (`status=timeout`); latency/throughput graphs read `client_requests.csv`
+    but exclude timeout/dropped/canceled rows (latency percentiles over
+    completed+ok only; throughput = completed).
+- **`rq1v2_p3_01_stats.py`** (CLI: per-arm `--run-dirs-*`, `--output`)
+  — pre-registered statistics (§0.4); canonical location
+  `docs/research_questions/v2/rq1/`.
+- **Gates:** `make rq1_analyzer_selftest` and the sampled-push selftest (see
+  `run_matrix.md` §9 pre-flight gate (c) — on the VM host, run the sampled-push
+  selftest inside the `osken-controller` image because host python3 lacks
+  pydantic; the selftest injects an os_ken hub stub). Both must pass before
+  v2 blocks.
 - **Run location:** where the data lives (cloud VM), then `scp` the
   `graphs/comparison/` folder back locally — same convention as the old
   `rq1-cross-mode-comparison` skill.

@@ -598,11 +598,24 @@ run_traffic() {
     echo "  Config       : ${PHASES_CONFIG}"
     echo "  Output       : ${METRICS_OUTPUT}"
 
+    # Fail-fast gate for the open-loop driver (hard requirement for RQ2 v2
+    # and the final RQ campaigns; see rq2_v2_rework_plan.md Phase 1).
+    if [[ "${TRAFFIC_DRIVER_MODE:-}" == "open_loop" ]]; then
+        echo "  Driver mode  : open_loop (window=${INFLIGHT_WINDOW:-1024}, drain=${DRAIN_S:-30}s)"
+        python3 "${SCRIPT_DIR}/openloop_p1_01_driver_selftest.py" || {
+            echo "ERROR: open-loop driver self-test FAILED — refusing to run the experiment" >&2
+            exit 1
+        }
+    fi
+
     local extra_flags=()
     "$DRY_RUN" && extra_flags+=("--dry-run")
     [[ -n "$RANDOM_SEED" ]] && extra_flags+=("--random-seed" "$RANDOM_SEED")
+    [[ -n "${TRAFFIC_DRIVER_MODE:-}" ]] && extra_flags+=("--driver-mode" "$TRAFFIC_DRIVER_MODE")
+    [[ -n "${INFLIGHT_WINDOW:-}" ]] && extra_flags+=("--in-flight-window" "$INFLIGHT_WINDOW")
+    [[ -n "${DRAIN_S:-}" ]] && extra_flags+=("--drain-s" "$DRAIN_S")
 
-    python3 "${SCRIPT_DIR}/traffic_generator.py" \
+    if ! python3 "${SCRIPT_DIR}/traffic_generator.py" \
         --config        "$PHASES_CONFIG" \
         --clients-lan1  "$CLIENTS_LAN1" \
         --clients-lan2  "$CLIENTS_LAN2" \
@@ -610,7 +623,12 @@ run_traffic() {
         --output        "$METRICS_OUTPUT" \
         --vip-lan1      "$VIP_LAN1" \
         --vip-lan2      "$VIP_LAN2" \
-        "${extra_flags[@]}"
+        "${extra_flags[@]}"; then
+        # Explicit failure propagation: a non-zero generator exit (e.g. an
+        # open-loop worker crash) must mark the run FAILED, not "completed".
+        echo "ERROR: traffic generator failed — run will be marked failed" >&2
+        return 1
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -716,6 +734,85 @@ collect_rq3_artifacts() {
 }
 
 # ---------------------------------------------------------------------------
+# RQ3 v2 per-run validity gates (plan §4.3): min-admissions per LAN,
+# flow-validation (A/B hard -> fail, C < 0.9 -> degraded, D > 1% -> fail),
+# and edge-container env verification. Runs AFTER collect_rq3_artifacts and
+# BEFORE the run-folder cleanup step. Non-RQ3 runs are skipped.
+verify_rq3_run() {
+    local _snap="${RUN_DIR}/controller_env_snapshot.env"
+    [[ -f "$_snap" ]] || { echo "  [rq3] no env snapshot — skipping RQ3 gate"; return 0; }
+    local _prop
+    _prop="$(grep -E '^READINESS_PROPAGATION=' "$_snap" | head -1 | cut -d= -f2)"
+    case "$_prop" in
+        direct|discovery) ;;
+        *) echo "  [rq3] READINESS_PROPAGATION=$_prop — non-RQ3 run, skipping gate"; return 0 ;;
+    esac
+
+    local _fail=0 _lan _adm _f
+    # 1) Min-admissions per LAN (>= 1 admitted backend each)
+    for _lan in 1 2; do
+        _f="${RUN_DIR}/admission_log_lan${_lan}.csv"
+        if [[ -f "$_f" ]]; then
+            _adm="$(grep -c ',admitted,' "$_f" 2>/dev/null || true)"
+            _adm="${_adm:-0}"
+            echo "  [rq3] lan${_lan} admitted backends: ${_adm}"
+            if [[ "$_adm" -lt 1 ]]; then
+                echo "  [rq3] FAIL: lan${_lan} has < 1 admitted backend (min-admissions gate)" >&2
+                _fail=1
+            fi
+        else
+            echo "  [rq3] WARN: admission_log_lan${_lan}.csv missing" >&2
+        fi
+    done
+
+    # 2) Flow-validation gate (0 = valid; 1 = hard; 2 = instrumentation-degraded)
+    if [[ -f "${RUN_DIR}/client_requests.csv" ]]; then
+        python3 "${REPO_ROOT}/docs/research_questions/v2/rq3/rq3_flow_validation.py" "${RUN_DIR}"
+        local _rc=$?
+        if [[ $_rc -eq 1 ]]; then
+            echo "  [rq3] FAIL: flow-validation hard violation (exit 1)" >&2
+            _fail=1
+        elif [[ $_rc -eq 2 ]]; then
+            echo "  [rq3] DEGRADED: flow-isolation coverage < 0.9 (recorded, not a hard fail)" >&2
+        fi
+    else
+        echo "  [rq3] WARN: client_requests.csv missing — flow-validation skipped" >&2
+    fi
+
+    # 3) Edge-container env verification (controller env + live dynamic edges).
+    local _e1 _e2 _dyn _de
+    _e1="$(docker exec osken printenv EDGE_APP_READY_EVENT 2>/dev/null || echo 0)"
+    _e2="$(docker exec osken printenv EDGE_FLOW_ISOLATION 2>/dev/null || echo 0)"
+    echo "  [rq3] controller env: EDGE_APP_READY_EVENT=$_e1 EDGE_FLOW_ISOLATION=$_e2"
+    if [[ "$_e2" != "1" ]]; then
+        echo "  [rq3] FAIL: EDGE_FLOW_ISOLATION=1 required for RQ3 runs (controller env)" >&2
+        _fail=1
+    fi
+    if [[ "$_prop" == "direct" && "$_e1" != "1" ]]; then
+        echo "  [rq3] FAIL: direct arm requires EDGE_APP_READY_EVENT=1 (controller env)" >&2
+        _fail=1
+    fi
+    _dyn="$(docker ps --format '{{.Names}}' | grep -E '^edge_server_lan[12]_dyn' | head -1)"
+    if [[ -n "$_dyn" ]]; then
+        _de="$(docker exec "$_dyn" printenv EDGE_APP_READY_EVENT 2>/dev/null || echo 0)"
+        echo "  [rq3] dynamic edge ${_dyn}: EDGE_APP_READY_EVENT=$_de"
+        if [[ "$_prop" == "direct" && "$_de" != "1" ]]; then
+            echo "  [rq3] FAIL: dynamic edge lacks EDGE_APP_READY_EVENT=1" >&2
+            _fail=1
+        fi
+    else
+        echo "  [rq3] note: no live dynamic edge to verify EDGE_APP_READY_EVENT at post-run"
+    fi
+
+    if [[ $_fail -eq 1 ]]; then
+        _write_run_status_failed
+        echo "  [rq3] run marked FAILED by the RQ3 gate" >&2
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -764,6 +861,7 @@ generate_elasticity_events
 generate_policy_state
 collect_rq1_artifacts
 collect_rq3_artifacts
+verify_rq3_run
 
 step "Experiment complete"
 echo "Results          : ${METRICS_OUTPUT}"

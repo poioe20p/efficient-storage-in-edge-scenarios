@@ -1,0 +1,7 @@
+RQ2 decision analysis — run 20260804_041449_rq2_sf_cb_2 (policy=fixed_storage_first, episode=compute_bound)
+  scale_up rows (deduped)     : 259
+  action counts               : compute=0 storage=1
+  budget used per LAN (max)   : lan1 c=0 s=0; lan2 c=0 s=1
+  classifier-vs-episode agree : 51/72 (70.8%)
+  T9.8 fire-keyed scale-down  : OK
+  counterbalance cell         : policy=fixed_storage_first, episode=compute_bound, replicate=20260804_041449_rq2_sf_cb_2

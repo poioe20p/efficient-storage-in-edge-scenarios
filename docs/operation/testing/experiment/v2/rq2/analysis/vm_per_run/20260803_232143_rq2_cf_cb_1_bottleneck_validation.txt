@@ -1,0 +1,4 @@
+﻿RQ2 bottleneck validation ù run 20260803_232143_rq2_cf_cb_1 (policy=fixed_compute_first, episode=compute_bound)
+lan,episode,n_windows,proc_ms,cpu_pct,db_ms,storage_cpu_pct,verdict
+1,compute_bound,36,0.47,40.98,0.00,0.00,PASS
+2,compute_bound,34,0.60,51.66,0.00,0.00,PASS

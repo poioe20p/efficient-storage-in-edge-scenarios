@@ -14,6 +14,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from ...loader import load_run
+from ...client_status import is_completed
 
 
 def _percentile(values: list[float], fraction: float) -> float:
@@ -48,6 +49,8 @@ def compute_endpoint_latency(run_dir: Path) -> list[dict]:
     # Group latencies by (phase, endpoint)
     buckets: dict[tuple[str, str], list[float]] = defaultdict(list)
     for row in run.all_client_rows:
+        if not is_completed(row):
+            continue
         phase = row.get("phase", "unknown")
         endpoint = row.get("endpoint", "unknown")
         lat = _safe_float(row.get("latency_s"))

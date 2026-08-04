@@ -40,6 +40,15 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` and
 > `Breitbach2019ContextAwareDataTaskPlacement`. Those three keys are now in
 > use but still pending addition to `tese/references.bib`.
+> (2026-08-03) ¶6 expanded beyond per-site scarcity to the full complexity
+> taxonomy (heterogeneity, demand volatility, placement/scheduling
+> decoupling, multi-owner resources), adding `Luo2021ResourceSchedulingEdgeComputingSurvey`
+> and `Liu2019SurveyEdgeComputingSystemsTools`; the production
+> over-provisioning/imbalance evidence `Xu2021FirstLookPublicEdgePlatforms`
+> (NEP) is now cited in ¶6 (previously absent despite being the
+> production-motivation). ¶8 gains a SOTA-positioning sentence (the thesis
+> follows the integration direction surveys call for, using standard
+> mechanisms). All three new keys are added to `tese/references.bib`.
 
 ## Reference key → paper → location
 
@@ -47,32 +56,35 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > used below are now in the corpus (PDF) or already in `tese/references.bib`;
 > the “Replaced references” table records the swaps.
 
-| Key | Paper (title — authors, year) | Location |
-|---|---|---|
-| `ITU2025InternetTraffic` | *Facts and Figures 2025: Internet Traffic* — ITU report, 2025 | `tese/references.bib` (no PDF) |
-| `Gurung2026CloudRevolutionTracingOriginsRise` | “Cloud Revolution: Tracing the Origins and Rise of Cloud Computing” — Gurung et al., IEEE CCWC 2026 | `tese/references.bib` (no PDF) |
-| `Cao2020OverviewEdgeComputingResearch` | “An Overview on Edge Computing Research” — Cao et al., IEEE Access 8, 2020 | `04_context_edge/An_Overview_on_Edge_Computing_Research.pdf` (+ in `.bib`) |
-| `Satyanarayanan2017EmergenceEdgeComputing` | “The Emergence of Edge Computing” — Satyanarayanan, IEEE Computer 50(1), 2017 | `04_context_edge/The_Emergence_of_Edge_Computing.pdf` (+ in `.bib`) |
-| `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` | “SDN Enhanced Resource Orchestration of Containerized Edge Applications for Industrial IoT” — Okwuibe et al., IEEE Access 8, 2020 | `05_context_orchestration/SDN_Enhanced_Resource_Orchestration_of_Containerized_Edge_Applications_for_Industrial_IoT.pdf` |
-| `Breitbach2019ContextAwareDataTaskPlacement` | “Context-Aware Data and Task Placement in Edge Computing Environments” — Breitbach et al., IEEE PerCom 2019 | `02_action_selection_rq2/Context-Aware_Data_and_Task_Placement_in_Edge_Computing_Environments.pdf` |
-| `Nicolaescu2021StoreEdgeNetworkedDataSEND` | “Store Edge Networked Data (SEND): A Data and Performance Driven Edge Storage Framework” — Nicolaescu et al., IEEE INFOCOM 2021 | `02_action_selection_rq2/Store_Edge_Networked_Data_SEND_A_Data_and_Performance_Driven_Edge_Storage_Framework.pdf` |
-| `Qu2018AutoScalingWebApplicationsClouds` | “Auto-Scaling Web Applications in Clouds: A Taxonomy and Survey” — Qu, Calheiros & Buyya, ACM Comput. Surv. 51(4), 2018 | `02_action_selection_rq2/Auto-Scaling Web Applications in Clouds - A Taxonomy and Survey.pdf` |
-| `Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing` | “An SDN-Based Solution for Horizontal Auto-Scaling and Load Balancing of Transparent VNF Clusters” — Llorens-Carrodeguas et al., Sensors 21(24), 2021 | `03_readiness_admission_rq3/An_SDN-Based_Solution_for_Horizontal_Auto-Scaling_and_Load_Balancing_of_Transparent_VNF_Clusters.pdf` |
-| `Pelle2022CostLatencyEdgePlatform` | “Cost and Latency Optimized Edge Computing Platform” — Pelle et al., Electronics 11(4):561, 2022 | `04_context_edge/Cost and Latency Optimized Edge Computing Platform.pdf` |
-| `Yaseen2025CountersTelemetrySurveyProgrammableNetwork` | “From Counters to Telemetry: A Survey of Programmable Network-Wide Monitoring” — Yaseen, Network 5:38, 2025 | `01_telemetry_rq1/From Counters to Telemetry - A Survey of Programmable Network-Wide Monitoring.pdf` |
+| Key                                                          | Paper (title — authors, year)                                                                                                                           | Location                                                                                                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `ITU2025InternetTraffic`                                   | *Facts and Figures 2025: Internet Traffic* — ITU report, 2025                                                                                         | `tese/references.bib` (no PDF)                                                                                                    |
+| `Gurung2026CloudRevolutionTracingOriginsRise`              | “Cloud Revolution: Tracing the Origins and Rise of Cloud Computing” — Gurung et al., IEEE CCWC 2026                                                   | `tese/references.bib` (no PDF)                                                                                                    |
+| `Cao2020OverviewEdgeComputingResearch`                     | “An Overview on Edge Computing Research” — Cao et al., IEEE Access 8, 2020                                                                            | `04_context_edge/An_Overview_on_Edge_Computing_Research.pdf` (+ in `.bib`)                                                      |
+| `Satyanarayanan2017EmergenceEdgeComputing`                 | “The Emergence of Edge Computing” — Satyanarayanan, IEEE Computer 50(1), 2017                                                                         | `04_context_edge/The_Emergence_of_Edge_Computing.pdf` (+ in `.bib`)                                                             |
+| `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` | “SDN Enhanced Resource Orchestration of Containerized Edge Applications for Industrial IoT” — Okwuibe et al., IEEE Access 8, 2020                     | `05_context_orchestration/SDN_Enhanced_Resource_Orchestration_of_Containerized_Edge_Applications_for_Industrial_IoT.pdf`          |
+| `Breitbach2019ContextAwareDataTaskPlacement`               | “Context-Aware Data and Task Placement in Edge Computing Environments” — Breitbach et al., IEEE PerCom 2019                                           | `02_action_selection_rq2/Context-Aware_Data_and_Task_Placement_in_Edge_Computing_Environments.pdf`                                |
+| `Nicolaescu2021StoreEdgeNetworkedDataSEND`                 | “Store Edge Networked Data (SEND): A Data and Performance Driven Edge Storage Framework” — Nicolaescu et al., IEEE INFOCOM 2021                       | `02_action_selection_rq2/Store_Edge_Networked_Data_SEND_A_Data_and_Performance_Driven_Edge_Storage_Framework.pdf`                 |
+| `Qu2018AutoScalingWebApplicationsClouds`                   | “Auto-Scaling Web Applications in Clouds: A Taxonomy and Survey” — Qu, Calheiros & Buyya, ACM Comput. Surv. 51(4), 2018                               | `02_action_selection_rq2/Auto-Scaling Web Applications in Clouds - A Taxonomy and Survey.pdf`                                     |
+| `Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing`    | “An SDN-Based Solution for Horizontal Auto-Scaling and Load Balancing of Transparent VNF Clusters” — Llorens-Carrodeguas et al., Sensors 21(24), 2021 | `03_readiness_admission_rq3/An_SDN-Based_Solution_for_Horizontal_Auto-Scaling_and_Load_Balancing_of_Transparent_VNF_Clusters.pdf` |
+| `Pelle2022CostLatencyEdgePlatform`                         | “Cost and Latency Optimized Edge Computing Platform” — Pelle et al., Electronics 11(4):561, 2022                                                      | `04_context_edge/Cost and Latency Optimized Edge Computing Platform.pdf`                                                          |
+| `Yaseen2025CountersTelemetrySurveyProgrammableNetwork`     | “From Counters to Telemetry: A Survey of Programmable Network-Wide Monitoring” — Yaseen, Network 5:38, 2025                                           | `01_telemetry_rq1/From Counters to Telemetry - A Survey of Programmable Network-Wide Monitoring.pdf`                              |
+| `Luo2021ResourceSchedulingEdgeComputingSurvey`             | “Resource Scheduling in Edge Computing: A Survey” — Luo et al., IEEE COMST 23(4), 2021                                                                | `04_context_edge/Resource_Scheduling_in_Edge_Computing_A_Survey.pdf`                                                              |
+| `Liu2019SurveyEdgeComputingSystemsTools`                   | “A Survey on Edge Computing Systems and Tools” — Liu et al., Proc. IEEE 107(8), 2019                                                                  | `04_context_edge/A_Survey_on_Edge_Computing_Systems_and_Tools.pdf`                                                                |
+| `Xu2021FirstLookPublicEdgePlatforms`                       | “From Cloud to Edge: A First Look at Public Edge Platforms” — Xu et al., ACM IMC 2021                                                                 | `04_context_edge/From Cloud to Edge - A First Look at Public Edge Platforms.pdf`                                                  |
 
 ### Replaced references (not in corpus / unverifiable — record only)
 
-| Old key | Replaced by (¶) |
-|---|---|
-| `Armbrust2010ViewCloudComputing` | `Gurung2026CloudRevolutionTracingOriginsRise` (¶3) |
-| `Shi2016EdgeComputingVisionChallenges` | `Cao2020OverviewEdgeComputingResearch` (¶4) |
-| `Tao2019` (unverifiable) | `Cao2020OverviewEdgeComputingResearch`, `Okwuibe2020...` (¶6) |
-| `Hong2019` | `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` (¶6) |
-| `Qadir2020` (unverifiable) | `Breitbach2019ContextAwareDataTaskPlacement` (¶6) |
-| `Sonkoly2021` | `Nicolaescu2021StoreEdgeNetworkedDataSEND` (¶6) |
-| `PodolskiyIaaS` | `Qu2018AutoScalingWebApplicationsClouds` (¶8) |
-| `Wang2026AutoScalingLoadAwareSDNFV` | `Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing` (¶8) |
+| Old key                                                    | Replaced by (¶)                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| `Armbrust2010ViewCloudComputing`                         | `Gurung2026CloudRevolutionTracingOriginsRise` (¶3)              |
+| `Shi2016EdgeComputingVisionChallenges`                   | `Cao2020OverviewEdgeComputingResearch` (¶4)                     |
+| `Tao2019` (unverifiable)                                 | `Cao2020OverviewEdgeComputingResearch`, `Okwuibe2020...` (¶6) |
+| `Hong2019`                                               | `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` (¶6) |
+| `Qadir2020` (unverifiable)                               | `Breitbach2019ContextAwareDataTaskPlacement` (¶6)               |
+| `Sonkoly2021`                                            | `Nicolaescu2021StoreEdgeNetworkedDataSEND` (¶6)                 |
+| `PodolskiyIaaS`                                          | `Qu2018AutoScalingWebApplicationsClouds` (¶8)                   |
+| `Wang2026AutoScalingLoadAwareSDNFV`                      | `Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing` (¶8)    |
 | `Pierro2026EvaluatingKubernetesAutoscalingStrategiesIoT` | `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` (¶8) |
 
 ---
@@ -146,7 +158,28 @@ The second is the operational cost of the dispersal itself:
 Satyanarayanan notes that “the dispersion inherent in edge computing
 raises the complexity of management considerably,” and that edge sites
 have weaker perimeter security than cloud data centers
-\parencite{Satyanarayanan2017EmergenceEdgeComputing}. Yet even when
+\parencite{Satyanarayanan2017EmergenceEdgeComputing}. Surveying the
+resource-scheduling literature, Luo et al. add two further sources of
+complexity: edge resources are heterogeneous — nodes of widely
+different capacity that must be scheduled jointly — and the demand
+they serve is volatile, so coarse or static scheduling degrades
+precisely when it matters most
+\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}. The
+consequences of that volatility are visible in production: a
+measurement of a major public edge platform found resource usage
+unbalanced by up to 14$\times$ across servers and 731$\times$ across
+sites in the same province, with utilization about six times lower
+than a comparable cloud — evidence that edge customers over-provision
+because demand is hard to forecast, and that the resulting imbalance
+traces to a decoupling between where capacity is placed and where
+requests are scheduled
+\parencite{Xu2021FirstLookPublicEdgePlatforms}. A further, often
+overlooked, source of complexity is that edge resources belong to
+different owners — a site's servers, the network it attaches to, and
+the gateways in its users' homes are administered by different
+parties — so orchestrating a service across them requires reconciling
+multiple administrative domains
+\parencite{Liu2019SurveyEdgeComputingSystemsTools}. Yet even when
 spare capacity exists elsewhere in the system, the binding constraint
 is not raw compute or memory exhaustion but network locality: scaling
 a service across sites to absorb a demand surge forces requests and
@@ -217,7 +250,19 @@ has been called for at the survey level by Yaseen
 never isolated, measured, or varied as an independent experimental
 variable. Within the reviewed corpus, no paper argues for this separation
 or against co-location: the separation appears as the unexamined default.
-Within this gap, this
+The direction of remedy, however, is well established: a survey of edge
+resource scheduling calls for the joint treatment of communication,
+computation, and storage resources
+\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}, and a survey of
+programmable network-wide monitoring calls for monitoring to be tightly
+integrated with network control and automation
+\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}. This
+thesis follows that direction with standard mechanisms — an SDN
+controller, threshold-based scaling, and push/poll telemetry — and makes
+its contribution not in any single mechanism but in co-locating them so
+that the three interfaces can be varied independently and their effects
+measured, extending the tradition of experimental studies that vary a
+telemetry parameter and observe the consequence. Within this gap, this
 thesis isolates three specific links in the demand-to-capacity chain — how
 demand evidence is delivered to the controller, which capacity action is
 chosen in response, and when ready capacity is admitted to traffic.

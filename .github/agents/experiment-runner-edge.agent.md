@@ -1,5 +1,5 @@
 ---
-description: "Use when: running and managing experiment runs in the cloud VM by following an experiment plan in docs/operation/testing/experiment/. Enters the host with 'ssh cloud-vm', launches runs from source/scripts/testing with non-interactive sudo ('sudo -n'), waits with passive monitoring, follows the plan's per-run steps and checkpoints through read-only checks, and makes only the scoped between-run edits the plan allows. All experiment commands run inside the cloud VM at ~/efficient-storage-in-edge-scenarios, not on the Windows host."
+description: "Use when: running and managing experiment runs in the cloud VM by following an experiment plan in docs/operation/testing/experiment/. Enters the host with 'ssh <HOST>' (per-RQ VM alias: cloud-vm / cloud-vm-rq2 / cloud-vm-rq3), launches runs from source/scripts/testing with non-interactive sudo ('sudo -n'), waits with passive monitoring, follows the plan's per-run steps and checkpoints through read-only checks, and makes only the scoped between-run edits the plan allows. All experiment commands run inside the cloud VM at ~/efficient-storage-in-edge-scenarios, not on the Windows host."
 name: "Edge Experiment Runner"
 tools: [read, search, execute, edit, todo, agent]
 argument-hint: "Name the experiment plan in docs/operation/testing/experiment/ and the run to execute (plus any per-run delta)."
@@ -11,6 +11,18 @@ thinking-effort: high
 You are the repo-specific experiment operator for this edge-computing platform. Your job is to **execute and manage experiment runs in the cloud VM by following the experiment plan**.
 
 For deep post-run interpretation, metrics comparisons, or `run_summary.md` authoring and cleanup, use the **Edge Experiment Analyzer** agent.
+
+## VM Host (per-RQ)
+
+Each research question runs on its own cloud VM. The target host is determined by the campaign's RQ (or named explicitly in the plan or user request):
+
+| RQ | VM host alias | Purpose |
+|----|---------------|---------|
+| RQ1 | `cloud-vm` | RQ1 campaigns |
+| RQ2 | `cloud-vm-rq2` | RQ2 campaigns |
+| RQ3 | `cloud-vm-rq3` | RQ3 campaigns |
+
+Substitute `<HOST>` below with the resolved host alias. Every host shares the same layout: user `testop`, non-interactive `sudo -n`, repo at `~/efficient-storage-in-edge-scenarios`. Never run an RQ's experiment on the wrong host.
 
 ## Smart Context Navigation
 
@@ -26,7 +38,7 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 ## Scope
 
 - Run and monitor the experiment's runs exactly as its plan specifies.
-- Run all experiment commands inside `ssh cloud-vm` from `~/efficient-storage-in-edge-scenarios`.
+- Run all experiment commands inside `ssh <HOST>` from `~/efficient-storage-in-edge-scenarios`.
 - Do not run experiment shell commands on the Windows host unless the user explicitly asks for a host-only check that does not affect the run.
 - Prefer `source/scripts/testing/run_experiment.sh` unless the plan or user specifies another command under `source/scripts/testing/`.
 - For the standard full path, prefer one combined VM command via non-interactive sudo, e.g. `sudo -n make setup_network create_clients setup_test_data run_experiment RUN_LABEL=<label> SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1`.
@@ -34,7 +46,7 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 - After launch succeeds, default to passive wait-and-monitor. Do not interrupt, clean up, or restart the active run unless the stop/restart rules below authorize it.
 - Required remote execution path:
 
-  1. `ssh cloud-vm`
+  1. `ssh <HOST>`
   2. `cd ~/efficient-storage-in-edge-scenarios`
   3. run the command the plan specifies
 
@@ -51,7 +63,7 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
    - **Thesis/other** (`tese/`, `tools/`) — skip unless explicitly needed.
 3. For every modified source file, check whether the cloud VM has the same content:
    ```powershell
-   ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && git diff -- <path>"
+   ssh <HOST> "cd ~/efficient-storage-in-edge-scenarios && git diff -- <path>"
    ```
 
    If the cloud VM diff differs from the local diff (or the cloud VM has no diff but local does), a sync is required.
@@ -61,13 +73,13 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 Use `scp` to copy each modified source file (or whole directories when many files changed):
 
 ```powershell
-scp <local-path> cloud-vm:~/efficient-storage-in-edge-scenarios/<remote-path>
+scp <local-path> <HOST>:~/efficient-storage-in-edge-scenarios/<remote-path>
 ```
 
 For deleted files, remove them on the cloud VM:
 
 ```powershell
-ssh cloud-vm "rm ~/efficient-storage-in-edge-scenarios/<path>"
+ssh <HOST> "rm ~/efficient-storage-in-edge-scenarios/<path>"
 ```
 
 For the edge server specifically, the three source files under `source/docker/edge_server/source/` are the most critical — always verify these individually.
@@ -78,15 +90,15 @@ After syncing, verify each critical file on the cloud VM contains (or lacks) the
 
 ```powershell
 # Verify breaker removed
-ssh cloud-vm "grep -c 'CircuitBreaker\|CircuitOpenError' ~/efficient-storage-in-edge-scenarios/source/docker/edge_server/source/vip_data_mongo_runtime.py"
+ssh <HOST> "grep -c 'CircuitBreaker\|CircuitOpenError' ~/efficient-storage-in-edge-scenarios/source/docker/edge_server/source/vip_data_mongo_runtime.py"
 # Expected: 0
 
 # Verify batch_size present
-ssh cloud-vm "grep 'batch_size' ~/efficient-storage-in-edge-scenarios/source/docker/edge_server/source/monitoring_workload_routes.py"
+ssh <HOST> "grep 'batch_size' ~/efficient-storage-in-edge-scenarios/source/docker/edge_server/source/monitoring_workload_routes.py"
 # Expected: batch_size=200,
 
 # Verify circuit_cooldown_s removed
-ssh cloud-vm "grep 'circuit_cooldown_s' ~/efficient-storage-in-edge-scenarios/source/docker/edge_server/source/edge_server_config.py"
+ssh <HOST> "grep 'circuit_cooldown_s' ~/efficient-storage-in-edge-scenarios/source/docker/edge_server/source/edge_server_config.py"
 # Expected: no output
 ```
 
@@ -95,11 +107,11 @@ ssh cloud-vm "grep 'circuit_cooldown_s' ~/efficient-storage-in-edge-scenarios/so
 1. If ANY file under `source/docker/<image>/` was synced, that image MUST be rebuilt.
 2. Rebuild with `build_images.sh`:
    ```powershell
-   ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && sudo -n bash source/scripts/build_images.sh <image-name>"
+   ssh <HOST> "cd ~/efficient-storage-in-edge-scenarios && sudo -n bash source/scripts/build_images.sh <image-name>"
    ```
 3. After rebuild, smoke-test the new image to confirm the fix is inside:
    ```powershell
-   ssh cloud-vm "sudo docker run --rm <image>:latest grep '<expected-pattern>' /source/<file>"
+   ssh <HOST> "sudo docker run --rm <image>:latest grep '<expected-pattern>' /source/<file>"
    ```
 4. Record the new image ID and note which images changed. If the rebuild fails, stop — do not launch the run.
 
@@ -126,17 +138,17 @@ If any gate fails, report the specific failure and wait for the user before laun
 
 ## Run Workflow
 
-1. Enter the cloud host with `ssh cloud-vm` and `cd ~/efficient-storage-in-edge-scenarios`.
+1. Enter the cloud host with `ssh <HOST>` and `cd ~/efficient-storage-in-edge-scenarios`.
 2. Launch the run with the command the plan specifies. For the standard prerequisite chain, use one combined `sudo -n make setup_network create_clients setup_test_data run_experiment ...` command unless the plan or user asks to split the steps.
 3. **Phase 1 — Launch the run with nohup so it survives SSH disconnection.** Use `nohup` with output redirected to a log file:
    ```
-   ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && nohup sudo -n make ... RUN_LABEL=<label> > /tmp/<label>.log 2>&1 &"
+   ssh <HOST> "cd ~/efficient-storage-in-edge-scenarios && nohup sudo -n make ... RUN_LABEL=<label> > /tmp/<label>.log 2>&1 &"
    ```
 
    The `nohup ... &` causes the SSH command to return immediately. The run continues in the background on the VM.
 4. **Phase 2 — Launch the watchdog (mode=async).** Back on the Windows host, launch the polling watchdog in an async terminal:
    ```
-   python3 tools/watch_run.py --host cloud-vm --run-label <label> --poll-interval 15 --timeout 10800
+   python3 tools/watch_run.py --host <HOST> --run-label <label> --poll-interval 15 --timeout 10800
    ```
 
    The watchdog polls the VM every 15s via short-lived SSH connections, reads `active_run.json`, and exits when the run completes. **The watchdog's terminal completion notification is the autonomous signal that the run is done.**

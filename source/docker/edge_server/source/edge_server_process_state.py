@@ -40,6 +40,20 @@ class EdgeServerProcessState:
     def mark_app_ready(self) -> None:
         self.app_ready = True
         log.info("EdgeServerProcessState marked application-ready")
+        # RQ3 v2 direct arm (approach A): emit an `app_ready` control event the
+        # moment the flag flips so the controller can admit this backend
+        # event-driven (no probe before admission). Gated on
+        # EDGE_APP_READY_EVENT=1 (default off -> non-RQ3 runs emit nothing).
+        if os.environ.get("EDGE_APP_READY_EVENT", "0") == "1":
+            try:
+                self.metric_sender.send({
+                    "event_type": "app_ready",
+                    "server_id": _get_server_mac(),
+                    "ts": time.time(),
+                })
+                log.info("app_ready control event emitted")
+            except Exception:
+                log.exception("[app-ready] event emission failed")
 
     def __post_init__(self) -> None:
         self.local_request_state = LocalRequestState(

@@ -234,6 +234,9 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "-e", "EDGE_MONGO_PRIMARY_LAN1=mongodb://10.0.0.4:27018/",
             "-e", "EDGE_MONGO_PRIMARY_LAN2=mongodb://10.0.1.4:27018/",
             "-e", f"EDGE_FLOW_ISOLATION={os.environ.get('EDGE_FLOW_ISOLATION', '0')}",
+            "-e", f"EDGE_APP_READY_EVENT={os.environ.get('EDGE_APP_READY_EVENT', '0')}",
+            "-e", f"EDGE_MONGO_READ_PREFERENCE={os.environ.get('EDGE_MONGO_READ_PREFERENCE', 'secondaryPreferred')}",
+            "-e", f"EDGE_MONGO_MAX_POOL_SIZE={os.environ.get('EDGE_MONGO_MAX_POOL_SIZE', '1')}",
             # Dynamic nodes inherit HEARTBEAT_ENABLED=false (the image default).
             # Lifecycle is handled by scale-down (graceful) + telemetry-window
             # absence timeout (failure). See

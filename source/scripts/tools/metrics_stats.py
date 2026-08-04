@@ -145,6 +145,21 @@ def extract_col(rows: list[dict], col: str) -> list[float]:
     return values
 
 
+def completed_rows(rows: list[dict]) -> list[dict]:
+    """Filter client rows to completed ones (status-aware).
+
+    Legacy 13-column CSVs (no ``status`` column) treat every row as
+    completed, so legacy runs are unaffected. Open-loop rows with
+    ``status`` = timeout/dropped/canceled are excluded — their ``latency_s``
+    is either censored (timeout) or empty, and must never enter latency
+    percentiles (RQ2 v2 plan §2.8).
+    """
+    if rows and "status" not in rows[0]:
+        return rows
+    return [r for r in rows
+            if str(r.get("status", "") or "").strip().lower() == "completed"]
+
+
 def group_by_key(rows: list[dict], key: str) -> dict[str, list[dict]]:
     groups: dict[str, list[dict]] = {}
     for row in rows:
@@ -197,8 +212,9 @@ def _append_latency_summary(stats: dict, run_name: str, scenario: str, phase: st
 
 
 def run_latency(rows: list[dict], args, file_path: Path) -> None:
+    completed = completed_rows(rows)
     scenario = "aggregate"
-    overall_stats = compute_stats(extract_col(rows, LATENCY_COL))
+    overall_stats = compute_stats(extract_col(completed, LATENCY_COL))
     print_stats("OVERALL", overall_stats, fmt_latency)
 
     # Summary CSV
@@ -208,7 +224,7 @@ def run_latency(rows: list[dict], args, file_path: Path) -> None:
     # Per-phase stats (always computed for summary CSV)
     phase_groups = sorted(group_by_key(rows, "phase").items())
     for phase, group in phase_groups:
-        phase_stats = compute_stats(extract_col(group, LATENCY_COL))
+        phase_stats = compute_stats(extract_col(completed_rows(group), LATENCY_COL))
         if args.by_phase:
             print_stats(f"phase: {phase}", phase_stats, fmt_latency)
         _append_latency_summary(phase_stats, run_name, scenario, phase, summary_csv)
@@ -218,11 +234,11 @@ def run_latency(rows: list[dict], args, file_path: Path) -> None:
 
     if args.by_lan:
         for lan, group in sorted(group_by_key(rows, "client_lan").items()):
-            print_stats(f"lan: {lan}", compute_stats(extract_col(group, LATENCY_COL)), fmt_latency)
+            print_stats(f"lan: {lan}", compute_stats(extract_col(completed_rows(group), LATENCY_COL)), fmt_latency)
 
     if args.by_endpoint:
         for ep, group in sorted(group_by_key(rows, "endpoint").items()):
-            print_stats(f"endpoint: {ep}", compute_stats(extract_col(group, LATENCY_COL)), fmt_latency)
+            print_stats(f"endpoint: {ep}", compute_stats(extract_col(completed_rows(group), LATENCY_COL)), fmt_latency)
 
 
 # ---------------------------------------------------------------------------

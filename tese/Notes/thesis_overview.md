@@ -47,6 +47,18 @@ Unless an approved RQ protocol explicitly states otherwise, thesis evaluation ru
 
 ## 3. State of the Art
 
+Across the reviewed literature, the constraints of edge deployments are
+framed less as absolute resource scarcity than as management and
+coordination complexity: resources are heterogeneous and volatile, the
+placement of capacity and the scheduling of requests are often decoupled,
+and the components of an edge stack are administered across multiple
+domains. This thesis addresses the measurable slice of that complexity —
+the three control-loop interfaces defined in Section 4 — rather than
+proposing a new scheduling, prediction, or optimization technique; it
+follows the integration direction the literature calls for, using
+standard mechanisms, and contributes a controlled experimental
+characterization of those interfaces.
+
 ### 3.1 Monitoring and Telemetry
 
 Monitoring research establishes that delivery design matters. Huang and Pierre's AdapPF varies Prometheus scrape intervals in geo-distributed cluster federations and shows that coarse collection can reduce scheduling quality, while adaptive collection can reduce monitoring traffic. Yaseen's survey of programmable network-wide monitoring identifies pull-based visibility gaps and calls for monitoring to be integrated with control and automation. Recent cloud-edge orchestration work also uses runtime telemetry for placement and rescheduling decisions, as recorded in the monitoring literature review.
@@ -118,6 +130,17 @@ This instrumentation distinguishes the time to create a container from the time 
 
 Existing RQ1, RQ2, and RQ3 campaigns are supporting platform and calibration evidence. Their telemetry-cadence, routing-policy-bundle, and trigger-composition framing is superseded by this document. They are not direct final evidence for the redesigned research questions until the interventions and measurements below are implemented and evaluated.
 
+The **RQ2 final protocol is implemented** (2026-08-04): the open-loop driver (§8), the `ba-strict` sticky-commitment arm (implemented, optional follow-up), and the v2 measurement/statistics layer (effect-size statistics at n=3 — Cliff's delta + 3/3 direction consistency, sync-cost, relief-flatten) are in place; the **18-run (6 cells × 3) v2 campaign execution remains**.
+
+The **RQ3 final protocol is implemented** (2026-08-04): the readiness gate and flow-isolation mechanism (`rq3_preparation.md`) plus the v2 evaluation design — event-driven `direct` arm (approach A: admission on an `app_ready` control event, no probe before admission), a 10 s periodic `discovery` arm, and a 15 s sensitivity cell; open-loop driver; pre-registered gap-window consequence metrics; MWU + Cliff's delta mirroring the RQ2 v2 stats layer; per-arm knob verification and selftest gates. The **13-run v2 campaign execution remains** (on `cloud-vm-rq3`).
+
+The **RQ1 final protocol is implemented** (2026-08-04): the 4-arm completeness ×
+info-age factorial (event-preserving, delayed, poll, and a **sampled-push**
+arm that delivers every third window immediately) with the open-loop driver,
+the status-aware measurement contract, and the pre-registered statistics
+(factorial-edge Mann–Whitney U + Cliff's delta, non-surge C8 verdict); the
+**20-run (4 arms × 5) v2 campaign execution remains**.
+
 ---
 
 ## 6. Research Questions
@@ -126,13 +149,15 @@ Existing RQ1, RQ2, and RQ3 campaigns are supporting platform and calibration evi
 
 > **How do verified event-preserving, delayed event-preserving, and latest-state telemetry delivery semantics affect overload observability, scaling response, and transient service quality in a stateful edge service?**
 
-The experiment compares:
+The experiment compares (full 2×2 factorial, RQ1 v2 protocol implemented
+2026-08-04):
 
-- an event-preserving reference that delivers every completed telemetry window exactly once in source order;
-- delayed event-preserving delivery of the same ordered windows, with a fixed, pre-registered delay and no burst replay; and
-- latest-state polling, where the consumer obtains only the most recent completed window and intermediate windows are not delivered.
+- an event-preserving reference that delivers every completed telemetry window exactly once in source order (fresh + complete);
+- delayed event-preserving delivery of the same ordered windows, with a fixed, pre-registered delay and no burst replay (stale + complete);
+- latest-state polling, where the consumer obtains only the most recent completed window and intermediate windows are not delivered (stale + lossy); and
+- **sampled-push** delivery, where every Nth completed window is delivered immediately and the intermediate windows are dropped (fresh + lossy) — the cell that lets the delay-vs-loss attribution be drawn cleanly.
 
-The aggregation window, scaling policy, routing policy, workload, topology, and resource limits remain fixed. The controller evaluates each delivered window when it arrives, so the effect of the specified delay on the decision timeline is intentional and measurable.
+The aggregation window, scaling policy, routing policy, workload, topology, and resource limits remain fixed. The controller evaluates each delivered window when it arrives, so the effect of the specified delay on the decision timeline is intentional and measurable. The pre-registered primary reaction metric is usable-capacity latency; the first-decision latency is descriptive-only because delivery timing confounds it in the delayed/poll/sampled arms.
 
 The purpose is not to claim that monitoring cadence has never been studied. AdapPF already shows that collection interval affects scheduler quality. This RQ isolates a more specific question: whether the controller is harmed mainly by delay, by loss of intermediate demand evidence, or by both.
 
@@ -197,7 +222,7 @@ Primary measurements include:
 - transition-window latency and failures; and
 - time from scale decision to usable capacity.
 
-**Required extension:** add a compute readiness probe and pending-backend registry; delay all pool admission until readiness succeeds; suppress direct admission in the discovery condition; and decouple propagation from backend-selection policy, warm-lease priority, and ramp behavior.
+**Required extension:** add a compute readiness probe and pending-backend registry; delay all pool admission until readiness succeeds; suppress direct admission in the discovery condition; and decouple propagation from backend-selection policy, warm-lease priority, and ramp behavior. **Implemented** (2026-08-04) and extended by the v2 protocol: the `direct` arm is genuinely event-driven (the edge emits an `app_ready` control event at readiness; the controller admits on the event with no probe before admission — measured via an `admit_source` admission-log column), and a `discovery_15` sensitivity cell shows the quantization cost scales with the discovery period. Primary consequence metrics are anchored to the **admission gap** (pool-wide old-backend `timeout_rate`/`failure_rate` over `[spawn_started, admitted]`), where the propagation quantization tail is observable, rather than the new backend's post-admission window.
 
 ---
 
@@ -226,7 +251,7 @@ The thesis uses the following methodological requirements:
 - The experimental unit is the independent run, not an individual request or individual scale event.
 - Workload order is randomized or blocked to reduce host-state and time effects.
 - Runs reset persistent containers, data state, manifests, and controller state.
-- Primary comparisons use a scheduled open-loop driver that preserves a pre-specified offered-load process independently of response latency. The current synchronous curl driver is calibration or secondary evidence only until it is replaced for the final RQ campaigns.
+- Primary comparisons use a scheduled open-loop driver that preserves a pre-specified offered-load process independently of response latency. This requirement follows Schroeder, Wierman & Harchol-Balter, *Open Versus Closed: A Cautionary Tale* (NSDI 2006): closed-loop models mask overload, and a latency-coupled driver makes the offered load differ per arm — as the RQ1 cross-campaign record acknowledges. The current synchronous curl driver is calibration or secondary evidence only until it is replaced for the final RQ campaigns; the RQ2 and RQ1 v2 protocols implement the replacement (see §5).
 - Offered request load is recorded separately from completed requests.
 - Every treatment uses the same application-readiness criterion.
 - The controller records a common event trace from demand observation through first successful traffic.

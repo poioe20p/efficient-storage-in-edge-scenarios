@@ -5,6 +5,8 @@ from collections import defaultdict
 from datetime import datetime
 from math import ceil, floor
 
+from .client_status import is_completed, is_failure as _cs_is_failure
+
 
 def safe_float(value, default: float = 0.0) -> float:
     try:
@@ -88,12 +90,14 @@ def infer_end_s(run, origin_ts: float) -> float:
     return max(candidates) if candidates else 0.0
 
 
-def is_failure(http_status: str | None) -> bool:
-    try:
-        status = int(str(http_status).strip())
-    except (TypeError, ValueError):
-        return True
-    return status < 200 or status >= 400
+def is_failure(row: dict, header=None) -> bool:
+    """Status-aware failure: only *completed* rows with http_status not 200/blank.
+
+    ``timeout``/``dropped``/``canceled`` rows are never failures. Legacy
+    13-column CSVs have no ``status`` column, so every row is ``completed``
+    and this matches the previous ``http_status``-based behavior.
+    """
+    return _cs_is_failure(row, header)
 
 
 def bucket_client_rows(rows: list[dict], origin_ts: float, bucket_s: int = 30) -> list[dict]:
@@ -101,7 +105,7 @@ def bucket_client_rows(rows: list[dict], origin_ts: float, bucket_s: int = 30) -
         raise ValueError("bucket_s must be > 0")
 
     buckets: dict[int, dict[str, object]] = defaultdict(
-        lambda: {"latencies_ms": [], "request_count": 0, "failure_count": 0}
+        lambda: {"latencies_ms": [], "request_count": 0, "completed_count": 0, "failure_count": 0}
     )
     max_index = -1
 
@@ -113,7 +117,10 @@ def bucket_client_rows(rows: list[dict], origin_ts: float, bucket_s: int = 30) -
         index = int(rel_s // bucket_s)
         bucket = buckets[index]
         bucket["request_count"] = int(bucket["request_count"]) + 1
-        bucket["failure_count"] = int(bucket["failure_count"]) + int(is_failure(row.get("http_status")))
+        if not is_completed(row):
+            continue
+        bucket["completed_count"] = int(bucket["completed_count"]) + 1
+        bucket["failure_count"] = int(bucket["failure_count"]) + int(is_failure(row))
         bucket["latencies_ms"].append(1000.0 * safe_float(row.get("latency_s"), 0.0))
         max_index = max(max_index, index)
 
@@ -125,19 +132,21 @@ def bucket_client_rows(rows: list[dict], origin_ts: float, bucket_s: int = 30) -
         bucket = buckets[index]
         latencies = list(bucket["latencies_ms"])
         request_count = int(bucket["request_count"])
+        completed_count = int(bucket["completed_count"])
         failure_count = int(bucket["failure_count"])
-        avg_latency_ms = (sum(latencies) / request_count) if request_count else 0.0
+        avg_latency_ms = (sum(latencies) / completed_count) if completed_count else 0.0
         p95_latency_ms = percentile(latencies, 0.95) if latencies else 0.0
         p99_latency_ms = percentile(latencies, 0.99) if latencies else 0.0
-        failure_rate_pct = (100.0 * failure_count / request_count) if request_count else 0.0
+        failure_rate_pct = (100.0 * failure_count / completed_count) if completed_count else 0.0
         out.append({
             "bucket_index": index,
             "bucket_start_s": index * bucket_s,
             "bucket_mid_s": index * bucket_s + (bucket_s / 2.0),
             "bucket_end_s": (index + 1) * bucket_s,
             "request_count": request_count,
+            "completed_count": completed_count,
             "failure_count": failure_count,
-            "success_count": request_count - failure_count,
+            "success_count": completed_count - failure_count,
             "avg_latency_ms": avg_latency_ms,
             "p95_latency_ms": p95_latency_ms,
             "p99_latency_ms": p99_latency_ms,
@@ -218,14 +227,17 @@ def build_container_step_series(event_rows: list[dict], origin_ts: float) -> lis
 
 def summarize_client_rows(rows: list[dict]) -> dict:
     request_count = len(rows)
-    failure_count = sum(1 for row in rows if is_failure(row.get("http_status")))
-    latencies_ms = [1000.0 * safe_float(row.get("latency_s"), 0.0) for row in rows]
-    avg_latency_ms = (sum(latencies_ms) / request_count) if request_count else 0.0
+    completed = [row for row in rows if is_completed(row)]
+    completed_count = len(completed)
+    failure_count = sum(1 for row in completed if is_failure(row))
+    latencies_ms = [1000.0 * safe_float(row.get("latency_s"), 0.0) for row in completed]
+    avg_latency_ms = (sum(latencies_ms) / completed_count) if completed_count else 0.0
     p95_latency_ms = percentile(latencies_ms, 0.95) if latencies_ms else 0.0
     p99_latency_ms = percentile(latencies_ms, 0.99) if latencies_ms else 0.0
-    failure_rate_pct = (100.0 * failure_count / request_count) if request_count else 0.0
+    failure_rate_pct = (100.0 * failure_count / completed_count) if completed_count else 0.0
     return {
         "request_count": request_count,
+        "completed_count": completed_count,
         "failure_count": failure_count,
         "avg_latency_ms": avg_latency_ms,
         "p95_latency_ms": p95_latency_ms,

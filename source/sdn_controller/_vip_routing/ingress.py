@@ -4,9 +4,11 @@ VIP server/data handling, and punt-rule installation.
 
 from os_ken.lib.packet import arp as arp_lib
 from os_ken.lib.packet import ethernet as eth_lib
-from os_ken.lib.packet import ether_types, ipv4, packet
+from os_ken.lib.packet import ether_types, ipv4, packet, tcp as tcp_lib
 
-from .config import _ROUTER_MAC, _ROUTER_OVS_PORT, logger
+from .config import (
+    _ROUTER_MAC, _ROUTER_OVS_PORT, _VIP_DATA_PER_CONNECTION, logger,
+)
 from . import flows, selection
 
 
@@ -187,7 +189,80 @@ def _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_p
 # ------------------------------------------------------------------
 
 def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_proto, *, domain) -> bool:
-    storage = selection.select_storage(controller, domain, src_mac)
+    # ── Per-connection mode (Approach B) ────────────────────────────────────
+    # A pooled edge client (EDGE_MONGO_MAX_POOL_SIZE>1) opens N connections;
+    # keying forward rules on tcp_src fans them out to N storage backends.
+    # INVARIANT: a connection is bound to one backend on its first SYN and is
+    # NEVER re-selected afterwards (SYN retransmits and established packets
+    # reuse the binding-map backend). If the bound backend is gone (unregister
+    # purges the map entry first), a non-SYN packet is dropped so the client
+    # reconnects with a fresh SYN — never a mid-connection DNAT change, which
+    # would break the established conntrack NAT.
+    per_conn = _VIP_DATA_PER_CONNECTION and ip_proto == 6
+    tcp_pkt = pkt.get_protocol(tcp_lib.tcp) if ip_proto == 6 else None
+    tcp_src_port = tcp_pkt.src_port if tcp_pkt is not None else None
+
+    if _VIP_DATA_PER_CONNECTION and not per_conn:
+        # Approach B per-connection mode: only TCP packet-ins are eligible.
+        # Never fall through to the per-client install path for non-TCP
+        # packets — a per-client forward rule (client_src_port=None, wildcard
+        # tcp_src) would match ANY source port and shadow per-connection
+        # selection for every subsequent connection from this client (probe
+        # 2026-08-03: boot-time per-client rules absorbed all episode traffic;
+        # zero per-connection rules were ever installed).
+        logger.debug(
+            "vip_data(%s): per-conn mode, non-TCP packet from %s dropped",
+            domain, src_ip,
+        )
+        return True
+
+    if per_conn and tcp_src_port is None:
+        logger.warning(
+            "vip_data(%s): per-conn mode but no TCP src port for client=%s — dropping",
+            domain, src_ip,
+        )
+        return True
+    conn_key = (domain, src_mac, src_ip, tcp_src_port) if per_conn else None
+    is_syn = bool(tcp_pkt is not None and (tcp_pkt.bits & 0x02))
+
+    if per_conn:
+        with controller._vip_data_conn_lock:
+            pinned = controller._vip_data_conn_map.get(conn_key)
+        if pinned is not None:
+            # Bound connection (first-SYN retransmit, established packet, or
+            # post-unregister re-install): reuse the recorded backend.  Never
+            # re-select — a different backend would change the DNAT mid-stream.
+            pool = (controller.vip_storage_pool_n1 if domain == "n1"
+                    else controller.vip_storage_pool_n2)
+            if pinned in pool:
+                storage = {"mac": pinned}
+            else:
+                with controller._vip_data_conn_lock:
+                    controller._vip_data_conn_map.pop(conn_key, None)
+                logger.info(
+                    "vip_data(%s): pinned backend %s gone for client=%s:%s — "
+                    "dropping (client will reconnect with a new SYN)",
+                    domain, pinned, src_ip, tcp_src_port,
+                )
+                return True
+        elif is_syn:
+            # New connection: select once and record the binding.
+            storage = selection.select_storage(controller, domain, src_mac)
+            if storage is not None:
+                with controller._vip_data_conn_lock:
+                    controller._vip_data_conn_map[conn_key] = storage["mac"]
+        else:
+            # Established packet with no binding (its backend was removed and
+            # the map entry purged): never re-select mid-stream.  Drop — the
+            # client reconnects with a new SYN and gets a fresh backend.
+            logger.info(
+                "vip_data(%s): no binding for established client=%s:%s — dropping",
+                domain, src_ip, tcp_src_port,
+            )
+            return True
+    else:
+        storage = selection.select_storage(controller, domain, src_mac)
+
     if storage is None:
         logger.warning("vip_data(%s): pool empty, packet dropped", domain)
         return True
@@ -230,7 +305,7 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
             )
             return True
 
-    # Install/update the per-client forward rule with conntrack
+    # Install/update the per-client or per-connection forward rule with conntrack
     flows.install_vip_data_forward_rule(
         controller, datapath,
         vip_ip=vip_ip, vip_mac=vip_mac, domain=domain,
@@ -239,6 +314,7 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
         backend_mac=storage_mac,
         backend_port=backend_port,
         is_cross_network=is_cross_network,
+        client_src_port=tcp_src_port if per_conn else None,
     )
 
     # Install reply rule for this client+domain (idempotent — same match means

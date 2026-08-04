@@ -14,6 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ...client_status import is_timeout_legacy
+
 # ── Config ───────────────────────────────────────────────────────
 MODE_LABELS = ["Push", "Poll-30s"]
 MODE_COLORS = ["#2196F3", "#F44336"]
@@ -120,7 +122,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
         if cr_rows:
             total = len(cr_rows)
             total_requests += total
-            failed = sum(1 for r in cr_rows if r.get("http_status", "200") == "0")
+            failed = sum(1 for r in cr_rows if is_timeout_legacy(r))
             timeouts.append((failed / total) * 100 if total else 0)
 
             # Per-phase
@@ -130,7 +132,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
                 if ph not in phase_counts:
                     phase_counts[ph] = {"total": 0, "fail": 0}
                 phase_counts[ph]["total"] += 1
-                if r.get("http_status", "200") == "0":
+                if is_timeout_legacy(r):
                     phase_counts[ph]["fail"] += 1
             for ph, d in phase_counts.items():
                 rate = (d["fail"] / d["total"]) * 100 if d["total"] else 0

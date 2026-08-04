@@ -16,6 +16,7 @@ Usage:
       --run-dirs-ep      ep_run1 ep_run2 ... \
       --run-dirs-delayed delayed_run1 ... \
       --run-dirs-ls      ls_run1 ... \
+      --run-dirs-sp      sp_run1 ... \
       --output-dir       <experiment>/graphs/comparison
 """
 
@@ -30,11 +31,13 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-ARM_ORDER = ("ep", "delayed", "ls")
+ARM_ORDER = ("ep", "delayed", "ls", "sp")
 ARM_LABELS = {"ep": "A · event-preserving",
               "delayed": "B · delayed (+30 s)",
-              "ls": "C · latest-state (poll 30)"}
-ARM_COLORS = {"ep": "#4C72B0", "delayed": "#DD8452", "ls": "#55A868"}
+              "ls": "C · latest-state (poll 30)",
+              "sp": "D · sampled-push (/3)"}
+ARM_COLORS = {"ep": "#4C72B0", "delayed": "#DD8452", "ls": "#55A868",
+              "sp": "#C44E52"}
 
 ANALYSIS_SUBDIR = os.path.join("analysis", "rq1_delivery")
 
@@ -378,6 +381,35 @@ def _phase_rows(rd, phase):
             if (r.get("phase") or "").strip() == phase]
 
 
+def _ok_rows(rows):
+    """Completed+ok requests only — v2: status=completed & http_status=200;
+    legacy: http_status not 0 and < 500. Timeout/dropped/canceled rows never
+    enter latency percentiles (censoring is reported separately, never
+    computed into latency)."""
+    out = []
+    for r in rows:
+        st = (r.get("status") or "").strip()
+        hs = str(r.get("http_status") or "").strip()
+        if st:
+            if st == "completed" and hs == "200":
+                out.append(r)
+            continue
+        try:
+            code = int(hs)
+        except ValueError:
+            continue
+        if code != 0 and 100 <= code < 500:
+            out.append(r)
+    return out
+
+
+def _completed_rows(rows):
+    """Completed requests only (offered minus timeout/dropped/canceled)."""
+    if rows and any((r.get("status") or "").strip() for r in rows):
+        return [r for r in rows if (r.get("status") or "").strip() == "completed"]
+    return rows
+
+
 def _pct(values, q):
     if not values:
         return None
@@ -386,10 +418,13 @@ def _pct(values, q):
 
 
 def _phase_pct_per_run(run_dirs, phase, q):
-    """Per-run percentile ``q`` of latency within ``phase`` (raw phase label)."""
+    """Per-run percentile ``q`` of latency within ``phase`` (raw phase label),
+    over completed+ok requests only — timeout/dropped/canceled and failed rows
+    never enter latency percentiles."""
     per_run = []
     for rd in run_dirs:
-        vals = [_fnum(r.get("latency_s")) for r in _phase_rows(rd, phase)
+        vals = [_fnum(r.get("latency_s"))
+                for r in _ok_rows(_phase_rows(rd, phase))
                 if _fnum(r.get("latency_s")) is not None]
         v = _pct(vals, q)
         if v is not None:
@@ -433,10 +468,10 @@ def graph_phase_latency(out_dir, arms_data):
                 for i, v in enumerate(pr):
                     ax.scatter(ai * 3 + pi + (i - (len(pr) - 1) / 2.0) * 0.06,
                                v, color="black", s=12, zorder=3, alpha=0.7)
-        ax.set_xticks([1, 4, 7])
-        ax.set_xticklabels([f"{labels[0]}\np50 p95 p99",
-                            f"{labels[1]}\np50 p95 p99",
-                            f"{labels[2]}\np50 p95 p99"], fontsize=7)
+        n_arms = len(ARM_ORDER)
+        ax.set_xticks([ai * 3 + 1 for ai in range(n_arms)])
+        ax.set_xticklabels([f"{labels[ai]}\np50 p95 p99"
+                            for ai in range(n_arms)], fontsize=7)
         ax.set_ylabel("latency (s)")
         ax.set_title(phase)
         ax.grid(axis="y", linestyle=":", alpha=0.4)
@@ -579,12 +614,13 @@ def graph_throughput(out_dir, arms_data):
     colors = [ARM_COLORS[a] for a in ARM_ORDER]
     means, stds, per_run = [], [], []
     for a in ARM_ORDER:
-        pr = _per_run_req(arms_data[a], lambda rows: len(rows))
+        pr = _per_run_req(arms_data[a],
+                          lambda rows: len(_completed_rows(rows)))
         means.append(statistics.mean(pr) if pr else float("nan"))
         stds.append(statistics.stdev(pr) if len(pr) > 1 else 0.0)
         per_run.append(pr)
     _bar_with_dots(ax, labels, means, stds, per_run, colors,
-                   "requests served per run")
+                   "requests served per run (completed)")
     fig.tight_layout()
     fig.savefig(_plot_path(out_dir, "throughput.png"), dpi=150)
     plt.close(fig)
@@ -597,14 +633,22 @@ def graph_throughput_per_phase(out_dir, arms_data):
     fig, ax = plt.subplots(figsize=(3.4 * len(phases), 5))
     _grouped_phase_bars(
         ax, phases,
-        lambda arm, ph: _phase_req_per_run(arm, ph, lambda rows: len(rows)),
-        "requests per phase", arms_data, "upper right")
+        lambda arm, ph: _phase_req_per_run(
+            arm, ph, lambda rows: len(_completed_rows(rows))),
+        "requests per phase (completed)", arms_data, "upper right")
     fig.tight_layout()
     fig.savefig(_plot_path(out_dir, "throughput_per_phase.png"), dpi=150)
     plt.close(fig)
 
 
 def _timeout_rate(rows):
+    if rows and "status" in rows[0]:
+        # RQ1 v2 contract: timeout is a distinct outcome class (never merged
+        # into failure; latency percentiles are descriptive-only).
+        return 100.0 * sum(1 for r in rows
+                           if (r.get("status") or "").strip() == "timeout"
+                           ) / len(rows)
+    # Legacy (no status column): curl timeout was http_status=0.
     return 100.0 * sum(1 for r in rows
                        if str(r.get("http_status")).strip() == "0") / len(rows)
 
@@ -648,14 +692,16 @@ def graph_degraded(out_dir, arms_data, threshold):
     for a in ARM_ORDER:
         pr = _per_run_req(
             arms_data[a],
-            lambda rows, X=threshold: 100.0 * sum(
-                1 for r in rows if (_fnum(r.get("latency_s")) or 0) > X)
-            / len(rows))
+            lambda rows, X=threshold: (lambda done: (
+                100.0 * sum(1 for r in done
+                            if (_fnum(r.get("latency_s")) or 0) > X
+                            and str(r.get("http_status") or "").strip() == "200")
+                / len(done)) if done else None)(_completed_rows(rows)))
         means.append(statistics.mean(pr) if pr else float("nan"))
         stds.append(statistics.stdev(pr) if len(pr) > 1 else 0.0)
         per_run.append(pr)
     _bar_with_dots(ax, labels, means, stds, per_run, colors,
-                   f"requests with latency > {threshold}s (%)")
+                   f"completed requests with latency > {threshold}s (%)")
     fig.tight_layout()
     fig.savefig(_plot_path(out_dir, f"degraded_{threshold}s.png"), dpi=150)
     plt.close(fig)
@@ -669,7 +715,8 @@ def graph_endpoint_latency(out_dir, arms_data, q):
     for a in ARM_ORDER:
         pr = _per_run_req(
             arms_data[a],
-            lambda rows: _pct([_fnum(r.get("latency_s")) for r in rows
+            lambda rows: _pct([_fnum(r.get("latency_s"))
+                               for r in _ok_rows(rows)
                                if _fnum(r.get("latency_s")) is not None], q))
         means.append(statistics.mean(pr) if pr else float("nan"))
         stds.append(statistics.stdev(pr) if len(pr) > 1 else 0.0)
@@ -775,6 +822,8 @@ def main():
                         metavar="DIR", help="Delayed (arm B) run folders")
     parser.add_argument("--run-dirs-ls", action="append", default=[],
                         metavar="DIR", help="Latest-state (arm C) run folders")
+    parser.add_argument("--run-dirs-sp", action="append", default=[],
+                        metavar="DIR", help="Sampled-push (arm D) run folders")
     parser.add_argument("--output-dir", required=True,
                         help="Where to write the graph suite.")
     args = parser.parse_args()
@@ -783,6 +832,7 @@ def main():
         "ep": _parse_run_dirs(args.run_dirs_ep),
         "delayed": _parse_run_dirs(args.run_dirs_delayed),
         "ls": _parse_run_dirs(args.run_dirs_ls),
+        "sp": _parse_run_dirs(args.run_dirs_sp),
     }
     for a in ARM_ORDER:
         kept = [rd for rd in arms_data[a]

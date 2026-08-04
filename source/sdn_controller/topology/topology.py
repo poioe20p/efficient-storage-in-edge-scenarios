@@ -467,7 +467,18 @@ class TopologyMixin:
         if not self.net or not self.host_attachment:
             return
 
-        backend_macs = (self._server_macs | self._storage_macs_n1 | self._storage_macs_n2) & set(self.host_attachment.keys())
+        # Only LOCAL backends get hop-cache paths. Peer (cross-LAN) backends
+        # are physically reached via the inter-LAN router; OVS learns their
+        # MACs on the router port, which makes a naive shortest-path compute
+        # the same 2-hop distance as a local backend and hides the router
+        # traversal entirely. Excluding them forces selection to the
+        # router-aware peer fallback (local_avg + peer_avg) so a cross-region
+        # backend is always strictly farther than a local one.
+        backend_macs = (
+            self._local_server_macs
+            | self._local_storage_macs_n1
+            | self._local_storage_macs_n2
+        ) & set(self.host_attachment.keys())
         if not backend_macs:
             return
 

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .loader import load_run
-from .simple_metrics import is_failure
+from .client_status import is_failure
 
 
 REQUEST_LEASE_RE = re.compile(
@@ -246,7 +246,7 @@ def _summarize_fault_windows(
             key=lambda row: row.timestamp,
         )
         outcome_counts = Counter(row.outcome for row in window_outcomes)
-        failure_count = sum(1 for row in window_client_rows if is_failure(row.get("http_status")))
+        failure_count = sum(1 for row in window_client_rows if is_failure(row))
         request_count = len(window_client_rows)
         summaries.append(
             {

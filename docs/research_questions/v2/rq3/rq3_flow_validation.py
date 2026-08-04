@@ -9,12 +9,18 @@ Verifies the RQ3 measurement assumptions (D5, D2):
   ``container_events.csv``), no request is attributed to it (no stale pinned
   flow survives removal).
 - **Check C (flow-delete coverage):** the number of ``request_complete``
-  handling log lines (``vip_server: client flows deleted``) ≈ the number of
-  measured requests; reported as a coverage ratio.
+  handling log lines (``vip_server: client flows deleted``) vs the number of
+  **measured requests** (``status`` in ``{completed, timeout}`` — dropped/
+  canceled never reach the service and emit no ``request_complete``); reported
+  as a coverage ratio. **Hard at coverage >= 0.9** (below =>
+  instrumentation-degraded run) per RQ3 v2 §2.8.
 - **Check D (client model):** no two requests from the same client share a
   source port within a short reuse window (one fresh TCP connection per
   request). The criterion is intentionally NOT "different backend per request"
   (under ``topology_host`` the newest backend legitimately wins repeatedly).
+  **Tolerated <= 1% reuse; > 1% fails the run** (one-connection-per-request is
+  a precondition for flow isolation; the D5 async-delete caveat is within the
+  1% allowance) per RQ3 v2 §2.8.
 
 Run-kind guard: only RQ3-arm runs (``READINESS_PROPAGATION`` in
 ``{direct, discovery}``) are processed.
@@ -31,7 +37,7 @@ import os
 import sys
 from datetime import datetime
 
-_RQ3_ARMS = {"direct", "discovery"}
+_RQ3_ARMS = {"direct", "discovery", "discovery_15"}
 _REMOVAL_EVENTS = {"die", "stop", "kill", "remove", "removed"}
 _REMOVAL_STATES = {"dead", "exited", "removed", "removing"}
 
@@ -172,15 +178,24 @@ def main() -> int:
                 # controller logs this exact prefix in state.py).
                 deletes += sum(1 for line in fh
                                if "request_complete: client flows deleted" in line)
-    measured = len(client_rows)
+    # Measured = completed requests only: request_complete is emitted after a
+    # response is flushed, so timeout/dropped/canceled rows never produce a
+    # delete event (a timeout is exactly the degraded case RQ3 measures).
+    measured = [r for r in client_rows
+                if r.get("status", "") == "completed"]
+    if not measured and client_rows:
+        measured = client_rows  # legacy CSV without a status column
+    measured_n = len(measured)
     if deletes == 0:
         print("  Check C (flow-delete coverage): SKIPPED "
               "(no 'client flows deleted' lines in controller logs)")
+        check_c_fail = False
     else:
-        coverage = deletes / measured if measured else 0.0
+        coverage = deletes / measured_n if measured_n else 0.0
+        check_c_fail = coverage < 0.9
         print(f"  Check C (flow-delete coverage): deletes={deletes} "
-              f"requests={measured} coverage={coverage:.2f} "
-              f"{'PASS' if coverage >= 0.9 else 'WARN'}")
+              f"requests={measured_n} coverage={coverage:.2f} "
+              f"{'PASS' if not check_c_fail else 'FAIL (< 0.9)'}")
 
     # ── Check D: one fresh connection per request (source-port reuse) ──
     by_client: dict[str, list[tuple[float, str]]] = {}
@@ -200,14 +215,27 @@ def main() -> int:
             if port in seen and t - seen[port] < args.reuse_window_s:
                 violations_d += 1
             seen[port] = t
+    with_port = sum(1 for entries in by_client.values()
+                    for _, port in entries if port)
+    reuse_rate = (violations_d / with_port) if with_port else 0.0
+    check_d_fail = reuse_rate > 0.01
     print(f"  Check D (one fresh connection per request): "
-          f"{violations_d} reuse violation(s) "
-          f"{'PASS' if violations_d == 0 else 'WARN'}")
+          f"{violations_d} reuse violation(s) / {with_port} with port "
+          f"rate={reuse_rate:.4f} "
+          f"{'PASS (<= 1%)' if not check_d_fail else 'FAIL (> 1%)'}")
 
-    print("  => flow-isolation valid" if not (violations_a or violations_b)
-          else "  => flow-isolation VIOLATIONS — investigate")
+    hard_fail = bool(violations_a or violations_b or check_d_fail)
+    print("  => flow-isolation valid" if not (hard_fail or check_c_fail)
+          else ("  => flow-isolation VIOLATIONS — investigate"
+                if hard_fail
+                else "  => flow-isolation DEGRADED (Check C < 0.9)"))
 
-    return 1 if (violations_a or violations_b) else 0
+    # 0 = valid; 1 = hard violation (A/B/D); 2 = instrumentation-degraded (C).
+    if hard_fail:
+        return 1
+    if check_c_fail:
+        return 2
+    return 0
 
 
 if __name__ == "__main__":

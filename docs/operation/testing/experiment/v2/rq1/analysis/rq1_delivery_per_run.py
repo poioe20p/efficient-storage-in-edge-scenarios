@@ -465,6 +465,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="RQ1 delivery-semantics per-run analyzer.")
     parser.add_argument("run_dir", help="Run folder (metrics/<timestamp>_<label>).")
+    parser.add_argument("--skip-phase-validation", action="store_true",
+                        help="Skip the generator-phase vs anchored-boundary "
+                             "check (use only for legacy v1 folders with the "
+                             "known plateau overrun; v2 runs must validate).")
     args = parser.parse_args()
 
     run_dir = os.path.abspath(args.run_dir)
@@ -492,7 +496,7 @@ def main():
 
     arm = (controller_env.get("TELEMETRY_SOURCE") or "unknown").strip()
     arm_short = {"event_preserving": "ep", "delayed_event_preserving": "delayed",
-                 "poll": "ls", "zmq": "zmq"}.get(arm, arm)
+                 "poll": "ls", "sampled_push": "sp", "zmq": "zmq"}.get(arm, arm)
     # The aggregator snapshot uses per-container keys (WINDOW_S_n1 / WINDOW_S_n2).
     window_s = _env_int(aggregator_env,
                         ("WINDOW_S", "WINDOW_S_n1", "WINDOW_S_n2"),
@@ -531,6 +535,83 @@ def main():
         phase_times.append((p.get("name", "phase"), start, end))
         acc = end
 
+    # --- request rows (status + generator phase label) + phase derivation ---
+    req_rows = _load_csv(req_path)
+    has_status = bool(req_rows) and "status" in req_rows[0]
+    has_phase_label = bool(req_rows) and any(
+        (r.get("phase") or "").strip() for r in req_rows)
+    known_phases = [p[0] for p in phase_times]
+
+    # Open-loop schedule provenance (drain/window) — additive keys written by
+    # the supervisor; absent on legacy sync runs.
+    drain_s = 0.0
+    sched_path = os.path.join(run_dir, "open_loop_schedule.json")
+    if os.path.exists(sched_path):
+        try:
+            with open(sched_path, "r", encoding="utf-8") as fh:
+                drain_s = float(json.load(fh).get("drain_s", 0.0) or 0.0)
+        except (ValueError, OSError):
+            drain_s = 0.0
+
+    if has_phase_label:
+        # RQ1 v2 rule (§2.3): phase boundaries are DERIVED from the generator
+        # `phase` label — the authoritative record of what the driver actually
+        # executed. The open-loop supervisor dispatches each phase for its
+        # nominal duration but shifts every later phase by the phase-boundary
+        # drains, so contiguous anchoring is wrong whenever a drain actually
+        # delays dispatch. Workers also progress through phases independently
+        # (per-worker drain durations differ), so per-phase label ranges can
+        # overlap across workers; only phase ORDER is globally monotonic.
+        label_times = {}
+        for name in known_phases:
+            ts = [t for t in (_iso_to_epoch(r.get("sent_at")) for r in req_rows
+                              if (r.get("phase") or "").strip() == name)
+                  if t is not None]
+            if ts:
+                label_times[name] = (min(ts), max(ts))
+        derived = []
+        for name, start, end in phase_times:
+            if name in label_times:
+                d_start, d_end = label_times[name]
+                derived.append((name, d_start, d_end))
+            else:
+                derived.append((name, start, end))  # no rows -> contiguous fallback
+        phase_times = derived
+
+        if not args.skip_phase_validation:
+            # Ordering validation: phases must start in schedule order. A worker
+            # can only enter phase i+1 after phase i's nominal duration elapsed,
+            # so min(sent_at) is non-decreasing across phases in any legitimate
+            # run; a violation means the labels are corrupt. (Overlap across
+            # workers is expected and NOT an error.)
+            prev_min = None
+            for name, d_start, _end in phase_times:
+                if name not in label_times:
+                    continue
+                if prev_min is not None and d_start < prev_min - 1e-6:
+                    sys.stderr.write(
+                        f"ERROR: phase '{name}' starts at {d_start:.1f} before "
+                        f"the previous phase's first request ({prev_min:.1f}) — "
+                        "generator phase labels are not ordered. "
+                        "Use --skip-phase-validation to force processing.\n")
+                    return 1
+                prev_min = d_start
+            # Informational span check (non-fatal): the open-loop supervisor is
+            # time-bounded per phase, so a span far beyond nominal + 2 drains +
+            # 2 windows (cross-worker stagger budget) indicates schedule/label
+            # corruption. Not fatal — the v1 plateau-overrun artifact is
+            # structurally impossible under the open-loop supervisor.
+            for i, (name, _s, end) in enumerate(phase_times):
+                if name not in label_times:
+                    continue
+                duration = float(phases_cfg[i].get("duration_s", 0))
+                if (end - label_times[name][0]) > duration + 2 * drain_s + 2 * window_s:
+                    sys.stderr.write(
+                        f"[warn] phase '{name}' span "
+                        f"{end - label_times[name][0]:.1f}s exceeds nominal "
+                        f"{duration:.1f}s + 2 drains + 2 windows — inspect "
+                        "the schedule/labels.\n")
+
     # --- per-LAN usable-capacity candidates from container_events ---
     capacity_by_lan = {lan: [] for lan in LAN_IDS}
     ce_path = os.path.join(run_dir, "container_events.csv")
@@ -566,8 +647,18 @@ def main():
         all_ep.extend(result["ep_rows"])
         all_timeline.extend(result["timeline"])
 
-    # --- service quality per phase per LAN ---
-    def is_failed(status):
+    # --- service quality per phase per LAN (status-aware, RQ1 v2 contract) ---
+    # Row contract (open-loop driver, 14th `status` column):
+    #   completed -> http_status is the real HTTP code (200 = ok, >=500 = failure)
+    #   timeout   -> http_status="000", latency_s = elapsed to timeout
+    #   dropped/canceled -> http_status="", latency_s=""
+    # Failure rate = completed-only (completed & http_status != 200).
+    # Timeout rate = status=timeout / offered. Latency percentiles are
+    # descriptive, over completed+ok requests only; timeout/canceled/dropped
+    # rows never enter latency or failure (censoring is reported by the
+    # comparison/stats layer, never conflated here).
+
+    def _legacy_failed(status):
         s = str(status or "").strip()
         if s == "0":
             return True
@@ -576,33 +667,92 @@ def main():
         except ValueError:
             return False
 
+    def _row_outcome(r, has_status):
+        if has_status:
+            st = (r.get("status") or "").strip()
+            if st == "completed":
+                # Contract: failure = completed & http_status != 200. Only 200
+                # is success for this edge service (3xx/4xx under VIP misrouting
+                # are failures, not successes).
+                return ("completed_ok"
+                        if str(r.get("http_status") or "").strip() == "200"
+                        else "failure")
+            if st == "timeout":
+                return "timeout"
+            if st == "dropped":
+                return "dropped"
+            if st == "canceled":
+                return "canceled"
+            # Unknown/missing status: consistent with completed (200-only).
+            return ("completed_ok"
+                    if str(r.get("http_status") or "").strip() == "200"
+                    else "failure")
+        # Legacy (no status column): v1 semantics (http_status 0 or >=500 failed).
+        return ("completed_ok" if not _legacy_failed(r.get("http_status"))
+                else "failure")
+
+    def _bucket(r, has_phase_label):
+        """Client-side phase attribution: generator `phase` label (v2 rule),
+        else the anchored boundary fallback (legacy runs)."""
+        if has_phase_label:
+            lbl = (r.get("phase") or "").strip()
+            return lbl if lbl in known_phases else "transition"
+        t = _iso_to_epoch(r.get("sent_at"))
+        if t is None:
+            return "transition"
+        for name, start, end in phase_times:
+            if start <= t < end:
+                return name
+        return "transition"
+
     sq = []
-    req_rows = _load_csv(req_path)
+    sq_phases = known_phases + (["transition"] if has_phase_label else [])
     for lan in LAN_IDS:
         lan_reqs = [r for r in req_rows
                     if (r.get("client_lan") or "").strip() == lan]
-        for name, start, end in phase_times:
-            phase_rows = [
-                r for r in lan_reqs
-                if start <= (_iso_to_epoch(r.get("sent_at")) or 0.0) < end]
-            # Latency percentiles over non-failed requests only.
-            lat = [v for v in (_fnum(r.get("latency_s")) for r in phase_rows
-                               if not is_failed(r.get("http_status")))
+        for name in sq_phases:
+            phase_rows = [r for r in lan_reqs if _bucket(r, has_phase_label) == name]
+            outcomes = [_row_outcome(r, has_status) for r in phase_rows]
+            # Latency percentiles over completed+ok requests only.
+            lat = [v for v in (_fnum(r.get("latency_s")) for r, o in
+                               zip(phase_rows, outcomes) if o == "completed_ok")
                    if v is not None]
             pcts = _percentiles(lat)
-            failures = sum(1 for r in phase_rows if is_failed(r.get("http_status")))
-            completed = len(phase_rows) - failures
+            completed_ok = outcomes.count("completed_ok")
+            failures = outcomes.count("failure")
+            timeouts = outcomes.count("timeout")
+            dropped = outcomes.count("dropped")
+            canceled = outcomes.count("canceled")
+            offered = len(phase_rows)
+            completed = completed_ok + failures
+            # Status-dependent columns are undefined for legacy runs (no status
+            # column): blank, not a misleading 0.
             sq.append({
                 "phase": name,
                 "network_id": lan,
-                "request_count": len(phase_rows),
+                "offered": offered,
+                "completed": completed,
                 "p50": _fmt(pcts[50]),
                 "p95": _fmt(pcts[95]),
                 "p99": _fmt(pcts[99]),
                 "failure_count": failures,
-                "failure_rate": (f"{failures / len(phase_rows):.4f}"
-                                 if phase_rows else ""),
-                "completed": completed,
+                # v2: failure over completed-only; legacy (no status column)
+                # keeps the v1 denominator (all rows), preserving the archived
+                # v1 failure-rate convention for the supporting record.
+                "failure_rate": (f"{failures / completed:.4f}"
+                                 if has_status and completed
+                                 else (f"{failures / offered:.4f}" if offered
+                                       else "")),
+                "timeout_count": (timeouts if has_status else ""),
+                # Timeout-rate denominator excludes rows that never reached the
+                # service and can never time out: canceled (phase-boundary
+                # drain artifacts) AND dropped (client-side admission, window
+                # full).
+                "timeout_rate": (
+                    f"{timeouts / (offered - canceled - dropped):.4f}"
+                    if has_status and offered - canceled - dropped > 0 else ""),
+                "dropped_count": (dropped if has_status else ""),
+                "canceled_count": (canceled if has_status else ""),
             })
 
     # --- controller overhead ---
@@ -661,8 +811,9 @@ def main():
                 "scale_down_latency_s"],
                all_timeline)
     _write_csv(os.path.join(out_dir, "phase_service_quality.csv"),
-               ["phase", "network_id", "request_count", "p50", "p95", "p99",
-                "failure_count", "failure_rate", "completed"],
+               ["phase", "network_id", "offered", "completed", "p50", "p95",
+                "p99", "failure_count", "failure_rate", "timeout_count",
+                "timeout_rate", "dropped_count", "canceled_count"],
                sq)
     _write_csv(os.path.join(out_dir, "overhead.csv"),
                ["container", "network_id", "sample_count", "mean_cpu_percent",

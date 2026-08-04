@@ -193,6 +193,47 @@ class PolicyGate:
 (`0` in `dual` → budget disabled); `margin` from `BOTTLENECK_CLASSIFY_MARGIN`.
 Read at construction in `main_n*.py` and logged at startup for provenance.
 
+### 2.3.1 `ba-strict` sticky commitment (`BOTTLENECK_STRICT_SINGLE`)
+
+Added in the RQ2 v2 rework (2026-08-04, `rq2_v2_rework_plan.md` Phase 3) as a
+**distinct, named configuration regime** (env
+`rq2_bottleneck_aware_strict.env`; allowed by the canonical-env rule — a named
+axis — sticky vs per-window commitment — not a per-experiment tweak). It keeps
+`SCALEUP_POLICY=bottleneck_aware` and adds a **sticky commitment** so the clean
+H1 test isolates "telemetry picks the right single action" from the v1
+`ba_db` both-tiers effect (v1's gate acted on whichever tier fired alone per
+window, accumulating 8 compute + 8 storage).
+
+**Knobs** (read by `scaling_config.py`, consumed directly by `PolicyGate` —
+no `scaling_policy.py` passthrough):
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `BOTTLENECK_STRICT_SINGLE` | `0` | `1` enables sticky commitment (only meaningful with `bottleneck_aware`). `0` → behavior **byte-identical** to the non-strict gate. |
+| `STRICT_COMMIT_N` | `2` | consecutive same-tier fires required to commit when only one tier fires alone |
+| `STRICT_RELEASE_N` | `3` | consecutive windows below the committed tier's threshold required to release the commitment (relief) |
+
+**Gate behavior while committed:**
+
+1. **Confidence-qualified commit** (avoids a single spurious fire locking the
+   wrong tier): the gate commits when either (a) **both** tiers fire in a
+   window (classified with the D3 margin), or (b) the **same single tier**
+   fires in `STRICT_COMMIT_N` consecutive windows.
+2. **Suppression while committed:** ONLY the committed tier can be selected.
+   When the other tier fires alone it is **suppressed** — the fire is still
+   logged (`*_fired=1`, `rejected_action=<suppressed tier>`), the decision
+   row's `reason="strict_suppressed"`, and `selected_action` = committed tier
+   (or `"none"` when only the suppressed tier fired). Verified in
+   `main_n1.py`/`main_n2.py` (20-column decision log).
+3. **Release on relief:** the commitment releases when the committed tier's
+   `score_norm` falls back under its `*_threshold` for `STRICT_RELEASE_N`
+   consecutive windows; the gate then requires the same confidence trigger to
+   re-commit and **cannot re-commit to the opposite tier before release** (no
+   chained oscillation).
+
+`BOTTLENECK_STRICT_SINGLE=0` keeps the per-window behavior of §2.3 exactly
+(regression-tested in T9).
+
 ### 2.4 Decision-log schema (extends RQ1)
 
 `_log_decision` keeps RQ1's row shape `ts, network_id, window_id, action_type, action`

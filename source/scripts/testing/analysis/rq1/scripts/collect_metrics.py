@@ -16,6 +16,8 @@ import os
 import sys
 from pathlib import Path
 
+from ...client_status import is_timeout_legacy
+
 
 def collect_run_metrics(run_dir: Path) -> dict:
     """Collect all metrics from a single run directory."""
@@ -60,7 +62,7 @@ def collect_run_metrics(run_dir: Path) -> dict:
         with open(cr_csv) as f:
             rows = list(csv.DictReader(f))
         result["total_requests"] = len(rows)
-        result["timeouts"] = sum(1 for r in rows if r.get("http_status", "200") == "0")
+        result["timeouts"] = sum(1 for r in rows if is_timeout_legacy(r))
         if result["total_requests"] > 0:
             result["timeout_rate_pct"] = (result["timeouts"] / result["total_requests"]) * 100
 
@@ -71,7 +73,7 @@ def collect_run_metrics(run_dir: Path) -> dict:
             if ph not in phases:
                 phases[ph] = {"total": 0, "timeouts": 0}
             phases[ph]["total"] += 1
-            if r.get("http_status", "200") == "0":
+            if is_timeout_legacy(r):
                 phases[ph]["timeouts"] += 1
         for ph, d in phases.items():
             d["rate_pct"] = (d["timeouts"] / d["total"]) * 100 if d["total"] else 0

@@ -1,0 +1,3 @@
+RQ2 relief analysis — run 20260804_060711_rq2_sf_cb_3 (policy=fixed_storage_first)
+  actions            : 1
+  recovered in-tier  : 0/1

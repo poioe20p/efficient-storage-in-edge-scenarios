@@ -73,6 +73,17 @@ def init_vip_routing_state(controller) -> None:
     # on request_complete). Keyed by client_mac.
     controller._vip_server_client_map: dict[str, ClientVipBinding] = {}
 
+    # Per-connection VIP_DATA bindings (Approach B, 2026-08-03):
+    # (domain, client_mac, client_ip, tcp_src) -> backend_mac.  Only populated
+    # in per-connection mode (VIP_DATA_PER_CONNECTION_FLOWS=1).  Used so an
+    # established connection is re-installed to the SAME backend after a
+    # bulk flow delete (backend unregister) — never re-selected mid-stream.
+    # Guarded by _vip_data_conn_lock (Thread 1 writes on selection/packet-in;
+    # Thread 3 prunes entries in unregister_storage_backend).  The lock is
+    # never nested with _warm_lock — no lock ordering hazard.
+    controller._vip_data_conn_map: dict[tuple[str, str, str, int], str] = {}
+    controller._vip_data_conn_lock = threading.Lock()
+
     from .config import (
         _W_CPU, _W_RAM, _W_REQUESTS, _W_HOPS,
         _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
@@ -216,6 +227,19 @@ def unregister_storage_backend(controller, mac: str, domain: str) -> None:
     controller.remove_storage_mac(mac, domain)
     clear_storage_backend_warm(controller, mac, domain)
     controller._backend_discovery_ts.pop(mac, None)
+
+    # Drop per-connection bindings pointing at the removed backend (Approach B):
+    # a connection to a removed backend must NOT be re-installed to it.  The
+    # bulk flow delete below removes all domain forward rules; established
+    # connections to OTHER backends are re-installed from the map on their
+    # next packet-in (same backend, never re-selected).
+    with controller._vip_data_conn_lock:
+        stale = [
+            k for k, b in controller._vip_data_conn_map.items()
+            if k[0] == domain and b == mac
+        ]
+        for k in stale:
+            controller._vip_data_conn_map.pop(k, None)
 
     # Delete the forward rule so new connections get a fresh backend.
     # The reply rule is NOT deleted — it's shared and handles all

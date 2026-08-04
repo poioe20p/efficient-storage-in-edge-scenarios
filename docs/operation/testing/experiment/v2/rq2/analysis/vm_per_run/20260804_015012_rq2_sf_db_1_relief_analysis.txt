@@ -1,0 +1,4 @@
+﻿RQ2 relief analysis ù run 20260804_015012_rq2_sf_db_1 (policy=fixed_storage_first)
+  actions            : 8
+  recovered in-tier  : 4/8
+  median recovery_s  : 20.2

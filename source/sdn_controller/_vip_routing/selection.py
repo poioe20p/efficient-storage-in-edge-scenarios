@@ -154,16 +154,23 @@ def select_server(controller, client_mac: str) -> dict | None:
         ram_norm = (stats.avg_ram_used_mb  / ram_max) if stats else _default
         req_norm = (stats.request_count    / req_max) if stats else _default
 
-        hops = (controller.hop_cache.get(client_mac) or {}).get(mac)
-        if hops is None:
-            if mac in controller.peer_hosts:
-                local_avg = max(controller._avg_hop_count, 1.0)
-                peer_avg  = max(controller._peer_avg_hop_count, 1.0)
-                hops = local_avg + peer_avg
-            elif mac in controller.host_attachment:
-                hops = max(controller._avg_hop_count, 1.0)
-            else:
-                hops = hops_max
+        if mac in controller.peer_hosts:
+            # Cross-LAN backend — always the router-aware estimate. Peers are
+            # excluded from the hop cache (see topology._rebuild_hop_cache),
+            # so this fallback is guaranteed to run: local hops to the router
+            # plus peer hops from the router. The router traversal cannot be
+            # bypassed for a peer, so a cross-region backend is always
+            # strictly farther than a local one (2 vs 4 in this topology).
+            local_avg = max(controller._avg_hop_count, 1.0)
+            peer_avg  = max(controller._peer_avg_hop_count, 1.0)
+            hops = local_avg + peer_avg
+        else:
+            hops = (controller.hop_cache.get(client_mac) or {}).get(mac)
+            if hops is None:
+                if mac in controller.host_attachment:
+                    hops = max(controller._avg_hop_count, 1.0)
+                else:
+                    hops = hops_max
         hop_norm = hops / hops_max
 
         cost = (_W_CPU * cpu_norm + _W_RAM * ram_norm
@@ -256,16 +263,22 @@ def select_storage(
         conn_norm = (stats.avg_connections          / conn_max) if stats else _default
         lag_norm  = ((stats.avg_repl_lag_s or 0)   / lag_max)  if stats else _default
 
-        hops = (controller.hop_cache.get(client_mac) or {}).get(mac)
-        if hops is None:
-            if mac in controller.peer_hosts:
-                local_avg = max(controller._avg_hop_count, 1.0)
-                peer_avg  = max(controller._peer_avg_hop_count, 1.0)
-                hops = local_avg + peer_avg
-            elif mac in controller.host_attachment:
-                hops = max(controller._avg_hop_count, 1.0)
-            else:
-                hops = hops_max
+        if mac in controller.peer_hosts:
+            # Cross-LAN backend — always the router-aware estimate. Peers are
+            # excluded from the hop cache (see topology._rebuild_hop_cache),
+            # so this fallback is guaranteed to run and yields local + peer
+            # hops (2 vs 4 here) — a cross-region backend is always strictly
+            # farther than a local one.
+            local_avg = max(controller._avg_hop_count, 1.0)
+            peer_avg  = max(controller._peer_avg_hop_count, 1.0)
+            hops = local_avg + peer_avg
+        else:
+            hops = (controller.hop_cache.get(client_mac) or {}).get(mac)
+            if hops is None:
+                if mac in controller.host_attachment:
+                    hops = max(controller._avg_hop_count, 1.0)
+                else:
+                    hops = hops_max
         hop_norm = hops / hops_max
 
         cost = (_W_STORAGE_CPU * cpu_norm + _W_STORAGE_RAM * ram_norm

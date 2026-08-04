@@ -110,6 +110,8 @@ docker run -dit --name edge_server_n2 --network none --restart=on-failure \
   -e HEARTBEAT_ENABLED=true \
   -e FEED_INTEGRITY_WORK_FACTOR=${FEED_INTEGRITY_WORK_FACTOR:-200} \
   -e EDGE_FLOW_ISOLATION=${EDGE_FLOW_ISOLATION:-0} \
+  -e EDGE_MONGO_READ_PREFERENCE=${EDGE_MONGO_READ_PREFERENCE:-secondaryPreferred} \
+  -e EDGE_MONGO_MAX_POOL_SIZE=${EDGE_MONGO_MAX_POOL_SIZE:-1} \
   edge_server
 
 # Review as each network will have its own mongodb shard

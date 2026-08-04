@@ -22,6 +22,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from ...loader import load_run
+from ...client_status import is_timeout
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -49,6 +50,19 @@ def _percentile(values: list[float], fraction: float) -> float:
 def _bucket_key(ts: float, bucket_s: int = 10) -> int:
     """Return bucket start timestamp for a given timestamp."""
     return int(ts // bucket_s) * bucket_s
+
+
+def _is_timeout_row(row: dict) -> bool:
+    """True when *row* is a timeout.
+
+    Open-loop rows carry ``status="timeout"``. Legacy 13-column CSVs (no
+    ``status`` column) identified timeouts by elapsed latency at the cap
+    (>= 29.9 s with CURL_MAX_TIME=30); the latency heuristic is kept for
+    those legacy rows only.
+    """
+    if "status" in row:
+        return is_timeout(row)
+    return _safe_float(row.get("latency_s")) >= 29.9
 
 
 def classify_timeouts(run_dir: Path) -> list[dict]:
@@ -113,9 +127,9 @@ def classify_timeouts(run_dir: Path) -> list[dict]:
     # Identify timeout rows and classify
     results = []
     for row in run.all_client_rows:
-        lat = _safe_float(row.get("latency_s"))
-        if lat < 29.9:
+        if not _is_timeout_row(row):
             continue
+        lat = _safe_float(row.get("latency_s"))
 
         sent_at = _safe_float(row.get("sent_at"))
         phase = row.get("phase", "unknown")
@@ -144,7 +158,7 @@ def classify_timeouts(run_dir: Path) -> list[dict]:
                        if r.get("phase") == phase
                        and r.get("endpoint") == endpoint
                        and _bucket_key(_safe_float(r.get("sent_at"))) == window_key]
-        bucket_timeouts = sum(1 for r in bucket_reqs if _safe_float(r.get("latency_s")) >= 29.9)
+        bucket_timeouts = sum(1 for r in bucket_reqs if _is_timeout_row(r))
         bucket_total = len(bucket_reqs)
         success_rate = (bucket_total - bucket_timeouts) / bucket_total if bucket_total > 0 else 1.0
 

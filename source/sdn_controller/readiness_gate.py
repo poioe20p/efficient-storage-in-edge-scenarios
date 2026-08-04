@@ -3,9 +3,11 @@
 Gates ``VIP_SERVER`` pool admission on a verified application-readiness event
 (``/ready``), under two switchable propagation modes:
 
-  - ``direct``:    probe immediately on enqueue and re-probe every
-                   ``READINESS_PROBE_RETRY_S``; admit on 200 (direct lifecycle
-                   notification).
+  - ``direct``:    RQ3 v2 (approach A, event-driven): admit on the edge's
+                   ``app_ready`` control event (no probe before admission);
+                   /ready is used only for the post-admission identity check,
+                   the event-absence safety net (``READINESS_EVENT_FALLBACK_S``),
+                   and abandonment detection.
   - ``discovery``: probe only on the ``DISCOVERY_POLL_INTERVAL_S`` cadence;
                    admit when a discovery pass observes 200 (periodic
                    discovery).
@@ -48,6 +50,13 @@ class PendingBackend:
     probe_first_wall_s: float | None = None
     app_ready_wall_s: float | None = None
     admitted_wall_s: float | None = None
+    # RQ3 v2: how this backend was admitted — "event" (app_ready control
+    # event, direct mode), "probe_fallback" (event-absence safety net, direct
+    # mode), or "probe" (discovery scan).
+    admit_source: str = "probe"
+    # Set when teardown is enqueued so a late app_ready event cannot admit a
+    # backend that is being abandoned.
+    abandoned: bool = False
 
 
 class ReadinessGate:
@@ -69,6 +78,7 @@ class ReadinessGate:
         admission_log_path: str,
         on_admit: Callable[[PendingBackend], None],
         on_abandon: Callable[[PendingBackend], None],
+        event_fallback_s: float = 5.0,
     ) -> None:
         self._propagation = propagation            # "direct" | "discovery"
         self._probe_timeout_s = probe_timeout_s
@@ -79,8 +89,14 @@ class ReadinessGate:
         self._admission_log_path = admission_log_path
         self._on_admit = on_admit
         self._on_abandon = on_abandon
+        self._event_fallback_s = event_fallback_s
 
         self._pending: list[PendingBackend] = []
+        self._confirm: list[PendingBackend] = []   # post-admission identity check
+        # app_ready events that arrived before the spawn's enqueue (startup
+        # race) — MAC -> arrival wall clock; replayed by enqueue within the
+        # event-fallback window.
+        self._late_events: dict[str, float] = {}
         self._wake = threading.Condition()
         self._last_scan_mono: float = float("-inf")
         self._csv_lock = threading.Lock()
@@ -93,21 +109,86 @@ class ReadinessGate:
         self._thread.start()
         logger.info(
             "[readiness] gate started propagation=%s probe_timeout=%.1fs "
-            "probe_max=%.1fs probe_retry=%.1fs discovery=%.1fs ready_port=%d",
+            "probe_max=%.1fs probe_retry=%.1fs discovery=%.1fs event_fallback=%.1fs "
+            "ready_port=%d",
             self._propagation, self._probe_timeout_s, self._probe_max_s,
-            self._probe_retry_s, self._discovery_interval_s, self._ready_port,
+            self._probe_retry_s, self._discovery_interval_s,
+            self._event_fallback_s, self._ready_port,
         )
 
     def enqueue(self, pb: PendingBackend) -> None:
+        replay = False
         with self._wake:
             self._pending.append(pb)
             if self._propagation == "direct":
                 # Direct lifecycle notification: wake the worker immediately.
                 self._wake.notify_all()
+                # Replay an app_ready event that arrived before this enqueue
+                # (the edge can flip ready before Thread 3 finishes the spawn
+                # registration). Only within the late-event window.
+                late_ts = self._late_events.get(pb.mac)
+                if late_ts is not None and time.time() - late_ts <= self._event_fallback_s:
+                    self._late_events.pop(pb.mac, None)
+                    replay = True
+        if replay:
+            self.admit_on_event(pb.mac)
         logger.info(
             "[readiness] enqueued pending backend name=%s mac=%s ip=%s lan=%d",
             pb.name, pb.mac, pb.ip, pb.lan,
         )
+
+    def _prune_late_events(self) -> None:
+        cutoff = time.time() - self._event_fallback_s
+        stale = [mac for mac, ts in self._late_events.items() if ts < cutoff]
+        for mac in stale:
+            self._late_events.pop(mac, None)
+
+    def admit_on_event(self, mac: str) -> bool:
+        """Admit a pending backend on its ``app_ready`` control event (direct).
+
+        Thread-safe (called from the Thread 2 control-event handler). Finds the
+        pending backend by MAC, records event-driven admission
+        (``admit_source="event"``), and enqueues a post-admission
+        identity-confirmation probe for the worker thread. Returns True if a
+        pending backend was admitted. A ``discovery`` run ignores app_ready
+        events (the cadence is the treatment). If the event arrives before the
+        spawn's ``enqueue`` (a startup race), the MAC is buffered for a short
+        window so ``enqueue`` can replay it. ``_on_admit`` is non-blocking
+        in-memory registration; all gate state mutations serialize on
+        ``_wake`` (enqueue / admit_on_event / worker scan).
+        """
+        if self._propagation != "direct":
+            return False
+        with self._wake:
+            for pb in self._pending:
+                if (pb.mac == mac and pb.admitted_wall_s is None
+                        and not pb.abandoned):
+                    now = time.time()
+                    if pb.app_ready_wall_s is None:
+                        pb.app_ready_wall_s = now
+                    pb.admitted_wall_s = now
+                    pb.admit_source = "event"
+                    try:
+                        self._on_admit(pb)
+                    except Exception:
+                        logger.exception(
+                            "[readiness] on_admit failed for %s — deferring to probe",
+                            pb.name,
+                        )
+                        pb.admitted_wall_s = None
+                        return False
+                    self._write_admission_row(pb, result="admitted")
+                    self._pending = [p for p in self._pending if p.mac != mac]
+                    self._confirm.append(pb)   # post-admission identity check
+                    logger.info(
+                        "[readiness] event-driven admission name=%s mac=%s",
+                        pb.name, pb.mac,
+                    )
+                    return True
+            # Event arrived before enqueue — buffer for the replay on enqueue.
+            self._late_events[mac] = time.time()
+            self._prune_late_events()
+            return False
 
     # ------------------------------------------------------------------
     # Worker loop (native daemon thread)
@@ -145,7 +226,7 @@ class ReadinessGate:
         admitted: list[PendingBackend] = []
         abandoned: list[PendingBackend] = []
         for pb in pending:
-            if pb.admitted_wall_s is not None:
+            if pb.admitted_wall_s is not None or pb.abandoned:
                 continue
             if now_wall - pb.spawn_complete_wall_s > self._probe_max_s:
                 # Only drop from the registry once teardown was successfully
@@ -153,9 +234,19 @@ class ReadinessGate:
                 if self._try_abandon(pb):
                     abandoned.append(pb)
                 continue
+            if (self._propagation == "direct"
+                    and now_wall - pb.spawn_complete_wall_s
+                    < self._event_fallback_s):
+                # Event-absence safety net: in direct mode, give the app_ready
+                # event time to arrive before probing (no probe before
+                # admission is the event-driven contract). Beyond the grace,
+                # probing resumes as the fallback.
+                continue
             self._probe_one(pb)
             if pb.app_ready_wall_s is not None and pb.admitted_wall_s is None:
                 pb.admitted_wall_s = time.time()
+                pb.admit_source = ("probe_fallback" if self._propagation == "direct"
+                                   else "probe")
                 try:
                     self._on_admit(pb)
                 except Exception:
@@ -170,6 +261,11 @@ class ReadinessGate:
                 self._write_admission_row(pb, result="admitted")
                 admitted.append(pb)
 
+        # Post-admission identity confirmation for event-driven admissions
+        # (direct mode): the worker probes /ready once; the event and the
+        # probe must agree on the same app_ready flag.
+        self._process_confirmations(now_wall)
+
         if admitted or abandoned:
             admitted_macs = {pb.mac for pb in admitted}
             abandoned_macs = {pb.mac for pb in abandoned}
@@ -179,8 +275,41 @@ class ReadinessGate:
                     if p.mac not in admitted_macs and p.mac not in abandoned_macs
                 ]
 
+    def _process_confirmations(self, now_wall: float) -> None:
+        """Post-admission identity check for event-driven admissions (direct).
+
+        The worker probes /ready once per event-admitted backend and logs
+        identity OK/violation; a non-200 is reported (not a gate) since the
+        flag was already true when the event fired. Blocking HTTP is safe in
+        the worker thread.
+        """
+        with self._wake:
+            confirm = list(self._confirm)
+            self._confirm = []
+        for pb in confirm:
+            url = f"http://{pb.ip}:{pb.ready_port}/ready"
+            try:
+                resp = requests.get(url, timeout=self._probe_timeout_s)
+                ok = resp.status_code == 200
+            except Exception:
+                ok = False
+            if ok:
+                logger.info(
+                    "[readiness] post-admission identity OK name=%s mac=%s",
+                    pb.name, pb.mac,
+                )
+            else:
+                logger.warning(
+                    "[readiness] post-admission identity CHECK VIOLATION "
+                    "name=%s mac=%s (event admitted but /ready != 200)",
+                    pb.name, pb.mac,
+                )
+
     def _try_abandon(self, pb: PendingBackend) -> bool:
         """Enqueue teardown + write the abandoned row; False → retry next pass."""
+        # Mark first so a late app_ready event cannot admit this backend while
+        # its teardown is being enqueued (admit_on_event checks pb.abandoned).
+        pb.abandoned = True
         try:
             self._on_abandon(pb)
         except Exception:
@@ -215,7 +344,7 @@ class ReadinessGate:
     _ADMISSION_COLUMNS = [
         "ts", "network_id", "lan", "container", "mac", "ip", "mode",
         "result", "spawn_started_ts", "spawn_complete_ts", "probe_first_ts",
-        "app_ready_ts", "admitted_ts",
+        "app_ready_ts", "admitted_ts", "admit_source",
     ]
 
     def _write_admission_row(self, pb: PendingBackend, *, result: str) -> None:
@@ -233,6 +362,7 @@ class ReadinessGate:
             _fmt_ts(pb.probe_first_wall_s),
             _fmt_ts(pb.app_ready_wall_s),
             _fmt_ts(pb.admitted_wall_s),
+            pb.admit_source,
         ]
         try:
             with self._csv_lock:

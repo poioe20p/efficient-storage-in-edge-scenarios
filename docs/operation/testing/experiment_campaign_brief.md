@@ -58,6 +58,16 @@ workflow. This brief records the current operator-facing commands and policy.
 
 ---
 
+## VM Host (per-RQ)
+
+Campaigns run **one VM per RQ** so RQ1, RQ2, and RQ3 can run in parallel. Replace
+`cloud-vm` below with the campaign's host alias: `cloud-vm` (RQ1),
+`cloud-vm-rq2` (RQ2), or `cloud-vm-rq3` (RQ3). See
+[`testing_overview.md`](testing_overview.md) for the host table and
+[`vm_provisioning.md`](vm_provisioning.md) for provisioning.
+
+---
+
 ## Canonical Launch Templates
 
 ### Canonical integrated profile

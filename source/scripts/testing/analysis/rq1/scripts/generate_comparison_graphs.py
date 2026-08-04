@@ -25,6 +25,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ...client_status import is_completed, is_timeout_legacy
+
 
 def _safe_read_csv(path: Path) -> list[dict]:
     if not path.exists():
@@ -130,18 +132,19 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
             total = len(cr_rows)
             total_requests += total
             throughputs.append(total)
-            failed = sum(1 for r in cr_rows if r.get("http_status", "200") == "0")
+            failed = sum(1 for r in cr_rows if is_timeout_legacy(r))
             timeouts.append((failed / total) * 100 if total else 0)
-            # Severely degraded: latency > 20s (any status)
-            deg20 = sum(1 for r in cr_rows
+            completed = [r for r in cr_rows if is_completed(r)]
+            # Severely degraded: latency > 20s (completed only)
+            deg20 = sum(1 for r in completed
                         if float(r.get("latency_s", 0) or 0) > 20)
             degraded_20s.append((deg20 / total) * 100 if total else 0)
             # Moderately degraded: latency > 10s
-            deg10 = sum(1 for r in cr_rows
+            deg10 = sum(1 for r in completed
                         if float(r.get("latency_s", 0) or 0) > 10)
             degraded_10s.append((deg10 / total) * 100 if total else 0)
             # Lightly degraded: latency > 5s
-            deg5 = sum(1 for r in cr_rows
+            deg5 = sum(1 for r in completed
                        if float(r.get("latency_s", 0) or 0) > 5)
             degraded_5s.append((deg5 / total) * 100 if total else 0)
 
@@ -152,7 +155,7 @@ def collect_mode_data(run_dirs: list[Path]) -> dict:
                 if ph not in phase_counts:
                     phase_counts[ph] = {"total": 0, "fail": 0}
                 phase_counts[ph]["total"] += 1
-                if r.get("http_status", "200") == "0":
+                if is_timeout_legacy(r):
                     phase_counts[ph]["fail"] += 1
             for ph, d in phase_counts.items():
                 rate = (d["fail"] / d["total"]) * 100 if d["total"] else 0

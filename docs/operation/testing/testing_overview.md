@@ -34,6 +34,26 @@ together with the durable campaign brief
 
 ---
 
+## Per-RQ Experiment VMs
+
+Long VM-backed campaigns run **one VM per research question** so RQ1, RQ2, and
+RQ3 campaigns can run in parallel. The host is a per-campaign launch parameter
+and must match the RQ under test:
+
+| RQ | VM host alias | IP | User |
+| --- | --- | --- | --- |
+| RQ1 | `cloud-vm` | `204.168.202.35` | `testop` |
+| RQ2 | `cloud-vm-rq2` | `62.238.107.159` | `testop` |
+| RQ3 | `cloud-vm-rq3` | `62.238.107.141` | `testop` |
+
+All VMs are provisioned identically (see
+[`vm_provisioning.md`](vm_provisioning.md)): Ubuntu 22.04.5 LTS, Docker, user
+`testop` with `sudo -n` NOPASSWD, repo at `~/efficient-storage-in-edge-scenarios`.
+The local SSH config defines the `cloud-vm*` aliases with the `edge-testop` key.
+The experiment-runner agent substitutes the campaign's host for `ssh cloud-vm`.
+
+---
+
 ## Architecture: Experiment Data Flow
 
 ```text
@@ -100,6 +120,40 @@ overrides (`source/scripts/testing/controller_env_overrides/`); the controller
 auto-propagates `EDGE_FLOW_ISOLATION=1` to spawned edge containers so they emit
 `request_complete` for flow isolation. See
 [RQ3 — Readiness Propagation and Traffic Admission](../../research_questions/v2/rq3/rq3_preparation.md).
+
+### Storage read preference (`EDGE_MONGO_READ_PREFERENCE`)
+
+The edge server's VIP read path connects to the data VIP with
+`directConnection=True`; the pymongo **read preference** decides whether a
+storage **secondary** can serve those reads (`secondaryOk`):
+
+- `primary` (default) — pre-fix behavior; reads to a secondary are rejected
+  (`NotPrimaryOrSecondary`/13436), so storage scale-out adds ~zero usable read
+  capacity. RQ1/RQ3 runs use this default and stay byte-identical.
+- `secondaryPreferred` — secondaries serve reads (eventual consistency).
+  Enables storage scale-out to be measured. See
+  [read_preference_data_path_finding.md](../testing/experiment/v2/read_preference_data_path_finding.md).
+
+**Two-path propagation** (mirrors `EDGE_FLOW_ISOLATION`): dynamic edge servers
+inherit the var from the controller env override; static `edge_server_n1/n2`
+read it from the **shell** at `setup_network` (`build_network_1/2.sh`). Runs
+that need `secondaryPreferred` must set it in the controller env override AND
+on the make/shell invocation.
+
+### Pooled storage fan-out (Approach B, 2026-08-03)
+
+Two more edge/controller knobs enable storage read fan-out:
+
+- `EDGE_MONGO_MAX_POOL_SIZE` (edge, default `1`) — epoch read-client pool size.
+- `VIP_DATA_PER_CONNECTION_FLOWS` (controller, default `0`) — when `1`, VIP_DATA
+  forward rules are keyed per connection (`tcp_src`) so a pooled edge client
+  spreads its connections across storage backends. Controller selects only on
+  SYN; established connections are never re-pinned (binding map).
+
+Same two-path propagation as the read-preference knob: dynamic edges inherit
+from the controller env; static edges need both vars on the shell at
+`setup_network`. See
+[read_preference_data_path_finding.md](../testing/experiment/v2/read_preference_data_path_finding.md) §7.
 
 ### Run Completion Watchdog
 

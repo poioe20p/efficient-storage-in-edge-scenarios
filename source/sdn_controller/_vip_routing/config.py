@@ -56,6 +56,20 @@ _W_STORAGE_HOPS        = float(os.environ.get("W_STORAGE_HOPS",        "0.3"))
 _VIP_IDLE_TIMEOUT = int(os.environ.get("VIP_IDLE_TIMEOUT", "30"))
 _VIP_HARD_TIMEOUT = int(os.environ.get("VIP_HARD_TIMEOUT", "120"))
 
+# Per-connection VIP_DATA flow matching (Approach B, 2026-08-03).
+# 0 (default) = per-CLIENT forward rules (one backend per edge server; the
+#   edge read client uses maxPoolSize=1, so every connection from an edge is
+#   DNAT'd to the same storage backend). Preserves pre-fix/RQ1/RQ3 behavior.
+# 1 = per-CONNECTION forward rules keyed on tcp_src: a pooled edge client
+#   (EDGE_MONGO_MAX_POOL_SIZE>1) fans its connections out to different storage
+#   backends, so storage serving capacity scales with edges x pool, not edges.
+#   Only SYNs select a backend; established connections are never re-pinned
+#   (their per-connection flow never expires), which avoids the
+#   mid-connection DNAT break that a re-select would cause.
+_VIP_DATA_PER_CONNECTION = int(
+    os.environ.get("VIP_DATA_PER_CONNECTION_FLOWS", "0")
+) > 0
+
 # Cross-network routing: OVS port number connected to the inter-LAN router.
 # 0 = disabled (local-only mode).  Set to the actual port (e.g. 3) to enable
 # forwarding DNAT'd packets via the router toward peer-network backends.

@@ -58,6 +58,13 @@ def _safe_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # Step 1 — Extract spawn events from controller logs
 # ---------------------------------------------------------------------------
@@ -84,7 +91,9 @@ def extract_spawns(run_dir: Path, tiers=("compute",)) -> list[dict]:
         log_path = run_dir / f"controller_{lan_label}.log"
         if not log_path.exists():
             continue
-        with open(log_path) as f:
+        # Controller logs can carry arbitrary bytes (e.g. UTF-8 escapes or
+        # binary fragments); decode leniently so one bad line never aborts the run.
+        with open(log_path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 # Log format: [elasticity] <tier>: spawning <name> on LAN <n> (ip=... mac=...)
                 # compute -> "compute:" (elasticity.py), storage -> "data:" (elasticity.py)
@@ -96,7 +105,15 @@ def extract_spawns(run_dir: Path, tiers=("compute",)) -> list[dict]:
                 parts = line.split(" ")
                 if len(parts) < 3:
                     continue
-                iso_ts = parts[0] + "T" + parts[1].split(",")[0]
+                # Preserve the millisecond fraction: log time is "HH:MM:SS,mmm"
+                # (comma separator). Dropping it truncates spawn_ts to whole
+                # seconds, which puts spawn_ts *before* the ms-precision
+                # decision action ts and breaks `action_ts <= spawn_ts` pairing.
+                # Tag the timestamp as UTC: controller logs are written in UTC
+                # on the VM and the decision-log ts is epoch-UTC; without the
+                # tag fromisoformat()/timestamp() resolves the naive datetime
+                # in the *local* timezone, breaking pairing on any non-UTC host.
+                iso_ts = parts[0] + "T" + parts[1].replace(",", ".") + "+00:00"
                 unix_ts = _parse_ts(iso_ts)
                 if unix_ts is None:
                     continue
@@ -143,7 +160,7 @@ def load_action_rows(run_dir: Path) -> list[dict]:
         path = run_dir / f"decision_log_{lan_label}.csv"
         if not path.exists():
             continue
-        with open(path) as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             reader = csv.DictReader(f)
             if "selected_action" not in (reader.fieldnames or []):
                 continue  # legacy/dual format — no RQ2 columns
@@ -216,10 +233,10 @@ def compute_ttft(spawns: list[dict], run_dir: Path) -> dict[int, float | None]:
 
     # Collect ALL (window_end, request_count) per MAC
     mac_windows: dict[str, list[tuple[float, int]]] = defaultdict(list)
-    with open(pns_path) as f:
+    with open(pns_path, encoding="utf-8", errors="replace") as f:
         for row in csv.DictReader(f):
             mac = row.get("server_id", "").strip()
-            rc = int(row.get("request_count", 0))
+            rc = _safe_int(row.get("request_count"))
             we = _safe_float(row.get("window_end"))
             if mac and we > 0:
                 mac_windows[mac].append((we, rc))
@@ -259,7 +276,7 @@ def compute_tfr(spawns: list[dict], run_dir: Path) -> dict[int, float | None]:
 
     # Read all rows, grouping completed_at by backend_id
     backend_timestamps: dict[str, list[float]] = defaultdict(list)
-    with open(cr_path) as f:
+    with open(cr_path, encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         if "backend_id" not in (reader.fieldnames or []):
             print(f"  [WARN] client_requests.csv has no 'backend_id' column - TFR unavailable")
@@ -308,10 +325,10 @@ def compute_initial_share(spawns: list[dict], run_dir: Path) -> tuple[dict[int, 
     window_totals: dict[float, int] = {}
     window_node_counts: dict[float, set] = {}  # window_end -> set of MACs
     first_window_data: dict[str, tuple[float, int]] = {}  # mac -> (window_end, request_count)
-    with open(pns_path) as f:
+    with open(pns_path, encoding="utf-8", errors="replace") as f:
         for row in csv.DictReader(f):
             mac = row.get("server_id", "").strip()
-            rc = int(row.get("request_count", 0))
+            rc = _safe_int(row.get("request_count"))
             we = _safe_float(row.get("window_end"))
             if not mac or we <= 0:
                 continue

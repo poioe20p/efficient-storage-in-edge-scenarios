@@ -24,7 +24,7 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 
 ## Scope
 
-- Analyze completed experiment runs under `source/scripts/testing/metrics/` on the local machine or on `cloud-vm`.
+- Analyze completed experiment runs under `source/scripts/testing/metrics/` on the local machine or on any of the experiment VMs (`cloud-vm` for RQ1, `cloud-vm-rq2` for RQ2, `cloud-vm-rq3` for RQ3). The hosting VM must be named by the user or resolved from the experiment plan.
 - Use the repository's run-analysis workflow in `.github/skills/metrics-run-summary/SKILL.md` and `docs/operation/testing/analysis_toolchain_plan.md`; always confirm whether logs should be deleted.
 - Base every conclusion on concrete artifacts (`resource_stats.csv`, `per_node_stats.csv`, `container_events.csv`, `phases_snapshot.json`, controller logs, generated summaries) and the analysis CLIs under `source/scripts/testing/analysis/` — never on assumption.
 - You may write or update `run_summary.md`, produce retained CSV evidence, remove transient request CSVs and controller logs after analysis, copy reduced run folders back from the cloud host, verify the local copy, and delete the remote copy when that workflow is allowed.

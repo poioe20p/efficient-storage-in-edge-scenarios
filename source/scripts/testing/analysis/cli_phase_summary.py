@@ -60,9 +60,13 @@ def run(run_dir: Path) -> None:
         print("[cli_phase_summary] no phases found — skipping")
         return
 
+    from .client_status import is_completed
+
     # ── Build per-phase latency percentiles ──────────────────────────────
     latencies_by_phase: dict[str, list[float]] = defaultdict(list)
     for row in r.all_client_rows:
+        if not is_completed(row):
+            continue
         phase = str(row.get("phase", "unknown"))
         lat_s = _safe_float(row.get("latency_s"), 0.0)
         latencies_by_phase[phase].append(lat_s * 1000.0)
@@ -70,6 +74,8 @@ def run(run_dir: Path) -> None:
     # ── Build per-phase LAN latency ──────────────────────────────────────
     latencies_by_phase_lan: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     for row in r.all_client_rows:
+        if not is_completed(row):
+            continue
         phase = str(row.get("phase", "unknown"))
         lan = str(row.get("client_lan", "unknown"))
         lat_s = _safe_float(row.get("latency_s"), 0.0)

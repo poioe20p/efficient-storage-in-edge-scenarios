@@ -78,6 +78,18 @@ storage reclaim completes **in-window** (RQ3 v7 precedent).
 > median-era composite control (G0-v4). The composite reproduces the mean-era
 > envelope (see [`mean_vs_median_signal_finding.md`](mean_vs_median_signal_finding.md) §6).
 
+> **⚠ Data-path fix (2026-08-03) — control re-run required:** the 2026-08-03
+> `cgr_v3_*`/`cgr_v4_*` tables above were produced with the storage-serving
+> data-path defect present: `EDGE_MONGO_READ_PREFERENCE` unset (`primary`) meant
+> storage **secondaries never served reads** (`NotPrimaryOrSecondary`/13436), so
+> the scalable arm's DB-latency relief (4.6 ms vs 177 ms) is **compute-driven**
+> (more edge servers → less edge queueing → less DB concurrency), NOT
+> storage-serving-driven. After the fix, both arms run with
+> `EDGE_MONGO_READ_PREFERENCE=secondaryPreferred` (plus the shell var for static
+> edges) and the control is re-run as `cgr_v5_scalable`/`cgr_v5_noscale` — see
+> [`read_preference_data_path_finding.md`](read_preference_data_path_finding.md).
+> The §5 tables will be replaced by the `cgr_v5_*` pair once validated.
+
 ### 5.1 Service quality (user-facing)
 | Metric | Scalable | No-scale | Effect |
 |---|---|---|---|

@@ -21,6 +21,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from ...loader import load_run
+from ...client_status import is_completed
 
 
 def _safe_float(v, default: float = 0.0) -> float:
@@ -84,6 +85,9 @@ def compute_time_to_capacity(run_dir: Path) -> list[dict]:
         # Exclude feed_ranking in cross-region phases
         crr = phase_cross_region.get(phase, 0)
         if endpoint == "feed_ranking" and crr > 0:
+            continue
+
+        if not is_completed(row):
             continue
 
         phase_start = phase_starts[phase]

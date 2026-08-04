@@ -1,0 +1,7 @@
+﻿RQ2 decision analysis ù run 20260804_002502_rq2_ba_db_1 (policy=bottleneck_aware, episode=data_bound)
+  scale_up rows (deduped)     : 257
+  action counts               : compute=8 storage=8
+  budget used per LAN (max)   : lan1 c=4 s=4; lan2 c=4 s=4
+  classifier-vs-episode agree : 24/31 (77.4%)
+  T9.8 fire-keyed scale-down  : OK
+  counterbalance cell         : policy=bottleneck_aware, episode=data_bound, replicate=20260804_002502_rq2_ba_db_1

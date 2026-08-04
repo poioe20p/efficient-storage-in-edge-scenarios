@@ -10,6 +10,28 @@ from typing import Optional
 
 from .events import ElasticityEvent, parse_logs
 
+# Status-aware helpers for client_requests.csv rows (open-loop `status`
+# column). Re-exported here so consumers can import them from either module.
+from .client_status import (  # noqa: F401
+    CANCELED,
+    COMPLETED,
+    DROPPED,
+    TIMEOUT,
+    completed_count,
+    completed_rows,
+    failure_count,
+    is_canceled,
+    is_completed,
+    is_dropped,
+    is_failure,
+    is_timeout,
+    is_timeout_legacy,
+    latency_values,
+    offered_count,
+    row_status,
+    timeout_count,
+)
+
 
 @dataclass
 class PhaseSpec:

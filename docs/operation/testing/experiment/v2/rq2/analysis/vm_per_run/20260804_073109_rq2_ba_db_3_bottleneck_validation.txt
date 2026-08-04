@@ -1,0 +1,4 @@
+RQ2 bottleneck validation — run 20260804_073109_rq2_ba_db_3 (policy=bottleneck_aware, episode=data_bound)
+lan,episode,n_windows,proc_ms,cpu_pct,db_ms,storage_cpu_pct,verdict
+1,data_bound,37,16.20,40.18,216.98,39.73,PASS
+2,data_bound,36,16.77,48.21,152.54,44.30,PASS

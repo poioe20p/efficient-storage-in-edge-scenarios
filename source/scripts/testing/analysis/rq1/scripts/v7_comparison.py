@@ -3,6 +3,8 @@ import csv, sys
 from pathlib import Path
 import numpy as np
 
+from ...client_status import is_timeout_legacy
+
 BASE = Path("/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics")
 PUSH_DIRS = [
     BASE / "20260721_051833_rq1_v7_gap_push_1",
@@ -44,7 +46,7 @@ def collect(mode_dirs):
             total_reqs += 1
             ph = row.get("phase", "unknown")
             phase_reqs[ph] = phase_reqs.get(ph, 0) + 1
-            if row.get("http_status") == "0":
+            if is_timeout_legacy(row):
                 total_timeouts += 1
                 phase_fails[ph] = phase_fails.get(ph, 0) + 1
 

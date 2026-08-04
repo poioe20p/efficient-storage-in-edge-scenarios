@@ -58,6 +58,22 @@ class ControlEventDispatcher:
                 "containers", _FLOW_ISOLATION_WARMUP_S,
             )
 
+    def process_app_ready_events(self, summary, readiness_gate) -> None:
+        """Handle app_ready control events (RQ3 v2 direct arm).
+
+        Routes each ``app_ready`` event (``server_id`` = backend MAC) to the
+        readiness gate for event-driven admission. No-op when the gate is None
+        (``READINESS_PROPAGATION == "off"``); unknown/unpending MACs are
+        ignored (e.g. static servers that boot before the run).
+        """
+        if readiness_gate is None:
+            return
+        for event in summary.control_events:
+            if event.get("event_type") == "app_ready":
+                mac = event.get("server_id")
+                if mac:
+                    readiness_gate.admit_on_event(mac)
+
     def _log_storage_ready(self, info, source: str) -> None:
         if info.ready_logged or info.spawn_started_monotonic_s <= 0:
             return

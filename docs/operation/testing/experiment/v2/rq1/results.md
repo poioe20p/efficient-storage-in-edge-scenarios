@@ -1,5 +1,98 @@
 # Results — RQ1 Telemetry Delivery Semantics (Pre-Flight / Ground)
 
+> **RQ1 v2 (final evidence):** the v1 9-run campaign below is the
+> **v1 / supporting record** once the v2 campaign completes. v2 adds Arm D
+> (sampled-push — the missing fresh+lossy cell), runs 4 arms × 5 = 20 runs
+> under the open-loop driver, and applies the pre-registered statistics
+> (factorial-edge MWU + Cliff's delta, non-surge C8 verdict). Authoritative
+> spec: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md); v2 contracts in
+> `analysis_focus.md` §0. This section is the v2 template — populate it
+> per the campaign (timeline + per-arm tables + judgment), mirroring the v1
+> sections below under the v2 contracts.
+
+---
+
+## v2 Campaign (20 runs) — TEMPLATE
+
+**Status**: ⏳ not yet executed · Plan: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md) · Matrix: [`run_matrix.md`](run_matrix.md) §9
+
+**Config:** open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`,
+`CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`); 4 arms × 5 = 20
+runs; 5 counterbalanced blocks (seeds 2001–2005, orders in
+`counterbalance_order_v2.csv`); Arm C `POLL_INTERVAL_S=30` on the shell; Arm D
+`rq1_sampled_push.env` (`SAMPLE_EVERY=3`).
+
+| Run | Arm | Status | Cumulative analysis | Conclusions | Changes made | Expectations |
+| --- | --- | --- | --- | --- | --- | --- |
+| Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | 🚧 in progress | Gates (a)–(c) ✅; **G2 calibration (Arm A) re-run under true open-loop: BLOCKED** — see below | True open-loop G2 (`20260804_165925_rq1_delivery_ep_calib2`) shows **catastrophic overload collapse + lan1 overload-detection asymmetry**: plateau 120 req/s/LAN → 58%/37% timeout, dropped 3.1%/15.5% (>1% rule → raise `INFLIGHT_WINDOW`), lan1 detects only 14 overload windows (lan2: 123) yet is the worse-performing LAN → lan1 under-scales. **Blocked pending root-cause + calibration retune.** | `_rq1_launch.sh`: env → make vars (fixed launch); G2 result now real open-loop but FAILED | Re-run G2 after retune (rate/window); then Arm D dry-run + gates (f)/(h) |
+| Blocks 1–5 — 20 runs | — | ⏳ | — | — | — | See `run_matrix.md` §9 |
+
+**⚠️ Calibration runs INVALIDATED (launch-env bug, 2026-08-04):** both
+`20260804_153342_rq1_delivery_ep_calib` and `20260804_162043_rq1_delivery_sp_calib`
+(exit 0) ran the **legacy latency-coupled sync driver** — the launch wrapper's
+`export TRAFFIC_DRIVER_MODE=open_loop ...` was stripped by sudo `env_reset`
+before `make`, so `INFLIGHT_WINDOW`/`DRAIN_S`/`STORAGE_CPUS`/`EDGE_CPUS`/
+`WAN_RTT_MS`/`RANDOM_SEED` never reached the run. They are retained as
+sync-driver reference evidence only; **none of their open-loop gates count**.
+Fix (verified on VM): knobs now passed as make command-line variables. Re-run
+pending — this block will be replaced by the open-loop calibration summary.
+
+**🚨 G2 calibration re-run (Arm A `event_preserving`, TRUE open-loop)
+`20260804_165925_rq1_delivery_ep_calib2` — exit 0, BLOCKED on two problems:**
+
+1. **Catastrophic overload collapse (both LANs).** With the open-loop driver
+   the offered rate is preserved (not collapsed by latency): plateau
+   71,638/71,629 offered per LAN ≈ **120 req/s/LAN**, vs the sync-driver run's
+   ~82 req/s total. Result: lan1 timeout_rate 87.7% (41,380 timeout / 47k
+   non-dropped), completed only 8.1% (5,825), p50 latency 21.9 s; lan2
+   timeout_rate 68.2% (26,252), completed 17.1% (12,255), p50 236 ms. `dropped`
+   = 3.13% (lan1) / 15.51% (lan2) — **both > 1%, triggering the G2 rule to
+   raise `INFLIGHT_WINDOW`** (or equivalently the offered rate is far above
+   the calibrated scale; the sync-driver "82 req/s" was a latency-collapsed
+   artifact, not a load cap).
+2. **lan1 overload-detection / scaling asymmetry (inverse of v1's Arm C
+   lan2).** lan1 window_log flagged only 14/173 windows overload, lan2
+   123/167 — yet lan1 was the WORSE-performing LAN. lan1 controller made only
+   2 scale-up decisions (lan2: 6), lan1 scaled to dyn2 only (lan2: dyn2/dyn3/
+   dyn5), and lan1's resource_stats show `server_count` dropping back to 1
+   mid-plateau. lan1 DB median 1.46 s vs lan2 13.7 s — lan1's overload signal
+   under-fires while its service collapses (58% timeout).
+
+**G2 decision rule outcome:** `dropped` > 1% on both LANs → per the
+pre-registered rule `INFLIGHT_WINDOW` must be raised (or the offered rate
+re-tuned so the overload is a designed, bounded outcome rather than a
+collapse). **Blocked pending root-cause of the lan1 detection asymmetry and a
+calibration retune — no campaign blocks may start until resolved.**
+
+**G2 calibration — Arm A `event_preserving` (INVALID — sync driver; reference only):**
+- Throughput: plateau 81.9 req/s vs 4.0 idle; 51,065 offered, 99.4% HTTP 200.
+- Latency: plateau p50 239 ms / p95 1,060 ms; idle ~6 ms.
+- Scale-up pre/post: lan1 p50 739→180 ms, lan2 538→252 ms; 1→4 servers/LAN.
+- Delivery: 100% (0 missed); delivery-delay p50 284 ms; info-age at scale-up p50 261 ms.
+- **These are sync-driver numbers — NOT the open-loop calibration.**
+
+**Arm D `sampled_push` dry-run (INVALID — sync driver; reference only):**
+- Delivered 41/124 = 0.3306 per LAN; delivery-delay p50 242 ms; scale-down fired both LANs; info-age at scale-up p50 340 ms.
+- **Sync-driver evidence only — open-loop re-run pending.**
+
+**Verdict template (populate after the campaign):**
+
+- C1–C6 (artifact, Arm A clean reference, Arm B delay, Arm C loss, **Arm D
+  delivered fraction ∈ [0.30, 0.36] + sub-second delivery delay**, overload,
+  scale-up): pending.
+- **C7 scale-down** — per-arm ≥ 1 decision/LAN, reported from `decision_log`
+  **and** `container_events` jointly (bounded claim; `removal_latency_s`
+  cross-check in the stats output).
+- **C8 non-surge** — cross-arm comparison; verdict via
+  `rq1v2_p3_01_stats.py` (DELAY PENALTY / NULL / UNANTICIPATED).
+- **C9 ordering** — factorial edges on usable-capacity latency, timeout_rate,
+  failure_rate, time-to-recover, info-age at decision (MWU + Cliff's delta).
+
+**Appendix — v1 9-run campaign (2026-08-02, supporting record):** the
+sections below remain the archived v1 record with its caveats (latency-coupled
+sync driver; n=3; anchored phase bucketing corrected per the generator-label
+note; C lan2 asymmetry pending root-cause in v2).
+
 **Date**: 2026-08-02 · **Experiment Plan**: [experiment_plan.md](experiment_plan.md) · **Runs**: `rq1_delivery_ep_preflight`, `rq1_delivery_delayed_preflight`, `rq1_delivery_ls_preflight` (×3)
 
 This file records the **pre-flight / ground-definition phase** of the RQ1

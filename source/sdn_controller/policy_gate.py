@@ -25,6 +25,9 @@ from .scaling_config import (
     _SCALEUP_POLICY,
     _ACTION_BUDGET_PER_TIER,
     _BOTTLENECK_CLASSIFY_MARGIN,
+    _BOTTLENECK_STRICT_SINGLE,
+    _STRICT_COMMIT_N,
+    _STRICT_RELEASE_N,
 )
 from .scaling_policy import ScaleUpVerdict
 
@@ -56,6 +59,20 @@ class PolicyGate:
         self._margin = (margin if margin is not None
                         else _BOTTLENECK_CLASSIFY_MARGIN)
         self._used: dict[Tier, int] = {"compute": 0, "storage": 0}
+        # ba-strict (sticky commitment) state.
+        self._strict = bool(_BOTTLENECK_STRICT_SINGLE)
+        self._strict_commit_n = max(1, _STRICT_COMMIT_N)
+        self._strict_release_n = max(1, _STRICT_RELEASE_N)
+        self._committed: Tier | None = None
+        self._single_fire_streak: dict[Tier, int] = {"compute": 0, "storage": 0}
+        self._relief_streak = 0
+        self._suppressed: Tier | None = None
+        if self._strict and self.mode == "bottleneck_aware":
+            logger.info(
+                "policy_gate: STRICT sticky-commit ON "
+                "(commit_n=%d release_n=%d)",
+                self._strict_commit_n, self._strict_release_n,
+            )
         logger.info(
             "policy_gate: mode=%s budget_per_tier=%d margin=%.3f",
             self.mode, self._budget, self._margin,
@@ -82,6 +99,8 @@ class PolicyGate:
         if self.mode == "fixed_storage_first":
             return ("storage",) if storage_v.fired else ()
         # bottleneck_aware
+        if self._strict:
+            return self._select_strict(compute_v, storage_v)
         if compute_v.fired and storage_v.fired:
             return (self.classify(compute_v, storage_v),)
         if compute_v.fired:
@@ -89,6 +108,71 @@ class PolicyGate:
         if storage_v.fired:
             return ("storage",)
         return ()
+
+    def _select_strict(self, compute_v: ScaleUpVerdict,
+                       storage_v: ScaleUpVerdict) -> tuple[Tier, ...]:
+        """Sticky-commit selection: once committed to a tier, suppress the
+        other tier until the committed tier shows relief."""
+        fired = [t for t, v in (("compute", compute_v), ("storage", storage_v))
+                 if v.fired]
+        self._suppressed = None
+
+        # 1. Release on relief of the committed tier.
+        if self._committed is not None:
+            committed_v = (compute_v if self._committed == "compute"
+                           else storage_v)
+            if committed_v.score_norm < committed_v.threshold:
+                self._relief_streak += 1
+            else:
+                self._relief_streak = 0
+            if self._relief_streak >= self._strict_release_n:
+                logger.info("policy_gate: STRICT released %s (relief)",
+                            self._committed)
+                self._committed = None
+                self._relief_streak = 0
+
+        # 2. Confidence-qualified commit (only when not currently committed).
+        if self._committed is None:
+            if compute_v.fired and storage_v.fired:
+                self._committed = self.classify(compute_v, storage_v)
+            else:
+                for tier in ("compute", "storage"):
+                    self._single_fire_streak[tier] = (
+                        self._single_fire_streak[tier] + 1 if tier in fired else 0)
+                candidates = [t for t in ("compute", "storage")
+                              if self._single_fire_streak[t] >= self._strict_commit_n]
+                if candidates:
+                    self._committed = candidates[0]
+            if self._committed is not None:
+                self._single_fire_streak = {"compute": 0, "storage": 0}
+                self._relief_streak = 0
+                logger.info("policy_gate: STRICT committed to %s", self._committed)
+
+        # 3. Act under commitment.
+        if self._committed is not None:
+            if self._committed in fired:
+                return (self._committed,)
+            # The other tier fired alone -> suppressed (counterfactual kept via
+            # *_fired=1 in the decision log).
+            self._suppressed = fired[0] if fired else None
+            return ()
+
+        # 4. Not committed yet -> current per-window behavior.
+        if compute_v.fired and storage_v.fired:
+            return (self.classify(compute_v, storage_v),)
+        if compute_v.fired:
+            return ("compute",)
+        if storage_v.fired:
+            return ("storage",)
+        return ()
+
+    def strict_enabled(self) -> bool:
+        """True when the sticky-commit mode is active (ba-strict arm)."""
+        return self._strict
+
+    def strict_committed(self) -> Tier | None:
+        """The tier currently committed to (None when not committed)."""
+        return self._committed
 
     def classify(self, compute_v: ScaleUpVerdict,
                  storage_v: ScaleUpVerdict) -> Tier:

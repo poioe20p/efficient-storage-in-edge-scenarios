@@ -73,6 +73,29 @@ must honor them):
   lifecycle/spawn transients — with CPU/DB-latency elevation as a secondary
   diagnostic. A run whose induced bottleneck does not match its label
   (criterion 2) is flagged before any policy comparison.
+- **Decision-signal statistic (median-era, 2026-08-03):** the decision-log
+  evidence (`score_norm`, `bottleneck_class`, `*_fired`) is computed from
+  **median** latency (`LATENCY_SIGNAL_MODE=median`) with the **composite
+  storage signal** (storage CPU 0.60 + median DB latency 0.40, G0-v4) —
+  consistent with the median-based validator. RQ2 adds the **Option-2 tuning**:
+  `SCALEUP_STORAGE_CPU_FLOOR=35` (2026-08-03) so compute-bound lifecycle CPU
+  transients (29–31 %) cannot trigger storage; residual compute-bound storage
+  fires are latency-driven tail outliers (accepted). Calibration evidence:
+  `20260803_*_cal{,2}` runs + `run_matrix.md` §6. Block-1 runs from 2026-08-02
+  used the mean-era signal and are **superseded** (re-run on this config; see
+  `mean_vs_median_signal_finding.md`).
+- **Data-path / read preference (data-path fix 2026-08-03):** the first
+  Block-1 set (`20260803_114003_rq2_cf_cb_1` … `20260803_141034_rq2_sf_db_1`)
+  had `EDGE_MONGO_READ_PREFERENCE` unset (`primary`) — storage **secondaries
+  never served reads** (rejected with `NotPrimaryOrSecondary`/13436), so
+  storage scale-out produced ~zero usable read capacity and the data-bound
+  cross-over was confounded. Those 6 runs were **deleted** and Block 1 is
+  **re-run on the fixed path** — all re-run cells (and the control re-run) set
+  `EDGE_MONGO_READ_PREFERENCE=secondaryPreferred` so secondaries serve reads;
+  storage serving is now measurable. Storage per-node `request_count` is an
+  **activity-window flag** (max ~1/poll), NOT a request volume — never divide
+  it by compute `request_count`. See
+  `read_preference_data_path_finding.md`.
 - **Budget reporting:** budget is per LAN (D4); report per-LAN and the 2-LAN
   aggregate.
 - **Grouping:** runs grouped by cell from the run-folder pattern
@@ -150,3 +173,108 @@ names).
 
 **Run location:** where the data lives (cloud VM), then `scp` the run folders
 back locally for analysis — same convention as RQ1.
+
+---
+
+## 7. RQ2 v2 measurement contract (final evidence)
+
+This section **supersedes §1–§6 as the measurement contract for the final RQ2
+evidence** (the v1 contract above remains the supporting record). Spec:
+`rq2_v2_rework_plan.md` §2. Implemented v2 analyzers live at
+`docs/research_questions/v2/rq2/` (referenced, not duplicated):
+
+| Analyzer | Purpose | Output |
+|---|---|---|
+| `rq2v2_p2_01_sync_cost.py` | replica-sync action cost per added storage member | `sync_cost.csv` |
+| `rq2v2_p2_02_relief_flatten.py` | secondary relief-flatten signal (score plateau after action) | `relief_flatten.csv` |
+| `rq2v2_p2_03_stats.py` | pre-registered statistics on `campaign_dataset.csv` | `stats_summary.csv` |
+
+### 7.1 `status`-aware metrics (row-value contract)
+
+`client_requests.csv` gains a **14th/last column `status`** with classes
+`completed | timeout | dropped | canceled` (all consumers audited in the
+Phase-1 pass). Definitions with **unified denominators**:
+
+| Metric | Definition | Denominator |
+|---|---|---|
+| **Offered** | all rows (every dispatched request) | — |
+| **Completed** | `status=completed` | offered |
+| **Timeout rate** — the **primary degradation statistic**, defined for every run | `status=timeout` / offered | offered |
+| **Failure rate** | `status=completed` **and** `http_status` not in (`"200"`, `""`) | completed |
+| **Dropped / canceled** | `status=dropped` / `status=canceled` | reported separately; **excluded from latency and failure** |
+
+Row-value contract (implemented in the driver): `timeout` →
+`http_status="000"`, `latency_s` = elapsed to timeout; `dropped`/`canceled` →
+`http_status=""`, `latency_s=""`. Never compute failure from a timeout row;
+never let a stale consumer reintroduce the cap artifact into p99.
+
+### 7.2 Sync-cost metric
+
+`rq2v2_p2_01_sync_cost.py` (CLI: `<run_dir> [--output FILE]`) — measures the
+MongoDB **initial-sync cost** paid when a storage member is added: from
+`service_logs/edge_storage_*.log` (STARTUP2 → SECONDARY transitions +
+`initial sync done` `bytesToCopy`; `rs_secondary_ready` as fallback),
+`container_events.csv`, and `resource_stats*.csv`/`per_node_stats.csv`.
+`sync_cost.csv` columns: `member_id, add_ts, first_secondary_ts,
+sync_duration_s, bytes_applied, storage_cpu_during_sync_pct, source`.
+`bytes_applied` is `null` when unobtainable (sync duration + storage CPU are
+the primary metrics). A cell that adds no storage produces a header-only file
+(reported as counts + medians, not tested). **Not inferred from existing
+artifacts.**
+
+### 7.3 Relief-flatten metric (secondary relief signal)
+
+`rq2v2_p2_02_relief_flatten.py` (CLI: `<run_dir> [--output FILE]
+[--flatten-window-s 120]`) — per spawned scale-up action, whether the targeted
+tier's `score_norm` **stops rising / plateaus** within
+`RELIEF_FLATTEN_WINDOW_S` after the action (`plateau_within_window`), in
+addition to the existing below-threshold recovery
+(`recovered_below_threshold`); `relief_signal` = either. Output:
+`relief_flatten.csv` (columns `window_id, action_ts, selected_action,
+targeted_tier, score_norm_at_action, score_norm_peak_after,
+plateau_within_window, recovered_below_threshold, relief_signal`).
+
+### 7.4 Statistics contract (pre-registered, effect-size at n=3)
+
+`rq2v2_p2_03_stats.py` (CLI: `--dataset campaign_dataset.csv
+[--output stats_summary.csv]`):
+
+- **n = 3 per cell → no α claims.** Mann–Whitney U at n=3 has minimum p = 0.10
+  and is reported **descriptively** only; conclusions rest on **Cliff's delta
+  magnitude** (≥ 0.6 = large) and **direction consistency across all 3
+  replicates**. Thesis claims are scoped to what this supports (no
+  significance language).
+- **Pre-registered comparison hierarchy** (per episode):
+  - *headline*: **aligned vs mis-aligned** (`cf` vs `sf` in cb; `sf` vs `cf`
+    in db) — the cross-over proof;
+  - *primary*: **`ba` vs mis-aligned** (value-of-information) and **`ba` vs
+    aligned** (equivalence — within 1.5× of the aligned median);
+  - *exploratory*: `cf` vs `sf` efficiency — Cliff's delta only, no claim.
+  Metrics: `timeout_rate`, `failure_rate`, `node-minutes`, `time-to-recover`.
+- **No censored value enters MWU** — latency percentiles are descriptive only
+  (median-of-replicates + per-run scatter + IQR) with a **censoring flag**
+  where the 300 s cap binds.
+- **≥3 defined values rule:** a comparison is evaluated only where all 3 runs
+  per cell have a defined value; cells with undefined values (e.g.
+  `cf_cb`/`sf_cb` time-to-recover, cells that add no storage for sync-cost)
+  are excluded and reported as counts + medians (Cliff's delta only).
+- Output: `stats_summary.csv` (rows `episode, pair, metric, n_a, n_b,
+  median_a, median_b, mwu_p, clifffs_delta, evaluated, note`).
+
+### 7.5 Censoring rule (latency percentiles)
+
+With `CURL_MAX_TIME=300`, any latency percentile that reaches the 300 s cap is
+the **cap, not a measurement** — flagged (censoring flag) and reported
+descriptively; the **per-run `timeout_rate` is the primary degradation
+statistic** (defined for every run, independent of the cap).
+
+### 7.6 New gates
+
+- **Per-run driver self-test** — enforced inside `run_traffic()` in
+  `run_experiment.sh` (fail-fast, exit 1) whenever `TRAFFIC_DRIVER_MODE=open_loop`;
+  a stronger gate than a one-off pre-flight check.
+- **Concurrency stress check** (pre-flight, Phase 5 step 1b): max in-flight at
+  the intended rate and the 300 s cap must not exhaust container/conntrack
+  connection limits.
+- **Stats gate** — MWU computed on all pre-registered primary pairs with
+  missing-value exclusions recorded.

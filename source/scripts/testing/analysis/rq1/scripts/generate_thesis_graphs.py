@@ -8,6 +8,8 @@ import csv
 from pathlib import Path
 import numpy as np
 import matplotlib
+
+from ...client_status import is_completed, is_failure
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -105,6 +107,8 @@ def collect_phase_latency(dirs, metric="mean"):
             if cr_path.exists():
                 phase_lats = {ph: [] for ph in PHASES}
                 for r in csv_rows(cr_path):
+                    if not is_completed(r):
+                        continue
                     ph = r.get("phase","")
                     if ph in PHASES and r.get("endpoint","") == ENDPOINT:
                         phase_lats[ph].append(float(r.get("latency_s", 0)))
@@ -261,7 +265,7 @@ def fig06():
     def fail_rate(d):
         rows=csv_rows(d/"client_requests.csv")
         if not rows: return 0
-        total=len(rows); failed=sum(1 for r in rows if r.get("http_status","200")=="0")
+        total=len(rows); failed=sum(1 for r in rows if is_failure(r))
         return (failed/total)*100
     p_v=per_run(V5_PUSH,fail_rate); pl_v=per_run(V5_POLL,fail_rate)
     fig,ax=plt.subplots(figsize=(7,5)); x=np.arange(1); BAR_W=0.35

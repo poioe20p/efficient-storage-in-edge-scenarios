@@ -1,0 +1,4 @@
+RQ2 relief analysis — run 20260804_022133_rq2_ba_cb_2 (policy=bottleneck_aware)
+  actions            : 10
+  recovered in-tier  : 2/10
+  median recovery_s  : 40.9

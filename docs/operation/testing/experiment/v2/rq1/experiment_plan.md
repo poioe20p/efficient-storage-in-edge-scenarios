@@ -4,6 +4,14 @@
 **Parent (implementation plan)**: [`docs/research_questions/v2/rq1/rq1_prepation.md`](../../../../research_questions/v2/rq1/rq1_prepation.md) (Design B, **IMPLEMENTED** 2026-07-31)
 **Thesis RQ1**: [`tese/Notes/thesis_overview.md`](../../../../../../tese/Notes/thesis_overview.md) §6 RQ1
 
+> **RQ1 v2 (final evidence):** the 9-run v1 campaign below becomes the
+> **v1 / supporting record** once the v2 campaign completes. v2 adds a fourth
+> arm (D, sampled-push — the missing fresh+lossy cell), runs n=5 per arm under
+> the open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`, `CURL_MAX_TIME=300`,
+> `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`), and pre-registers the statistics.
+> Authoritative spec: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md); v2
+> matrix in `run_matrix.md` §9; measurement contract in `analysis_focus.md` §0.
+
 This is the **experiment plan** for the RQ1 delivery-semantics extension — the
 "separate step" flagged in `rq1_prepation.md` §8. It turns the implemented
 three-arm delivery machinery into a runnable, analyst-checkable campaign.
@@ -201,10 +209,36 @@ Numbered success criteria (each objectively checkable by the analyst; per LAN):
    the rate (only `recovery_gap` is a low-volume f0.05 phase; `baseline` and
    `demand_drop` are f0.1 — `demand_drop` is high-volume at 420 s — so no
    blanket "≤1 failure" claim applies).
+
+   **v2 re-framing (pre-registered, 2026-08-04):** under the open-loop driver
+   the arms finally face equal offered load, so C8 is **re-cast as a cross-arm
+   comparison** on non-surge `timeout_rate` + `failure_rate` (per generator
+   `phase` label, `canceled` rows excluded from the denominator) rather than an
+   absolute ≤ 2% bound. The pre-registered expectation is that any
+   arm-discriminative non-surge degradation is a **delay penalty** (Arm B); a
+   null result is an acceptable, reported outcome. The absolute ≤ 2% bound
+   from v1 is dropped for v2 (v1 showed it was spike-driven and
+   non-discriminative).
+
+   **C8 decision rule (implemented in `rq1v2_p3_01_stats.py`):** the non-surge
+   comparison is one of three outcomes from Cliff's delta on non-surge
+   `timeout_rate`/`failure_rate` across the factorial edges — **DELAY PENALTY**
+   (delay edges A→B, D→C degrade while loss edges are ≈ 0; pass),
+   **NULL** (all |delta| ≤ 0.2; reported as a null), or **UNANTICIPATED** (any
+   loss edge clearly degrades, or any edge shows a **direction reversal** —
+   |delta| > 0.2 with the wrong sign; triggers re-inspection).
 9. **Delay-vs-loss ordering:** mean reaction latency (plateau start → first
    scale-up decision) and info-age-at-decision order as B ≥ C > A, while
    delivered fraction orders as A ≈ B > C. If this ordering is violated, the
    run/arm is flagged for re-inspection before conclusions.
+
+   **v2 re-framing (2026-08-04):** the v1 first-decision ordering formulation is
+   superseded for v2 — first-decision latency is descriptive-only (delivery
+   timing confounds it in every arm), and the v2 ordering claim is the
+   pre-registered **factorial-edge comparison** (delay edges A−B, D−C; loss
+   edges A−D, B−C) on usable-capacity latency, `timeout_rate`, `failure_rate`,
+   time-to-recover, and info-age at decision (`analysis_focus.md` §0.4;
+   implemented in `rq1v2_p3_01_stats.py`).
 
 ## 6. Analysis Approach
 
@@ -267,8 +301,9 @@ Full detail in [`analysis_focus.md`](analysis_focus.md) §4–§6. Summary:
 - **C3 (per run):** all four RQ1 artifacts copied before external cleanup
   (`collect_rq1_artifacts` ordering).
 - **C4 (campaign):** run folders follow `<timestamp>_rq1_delivery_<arm>_<suffix>`
-  (arm ∈ `ep` | `delayed` | `ls`). Replicate aggregation includes **only numeric
-  suffixes** (`_1`..`_3`); pre-flight (`_preflight`) runs are excluded from the
+  (arm ∈ `ep` | `delayed` | `ls` | `sp` — the `sp` suffix was added for v2).
+  Replicate aggregation includes **only numeric suffixes** (`_1`..`_5` for v2,
+  `_1`..`_3` for v1); pre-flight (`_preflight`) runs are excluded from the
   replicate scatter.
 - **C5 (environment):** the VM shell must not have `TELEMETRY_SOURCE` exported —
   `build_network_setup.sh` passes it through only when set, and the per-arm env
@@ -302,6 +337,34 @@ Full detail in [`analysis_focus.md`](analysis_focus.md) §4–§6. Summary:
   this folder's `env/rq1_{event_preserving,delayed,latest_state}.env`,
   control group's `source/scripts/testing/phases_override/phases_stress_plateau.json`,
   this folder's `analysis/rq1_delivery_{per_run,comparison}.py`
+
+## F. RQ1 v2 — final evidence
+
+Authoritative spec: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md); matrix
+`run_matrix.md` §9; measurement contract `analysis_focus.md` §0.
+
+- **Design:** 4-arm full 2×2 factorial — adds Arm D `sampled_push`
+  (fresh+lossy, `SAMPLE_EVERY=3`, sub-second delivery, ~1/3 delivered). n=5 per
+  arm, 20 runs, 5 counterbalanced blocks (seeds 2001–2005).
+- **Hypothesis additions:** the delay-vs-loss attribution is clean only with
+  the missing cell — **delay** = A−B and D−C edges (fresh- and lossy-level);
+  **loss** = A−D and B−C edges (complete- and stale-level); diagonals B−D /
+  A−C are the headline tradeoff (descriptive + Cliff's delta only).
+- **Driver:** `TRAFFIC_DRIVER_MODE=open_loop`, `CURL_MAX_TIME=300`,
+  `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`; offered/completed separated; `timeout`
+  a distinct outcome class; `dropped` possible by design (counted in offered,
+  excluded from latency/failure, reported separately).
+- **Metrics:** pre-registered primary = **usable-capacity latency**;
+  first-decision latency is descriptive-only for ALL arms (delivery-timing
+  confounded). Stats: MWU (exact/normal) + Cliff's delta on the factorial
+  edges; ≥ 3 defined runs/cell; no censored value enters MWU; latency
+  percentiles descriptive-only with a censoring flag. Implemented in
+  `docs/research_questions/v2/rq1/rq1v2_p3_01_stats.py`.
+- **Gates:** driver/analyzer/sampled-push selftests, concurrency stress, G2
+  calibration under open-loop, per-arm scale-down arming (esp. Arm D), Arm D
+  dry-run, lan2 asymmetry diagnostic, sync-mode regression.
+- **v1 status:** the v1 9-run campaign above is the **supporting record** once
+  the v2 campaign completes.
 
 ## E. Changelog
 

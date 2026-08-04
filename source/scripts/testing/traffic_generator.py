@@ -26,6 +26,7 @@ import csv
 import json
 import os
 import random
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -411,6 +412,9 @@ async def client_loop(
 
 
 async def run(args):
+    if args.driver_mode == "open_loop":
+        return await run_open_loop(args)
+
     # Fix random seed before any workload decisions for reproducible runs
     if args.random_seed is not None:
         random.seed(args.random_seed)
@@ -514,11 +518,330 @@ async def run(args):
     print(f"  {args.output}")
 
 
+# ---------------------------------------------------------------------------
+# Open-loop driver (supervisor + per-netns workers)
+# ---------------------------------------------------------------------------
+#
+# open_loop mode restructures the generator:
+#   * the supervisor (this process) computes the per-phase active-client mask
+#     with a DEDICATED RNG (so it never consumes the per-client request RNG),
+#     writes a schedule file, launches one worker subprocess per client netns
+#     (`ip netns exec <ns> python3 traffic_generator.py --worker ...`), joins
+#     them, and merges their per-worker CSVs into the final output.
+#   * each worker uses an in-process async HTTP client (aiohttp) with a fresh
+#     TCP connection per request (TCPConnector(force_close=True)), dispatches
+#     on the schedule independent of completion (open-loop), drains in-flight
+#     at phase boundaries, and writes a 14th `status` column:
+#     completed | timeout | dropped | canceled.
+#
+# Rationale: the legacy sync driver is stop-and-wait (1 in-flight/client), so
+# its issued rate collapses to ~1/latency under degradation and arms face
+# different demand. See docs/operation/testing/experiment/v2/rq2/rq2_v2_rework_plan.md
+
+_OPEN_LOOP_CSV_HEADER = [
+    "sent_at", "phase", "client_ns", "client_lan", "endpoint",
+    "content_id", "user_id", "target_region", "http_status", "latency_s",
+    "completed_at", "backend_id", "source_port", "status",
+]
+
+
+def _compute_active_masks(phases, all_clients, base_seed):
+    """Per-phase active (ns, lan) list sampled with a dedicated RNG so the
+    per-client request RNG stream is never consumed by mask sampling."""
+    rng = random.Random(base_seed)
+    lan1 = [(ns, lan) for ns, lan in all_clients if lan == "lan1"]
+    lan2 = [(ns, lan) for ns, lan in all_clients if lan == "lan2"]
+    masks = []
+    for phase in phases:
+        fraction = getattr(phase, "client_fraction", 1.0)
+        if fraction < 1.0:
+            n1 = max(1, int(len(lan1) * fraction))
+            n2 = max(1, int(len(lan2) * fraction))
+            masks.append(rng.sample(lan1, n1) + rng.sample(lan2, n2))
+        else:
+            masks.append(all_clients)
+    return masks
+
+
+def _build_body(request_type, target, client_lan):
+    """Request body for POST endpoints (None for GET endpoints)."""
+    if request_type == "content_update":
+        return {
+            "content_id": target["content_id"],
+            "engagement": random.randint(0, 100),
+            "lan": client_lan,
+            "update_padding": "x" * 1024,
+        }
+    if request_type == "content_aggregate":
+        return {
+            "lan": client_lan,
+            "engagement_threshold": random.randint(30, 70),
+        }
+    return None
+
+
+async def run_open_loop(args):
+    """Supervisor: schedule file + one worker subprocess per client netns,
+    then merge per-worker CSVs into the final output."""
+    with open(args.config) as f:
+        raw = json.load(f)
+    phases = [PhaseConfig.from_dict(p) for p in raw["phases"]]
+    if args.dry_run:
+        snap = Snapshot.mock()
+    else:
+        snap = Snapshot.load(args.snapshot_dir)
+    n_content_items = sum(len(v) for v in snap.content_ids_by_region.values())
+    n_users = sum(len(v) for v in snap.user_ids_by_region.values())
+    print(f"Snapshot: {n_content_items} content items, {n_users} user profiles")
+
+    lan1_clients = [c for c in args.clients_lan1.split(",") if c] if args.clients_lan1 else []
+    lan2_clients = [c for c in args.clients_lan2.split(",") if c] if args.clients_lan2 else []
+    all_clients = [(ns, "lan1") for ns in lan1_clients] + [(ns, "lan2") for ns in lan2_clients]
+    if not all_clients:
+        print("ERROR: no clients specified (use --clients-lan1 and/or --clients-lan2)")
+        return 1
+
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    base_seed = args.random_seed if args.random_seed is not None else 42
+    masks = _compute_active_masks(phases, all_clients, base_seed)
+
+    sched_path = os.path.join(output_dir or ".", "open_loop_schedule.json")
+    sched = {
+        "base_seed": base_seed,
+        "drain_s": args.drain_s,
+        "in_flight_window": args.in_flight_window,
+        "phases": [p.__dict__ for p in phases],
+        "active_masks": [[ns for ns, _ in m] for m in masks],
+    }
+    with open(sched_path, "w") as f:
+        json.dump(sched, f)
+
+    phase_state_file = os.path.join(output_dir or ".", "current_phase.txt")
+    print(f"{len(phases)} phases, {len(all_clients)} clients; "
+          f"open-loop supervisor (window={args.in_flight_window}, drain={args.drain_s}s)")
+    for i, p in enumerate(phases):
+        print(f"  {p.name}: {p.duration_s}s @ {p.rate_per_client} req/s/client, "
+              f"{len(masks[i])}/{len(all_clients)} active")
+
+    procs = []
+    worker_csvs = []
+    for idx, (ns, lan) in enumerate(all_clients):
+        worker_csv = os.path.join(output_dir or ".", f"client_requests_{ns}.csv")
+        worker_csvs.append(worker_csv)
+        vip = args.vip_lan1 if lan == "lan1" else args.vip_lan2
+        cmd = [
+            "ip", "netns", "exec", ns,
+            sys.executable, os.path.abspath(__file__),
+            "--worker",
+            "--client-ns", ns,
+            "--client-lan", lan,
+            "--ns-index", str(idx),
+            "--vip", vip,
+            "--schedule-file", sched_path,
+            "--snapshot-dir", args.snapshot_dir,
+            "--output", worker_csv,
+            "--driver-mode", "open_loop",
+            "--in-flight-window", str(args.in_flight_window),
+            "--drain-s", str(args.drain_s),
+            "--phase-state-file", phase_state_file,
+        ]
+        if args.dry_run:
+            cmd.append("--dry-run")
+        print(f"  launching worker: {' '.join(cmd)}")
+        procs.append(await asyncio.create_subprocess_exec(*cmd))
+
+    rc = 0
+    for i, p in enumerate(procs):
+        code = await p.wait()
+        if code != 0:
+            rc = code
+            # A worker failed — terminate the remaining workers to bound the
+            # run and surface the error promptly.
+            for other in procs[i + 1:]:
+                if other.returncode is None:
+                    other.terminate()
+            for other in procs[i + 1:]:
+                try:
+                    await other.wait()
+                except ProcessLookupError:
+                    pass
+            break
+    if rc != 0:
+        print(f"ERROR: open-loop worker(s) failed (rc={rc})")
+        return rc
+
+    with open(args.output, "w", newline="") as out:
+        writer = csv.writer(out)
+        writer.writerow(_OPEN_LOOP_CSV_HEADER)
+        for wcsv in worker_csvs:
+            if not os.path.exists(wcsv):
+                print(f"  [WARN] missing worker CSV: {wcsv}")
+                continue
+            with open(wcsv, newline="") as f:
+                reader = csv.reader(f)
+                next(reader, None)  # skip header
+                for row in reader:
+                    if row:
+                        writer.writerow(row)
+    print(f"\nDone (open-loop). Merged {len(worker_csvs)} worker CSVs -> {args.output}")
+    return 0
+
+
+async def _worker_main(args):
+    """Per-netns worker: schedule-preserving dispatcher with aiohttp."""
+    try:
+        import aiohttp
+    except ImportError:
+        print("ERROR: open_loop worker requires aiohttp (pip install aiohttp)")
+        return 1
+
+    with open(args.schedule_file) as f:
+        sched = json.load(f)
+    phases = [PhaseConfig.from_dict(p) for p in sched["phases"]]
+    active_sets = sched["active_masks"]
+    random.seed(int(sched["base_seed"]) + args.ns_index)
+
+    if args.dry_run:
+        snap = Snapshot.mock()
+    else:
+        snap = Snapshot.load(args.snapshot_dir)
+
+    out_f = open(args.output, "w", newline="")
+    writer = csv.writer(out_f)
+    writer.writerow(_OPEN_LOOP_CSV_HEADER)
+
+    curl_max_time = float(os.environ.get("CURL_MAX_TIME") or "300")
+    window = max(1, args.in_flight_window)
+    drain_s = max(0.0, args.drain_s)
+
+    connector = aiohttp.TCPConnector(force_close=True)
+    session = aiohttp.ClientSession(connector=connector)
+    sem = asyncio.Semaphore(window)
+    pending: set = set()
+    stop_dispatch = asyncio.Event()
+
+    def write_row(parts):
+        writer.writerow(parts)
+        out_f.flush()
+
+    async def dispatch_one(phase, req_type, target, body, sent_at_iso):
+        if sem.locked():
+            # In-flight window full -> client-side admission (reported separately).
+            # No await between locked() and the drop decision, so this is atomic
+            # in single-threaded asyncio.
+            write_row([sent_at_iso, phase.name, args.client_ns, args.client_lan, req_type,
+                       target.get("content_id", ""), target.get("user_id", ""),
+                       target.get("target_region", ""), "", "", "", "", "", "dropped"])
+            return
+        await sem.acquire()
+        try:
+            t0 = time.monotonic()
+            try:
+                url = build_url(args.vip, req_type, target)
+                if body is not None:
+                    resp = await asyncio.wait_for(
+                        session.post(url, json=body), timeout=curl_max_time)
+                else:
+                    resp = await asyncio.wait_for(
+                        session.get(url), timeout=curl_max_time)
+            except asyncio.TimeoutError:
+                elapsed = time.monotonic() - t0
+                write_row([sent_at_iso, phase.name, args.client_ns, args.client_lan, req_type,
+                           target.get("content_id", ""), target.get("user_id", ""),
+                           target.get("target_region", ""), "000", round(elapsed, 4),
+                           datetime.now(timezone.utc).isoformat(), "unknown", 0, "timeout"])
+                return
+            except Exception:
+                elapsed = time.monotonic() - t0
+                write_row([sent_at_iso, phase.name, args.client_ns, args.client_lan, req_type,
+                           target.get("content_id", ""), target.get("user_id", ""),
+                           target.get("target_region", ""), "000", round(elapsed, 4),
+                           datetime.now(timezone.utc).isoformat(), "unknown", 0, "completed"])
+                return
+            latency = time.monotonic() - t0
+            backend_id = resp.headers.get("X-Backend-ID", "unknown")
+            source_port = 0
+            try:
+                conn = resp.connection
+                transport = conn._protocol.transport if conn is not None else None
+                sockname = transport.get_extra_info("sockname") if transport is not None else None
+                if sockname:
+                    source_port = int(sockname[1])
+            except Exception:
+                source_port = 0
+            write_row([sent_at_iso, phase.name, args.client_ns, args.client_lan, req_type,
+                       target.get("content_id", ""), target.get("user_id", ""),
+                       target.get("target_region", ""), str(resp.status), round(latency, 4),
+                       datetime.now(timezone.utc).isoformat(), backend_id, source_port, "completed"])
+        except asyncio.CancelledError:
+            write_row([sent_at_iso, phase.name, args.client_ns, args.client_lan, req_type,
+                       target.get("content_id", ""), target.get("user_id", ""),
+                       target.get("target_region", ""), "", "", "", "", "", "canceled"])
+            raise
+        finally:
+            sem.release()
+
+    async def dispatch_phase(phase):
+        stop_dispatch.clear()
+        phase_end = time.monotonic() + phase.duration_s
+        interval = 1.0 / phase.rate_per_client if phase.rate_per_client > 0 else 1.0
+        while time.monotonic() < phase_end and not stop_dispatch.is_set():
+            req_type = pick_request_type(phase.mix)
+            target = pick_target(args.client_lan, phase, snap, req_type)
+            body = _build_body(req_type, target, args.client_lan)
+            sent_at_iso = datetime.now(timezone.utc).isoformat()
+            task = asyncio.create_task(
+                dispatch_one(phase, req_type, target, body, sent_at_iso))
+            pending.add(task)
+            task.add_done_callback(pending.discard)
+            await asyncio.sleep(max(0.0, interval + random.uniform(-0.05, 0.05)))
+
+    async def drain():
+        stop_dispatch.set()
+        deadline = time.monotonic() + drain_s
+        while pending and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        for t in list(pending):
+            t.cancel()
+        for t in list(pending):
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    total_s = sum(p.duration_s for p in phases)
+    print(f"[{args.client_ns}] worker start: {len(phases)} phases, {total_s}s")
+    for i, phase in enumerate(phases):
+        await drain()
+        with open(args.phase_state_file, "w") as pf:
+            pf.write(phase.name)
+        if args.client_ns in active_sets[i]:
+            print(f"[{args.client_ns}] ACTIVE in {phase.name} ({phase.duration_s}s)")
+            if args.dry_run:
+                # Match the sync driver's dry-run semantics: print, do NOT
+                # dispatch (open-loop would otherwise fire real requests).
+                print(f"[{args.client_ns}] dry-run: skipping dispatch for {phase.name}")
+                await asyncio.sleep(phase.duration_s)
+            else:
+                await dispatch_phase(phase)
+        else:
+            print(f"[{args.client_ns}] idle in {phase.name} ({phase.duration_s}s)")
+            await asyncio.sleep(phase.duration_s)
+    await drain()
+    await session.close()
+    out_f.close()
+    print(f"[{args.client_ns}] worker done -> {args.output}")
+    return 0
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Traffic generator for the edge content-discovery workload experiment"
     )
-    parser.add_argument("--config", required=True, help="Path to phases.json")
+    parser.add_argument("--config", required=False, help="Path to phases.json (supervisor only)")
     parser.add_argument(
         "--clients-lan1", default="",
         help="Comma-separated LAN1 namespace names (e.g. test_client_1,test_client_2)"
@@ -545,6 +868,56 @@ if __name__ == "__main__":
         "--random-seed", type=int, default=None,
         help="Fixed random seed for reproducible request sequences (default: system random)"
     )
+    parser.add_argument(
+        "--driver-mode", choices=["sync", "open_loop"], default="sync",
+        help="Traffic driver mode: sync (legacy stop-and-wait) or open_loop "
+             "(schedule-preserving, independent of response latency)"
+    )
+    parser.add_argument(
+        "--worker", action="store_true",
+        help="[open_loop] internal: run as a per-netns worker subprocess"
+    )
+    parser.add_argument(
+        "--client-ns", default="",
+        help="[open_loop worker] this worker's network namespace"
+    )
+    parser.add_argument(
+        "--client-lan", default="",
+        help="[open_loop worker] this worker's LAN (lan1|lan2)"
+    )
+    parser.add_argument(
+        "--ns-index", type=int, default=0,
+        help="[open_loop worker] netns index for per-client seeding (base + index)"
+    )
+    parser.add_argument(
+        "--vip", default="",
+        help="[open_loop worker] VIP address:port for this worker's LAN"
+    )
+    parser.add_argument(
+        "--schedule-file", default="",
+        help="[open_loop worker] supervisor-written schedule JSON"
+    )
+    parser.add_argument(
+        "--phase-state-file", default="current_phase.txt",
+        help="[open_loop worker] shared current-phase marker file"
+    )
+    parser.add_argument(
+        "--in-flight-window", type=int, default=1024,
+        help="[open_loop] max in-flight requests per client (window)"
+    )
+    parser.add_argument(
+        "--drain-s", type=float, default=30.0,
+        help="[open_loop] seconds to drain in-flight requests at each phase boundary"
+    )
 
     args = parser.parse_args()
-    asyncio.run(run(args))
+    if not args.worker and not args.config:
+        # --config is only required for the supervisor (run()/run_open_loop);
+        # workers read the supervisor's schedule file instead. Without this
+        # guard, a bare invocation fails late inside run(); keeping the guard
+        # here makes the requirement explicit at parse time.
+        parser.error("--config is required unless running as a worker (--worker)")
+    if args.worker:
+        asyncio.run(_worker_main(args))
+    else:
+        asyncio.run(run(args))

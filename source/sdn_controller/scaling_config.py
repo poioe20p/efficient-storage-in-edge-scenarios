@@ -156,15 +156,25 @@ _BOTTLENECK_CLASSIFY_MARGIN = float(
     os.environ.get("BOTTLENECK_CLASSIFY_MARGIN", "0.05")
 )
 
+# RQ2 ba-strict (sticky commitment): when enabled, once the episode is
+# classified the gate COMMITS to the classified tier and suppresses the other
+# tier even when it fires alone, until relief (score_norm < threshold for
+# STRICT_RELEASE_N consecutive windows). The suppressed fire is still logged
+# (*_fired=1, rejected_action). 0 = current per-window behavior unchanged.
+_BOTTLENECK_STRICT_SINGLE = int(os.environ.get("BOTTLENECK_STRICT_SINGLE", "0"))
+_STRICT_COMMIT_N = int(os.environ.get("STRICT_COMMIT_N", "2"))
+_STRICT_RELEASE_N = int(os.environ.get("STRICT_RELEASE_N", "3"))
+
 # ── RQ3 readiness-propagation gate ─────────────────────────────────
 # READINESS_PROPAGATION selects compute-backend admission timing:
 #   "off"       → current pre-RQ3 behavior: register into the VIP_SERVER pool
 #                 immediately after spawn (no probe, no admission log, no
 #                 readiness worker thread) — DEFAULT. Canonical / RQ1 / RQ2
 #                 runs byte-identical.
-#   "direct"    → RQ3 arm: probe /ready immediately + every
-#                 READINESS_PROBE_RETRY_S; admit on 200 (direct lifecycle
-#                 notification).
+#   "direct"    → RQ3 v2 arm (approach A, event-driven): admit on the edge's
+#                 `app_ready` control event (no probe before admission);
+#                 /ready is used only for the post-admission identity check,
+#                 the event-absence safety net, and abandonment detection.
 #   "discovery" → RQ3 arm: probe /ready only on DISCOVERY_POLL_INTERVAL_S
 #                 cadence; admit when a discovery pass sees 200 (periodic
 #                 discovery).
@@ -179,6 +189,12 @@ _READINESS_PROBE_TIMEOUT_S = float(os.environ.get("READINESS_PROBE_TIMEOUT_S", "
 _READINESS_PROBE_MAX_S = float(os.environ.get("READINESS_PROBE_MAX_S", "120.0"))
 # direct-mode probe retry interval (seconds). Must be << DISCOVERY_POLL_INTERVAL_S.
 _READINESS_PROBE_RETRY_S = float(os.environ.get("READINESS_PROBE_RETRY_S", "1.0"))
+# direct-mode event-absence safety net: no /ready probing until this many
+# seconds after spawn-complete, giving the `app_ready` event time to arrive.
+# A lost event cannot strand a ready backend — probing resumes afterwards
+# (admit_source="probe_fallback"), which the analyzer's event-fraction gate
+# surfaces as instrumentation-degraded.
+_READINESS_EVENT_FALLBACK_S = float(os.environ.get("READINESS_EVENT_FALLBACK_S", "5.0"))
 # discovery-mode scan cadence (seconds). Pre-registered per run.
 _DISCOVERY_POLL_INTERVAL_S = float(os.environ.get("DISCOVERY_POLL_INTERVAL_S", "10.0"))
 # Edge-server /ready port. Must equal the edge server's BIND_PORT (5000) in RQ3 runs.

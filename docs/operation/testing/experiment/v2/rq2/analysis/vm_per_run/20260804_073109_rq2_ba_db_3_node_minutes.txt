@@ -1,0 +1,4 @@
+RQ2 node-minutes — run 20260804_073109_rq2_ba_db_3 (policy=bottleneck_aware)
+  compute node-minutes : 137.48
+  storage node-minutes : 103.10
+  per 1000 recorded req: compute=2.207 storage=1.655 (recorded_requests=62286; includes failures — refine with a status column when the schema is known)

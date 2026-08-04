@@ -25,6 +25,7 @@ from .telemetry.zmq_source import ZmqTelemetrySource
 from .telemetry.polling_source import PollingTelemetrySource
 from .telemetry.event_preserving_source import EventPreservingTelemetrySource
 from .telemetry.delayed_source import DelayedEventPreservingTelemetrySource
+from .telemetry.sampled_push_source import SampledPushTelemetrySource
 from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
 from .scaling_policy import ScalingPolicy
@@ -47,6 +48,7 @@ from .scaling_config import (
     _READINESS_PROBE_TIMEOUT_S,
     _READINESS_PROBE_MAX_S,
     _READINESS_PROBE_RETRY_S,
+    _READINESS_EVENT_FALLBACK_S,
     _DISCOVERY_POLL_INTERVAL_S,
     _EDGE_READY_PORT,
     _ADMISSION_LOG_PATH,
@@ -121,6 +123,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 discovery_interval_s=_DISCOVERY_POLL_INTERVAL_S,
                 ready_port=_EDGE_READY_PORT,
                 admission_log_path=_ADMISSION_LOG_PATH,
+                event_fallback_s=_READINESS_EVENT_FALLBACK_S,
                 on_admit=lambda pb: self._elasticity._admit_compute_backend(
                     pb.mac, pb.ip, pb.name, pb.lan, pb.network_id,
                     pb.spawn_started_mono_s, "readiness_gate",
@@ -212,6 +215,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             self._telemetry = DelayedEventPreservingTelemetrySource(
                 endpoints=_http_endpoints,
                 delay_s=float(os.environ.get("DELAY_S", "30")),
+                poll_interval_s=float(os.environ.get("EVENT_POLL_INTERVAL_S", "0.5")),
+                on_update=self._on_telemetry_update,
+            )
+        elif _telemetry_source_mode == "sampled_push":
+            self._telemetry = SampledPushTelemetrySource(
+                endpoints=_http_endpoints,
+                sample_every=int(os.environ.get("SAMPLE_EVERY", "3")),
                 poll_interval_s=float(os.environ.get("EVENT_POLL_INTERVAL_S", "0.5")),
                 on_update=self._on_telemetry_update,
             )
@@ -481,6 +491,9 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # VipRoutingMixin and provides delete_vip_server_client_flows.
         self._control_events.process_flow_events(
             summary, self, _VIP_FLOW_ISOLATION == 1, time.monotonic())
+        # RQ3 v2 direct arm: app_ready control event -> event-driven admission.
+        self._control_events.process_app_ready_events(
+            summary, self._readiness_gate)
 
         # Mini-summaries (control event pass-throughs) have empty server dicts.
         if not summary.servers and not summary.storage_servers:
@@ -678,7 +691,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                                 rs_name=f"rs_net{lan}",
                                 primary_container=f"edge_storage_server_n{lan}"))
 
+                    strict_suppressed = (self._policy_gate.strict_enabled()
+                                         and self._policy_gate.strict_committed() is not None
+                                         and not selected
+                                         and (compute_v.fired or storage_v.fired))
+
                     reason = ("action" if selected
+                              else "strict_suppressed" if strict_suppressed
                               else "budget_exhausted"
                               if any((compute_v.fired and not self._policy_gate.budget_available("compute"),
                                       storage_v.fired and not self._policy_gate.budget_available("storage")))

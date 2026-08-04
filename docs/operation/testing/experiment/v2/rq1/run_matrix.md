@@ -166,3 +166,88 @@ After the P1–P3 pre-flight runs are analyzed (gates G1–G3 below):
 ~25–30 min per run (1200 s traffic + setup/teardown + artifact copy) →
 pre-flight 3 runs ≈ 1.5 h; main 9 runs ≈ 4.5 h; total **≈ 6–7 h**, plus any
 calibration re-runs.
+
+---
+
+## 9. RQ1 v2 matrix (final evidence — 20 runs)
+
+Authoritative spec: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md). The
+v1 9-run campaign above (§1–§8) becomes the **v1 / supporting record** once v2
+completes.
+
+**Structure:** 4 arms × 5 replicates = **20 runs**, 5 counterbalanced blocks
+of 4 (seeds **2001–2005** = driver `RANDOM_SEED` base; distinct-order
+verification — re-sample a block's seed on collision). Orders are recorded in
+a **new** `counterbalance_order_v2.csv` (distinct from any prior order file).
+
+| Arm | `TELEMETRY_SOURCE` | Env override | Suffix |
+|---|---|---|---|
+| A | `event_preserving` | `env/rq1_event_preserving.env` | `ep` |
+| B | `delayed_event_preserving` | `env/rq1_delayed.env` | `delayed` |
+| C | `poll` | `env/rq1_latest_state.env` | `ls` |
+| D | `sampled_push` | `env/rq1_sampled_push.env` | `sp` |
+
+**Launch (per run, cloud VM):** `TRAFFIC_DRIVER_MODE=open_loop
+CURL_MAX_TIME=300 INFLIGHT_WINDOW=1024 DRAIN_S=30`; workload =
+`phases_stress_plateau.json` (rate 5.0 unchanged). **Each run's launch prefix
+sets `RANDOM_SEED=<block seed>` (2001–2005), NOT the v1-fixed 42** — do not
+copy the §4 command verbatim; the counterbalance order file records the
+per-run seed. **Arm C: `POLL_INTERVAL_S=30`
+on the shell** (Docker `-e` override trap — restated from v1; dropping it runs
+C at poll-10 and destroys the factorial). **Arm D:** `SAMPLE_EVERY` comes from
+the env file (no `-e` override exists for it; verify in
+`controller_env_snapshot.env`). Run folders
+`<timestamp>_rq1_delivery_<suffix>_<1..5>`; checkpoint **C4 arm set is
+`ep | delayed | ls | sp`**.
+
+**Pre-flight (hard gates, fail-fast; blocks do not start until all pass):**
+(a) `make driver_selftest` (host + netns) — ✅ passed; (b) `make
+rq1_analyzer_selftest` — ✅ passed (local + VM); (c) **sampled-push selftest
+inside the `osken-controller` image** (the VM host python3 lacks pydantic; the
+selftest injects an os_ken hub stub so it runs without the controller runtime):
+`sudo -n docker run --rm -v $PWD:/workspace -w /workspace -e PYTHONPATH=/workspace --entrypoint python3 osken-controller source/scripts/testing/rq1v2_p2_01_sampled_push_selftest.py`
+(`make rq1_sampled_push_selftest` works on hosts where python3 has os_ken +
+pydantic — e.g. the dev machine) — ✅ passed in-container; (d) concurrency
+stress check (aggregate in-flight at rate 5.0 × 24 clients × 300 s cap must not
+exhaust container/conntrack limits) — ✅ satisfied by the calibration plateau
+(82 req/s over 600 s, conntrack 262144, no exhaustion); (e) **G2 calibration
+under open-loop** — plateau rate 5.0 with `INFLIGHT_WINDOW=1024` ⇒ worst-case
+in-flight/client = 1500 > window ⇒ **`dropped` is possible by design** and is a
+designed, reported outcome (counted in offered, excluded from latency/failure);
+decision rule: if calibration `dropped` > 1% of offered, raise
+`INFLIGHT_WINDOW` up to the concurrency limit, else keep 1024 — recorded in the
+plan; **🚨 BLOCKED — re-run executed but FAILED (true open-loop)**. The
+re-run `20260804_165925_rq1_delivery_ep_calib2` ran open-loop correctly (fix
+verified: `open_loop_schedule.json`, workers `--driver-mode open_loop
+--in-flight-window 1024 --drain-s 30.0`) but revealed: (i) **catastrophic
+overload collapse** — plateau ≈ 120 req/s/LAN (open-loop preserves offered
+load), lan1 timeout 87.7%/p50 21.9 s, lan2 timeout 68.2%; `dropped` =
+3.13%/15.51% both > 1% → G2 rule requires raising `INFLIGHT_WINDOW` or
+re-tuning the offered rate; (ii) **lan1 overload-detection/scaling
+asymmetry** — lan1 flagged 14/173 overload windows (lan2: 123/167), made 2
+scale-ups (lan2: 6), scaled to dyn2 only, `server_count` collapsed to 1
+mid-plateau, yet lan1 was the worse-performing LAN (inverse of v1's Arm C
+lan2 asymmetry). **No campaign block may start until the lan1 asymmetry is
+root-caused and G2 is retuned**; (f) **per-arm
+scale-down arming check** (esp. Arm D — its ~30 s delivery cadence stretches
+the 3-of-6 below-window accumulation; must fire ≥ 1 scale-down decision/LAN —
+the v1 P3 failure mode); (g) Arm D dry-run (delivered fraction ∈ [0.30, 0.36],
+delivery-delay p50 < 2 s — the sampled-push selftest assertion) — **⚠️
+INVALIDATED — RE-RUN PENDING** (sync-driver evidence only from
+`20260804_162043_rq1_delivery_sp_calib`; open-loop re-run required); (h) lan2
+asymmetry diagnostic on the
+calibration runs (`rq1v2_p4_01_lan2_asymmetry.py`) — pending on valid open-loop
+calibration runs; (i) legacy `sync`-mode
+regression smoke.
+
+**Per-arm env verification (Phase-6 gate):** A/B: `TELEMETRY_SOURCE`; C:
+`TELEMETRY_SOURCE=poll` **and** shell `POLL_INTERVAL_S=30`; D:
+`TELEMETRY_SOURCE=sampled_push` and `SAMPLE_EVERY=3`. Driver-mode/window/drain
+are shell-only knobs and never appear in `controller_env_snapshot.env` —
+verify them from the run log's printed config line ("Driver mode: open_loop
+(window=…, drain=…)").
+
+**Wall-clock:** ~20 runs × ~30–35 min (incl. 3 phase-boundary drains + run-end
+drain of 30 s each + setup) ≈ 11–12 h ≈ 1.5–2 VM-days, **plus** pre-flight /
+calibration (~4–6 runs ≈ 3 h). RQ2's v2 campaign (18-run, 6 cells × 3) has VM
+priority; RQ1 v2 runs after (or interleaved per user).

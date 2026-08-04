@@ -127,10 +127,14 @@ cleanup_metrics:
 ##   make run_experiment FAULT_PLAN=testing/fault_plan.json
 ##   make run_experiment OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/example.env
 ##   make run_experiment RANDOM_SEED=42     # fixed seed for reproducible traffic
+##   make run_experiment TRAFFIC_DRIVER_MODE=open_loop INFLIGHT_WINDOW=1024 DRAIN_S=30
 run_experiment:
 	OSKEN_ENV_FILE="$(strip $(OSKEN_ENV_FILE))" \
 	OSKEN_ENV_OVERRIDE_FILE="$(strip $(OSKEN_ENV_OVERRIDE_FILE))" \
 	CURL_MAX_TIME="$(CURL_MAX_TIME)" \
+	TRAFFIC_DRIVER_MODE="$(strip $(TRAFFIC_DRIVER_MODE))" \
+	INFLIGHT_WINDOW="$(strip $(INFLIGHT_WINDOW))" \
+	DRAIN_S="$(strip $(DRAIN_S))" \
 	sudo -E bash testing/run_experiment.sh \
 	  $(if $(strip $(RUN_LABEL)),--run-label "$(strip $(RUN_LABEL))") \
 	  --clients-per-lan "$(strip $(CLIENTS))" \
@@ -143,6 +147,40 @@ run_experiment:
 	  $(if $(filter-out 0 false,$(SKIP_SEED)),--skip-seed) \
 	  $(if $(filter-out 0 false,$(SKIP_SNAPSHOT)),--skip-snapshot) \
 	  $(if $(filter-out 0 false,$(DRY_RUN)),--dry-run)
+
+## Run the open-loop driver self-test (hard gate; requires aiohttp).
+## Exit non-zero on any failed scenario.
+driver_selftest:
+	$(PYTHON) testing/openloop_p1_01_driver_selftest.py
+
+## RQ1 v2 Arm D sampled-push source self-test (hard gate before RQ1 v2 blocks).
+## Exit non-zero on any failed scenario.
+rq1_sampled_push_selftest:
+	$(PYTHON) testing/rq1v2_p2_01_sampled_push_selftest.py
+
+## RQ1 v2 analyzer self-test (status-aware service quality, phase-label
+## bucketing validation, sampled_push mode). Hard gate before RQ1 v2 blocks.
+## Exit non-zero on any failed scenario.
+rq1_analyzer_selftest:
+	$(PYTHON) testing/rq1v2_p1_01_analyzer_selftest.py
+
+## RQ3 v2 analyzer + flow-validation self-test (status-aware service quality,
+## gap-window primaries, run-level aggregation, void gate, arm labels,
+## admit_source event-fraction gate, flow-validation A/B/C/D gate policy).
+## Hard gate before RQ3 v2 blocks. Exit non-zero on any failed scenario.
+rq3_analyzer_selftest:
+	$(PYTHON) testing/rq3v2_p1_01_analyzer_selftest.py
+
+## RQ3 v2 direct-arm app_ready event self-test (event-driven admission,
+## event-absence safety net, admit_source, off/discovery regression).
+## Hard gate before RQ3 v2 blocks. Exit non-zero on any failed scenario.
+rq3_app_ready_selftest:
+	$(PYTHON) testing/rq3v2_p2_01_app_ready_selftest.py
+
+## RQ3 v2 Phase-6 pre-flight gates (VM-side; run on cloud-vm-rq3).
+## See docs/operation/testing/experiment/v2/rq3/rq3_preflight.md.
+rq3_preflight:
+	bash testing/rq3v2_p6_01_preflight.sh
 
 ## Validate reverse_hotspot probe capture prerequisites under the current environment.
 probe_capture_preflight:

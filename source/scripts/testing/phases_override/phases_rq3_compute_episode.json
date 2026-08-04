@@ -15,7 +15,7 @@
     {
       "name": "compute_spike",
       "duration_s": 180,
-      "rate_per_client": 5.0,
+      "rate_per_client": 3.0,
       "cross_region_ratio": 0.0,
       "client_fraction": 1.0,
       "mix": {
