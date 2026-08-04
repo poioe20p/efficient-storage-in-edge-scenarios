@@ -742,7 +742,7 @@ verify_rq3_run() {
     local _snap="${RUN_DIR}/controller_env_snapshot.env"
     [[ -f "$_snap" ]] || { echo "  [rq3] no env snapshot — skipping RQ3 gate"; return 0; }
     local _prop
-    _prop="$(grep -E '^READINESS_PROPAGATION=' "$_snap" | head -1 | cut -d= -f2)"
+    _prop="$(grep -E '^READINESS_PROPAGATION=' "$_snap" | head -1 | cut -d= -f2 || true)"
     case "$_prop" in
         direct|discovery) ;;
         *) echo "  [rq3] READINESS_PROPAGATION=$_prop — non-RQ3 run, skipping gate"; return 0 ;;
