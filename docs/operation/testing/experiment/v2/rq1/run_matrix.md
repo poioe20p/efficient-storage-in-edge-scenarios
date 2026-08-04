@@ -189,7 +189,10 @@ a **new** `counterbalance_order_v2.csv` (distinct from any prior order file).
 
 **Launch (per run, cloud VM):** `TRAFFIC_DRIVER_MODE=open_loop
 CURL_MAX_TIME=300 INFLIGHT_WINDOW=1024 DRAIN_S=30`; workload =
-`phases_stress_plateau.json` (rate 5.0 unchanged). **Each run's launch prefix
+**`phases_rq1_stress_plateau.json`** (2026-08-04 G2 retune, Option A:
+`compute_plateau` rate **3.0** — see retune note; a per-RQ1 copy of the
+control group's `phases_stress_plateau.json`, which stays at rate 5.0 for the
+control-group record). **Each run's launch prefix
 sets `RANDOM_SEED=<block seed>` (2001–2005), NOT the v1-fixed 42** — do not
 copy the §4 command verbatim; the counterbalance order file records the
 per-run seed. **Arm C: `POLL_INTERVAL_S=30`
@@ -199,6 +202,18 @@ the env file (no `-e` override exists for it; verify in
 `controller_env_snapshot.env`). Run folders
 `<timestamp>_rq1_delivery_<suffix>_<1..5>`; checkpoint **C4 arm set is
 `ep | delayed | ls | sp`**.
+
+**2026-08-04 G2 retune (Option A):** the true open-loop G2 revealed the
+collapse root cause — (1) RQ1 envs predated the 2026-08-03 data-path fix, so
+edge servers ran Mongo pool size 1 (serialized DB → DB latency explosion →
+256 MB OOM → lan1 telemetry silence → no scale-up; the "lan1 asymmetry" is a
+downstream symptom, not an independent bug); (2) rate 5.0 = 120 req/s/LAN ≈ 3×
+sustainable. Fix: **data-path fix (`EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`,
+`VIP_DATA_PER_CONNECTION_FLOWS=1`, `EDGE_MONGO_MAX_POOL_SIZE=6`) added to all 4
+RQ1 env files** (matching RQ2/control) + **new `phases_rq1_stress_plateau.json`
+at rate 3.0** (RQ2's proven-stable level). **All launch knobs are make
+command-line variables** (sudo `env_reset` strips exported env — the
+2026-08-04 launch bug). Re-validation run pending before any block starts.
 
 **Pre-flight (hard gates, fail-fast; blocks do not start until all pass):**
 (a) `make driver_selftest` (host + netns) — ✅ passed; (b) `make

@@ -1,12 +1,17 @@
 # RQ1 v2 Rework Plan — Telemetry Delivery Semantics (final evidence)
 
-**Date**: 2026-08-04 · **Status**: ✅ **Phases 1–5 implemented** (2026-08-04) · 🚧 **Phase 6 (campaign execution) in progress — G2 open-loop calibration BLOCKED** (two problems; see below) — no campaign blocks may start until resolved
+**Date**: 2026-08-04 · **Status**: ✅ **Phases 1–5 implemented** (2026-08-04) · 🚧 **Phase 6 (campaign execution) in progress — G2 retune applied (Option A), re-validation run pending** — no campaign blocks may start until the retuned calibration passes
 
 **Phase 6 execution record (2026-08-04):**
-- **🚨 G2 calibration re-run (Arm A, TRUE open-loop) — `20260804_165925_rq1_delivery_ep_calib2`, exit 0, BLOCKED.** The launch fix worked (open_loop_schedule.json present, workers `--driver-mode open_loop --in-flight-window 1024 --drain-s 30.0`, 14-col CSV with `status`). But the run revealed two blocking problems:
-  1. **Catastrophic overload collapse (both LANs)**: open-loop preserves offered load → plateau ≈ 120 req/s/LAN (71.6k offered each) vs the sync-driver run's ~82 req/s total. lan1 timeout_rate 87.7%, completed 8.1%, p50 21.9 s; lan2 timeout_rate 68.2%, completed 17.1%, p50 236 ms. `dropped` = 3.13% / 15.51% — both > 1% → **G2 rule triggers raising `INFLIGHT_WINDOW`** (or re-tuning offered rate).
-  2. **lan1 overload-detection/scaling asymmetry**: lan1 window_log flagged 14/173 overload vs lan2 123/167, lan1 made 2 scale-ups (lan2: 6), scaled to dyn2 only, `server_count` collapsed back to 1 mid-plateau — yet lan1 was the worse-performing LAN. Inverse of v1's Arm C lan2 asymmetry.
-  **Blocked pending: root-cause of the lan1 detection asymmetry + G2 calibration retune. See `results.md` §v2 for full numbers.**
+- **🛠️ G2 RETUNE (2026-08-04, root-caused collapse → Option A).** The true open-loop G2 (`20260804_165925_rq1_delivery_ep_calib2`) collapsed: lan1 timeout 87.7%, lan2 68.2%, dropped 3.1%/15.5%, lan1 dyn2 OOM-killed + base server restarted, lan1 telemetry silent from w54 → only 14 overload windows detected. **Root cause (not an independent lan1 bug):**
+  1. **RQ1 envs predate the 2026-08-03 data-path fix** (`EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`, `VIP_DATA_PER_CONNECTION_FLOWS=1`, `EDGE_MONGO_MAX_POOL_SIZE=6`) that RQ2/control already carry → RQ1 edge servers ran **Mongo pool size 1** (serialized DB) → DB latency explosion (lan2 median 13.7 s) → 256 MB OOM → lan1 server death → telemetry silence → controller (correctly) saw no overload and stopped scaling. The "lan1 asymmetry" is a downstream symptom of the collapse.
+  2. **Plateau rate 5.0 × 24 clients = 120 req/s/LAN offered** ≈ 3× the platform's sustainable ~41/LAN (the sync-driver "82 req/s" was a latency-collapsed artifact).
+  **Changes (Option A — new per-RQ phase file, control-group file untouched):**
+  - Added the data-path fix block to **all 4 RQ1 env files** (`rq1_*.env` → `EDGE_MONGO_MAX_POOL_SIZE=6` etc.), matching RQ2/control.
+  - Created **`source/scripts/testing/phases_override/phases_rq1_stress_plateau.json`** = copy of `phases_stress_plateau.json` with **compute_plateau rate 3.0** (RQ2's proven-stable 72 req/s/LAN offered). `phases_stress_plateau.json` (control, rate 5.0) left untouched.
+  - `_rq1_launch.sh` now uses `PHASES_CONFIG=testing/phases_override/phases_rq1_stress_plateau.json`.
+  **Re-validation run pending** (Arm A `event_preserving`, open-loop, rate 3.0 + pool 6). **No campaign blocks may start until it passes** (bounded overload: no OOM, no telemetry silence, dropped ≤ 1% or window raised per G2 rule, scale-up + scale-down fire, lan1≈lan2 detection).
+- **🚨 G2 calibration re-run (Arm A, TRUE open-loop) — `20260804_165925_rq1_delivery_ep_calib2`, exit 0, INVALIDATED by the above collapse.** See retune note above; full numbers in `results.md` §v2.
 - **⚠️ First two calibration runs INVALIDATED (launch-env bug, 2026-08-04):** `20260804_153342_rq1_delivery_ep_calib`, `20260804_162043_rq1_delivery_sp_calib` (exit 0) ran the **legacy sync driver**: `export`ed knobs were stripped by sudo `env_reset` before `make` (no `open_loop_schedule.json`, no "Driver mode" log line, legacy 13-col CSV, default CPU caps). **Fix applied + verified**: `_rq1_launch.sh` now passes all knobs as make command-line variables (which survive sudo). Retained as sync-driver reference only.
 - Gates (a)/(b)/(c) (driver/analyzer/sampled-push selftests) already passing; (d) concurrency stress implicit in the calibration plateau (82 req/s × 300 s cap without conntrack exhaustion); (i) sync regression pending.
 

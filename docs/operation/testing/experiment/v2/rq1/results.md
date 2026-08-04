@@ -20,49 +20,40 @@
 `CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`); 4 arms × 5 = 20
 runs; 5 counterbalanced blocks (seeds 2001–2005, orders in
 `counterbalance_order_v2.csv`); Arm C `POLL_INTERVAL_S=30` on the shell; Arm D
-`rq1_sampled_push.env` (`SAMPLE_EVERY=3`).
+`rq1_sampled_push.env` (`SAMPLE_EVERY=3`). **Workload (2026-08-04 G2 retune):
+`phases_rq1_stress_plateau.json` (plateau rate 3.0)** — see retune note below.
 
 | Run | Arm | Status | Cumulative analysis | Conclusions | Changes made | Expectations |
 | --- | --- | --- | --- | --- | --- | --- |
-| Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | 🚧 in progress | Gates (a)–(c) ✅; **G2 calibration (Arm A) re-run under true open-loop: BLOCKED** — see below | True open-loop G2 (`20260804_165925_rq1_delivery_ep_calib2`) shows **catastrophic overload collapse + lan1 overload-detection asymmetry**: plateau 120 req/s/LAN → 58%/37% timeout, dropped 3.1%/15.5% (>1% rule → raise `INFLIGHT_WINDOW`), lan1 detects only 14 overload windows (lan2: 123) yet is the worse-performing LAN → lan1 under-scales. **Blocked pending root-cause + calibration retune.** | `_rq1_launch.sh`: env → make vars (fixed launch); G2 result now real open-loop but FAILED | Re-run G2 after retune (rate/window); then Arm D dry-run + gates (f)/(h) |
+| Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | 🚧 in progress | Gates (a)–(c) ✅; **G2 retune applied (Option A) — re-validation run pending** | **Root cause of the open-loop collapse identified (not a lan1 bug):** RQ1 envs predated the 2026-08-03 data-path fix → Mongo pool 1 (serialized DB) → DB explosion → 256 MB OOM → lan1 telemetry silence → no scale-up; plus rate 5.0 = 120 req/s/LAN ≈ 3× sustainable. **Retune:** pool-6 data-path fix added to all 4 RQ1 envs + new `phases_rq1_stress_plateau.json` (rate 3.0, control file untouched). | Env ×4: pool-6 block; new phases file; `_rq1_launch.sh` → new phases file | Re-validation run (Arm A, open-loop, rate 3.0) must show bounded overload (no OOM, no telemetry silence, dropped ≤ 1%, scale-up+down fire, lan1≈lan2) before any block |
 | Blocks 1–5 — 20 runs | — | ⏳ | — | — | — | See `run_matrix.md` §9 |
 
-**⚠️ Calibration runs INVALIDATED (launch-env bug, 2026-08-04):** both
-`20260804_153342_rq1_delivery_ep_calib` and `20260804_162043_rq1_delivery_sp_calib`
-(exit 0) ran the **legacy latency-coupled sync driver** — the launch wrapper's
-`export TRAFFIC_DRIVER_MODE=open_loop ...` was stripped by sudo `env_reset`
-before `make`, so `INFLIGHT_WINDOW`/`DRAIN_S`/`STORAGE_CPUS`/`EDGE_CPUS`/
-`WAN_RTT_MS`/`RANDOM_SEED` never reached the run. They are retained as
-sync-driver reference evidence only; **none of their open-loop gates count**.
-Fix (verified on VM): knobs now passed as make command-line variables. Re-run
-pending — this block will be replaced by the open-loop calibration summary.
+**🛠️ G2 RETUNE (2026-08-04, Option A) — collapse root-caused + fixed.** The
+true open-loop G2 (`20260804_165925_rq1_delivery_ep_calib2`) collapsed:
+lan1 timeout 87.7%, lan2 68.2%, dropped 3.1%/15.5%, lan1 dyn2 OOM-killed,
+lan1 telemetry silent from w54 (only 14/173 overload windows vs lan2
+123/167). Root cause was **not an independent lan1 controller bug**:
+- RQ1 env files were rebased from `current_state_integrated.env` **before**
+  the 2026-08-03 data-path fix, so they lacked `EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`,
+  `VIP_DATA_PER_CONNECTION_FLOWS=1`, `EDGE_MONGO_MAX_POOL_SIZE=6` — every RQ1
+  edge server ran **Mongo pool size 1** (serialized DB). Under open-loop load
+  this drove DB latency to 13.7 s median (lan2), requests piled up, the 256 MB
+  cap OOM-killed lan1's dyn2 (ExitCode 137) and restarted the base server,
+  lan1's telemetry died → the controller (correctly) saw no overload and
+  stopped scaling. The 14-vs-123 overload-window gap is the controller
+  faithfully reporting on a dead signal path.
+- Plus plateau **rate 5.0 × 24 = 120 req/s/LAN offered** ≈ 3× the platform's
+  sustainable ~41/LAN (the sync-driver "82 req/s" was latency-collapsed).
+
+**Changes (Option A):** (1) added the data-path fix block to all 4 RQ1 env
+files; (2) created `phases_rq1_stress_plateau.json` = `phases_stress_plateau.json`
+with `compute_plateau` rate **3.0** (RQ2's proven-stable 72 req/s/LAN;
+control-group file stays at 5.0); (3) `_rq1_launch.sh` → new phases file.
+**Re-validation run pending — no campaign block may start until it passes.**
 
 **🚨 G2 calibration re-run (Arm A `event_preserving`, TRUE open-loop)
-`20260804_165925_rq1_delivery_ep_calib2` — exit 0, BLOCKED on two problems:**
-
-1. **Catastrophic overload collapse (both LANs).** With the open-loop driver
-   the offered rate is preserved (not collapsed by latency): plateau
-   71,638/71,629 offered per LAN ≈ **120 req/s/LAN**, vs the sync-driver run's
-   ~82 req/s total. Result: lan1 timeout_rate 87.7% (41,380 timeout / 47k
-   non-dropped), completed only 8.1% (5,825), p50 latency 21.9 s; lan2
-   timeout_rate 68.2% (26,252), completed 17.1% (12,255), p50 236 ms. `dropped`
-   = 3.13% (lan1) / 15.51% (lan2) — **both > 1%, triggering the G2 rule to
-   raise `INFLIGHT_WINDOW`** (or equivalently the offered rate is far above
-   the calibrated scale; the sync-driver "82 req/s" was a latency-collapsed
-   artifact, not a load cap).
-2. **lan1 overload-detection / scaling asymmetry (inverse of v1's Arm C
-   lan2).** lan1 window_log flagged only 14/173 windows overload, lan2
-   123/167 — yet lan1 was the WORSE-performing LAN. lan1 controller made only
-   2 scale-up decisions (lan2: 6), lan1 scaled to dyn2 only (lan2: dyn2/dyn3/
-   dyn5), and lan1's resource_stats show `server_count` dropping back to 1
-   mid-plateau. lan1 DB median 1.46 s vs lan2 13.7 s — lan1's overload signal
-   under-fires while its service collapses (58% timeout).
-
-**G2 decision rule outcome:** `dropped` > 1% on both LANs → per the
-pre-registered rule `INFLIGHT_WINDOW` must be raised (or the offered rate
-re-tuned so the overload is a designed, bounded outcome rather than a
-collapse). **Blocked pending root-cause of the lan1 detection asymmetry and a
-calibration retune — no campaign blocks may start until resolved.**
+`20260804_165925_rq1_delivery_ep_calib2` — exit 0, INVALIDATED by the collapse
+(see retune above).**
 
 **G2 calibration — Arm A `event_preserving` (INVALID — sync driver; reference only):**
 - Throughput: plateau 81.9 req/s vs 4.0 idle; 51,065 offered, 99.4% HTTP 200.
