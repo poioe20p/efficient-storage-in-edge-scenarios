@@ -13,13 +13,15 @@ Alignment: in the compute-bound episode (``cb``) the aligned arm is ``cf``
 (fixed_compute_first) and the mis-aligned arm is ``sf``; in the data-bound
 episode (``db``) the aligned arm is ``sf`` and the mis-aligned arm is ``cf``.
 
-Statistics: two-sided Mann–Whitney U reported DESCRIPTIVELY (n=3 gives a
-minimum p of 0.10, so NO alpha claim is made; pure-python: exact enumeration
+Statistics: two-sided Mann–Whitney U reported with exact p (n=6 gives a
+minimum p of 0.0022, so α=0.05 significance claims are possible; pure-python:
+exact enumeration
 for n_a+n_b <= 16, tie-corrected normal approximation with continuity
 correction otherwise) and Cliff's delta
 ``(sum_{i,j}[x_i>y_j] - sum_{i,j}[x_i<y_j]) / (n*m)``. Conclusions rest on
-Cliff's delta >= 0.6 (large effect) and 3/3 direction consistency across
-replicates.
+significance where reached, Cliff's delta >= 0.6 (large effect), and 6/6
+direction consistency across replicates; where p > 0.05, claims are scoped to
+effect size + direction only (no significance language).
 
 Rules:
 - Only headline/primary pairs are evaluated (MWU + Cliff's delta, reported
@@ -29,7 +31,7 @@ Rules:
   the cap, default 30000 ms = the v1 CURL_MAX_TIME). The unit of the latency
   columns is auto-detected (the v1 dataset stores SECONDS despite the ``_ms``
   column suffix), so the cap is compared in the correct scale.
-- Missing values: a metric is tested only where >= 3 runs per cell have a
+- Missing values: a metric is tested only where >= 6 runs per cell have a
   defined value; otherwise it is excluded and reported as counts + medians.
 
 Output: ``stats_summary.csv`` (rows ``episode, pair, metric, n_a, n_b,
@@ -68,7 +70,7 @@ _METRIC_NAMES = ["timeout_rate", "failure_rate", "node_minutes_per_1000",
                  "time_to_recover"]
 
 _EXACT_MAX_N = 16          # n_a + n_b <= 16 -> exact enumeration
-_MIN_RUNS = 3              # per cell, defined values required to test
+_MIN_RUNS = 6              # per cell, defined values required to test
 
 _EPISODE_ALIASES = {"cb": "cb", "compute_bound": "cb", "compute-bound": "cb",
                     "db": "db", "data_bound": "db", "data-bound": "db"}
@@ -217,9 +219,9 @@ def _episode_of(r) -> str:
 def _pairs(episode: str) -> list[tuple[str, str, str, str, str]]:
     """(pair_name, policy_a, policy_b, kind, role) for one episode.
 
-    Effect-size hierarchy at n=3 (no alpha claims): headline = aligned vs
-    mis-aligned (the cross-over); primary = ba vs mis-aligned (value-of-
-    information) and ba vs aligned (equivalence); exploratory = cf vs sf.
+    Effect-size + significance hierarchy at n=6 (α-capable): headline =
+aligned vs mis-aligned (the cross-over); primary = ba vs mis-aligned
+(value-of-information) and ba vs aligned (equivalence); exploratory = cf vs sf.
     """
     aligned = "cf" if episode == "cb" else "sf"
     mis = "sf" if episode == "cb" else "cf"
@@ -357,7 +359,7 @@ def main() -> int:
                 if metric == "failure_rate" and col_map[metric]:
                     note_parts.append("v1 ep_failure_pct includes timeouts")
                 if role in ("headline", "primary"):
-                    note_parts.append("n=3 no alpha claim (effect-size)")
+                    note_parts.append("n=6 significance-capable (a=0.05)")
                 elif role == "exploratory":
                     note_parts.append("no significance claim")
                 summary.append({
@@ -402,7 +404,7 @@ def main() -> int:
     n_total = len(_METRIC_NAMES) * 2 * sum(
         1 for *_x, role in _pairs("cb") if role in ("headline", "primary"))
     print(f"  comparisons evaluated : {n_tested}/{n_total} "
-          f"(effect-size at n=3; no alpha claims)")
+          f"(n=6 significance-capable; exact MWU)")
     _console(summary, col_map, cap_value, latency_unit)
     print(f"\n  wrote {args.output} ({len(summary)} rows)")
     return 0

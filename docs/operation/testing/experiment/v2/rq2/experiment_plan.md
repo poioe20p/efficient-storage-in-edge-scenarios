@@ -37,24 +37,24 @@ structural gaps (G1–G5, `rq2_v2_rework_plan.md` §1):
 | Aspect | v2 setting |
 |---|---|
 | **Driver** | **open-loop** (`traffic_generator.py --driver-mode open_loop`): the arrival process is independent of completions, per-request synchronous response timing preserved. Rationale — Schroeder, Wierman & Harchol-Balter, *Open Versus Closed: A Cautionary Tale* (NSDI 2006): closed-loop models mask overload; a latency-coupled driver makes the offered load differ per arm, which is exactly the v1 confound (G1). |
-| **Replicates** | n = 3 per cell (min achievable MWU p = 0.10 — **no α claims**; conclusions by effect size + 3/3 direction consistency, scoped to what n=3 supports) |
-| **Cells** | 6 cells × 3 = **18 runs** — `cf_cb, cf_db, sf_cb, sf_db, ba_cb, ba_db` |
+| **Replicates** | n = 6 per cell (min achievable MWU p = 0.0022 — significance claims possible at α=0.05; conclusions by effect size + 6/6 direction consistency) |
+| **Cells** | 6 cells × 6 = **36 runs** — `cf_cb, cf_db, sf_cb, sf_db, ba_cb, ba_db` |
 | **`ba-strict`** | implemented (knob `BOTTLENECK_STRICT_SINGLE=1`, env `rq2_bottleneck_aware_strict.env`, gate unit-tested) but **not run** in this 18-run campaign — kept as a documented option for a follow-up capacity-vs-classification test. |
 | **Timeouts** | `CURL_MAX_TIME=300` s; `timeout` is a **distinct outcome class**, never merged into `failure`; the per-run `timeout_rate` is the primary degradation statistic (defined for every run). |
 | **Concurrency / drain** | `INFLIGHT_WINDOW=1024` (window/rate > cap → `dropped` unreachable in production by design), `DRAIN_S=30` at each phase boundary (`canceled` class, sequential drain→dispatch). |
 | **Process model** | supervisor keeps the phase timeline + active mask (dedicated seeded RNG); **one worker process per netns** (`--client-ns`, seeded `random.seed(base + ns_index)`, fresh TCP connection per request). |
-| **Statistics** | **effect-size hierarchy** (no α claims at n=3): per episode, aligned vs mis-aligned (headline), `ba` vs mis-aligned, `ba` vs aligned (equivalence ≤ 1.5×) — Cliff's delta ≥ 0.6 + 3/3 direction consistency on `timeout_rate`, `failure_rate`, `node-minutes`, `time-to-recover`; MWU reported descriptively (n=3 min p=0.10); **no censored value enters MWU**; ≥3 defined values rule. |
+| **Statistics** | **effect-size hierarchy + significance at n=6**: per episode, aligned vs mis-aligned (headline), `ba` vs mis-aligned, `ba` vs aligned (equivalence ≤ 1.5×) — Cliff's delta ≥ 0.6 + 6/6 direction consistency on `timeout_rate`, `failure_rate`, `node-minutes`, `time-to-recover`; MWU reported with exact p (n=6 min p=0.0022, α=0.05-capable); **no censored value enters MWU**; ≥6 defined values rule. |
 | **Action cost** | replica-sync cost per added storage member — **new collector** `rq2v2_p2_01_sync_cost.py` → `sync_cost.csv` (initial-sync duration, bytes applied, storage CPU during sync). |
 | **Relief** | secondary **relief-flatten** signal — `rq2v2_p2_02_relief_flatten.py` → `relief_flatten.csv` (target-tier `score_norm` stops rising / plateaus within `RELIEF_FLATTEN_WINDOW_S` after the action). |
 | **Reporting** | `status`-aware metrics: offered vs completed vs timeout vs dropped/canceled; unified denominators; classifier asymmetry reported honestly (cb ≈ chance, db strong). |
 | **New gates** | **per-run driver self-test** (enforced inside `run_traffic()` in `run_experiment.sh` — fail-fast on every run, stronger than a one-off pre-flight check), pre-flight concurrency stress check, stats gate (effect-size comparisons with missing-value exclusions recorded). |
 
-**v2 success criteria (scoped to n=3 — effect-size, no α claims):**
+**v2 success criteria (scoped to n=6):**
 
 - **SC1 Cross-over (headline):** per episode, aligned beats mis-aligned on
-  episode p95 and `timeout_rate` with **3/3 direction consistency** and
+  episode p95 and `timeout_rate` with **6/6 direction consistency** and
   Cliff's delta ≥ 0.6.
-- **SC2 Value-of-information:** `ba` beats mis-aligned (3/3 + Cliff's delta
+- **SC2 Value-of-information:** `ba` beats mis-aligned (6/6 + Cliff's delta
   ≥ 0.6) and is within **1.5×** of the aligned median (equivalence).
 - **SC3 Wrong-action cost:** mis-aligned shows no targeted-tier relief,
   exhausts its wrong-tier budget, and node-minutes/1000 ≥ aligned and ≥ `ba`.
@@ -65,9 +65,9 @@ structural gaps (G1–G5, `rq2_v2_rework_plan.md` §1):
 - **SC6 Efficiency:** `ba` node-minutes/1000 ≤ mis-aligned.
 
 **Run-label pattern (v2):** `rq2_<policy>_<episode>_<replicate>` with
-`policy ∈ {cf, sf, ba}`, `episode ∈ {cb, db}`, `replicate ∈ {1..3}` (e.g. `rq2_ba_cb_1`). Block orders live in
+`policy ∈ {cf, sf, ba}`, `episode ∈ {cb, db}`, `replicate ∈ {1..6}` (e.g. `rq2_ba_cb_1`). Block orders live in
 [`counterbalance_order_v2.csv`](counterbalance_order_v2.csv) (seeds
-2001–2003, distinct-order verified; the v1 `counterbalance_order.csv` is
+2001–2006, distinct-order verified; the v1 `counterbalance_order.csv` is
 never overwritten). Full v2 matrix: [`run_matrix.md`](run_matrix.md) §10;
 v2 measurement contract: [`analysis_focus.md`](analysis_focus.md) §7.
 

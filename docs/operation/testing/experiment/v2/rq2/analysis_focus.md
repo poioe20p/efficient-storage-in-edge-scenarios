@@ -234,16 +234,17 @@ addition to the existing below-threshold recovery
 targeted_tier, score_norm_at_action, score_norm_peak_after,
 plateau_within_window, recovered_below_threshold, relief_signal`).
 
-### 7.4 Statistics contract (pre-registered, effect-size at n=3)
+### 7.4 Statistics contract (pre-registered, significance-capable at n=6)
 
 `rq2v2_p2_03_stats.py` (CLI: `--dataset campaign_dataset.csv
 [--output stats_summary.csv]`):
 
-- **n = 3 per cell → no α claims.** Mann–Whitney U at n=3 has minimum p = 0.10
-  and is reported **descriptively** only; conclusions rest on **Cliff's delta
-  magnitude** (≥ 0.6 = large) and **direction consistency across all 3
-  replicates**. Thesis claims are scoped to what this supports (no
-  significance language).
+- **n = 6 per cell → α-capable.** Mann–Whitney U at n=6 has minimum p = 0.0022
+  (exact enumeration); α=0.05 significance claims are possible (~22 distinct
+  p-values ≤ 0.05 reachable). Conclusions rest on **significance (where
+  reached) + Cliff's delta magnitude** (≥ 0.6 = large) and **direction
+  consistency across all 6 replicates**; where p > 0.05, claims are scoped to
+  effect size + direction only (no significance language).
 - **Pre-registered comparison hierarchy** (per episode):
   - *headline*: **aligned vs mis-aligned** (`cf` vs `sf` in cb; `sf` vs `cf`
     in db) — the cross-over proof;
@@ -254,7 +255,7 @@ plateau_within_window, recovered_below_threshold, relief_signal`).
 - **No censored value enters MWU** — latency percentiles are descriptive only
   (median-of-replicates + per-run scatter + IQR) with a **censoring flag**
   where the 300 s cap binds.
-- **≥3 defined values rule:** a comparison is evaluated only where all 3 runs
+- **≥6 defined values rule:** a comparison is evaluated only where all 6 runs
   per cell have a defined value; cells with undefined values (e.g.
   `cf_cb`/`sf_cb` time-to-recover, cells that add no storage for sync-cost)
   are excluded and reported as counts + medians (Cliff's delta only).
@@ -278,3 +279,35 @@ statistic** (defined for every run, independent of the cap).
   connection limits.
 - **Stats gate** — MWU computed on all pre-registered primary pairs with
   missing-value exclusions recorded.
+
+### 7.7 Efficiency (SC6) — pre-registered interpretation nuance
+
+**Background (pre-campaign evidence, 2026-08-04):** calibration/validation runs
+(`rq2_g2_ba_db_cal4`, `rq2_g2_ba_db_hard_cal`, `rq2_g2_ba_strict_db_cal`)
+show that `ba` in the **db** episode spends **both** action budgets
+(compute=4 **and** storage=4 per LAN): the classifier commits to storage on
+most windows, but single-tier compute fires recur (~1/3 of episode windows), so
+compute actions also bind. The aligned `sf` arm spends storage only (4);
+mis-aligned `cf` spends compute only (4). If node lifetimes are comparable,
+`ba` node-minutes in db may approach **2× the aligned arm**.
+
+**Pre-registered decision rule (SC6)** — committed before the campaign
+completes, so the db-cell outcome cannot reinterpret the criterion after the
+fact:
+
+1. `SC6` (`ba` node-minutes ≤ mis-aligned) is evaluated **as written**.
+2. If it holds → the efficiency claim stands unchanged.
+3. If it does **not** hold (`ba` spends both budgets; node-minutes > aligned or
+   > mis-aligned), it is reported as a **finding, not a shortfall**:
+   - `ba` recovers service quality to the aligned arm's level **without
+     knowing the episode** (SC2 value-of-information on quality), and its
+     node-minutes are **bounded by the action budget** (4/tier/LAN — the same
+     ceiling each fixed arm hits on its own tier).
+   - The efficiency narrative reframes from *"uses fewer nodes"* to
+     *"avoids the mis-configured outcome at a bounded, budget-capped resource
+     cost"* — the price of not knowing the episode.
+   - Node-minutes are reported **per unit of completed demand**
+     (node-minutes ÷ completed requests) alongside the raw figure, so the
+     comparison is not distorted by differing completed-load denominators.
+4. The same rule applies to the **cb** episode if classifier noise causes `ba`
+   to spend storage budget there (cb classifier ≈ chance).

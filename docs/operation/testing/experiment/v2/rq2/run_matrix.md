@@ -341,11 +341,12 @@ calibration re-runs.
 
 ---
 
-## 10. RQ2 v2 matrix (final evidence — 18 runs)
+## 10. RQ2 v2 matrix (final evidence — 36 runs)
 
 This section **supersedes §1–§9 as the primary RQ2 run configuration**; the
-18-run v1 campaign above remains the supporting record. Spec:
-`rq2_v2_rework_plan.md` (Phases 1–3 implemented; Phase 5 pending execution).
+36-run v2 campaign is the final thesis evidence (n=6, 2026-08-04 scope
+upgrade). The 18-run v1 campaign remains the supporting record. Spec:
+`rq2_v2_rework_plan.md` (Phases 1–3 implemented; Phase 5 in execution).
 
 ### 10.1 Structure
 
@@ -353,7 +354,7 @@ This section **supersedes §1–§9 as the primary RQ2 run configuration**; the
 |---|---|---|
 | **Pre-flight (Phase-5 gates, fail-fast)** | 3 + smoke | (a) `make driver_selftest` on the VM (host + inside a netns); (b) **concurrency stress check** — max in-flight at the intended rate and the 300 s cap must not exhaust container/conntrack connection limits (tune limits if it does; else lower window/rate and re-record the budget); (c) 2 G2 calibration runs (`ba_cb`, `ba_db`) under open-loop to re-tune episode rates (target ≤ 3 req/s/client so `window/rate > 300 s`); (d) legacy `sync`-mode
 regression smoke. **Blocks do not start until all pass.** |
-| **Main** | 18 | 6 cells × 3 replicates, 3 counterbalanced blocks |
+| **Main** | 36 | 6 cells × 6 replicates, 6 counterbalanced blocks |
 
 **Cells (6):** `cf_cb, cf_db, sf_cb, sf_db, ba_cb, ba_db` (the
 `ba-strict` arm is implemented but **not run** in this campaign — kept as a
@@ -361,16 +362,16 @@ documented option for a follow-up capacity-vs-classification test).
 
 **Run-label pattern (v2):** `rq2_<policy>_<episode>_<replicate>` with
 `policy ∈ {cf, sf, ba}`, `episode ∈ {cb, db}`,
-`replicate = block number ∈ {1..3}` (e.g. `rq2_ba_cb_1`). Run folder:
+`replicate = block number ∈ {1..6}` (e.g. `rq2_ba_cb_1`). Run folder:
 `<timestamp>_rq2_<policy>_<episode>_<replicate>`.
 
-### 10.2 Counterbalancing (3 blocks, seeds 2001–2003)
+### 10.2 Counterbalancing (6 blocks, seeds 2001–2006)
 
-The 18 runs execute in **3 blocks of 6 cells**, each block a different
+The 36 runs execute in **6 blocks of 6 cells**, each block a different
 randomized order. Each block order is generated deterministically with
 `python -c "import random; random.seed(<BLOCK_SEED>); print(random.sample([...6 cells...], 6))"`
-with `BLOCK_SEED = 2001..2003` for blocks 1–3. **Distinct-order verification
-is kept** — the three sampled orders must all be distinct (re-sample a block's
+with `BLOCK_SEED = 2001..2006` for blocks 1–6. **Distinct-order verification
+is kept** — the six sampled orders must all be distinct (re-sample a block's
 seed on collision until distinct). The verified final orders are recorded in
 **`counterbalance_order_v2.csv`** in this experiment folder (a **new** file —
 the v1 `counterbalance_order.csv` is **never overwritten**). `RANDOM_SEED=42`
