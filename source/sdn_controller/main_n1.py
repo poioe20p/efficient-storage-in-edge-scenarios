@@ -53,6 +53,7 @@ from .scaling_config import (
     _EDGE_READY_PORT,
     _ADMISSION_LOG_PATH,
     _VIP_FLOW_ISOLATION,
+    _HOUSEKEEPING_OVERLOAD_GATE,
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
@@ -777,6 +778,15 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         try:
             s = self._last_summary
             if s is None or s.window_seq is None:
+                return
+
+            # Churn guard: while the LAN is overloaded, do NOT shed capacity.
+            # Absent-cleanup and scale-down remove LIVE nodes when telemetry
+            # presence is sparse (bursty completions), triggering RS reconfigs
+            # that stall DB ops — the self-amplifying collapse (G2 calib4/6).
+            if _HOUSEKEEPING_OVERLOAD_GATE and s.overload:
+                logger.debug(
+                    "[housekeeping] LAN overloaded — suppressing absent-cleanup + scale-down (churn guard)")
                 return
 
             # ── Absent-node detection → alert submission ────────────────

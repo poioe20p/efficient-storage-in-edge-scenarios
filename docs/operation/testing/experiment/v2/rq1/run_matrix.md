@@ -220,6 +220,33 @@ pool 6; storage idle ~25% CPU). **Pool raised 6→12 in all 4 env files +
 `source/scripts/testing/rq1_launch_run.sh`** (formalized from temp
 `_rq1_launch.sh`; ~96 DB ops/s capacity, keeps rate 3.0).
 
+**2026-08-04 G2 calib6 (pool 12 + absent-cleanup slot fix): still collapsed —
+workload RE-ANCHORED, not patched.** Plateau p50 22.2/30.5 s, timeout 68%,
+completion ~29%, delivery 124/124, detection 118/105. Pool 12 did NOT help →
+the DB-ceiling hypothesis was wrong. Root cause = **control-loop churn
+collapse**: overload → bursty completions → sparse telemetry presence →
+absent-node cleanup + scale-down removed LIVE compute/storage nodes mid-overload
+→ RS reconfig + fleet shrink (25 adds/17 removes; compute fleet ~1 node for
+76/125 windows) → DB ops stall 6–16 s → worse overload (self-amplifying; every
+DB spike coincided with a churn event). **Driver-mismatch finding:** the
+control-group / RQ2 “proven-stable” rates (5.0 / 1.5) were measured with the
+legacy SYNC (closed-loop) driver (13-col CSVs, no `status`), which
+backpressures and hides data-plane collapse; RQ1's open-loop driver (fixed load
+— correct for the thesis) was never rate-calibrated.
+
+**Fix (2026-08-04): churn guard + open-loop rate sweep.**
+1. **Controller churn guard** (all RQs; `_HOUSEKEEPING_OVERLOAD_GATE` default
+   ON): while the LAN is overloaded, `_run_housekeeping` suppresses absent-node
+   cleanup AND scale-down (they destroy live capacity under sparse telemetry);
+   scale-up still runs; cleanup/scale-down resume once overload clears.
+2. **Open-loop rate sweep** (Arm A reference, seed 2001, pool 12 held): edit
+   `phases_rq1_stress_plateau.json` rate in place (canonical-file rule); 3 runs
+   `rq1_g2_rate20` / `rq1_g2_rate25` / `rq1_g2_rate30` (2.0 / 2.5 / 3.0 → 34 /
+   42 / 50 DB ops/s/LAN). **Decision rule:** pick the highest rate with bounded
+   overload — overload detected (arms must differentiate), failure ≤ 5–10%,
+   stable fleet (no dyn-churn), DB spikes bounded (< ~2 s). Re-confirm the
+   chosen rate at pool 6 for control/RQ2 parity, then lock the plateau.
+
 **Pre-flight (hard gates, fail-fast; blocks do not start until all pass):**
 (a) `make driver_selftest` (host + netns) — ✅ passed; (b) `make
 rq1_analyzer_selftest` — ✅ passed (local + VM); (c) **sampled-push selftest

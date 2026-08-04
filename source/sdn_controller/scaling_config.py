@@ -132,6 +132,18 @@ _TELEMETRY_TIMEOUT_S = max(
     3.0 * float(os.environ.get("HEARTBEAT_INTERVAL_S", "60")),
 )
 
+# ── Churn guard (G2 calib4/calib6 finding) ─────────────────────────────
+# During an overload episode the LAN must NOT shed capacity: absent-node
+# cleanup and scale-down both remove LIVE nodes when telemetry presence is
+# sparse (bursty completions under load), which reconfigures the replica set
+# and stalls in-flight DB ops — the self-amplifying collapse seen at open-loop
+# rate 3.0 / 70% DB mix (pool 12 did NOT fix it; the churn did the damage).
+# Default ON (correct behavior for all RQs); set HOUSEKEEPING_OVERLOAD_GATE=0
+# to reproduce the pre-fix behavior.
+_HOUSEKEEPING_OVERLOAD_GATE = os.environ.get(
+    "HOUSEKEEPING_OVERLOAD_GATE", "1"
+).strip().lower() in ("1", "true", "yes")
+
 # ── RQ2 bottleneck policy gate ─────────────────────────────────────────
 # SCALEUP_POLICY selects the scale-up selection policy:
 #   "dual"                 → pre-RQ2 behavior (both tiers may fire + submit
@@ -205,6 +217,18 @@ _ADMISSION_LOG_PATH = os.environ.get("ADMISSION_LOG_PATH", "/tmp/admission_log.c
 # response (one fresh backend-selection event per request). RQ3 measurement
 # instrumentation; 0 elsewhere.
 _VIP_FLOW_ISOLATION = int(os.environ.get("VIP_FLOW_ISOLATION", "0"))
+# Per-connection VIP_SERVER flow matching (RQ3 flow isolation, 2026-08-04).
+# 0 (default) = per-CLIENT flows (one DNAT/SNAT pair per client, keyed by
+#   client_mac); preserves canonical/RQ1/RQ2 byte-identical behavior and the
+#   original D5 per-client design.
+# 1 = per-CONNECTION flows keyed on tcp_src (the client's ephemeral port).
+#   Each fresh request connection gets its own flow pair, so the async
+#   request_complete delete for one request can never collide with the next
+#   request's flow -> Check C delete coverage approaches 1.0 under the
+#   calibrated spike rate (per-client flows shared a generation whenever the
+#   delete landed after the next SYN). RQ3 arm envs set this to 1.
+_VIP_SERVER_PER_CONNECTION = int(
+    os.environ.get("VIP_SERVER_PER_CONNECTION_FLOWS", "0"))
 # Misconfiguration guard: warn (once) if flow isolation is enabled but no
 # request_complete events have arrived within this many seconds of startup.
 _FLOW_ISOLATION_WARMUP_S = float(os.environ.get("FLOW_ISOLATION_WARMUP_S", "120.0"))
