@@ -259,6 +259,38 @@ if not.
 > (DB-activity gate, code change) rejected — it yields the same residual for
 > higher cost. Block 1 re-run (2026-08-03) uses the floor-35 envs.
 
+> **Open-loop G2 recalibration evidence (2026-08-04, v2 open-loop driver):**
+> the v2 open-loop driver preserves offered load (the v1 sync driver
+> collapsed it), so the v1 episode rates (8.0/5.0) over-saturate. The rates
+> were re-tuned in place and each candidate was validated on a `ba` G2
+> calibration run before the campaign. **Calibration runs and verdicts:**
+>
+> | Run | episode | rate | driver | G2 (proc/db ms) | ep p50 | timeout% | canceled% | dropped | recovery | scale-up | verdict |
+> |---|---|---|---|---|---|---|---|---|---|---|---|
+> | `145827_rq2_g2_ba_cb_cal` | cb | 8.0 | open-loop | PASS | 84.8 s | 19.2 % | 18 % | 12.7 % | no | compute 4/LAN | **REJECT** — over-saturated (rate too hot) |
+> | `153023_rq2_g2_ba_cb_cal2` | cb | 3.0 | open-loop | PASS (1.4/0) | 3.1 s | 14.9 % | 1.2 % | 0 | yes (→0 by ~360 s) | compute 4/LAN | **ACCEPT** |
+> | `163351_rq2_g2_ba_db_cal` | db | 3.0 | **sync** | PASS (5/25) | 24 ms | 0 | 0 | 0 | n/a | storage 4/LAN | **INVALID** — launch omitted the open-loop env (13-col CSV, no `status`); sync driver load-collapse |
+> | `181521_rq2_g2_ba_db_cal2` | db | 3.0 | open-loop | PASS (22/273) | 67 s | 21.4 % | 24.5 % | 0 | no (queue never clears) | storage 4/LAN | **REJECT** — over-saturated |
+> | `190146_rq2_g2_ba_db_cal3` | db | 2.0 | open-loop | PASS (17/245) | 32 s | 15.6 % | 10.1 % | 0 | **yes** (timeouts 2648→0 by ep end) | storage 4/LAN | **PROVISIONAL** — mechanism works; retune to 1.5 for a shallower ramp |
+> | `193959_rq2_g2_ba_db_cal4` | db | **1.5** | open-loop | PASS (12–24/177–230) | **2.0 s** | **10.1 %** (ramp-only) | **3.1 %** | 0 | **clean** (→0 by ~5 min; 0/9/2 in last 3 buckets) | storage 4/LAN | **ACCEPT** |
+>
+> **What worked at rate 1.5 (db, `193959_rq2_g2_ba_db_cal4`):**
+> - Episode p50 **2.0 s**, p95 16 s, p99 28 s — real DB pressure (median `db_ms`
+>   177–230 ≫ `proc_ms` 12–24), not collapse.
+> - `timeout_rate` 10.1 % concentrated in the ramp (peak 1108 in the first
+>   180 s), → ~0 in steady state after storage scale-up; `canceled` 3.1 %;
+>   `dropped` 0.
+> - Storage scale-up fires and the budget exhausts (4/LAN); G2 PASS both LANs;
+>   the run completed exit=0 (the RQ3 gate skip fix).
+>
+> **Decision (2026-08-04, final):** the db episode is **ACCEPTED at rate 1.5**
+> (window/rate = 1024/1.5 = 683 s > 300 s ✅). The cb episode is accepted at
+> rate 3.0 (`153023_rq2_g2_ba_cb_cal2`). Both episode files are calibrated
+> in place and synced to the VM. `ba` dual-fires in db (compute budget also
+> exhausts, compute score pinned at 0.60) — documented, matches the v1
+> baseline, reported honestly. **Pre-flight gate is green; the 18-run
+> campaign may start.**
+
 The 600 s episode (like the control plateau) is long enough to exhaust the
 4/tier budget even under the 120 s storage cooldown and to measure
 time-to-recover in-window. Compute-bound endpoints: `service_pressure`,
