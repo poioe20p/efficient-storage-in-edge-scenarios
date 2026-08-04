@@ -82,10 +82,19 @@ companion script checks these assertions.
 | `BACKEND_SELECTION_POLICY` | `topology_host` | `topology_host` | `topology_host` |
 | `VIP_WARM_SERVER_SECONDS` | `0` | `0` | `0` |
 | `SCALEUP_POLICY` | `dual` | `dual` | `dual` |
+| `MAX_DYNAMIC_COMPUTE` | `6` | `6` | `6` |
 | `TELEMETRY_SOURCE` | `event_preserving` | `event_preserving` | `event_preserving` |
 | `STORAGE_PERSISTENT_RESERVE_ENABLED` | `0` | `0` | `0` |
 | `SS_ENABLED` | `0` | `0` | `0` |
 | `CROSS_REGION_STORAGE_ENABLED` | `0` | `0` | `0` |
+
+> **`MAX_DYNAMIC_COMPUTE` is REQUIRED (calibration finding):** the base env
+> `osken-controller.env` sets `MAX_DYNAMIC_COMPUTE=0`, which silently disables
+> compute scale-up — the readiness gate never enqueues a pending backend and
+> no `admission_log` is ever written. Calibration run 20260804_190659 showed
+> the compute layer WAS saturated (spike `average_cpu_percent` 9.58%, max
+> 21.7%, vs the 4.5% scale-up floor) yet `max_nodes=0` blocked every ComputeAlert.
+> All three arm files therefore set `MAX_DYNAMIC_COMPUTE=6`.
 
 Additional checks (all **FAIL-hard**, no warn-and-continue):
 
@@ -103,6 +112,17 @@ Additional checks (all **FAIL-hard**, no warn-and-continue):
 - **Controller propagation**: `EDGE_APP_READY_EVENT`/`EDGE_FLOW_ISOLATION`
   must be present in the **controller env** (they are read by
   `compute_node_manager._docker_run_server` and passed to dynamic edges).
+- **Edge self-identity (`OWN_MAC`)**: every edge server must self-report the
+  MAC the controller assigned it, or its telemetry is invisible to WSM
+  selection (cross-LAN routing). Calibration run 20260804_193235 showed
+  `edge_server_n2` self-reporting a random veth MAC (`ea:62:ea:e6:62:e3`)
+  because `_discover_mac()` raced the veth attach and latched the pre-set MAC —
+  the storage server already handled this via `OWN_MAC`
+  (`mongo_telemetry.py`), and the fix was ported to
+  `edge_server/source/telemetry.py` (`OWN_MAC` validated first) with
+  `-e OWN_MAC=` wired in `build_network_1/2.sh` (static edges) and
+  `compute_node_manager._docker_run_server` (dynamic edges). Verify in the
+  edge-container env: `printenv OWN_MAC` equals the OVS-learned MAC.
 
 ## 7. Stage 4 — Network provisioning + probe reachability
 
@@ -137,10 +157,16 @@ make -C source/scripts run_experiment \
 **Per-run reset (thesis §8 — fresh data every run; seeding is an upsert, so
 only a teardown actually resets data):** before EACH run (calibration and
 campaign), run `make -C source/scripts teardown_clients` (removes clients +
-`cleanup.sh`), then `EDGE_FLOW_ISOLATION=1 make -C source/scripts
-setup_network`, then the run with `SKIP_CLIENTS=0 SKIP_SEED=0 SKIP_SNAPSHOT=0`
-(creates clients, seeds, exports the snapshot, and runs — the same cycle
-RQ1/RQ2 v2 use).
+`cleanup.sh`), then
+`EDGE_FLOW_ISOLATION=1 make -C source/scripts setup_network
+OSKEN_ENV_OVERRIDE_FILE=testing/controller_env_overrides/<arm>.env` —
+**the override MUST be passed to `setup_network` too**: the controller env is
+fixed at setup time (`build_network_setup.sh` starts `osken` with the merged
+base+override `--env-file`), so running only `run_experiment` with the
+override leaves the controller on the base env and the RQ3 env gate fails —
+then the run with `SKIP_CLIENTS=0 SKIP_SEED=0 SKIP_SNAPSHOT=0` (creates
+clients, seeds, exports the snapshot, and runs — the same cycle RQ1/RQ2 v2
+use, and the same override passed to `run_experiment`).
 
 **Pre-registered decision rules (recorded, not post-hoc). Feasible spike-rate
 interval:** the rate must be ≥ the saturation floor (old-backend `timeout_rate`

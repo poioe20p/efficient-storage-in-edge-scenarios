@@ -67,7 +67,7 @@ class ComputeNodeAdder(_BaseNodeAdder):
         # ── Step 1: docker run ────────────────────────────────────────────────
         logger.info("[node_add] step=docker_run container=%s", name)
         t0 = time.perf_counter()
-        ok, stdout, stderr = self._docker_run_server(name, lan)
+        ok, stdout, stderr = self._docker_run_server(name, lan, mac=mac)
         timings.docker_run_s = time.perf_counter() - t0
 
         if not ok:
@@ -212,7 +212,7 @@ class ComputeNodeAdder(_BaseNodeAdder):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _docker_run_server(self, name: str, lan: int) -> tuple[bool, str, str]:
+    def _docker_run_server(self, name: str, lan: int, mac: str | None = None) -> tuple[bool, str, str]:
         state = self._container_state(name)
         if state == "running":
             logger.info("[node_add] container %s already running — skipping docker run", name)
@@ -231,6 +231,7 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "--name", name,
             "-e", f"LAN_ID=lan{lan}",
             "-e", f"CONTAINER_NAME={name}",
+            "-e", f"OWN_MAC={mac}",
             "-e", "EDGE_MONGO_PRIMARY_LAN1=mongodb://10.0.0.4:27018/",
             "-e", "EDGE_MONGO_PRIMARY_LAN2=mongodb://10.0.1.4:27018/",
             "-e", f"EDGE_FLOW_ISOLATION={os.environ.get('EDGE_FLOW_ISOLATION', '0')}",

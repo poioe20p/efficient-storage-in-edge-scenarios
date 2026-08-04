@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -100,13 +101,37 @@ def container_ram_used_mb() -> float:
         return 0.0
 
 
+_MAC_RE = re.compile(r"^[0-9a-f]{2}(?::[0-9a-f]{2}){5}$")
+
+
+def _validated_env_mac() -> str:
+    """Return a validated ``OWN_MAC`` env override, or "" when unset/invalid.
+
+    Mirrors ``edge_storage_server/mongo_telemetry.py``: the controller passes
+    the static MAC it assigns to this container via ``OWN_MAC``. Honouring it
+    makes the edge's self-reported ``server_id`` deterministic even when the
+    veth-attach race would otherwise latch a random veth MAC at discovery time.
+    """
+    configured_mac = os.environ.get("OWN_MAC", "").strip().lower()
+    if not configured_mac:
+        return ""
+    if _MAC_RE.fullmatch(configured_mac):
+        return configured_mac
+    return ""
+
+
 def _discover_mac() -> str:
     """Return the MAC address of the first non-loopback interface found in sysfs.
 
     Prefers the interface named by the IFACE env var (default: eth0), but falls
     back to scanning all interfaces so that containers whose primary interface is
-    named differently (e.g. eth1, ens3) still report a real MAC.
+    named differently (e.g. eth1, ens3) still report a real MAC. A validated
+    ``OWN_MAC`` env override always wins (the controller assigns the static MAC).
     """
+    configured_mac = _validated_env_mac()
+    if configured_mac:
+        return configured_mac
+
     preferred = os.environ.get("IFACE", "eth0")
     candidates = [preferred]
     try:
