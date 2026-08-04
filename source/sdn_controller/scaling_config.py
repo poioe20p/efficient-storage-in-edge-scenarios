@@ -143,6 +143,12 @@ _TELEMETRY_TIMEOUT_S = max(
 _HOUSEKEEPING_OVERLOAD_GATE = os.environ.get(
     "HOUSEKEEPING_OVERLOAD_GATE", "1"
 ).strip().lower() in ("1", "true", "yes")
+# Hysteresis lookback: the producer overload label (D3) flickers on lull
+# windows under sparse telemetry, so a current-window-only gate lets
+# absent-cleanup/scale-down fire mid-episode. Suppress while ANY of the last N
+# delivered windows was overloaded.
+_HOUSEKEEPING_OVERLOAD_LOOKBACK = int(os.environ.get(
+    "HOUSEKEEPING_OVERLOAD_LOOKBACK", "5"))
 
 # ── RQ2 bottleneck policy gate ─────────────────────────────────────────
 # SCALEUP_POLICY selects the scale-up selection policy:

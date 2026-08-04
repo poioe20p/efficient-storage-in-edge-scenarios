@@ -54,6 +54,7 @@ from .scaling_config import (
     _ADMISSION_LOG_PATH,
     _VIP_FLOW_ISOLATION,
     _HOUSEKEEPING_OVERLOAD_GATE,
+    _HOUSEKEEPING_OVERLOAD_LOOKBACK,
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
@@ -257,6 +258,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         # ── Design B housekeeping ticker (time-based, fixed clock) ──
         self._last_scale_eval_seq: int | None = None
+        self._recent_overload: deque[bool] = deque(maxlen=_HOUSEKEEPING_OVERLOAD_LOOKBACK)
         hub.spawn(self._housekeeping_loop)
 
         # ── Cross-region warm standby: init slot, defer pre-spawn ──
@@ -484,6 +486,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # control mini-summaries (window_seq None) never do.
         if summary.window_seq is not None:
             self._last_summary = summary
+            self._recent_overload.append(summary.overload)
 
         # 1. Sync node tracking (Thread 3 → Thread 2)
         self._node_registry.sync(self._elasticity)
@@ -780,13 +783,15 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             if s is None or s.window_seq is None:
                 return
 
-            # Churn guard: while the LAN is overloaded, do NOT shed capacity.
-            # Absent-cleanup and scale-down remove LIVE nodes when telemetry
-            # presence is sparse (bursty completions), triggering RS reconfigs
-            # that stall DB ops — the self-amplifying collapse (G2 calib4/6).
-            if _HOUSEKEEPING_OVERLOAD_GATE and s.overload:
+            # Churn guard (hysteresis): while the LAN is overloaded (current OR
+            # any of the last _HOUSEKEEPING_OVERLOAD_LOOKBACK windows), do NOT
+            # shed capacity. The producer overload label flickers on lull
+            # windows (sparse telemetry), so a current-window-only check lets
+            # absent-cleanup/scale-down fire mid-episode and gut the fleet —
+            # the self-amplifying collapse (G2 calib4/calib6/rate20).
+            if _HOUSEKEEPING_OVERLOAD_GATE and (s.overload or any(self._recent_overload)):
                 logger.debug(
-                    "[housekeeping] LAN overloaded — suppressing absent-cleanup + scale-down (churn guard)")
+                    "[housekeeping] LAN overloaded (recent) — suppressing absent-cleanup + scale-down (churn guard)")
                 return
 
             # ── Absent-node detection → alert submission ────────────────
