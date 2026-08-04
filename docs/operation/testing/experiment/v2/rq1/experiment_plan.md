@@ -113,21 +113,20 @@ Canonical per-run launch (all runs in the cloud VM at
 
 ```bash
 ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && \
-  nohup sudo -n STORAGE_CPUS=0.08 EDGE_CPUS=0.15 WAN_RTT_MS=185 RANDOM_SEED=42 \
-    make -C source/scripts setup_network create_clients setup_test_data run_experiment \
-    OSKEN_ENV_OVERRIDE_FILE=../../docs/operation/testing/experiment/v2/rq1/env/<ENV_FILE> \
-    RUN_LABEL=<LABEL> \
-    PHASES_CONFIG=testing/phases_override/phases_stress_plateau.json \
-    CLIENTS=24 CONTENT_ITEMS=3000 USERS=100 \
-    DATA_SEED=42 CURL_MAX_TIME=30 \
-    SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1 \
+  nohup bash source/scripts/testing/rq1_launch_run.sh \
+    <ENV_FILE> <LABEL> <SEED> [POLL_INTERVAL_S=30 for Arm C] \
     > /tmp/<LABEL>.log 2>&1 &"
 ```
 
-- `OSKEN_ENV_OVERRIDE_FILE` is resolved relative to `source/scripts` (make cwd),
-  hence the `../../docs/...` path to the per-arm env files in this folder.
-  `PHASES_CONFIG=testing/phases_override/phases_stress_plateau.json` reuses the
-  control group's canonical workload (repo-synced with `source/`, no staging).
+- The launcher `source/scripts/testing/rq1_launch_run.sh` encodes the canonical
+  make chain: open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`,
+  `CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`),
+  `PHASES_CONFIG=testing/phases_override/phases_rq1_stress_plateau.json`
+  (rate 3.0), and the Mongo data-path block
+  (`EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`, `EDGE_MONGO_MAX_POOL_SIZE=12`,
+  `VIP_DATA_PER_CONNECTION_FLOWS=1`). All knobs are make command-line variables
+  so they survive sudo `env_reset`. Arm C additionally passes `POLL_INTERVAL_S=30`
+  as the optional extra-args slot.
 - **Arm C poll interval (critical):** `build_network_setup.sh` passes
   `-e POLL_INTERVAL_S="${POLL_INTERVAL_S:-10}"` and Docker `-e` overrides the
   env file — so the `POLL_INTERVAL_S=30` in `rq1_latest_state.env` alone is

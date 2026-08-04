@@ -20,7 +20,9 @@ Verifies the RQ3 measurement assumptions (D5, D2):
   (under ``topology_host`` the newest backend legitimately wins repeatedly).
   **Tolerated <= 1% reuse; > 1% fails the run** (one-connection-per-request is
   a precondition for flow isolation; the D5 async-delete caveat is within the
-  1% allowance) per RQ3 v2 §2.8.
+  1% allowance) per RQ3 v2 §2.8. Unknown ports (``""`` / ``"0"`` — capture
+  failure) are excluded from both numerator and denominator; an unknown
+  fraction > 50% reports the run as instrumentation-degraded (exit 2).
 
 Run-kind guard: only RQ3-arm runs (``READINESS_PROPAGATION`` in
 ``{direct, discovery}``) are processed.
@@ -198,6 +200,9 @@ def main() -> int:
               f"{'PASS' if not check_c_fail else 'FAIL (< 0.9)'}")
 
     # ── Check D: one fresh connection per request (source-port reuse) ──
+    # Unknown ports ("", "0" — capture failure) are excluded from BOTH the
+    # numerator and denominator; an unknown fraction > 50% reports the run as
+    # instrumentation-degraded (exit 2), not a hard fail.
     by_client: dict[str, list[tuple[float, str]]] = {}
     for row in client_rows:
         cns = row.get("client_ns", "")
@@ -206,34 +211,44 @@ def main() -> int:
         by_client.setdefault(cns, []).append(
             (row["_ts"], row.get("source_port", "")))
     violations_d = 0
+    with_port = 0
+    unknown_d = 0
     for cns, entries in by_client.items():
         entries.sort(key=lambda x: x[0])
         seen: dict[str, float] = {}
         for t, port in entries:
-            if not port:
+            if not port or port == "0":
+                unknown_d += 1
                 continue
+            with_port += 1
             if port in seen and t - seen[port] < args.reuse_window_s:
                 violations_d += 1
             seen[port] = t
-    with_port = sum(1 for entries in by_client.values()
-                    for _, port in entries if port)
+    total_d = with_port + unknown_d
     reuse_rate = (violations_d / with_port) if with_port else 0.0
+    unknown_rate = (unknown_d / total_d) if total_d else 0.0
     check_d_fail = reuse_rate > 0.01
+    check_d_degraded = (not check_d_fail) and unknown_rate > 0.50
+    check_d_status = ("PASS (<= 1%)"
+                      if not (check_d_fail or check_d_degraded)
+                      else ("FAIL (> 1%)" if check_d_fail
+                            else "DEGRADED (>50% unknown)"))
     print(f"  Check D (one fresh connection per request): "
           f"{violations_d} reuse violation(s) / {with_port} with port "
-          f"rate={reuse_rate:.4f} "
-          f"{'PASS (<= 1%)' if not check_d_fail else 'FAIL (> 1%)'}")
+          f"rate={reuse_rate:.4f} unknown={unknown_rate:.2%} {check_d_status}")
 
     hard_fail = bool(violations_a or violations_b or check_d_fail)
-    print("  => flow-isolation valid" if not (hard_fail or check_c_fail)
+    print("  => flow-isolation valid"
+          if not (hard_fail or check_c_fail or check_d_degraded)
           else ("  => flow-isolation VIOLATIONS — investigate"
                 if hard_fail
-                else "  => flow-isolation DEGRADED (Check C < 0.9)"))
+                else "  => flow-isolation DEGRADED "
+                     "(Check C < 0.9 or Check D >50% unknown ports)"))
 
-    # 0 = valid; 1 = hard violation (A/B/D); 2 = instrumentation-degraded (C).
+    # 0 = valid; 1 = hard violation (A/B/D); 2 = instrumentation-degraded (C/D).
     if hard_fail:
         return 1
-    if check_c_fail:
+    if check_c_fail or check_d_degraded:
         return 2
     return 0
 

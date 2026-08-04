@@ -93,6 +93,10 @@ assert_matrix() {
         assert_env_key "$f" "BACKEND_SELECTION_POLICY" "topology_host"
         assert_env_key "$f" "VIP_WARM_SERVER_SECONDS" "0"
         assert_env_key "$f" "SCALEUP_POLICY" "dual"
+        # Base env disables compute scale-up (MAX_DYNAMIC_COMPUTE=0); RQ3 v2
+        # arms must re-enable it or the readiness gate never sees a pending
+        # compute backend (calibration finding).
+        assert_env_key "$f" "MAX_DYNAMIC_COMPUTE" "6"
         assert_env_key "$f" "TELEMETRY_SOURCE" "event_preserving"
         assert_env_key "$f" "STORAGE_PERSISTENT_RESERVE_ENABLED" "0"
         assert_env_key "$f" "SS_ENABLED" "0"

@@ -25,7 +25,7 @@ runs; 5 counterbalanced blocks (seeds 2001–2005, orders in
 
 | Run | Arm | Status | Cumulative analysis | Conclusions | Changes made | Expectations |
 | --- | --- | --- | --- | --- | --- | --- |
-| Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | 🚧 in progress | Gates (a)–(c) ✅; **G2 retune applied (Option A) — re-validation run pending** | **Root cause of the open-loop collapse identified (not a lan1 bug):** RQ1 envs predated the 2026-08-03 data-path fix → Mongo pool 1 (serialized DB) → DB explosion → 256 MB OOM → lan1 telemetry silence → no scale-up; plus rate 5.0 = 120 req/s/LAN ≈ 3× sustainable. **Retune:** pool-6 data-path fix added to all 4 RQ1 envs + new `phases_rq1_stress_plateau.json` (rate 3.0, control file untouched). | Env ×4: pool-6 block; new phases file; `_rq1_launch.sh` → new phases file | Re-validation run (Arm A, open-loop, rate 3.0) must show bounded overload (no OOM, no telemetry silence, dropped ≤ 1%, scale-up+down fire, lan1≈lan2) before any block |
+| Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | 🚧 in progress | Gates (a)–(c) ✅; **G2 retune (Option A) + pool-12 calibration — re-validation run pending** | **Root cause of the open-loop collapse identified (not a lan1 bug):** RQ1 envs predated the 2026-08-03 data-path fix → Mongo pool 1 (serialized DB) → DB explosion → 256 MB OOM → lan1 telemetry silence → no scale-up; plus rate 5.0 = 120 req/s/LAN ≈ 3× sustainable. **Retune:** pool data-path fix added to all 4 RQ1 envs + new `phases_rq1_stress_plateau.json` (rate 3.0, control file untouched); **G2 calib4: pool 6 still collapsed at rate 3.0 → pool raised to 12**. | Env ×4: pool-12 block; new phases file; `rq1_launch_run.sh` launcher (formalized from `_rq1_launch.sh`) | Re-validation run (Arm A, open-loop, rate 3.0, pool 12) must show bounded overload (no OOM, no telemetry silence, dropped ≤ 1%, scale-up+down fire, lan1≈lan2) before any block |
 | Blocks 1–5 — 20 runs | — | ⏳ | — | — | — | See `run_matrix.md` §9 |
 
 **🛠️ G2 RETUNE (2026-08-04, Option A) — collapse root-caused + fixed.** The
@@ -49,6 +49,14 @@ lan1 telemetry silent from w54 (only 14/173 overload windows vs lan2
 files; (2) created `phases_rq1_stress_plateau.json` = `phases_stress_plateau.json`
 with `compute_plateau` rate **3.0** (RQ2's proven-stable 72 req/s/LAN;
 control-group file stays at 5.0); (3) `_rq1_launch.sh` → new phases file.
+**G2 calib4 (2026-08-04) — pool 6→12:** with the data path fixed, detection was
+stable (121/121 overload windows, 100% delivery, no OOM) but service still
+collapsed (plateau p50 24–34 s, timeout ~63%): pool 6 sits at the DB-path
+knife's edge for rate 3.0 / 70% DB mix (~50 DB ops/s/LAN demand vs ~48
+capacity; storage idle at ~25% CPU; telemetry proven lossless — the 81% gap is
+requests killed at the 60 s VIP timeout, not ZMQ drops). **Pool raised to 12 in
+all 4 env files + `source/scripts/testing/rq1_launch_run.sh`** (launcher
+formalized from temp `_rq1_launch.sh`; ~96 DB ops/s, ~2× headroom).
 **Re-validation run pending — no campaign block may start until it passes.**
 
 **🚨 G2 calibration re-run (Arm A `event_preserving`, TRUE open-loop)

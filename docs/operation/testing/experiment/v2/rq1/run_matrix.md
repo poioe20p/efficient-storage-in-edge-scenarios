@@ -69,22 +69,20 @@ from the shell, not from the controller env file — any calibration adjustment
 
 ```bash
 ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && \
-  nohup sudo -n STORAGE_CPUS=0.08 EDGE_CPUS=0.15 WAN_RTT_MS=185 RANDOM_SEED=42 \
-    make -C source/scripts setup_network create_clients setup_test_data run_experiment \
-    OSKEN_ENV_OVERRIDE_FILE=../../docs/operation/testing/experiment/v2/rq1/env/<ENV_FILE> \
-    RUN_LABEL=<LABEL> \
-    PHASES_CONFIG=testing/phases_override/phases_stress_plateau.json \
-    CLIENTS=24 CONTENT_ITEMS=3000 USERS=100 \
-    DATA_SEED=42 CURL_MAX_TIME=30 \
-    SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1 \
+  nohup bash source/scripts/testing/rq1_launch_run.sh \
+    <ENV_FILE> <LABEL> <SEED> [POLL_INTERVAL_S=30 for Arm C] \
     > /tmp/<LABEL>.log 2>&1 &"
 ```
 
-`OSKEN_ENV_OVERRIDE_FILE` is resolved relative to `source/scripts` (make cwd);
-the `../../docs/...` path points at the per-arm env files in this v2/rq1 folder.
-`PHASES_CONFIG=testing/phases_override/phases_stress_plateau.json` reuses the
-control group's canonical workload (repo-synced to the VM with `source/`, so no
-docs-housed phase staging is needed).
+The launcher `source/scripts/testing/rq1_launch_run.sh` encodes the canonical
+make chain: open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`,
+`CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`),
+`PHASES_CONFIG=testing/phases_override/phases_rq1_stress_plateau.json` (rate
+3.0), and the Mongo data-path block
+(`EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`, `EDGE_MONGO_MAX_POOL_SIZE=12`,
+`VIP_DATA_PER_CONNECTION_FLOWS=1`). All knobs are make command-line variables
+so they survive sudo `env_reset`. Arm C additionally passes `POLL_INTERVAL_S=30`
+as the optional extra-args slot.
 
 | Run | `<ENV_FILE>` | `<LABEL>` |
 |---|---|---|
@@ -214,6 +212,13 @@ RQ1 env files** (matching RQ2/control) + **new `phases_rq1_stress_plateau.json`
 at rate 3.0** (RQ2's proven-stable level). **All launch knobs are make
 command-line variables** (sudo `env_reset` strips exported env — the
 2026-08-04 launch bug). Re-validation run pending before any block starts.
+**2026-08-04 G2 calib4:** pool 6 still collapsed at rate 3.0 (detection stable
+— 121/121 overload windows, 100% delivery, no OOM — but plateau p50 24–34 s,
+timeout ~63%; telemetry proven lossless, so the gap is 60 s VIP-timeout kills).
+Root cause: DB-path knife's edge (~50 DB ops/s/LAN demand vs ~48 capacity with
+pool 6; storage idle ~25% CPU). **Pool raised 6→12 in all 4 env files +
+`source/scripts/testing/rq1_launch_run.sh`** (formalized from temp
+`_rq1_launch.sh`; ~96 DB ops/s capacity, keeps rate 3.0).
 
 **Pre-flight (hard gates, fail-fast; blocks do not start until all pass):**
 (a) `make driver_selftest` (host + netns) — ✅ passed; (b) `make

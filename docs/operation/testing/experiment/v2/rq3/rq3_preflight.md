@@ -123,6 +123,17 @@ Additional checks (all **FAIL-hard**, no warn-and-continue):
   `-e OWN_MAC=` wired in `build_network_1/2.sh` (static edges) and
   `compute_node_manager._docker_run_server` (dynamic edges). Verify in the
   edge-container env: `printenv OWN_MAC` equals the OVS-learned MAC.
+- **Cross-LAN stats merge (`main_n1.py`/`main_n2.py`)**: the selection pools
+  deliberately include cross-LAN candidates (`topology._server_macs =
+  local ∪ peer`), and both controllers subscribe to both aggregators' PUB
+  (`AGGREGATOR_ENDPOINTS` includes `10.0.0.5:5556` and `10.0.1.5:5556`) — the
+  peer summaries arrive (controller logs show "ignoring telemetry for <peer>")
+  but were previously discarded before `update_server_stats`, so cross-LAN
+  candidates were permanently `0/0` and won every WSM cost (run 20260804_203701:
+  LAN1 selected `edge_server_n2` 534× at cost 0.56 while the local edge at cost
+  0.88 was never selected). The fix merges peer `servers`/`storage_servers`
+  stats into the pools before the per-LAN early-return, keeping scaling/control
+  local; the hops term then favours the local edge.
 
 ## 7. Stage 4 — Network provisioning + probe reachability
 

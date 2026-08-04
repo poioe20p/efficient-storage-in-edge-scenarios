@@ -718,7 +718,30 @@ async def _worker_main(args):
     drain_s = max(0.0, args.drain_s)
 
     connector = aiohttp.TCPConnector(force_close=True)
-    session = aiohttp.ClientSession(connector=connector)
+    # RQ3 flow validation reads the client source port per request. Reading it
+    # from the response after the request often returns nothing under flow
+    # isolation (the per-request flow delete can reset the connection before
+    # the response is inspected), so record the local port at CONNECTION
+    # CREATION — the transport is guaranteed alive there.
+    _conn_ports: dict[int, int] = {}
+
+    class _PortRecordingConnector(aiohttp.TCPConnector):
+        async def _create_connection(self, req, traces, timeout):
+            protocol = await super()._create_connection(req, traces, timeout)
+            try:
+                transport = getattr(protocol, "transport", None)
+                sockname = (transport.get_extra_info("sockname")
+                            if transport is not None else None)
+                if sockname:
+                    if len(_conn_ports) > 8192:
+                        _conn_ports.clear()
+                    _conn_ports[id(protocol)] = int(sockname[1])
+            except Exception:
+                pass
+            return protocol
+
+    session = aiohttp.ClientSession(
+        connector=_PortRecordingConnector(force_close=True))
     sem = asyncio.Semaphore(window)
     pending: set = set()
     stop_dispatch = asyncio.Event()
@@ -764,14 +787,19 @@ async def _worker_main(args):
             latency = time.monotonic() - t0
             backend_id = resp.headers.get("X-Backend-ID", "unknown")
             source_port = 0
-            try:
-                conn = resp.connection
-                transport = conn._protocol.transport if conn is not None else None
-                sockname = transport.get_extra_info("sockname") if transport is not None else None
-                if sockname:
-                    source_port = int(sockname[1])
-            except Exception:
-                source_port = 0
+            conn = resp.connection
+            if conn is not None:
+                source_port = _conn_ports.pop(id(conn._protocol), 0)
+            if not source_port:
+                # Fallback: read the transport directly (pre-record path).
+                try:
+                    transport = conn._protocol.transport if conn is not None else None
+                    sockname = (transport.get_extra_info("sockname")
+                                if transport is not None else None)
+                    if sockname:
+                        source_port = int(sockname[1])
+                except Exception:
+                    source_port = 0
             write_row([sent_at_iso, phase.name, args.client_ns, args.client_lan, req_type,
                        target.get("content_id", ""), target.get("user_id", ""),
                        target.get("target_region", ""), str(resp.status), round(latency, 4),
