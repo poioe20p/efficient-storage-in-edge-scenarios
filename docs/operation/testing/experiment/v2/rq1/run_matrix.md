@@ -202,6 +202,73 @@ the env file (no `-e` override exists for it; verify in
 `<timestamp>_rq1_delivery_<suffix>_<1..5>`; checkpoint **C4 arm set is
 `ep | delayed | ls | sp`**.
 
+### §9.1 Concrete launch commands (per block, cloud VM)
+
+Launcher: `bash source/scripts/testing/rq1_launch_run.sh <env> <label> <seed> [extra]`
+(extra = `POLL_INTERVAL_S=30` for Arm C only). Each run ~35–40 min (setup +
+60 s baseline + 600 s plateau + 120 s recovery + 420 s demand_drop + 420 s
+idle_tail + drains). Blocks are **sequential** (one VM, one run at a time).
+
+| Blk | Pos | Arm | Env file | Label | Seed | Command |
+|----|----|-----|----------|-------|------|---------|
+| 1 | 1 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_1` | 2001 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_1 2001` |
+| 1 | 2 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_1` | 2001 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_1 2001` |
+| 1 | 3 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_1` | 2001 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_1 2001` |
+| 1 | 4 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_1` | 2001 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_1 2001 POLL_INTERVAL_S=30` |
+| 2 | 1 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_2` | 2002 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_2 2002` |
+| 2 | 2 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_2` | 2002 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_2 2002` |
+| 2 | 3 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_2` | 2002 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_2 2002` |
+| 2 | 4 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_2` | 2002 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_2 2002 POLL_INTERVAL_S=30` |
+| 3 | 1 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_3` | 2003 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_3 2003` |
+| 3 | 2 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_3` | 2003 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_3 2003` |
+| 3 | 3 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_3` | 2003 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_3 2003 POLL_INTERVAL_S=30` |
+| 3 | 4 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_3` | 2003 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_3 2003` |
+| 4 | 1 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_4` | 2004 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_4 2004` |
+| 4 | 2 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_4` | 2004 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_4 2004` |
+| 4 | 3 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_4` | 2004 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_4 2004 POLL_INTERVAL_S=30` |
+| 4 | 4 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_4` | 2004 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_4 2004` |
+| 5 | 1 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_5` | 2005 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_5 2005` |
+| 5 | 2 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_5` | 2005 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_5 2005` |
+| 5 | 3 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_5` | 2005 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_5 2005` |
+| 5 | 4 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_5` | 2005 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_5 2005 POLL_INTERVAL_S=30` |
+
+Per-run checkpoint (after each run, before the next): confirm the run folder
+contains `phases_snapshot.json` with rate 1.2 + `idle_tail`, the
+`controller_env_snapshot.env` carries the arm's `TELEMETRY_SOURCE` (and
+`POLL_INTERVAL_S=30` for C / `SAMPLE_EVERY=3` for D), and the driver line in
+the run log says "Driver mode: open_loop". Then run
+`rq1_delivery_per_run.py <run_dir>` before launching the next run (fail-fast).
+
+### §9.2 Campaign readiness — validated 2026-08-05 (NOT yet launched)
+
+All campaign-blocking pre-flight gates are GREEN; **no campaign run has
+started** (this section is the launch contract, not a record of execution).
+
+- **Config locked**: `phases_rq1_stress_plateau.json` (rate 1.2, rebalanced
+  mix, `idle_tail` 420 s); `EDGE_CPUS=0.25`; pool 6; churn guard + hysteresis
+  (controller, all RQs). Byte-for-byte VM↔local sync verified (9 critical
+  files: phases, launcher, controller ×3, env ×4).
+- **Gates**: (a)–(c) selftests ✅ (re-run on VM 2026-08-05); (d) concurrency ✅;
+  (e) G2 plateau ✅ (rate12_mix_ec25); (f) per-arm scale-down arming ✅
+  (A/B/C/D real removals, C/D via `idle_tail`); (g) Arm D dry-run ✅
+  (frac 0.3333, delay p50 0.438 s); (h) lan2 asymmetry ⚠️ n=1 caveated
+  (replicates are the real verdict); (i) sync regression ⚠️ pending
+  (non-blocking).
+- **Watch-items during the campaign**: (1) plateau marginality — real demand
+  ~45 DB ops/s/LAN at/above RQ2's cliff, lan1 detection 66/124 in the gate run
+  → watch replicate-to-replicate stability, esp. lan1 timeout/completion;
+  (2) C/D scale-down in `idle_tail` may not fire on an individual replicate
+  (a single >1 s request resets the guard lookback) → C7 could fail on a run;
+  (3) enforce the C1 checkpoint (recreate aggregator/controller containers
+  between runs) — the pre-flight delivery-log CSV showed cross-window row
+  accumulation, so strict per-run container recreation is required to keep
+  delivery logs per-run clean; (4) `dropped` > 1% rule applies per run as
+  documented.
+- **Analysis after the campaign**: per-run `rq1_delivery_per_run.py` → group
+  by arm with `rq1_delivery_comparison.py` (4-arm graph suite) → stats with
+  `rq1v2_p3_01_stats.py` (n=5, exact MWU, no scipy needed) → lan2 asymmetry
+  re-run at n=5.
+
 **2026-08-04 G2 retune (Option A):** the true open-loop G2 revealed the
 collapse root cause — (1) RQ1 envs predated the 2026-08-03 data-path fix, so
 edge servers ran Mongo pool size 1 (serialized DB → DB latency explosion →
@@ -377,7 +444,9 @@ are shell-only knobs and never appear in `controller_env_snapshot.env` —
 verify them from the run log's printed config line ("Driver mode: open_loop
 (window=…, drain=…)").
 
-**Wall-clock:** ~20 runs × ~30–35 min (incl. 3 phase-boundary drains + run-end
-drain of 30 s each + setup) ≈ 11–12 h ≈ 1.5–2 VM-days, **plus** pre-flight /
-calibration (~4–6 runs ≈ 3 h). RQ2's v2 campaign (18-run, 6 cells × 3) has VM
-priority; RQ1 v2 runs after (or interleaved per user).
+**Wall-clock:** ~20 runs × **~35–40 min** each (60 s baseline + 600 s plateau +
+120 s recovery + 420 s demand_drop + **420 s idle_tail** + 3 phase-boundary
+drains + 30 s run-end drain + ~5–8 min setup) ≈ **12–14 h ≈ 2 VM-days**,
+sequential on cloud-vm. Pre-flight/calibration (2026-08-04/05) already
+completed. RQ2's v2 campaign (18-run, 6 cells × 3) has its own VM; RQ1 v2 runs
+on cloud-vm (or interleaved per user).

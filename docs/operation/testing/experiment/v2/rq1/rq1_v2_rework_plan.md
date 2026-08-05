@@ -1,6 +1,12 @@
 # RQ1 v2 Rework Plan — Telemetry Delivery Semantics (final evidence)
 
-**Date**: 2026-08-04 · **Status**: ✅ **Phases 1–5 implemented** (2026-08-04) · 🚧 **Phase 6 (campaign execution) in progress — G2 plateau LOCKED ✅ 2026-08-05** (`rq1_g2_rate12_mix_ec25` PASS: rate 1.2 + rebalanced mix + `EDGE_CPUS=0.25`); **ALL pre-flight gates ✅ PASS 2026-08-05** (per-arm scale-down arming A/B/C/D, Arm D open-loop dry-run, lan2 asymmetry BALANCED) — **20-run campaign ready to launch**
+**Date**: 2026-08-04 · **Status**: ✅ **Phases 1–5 implemented** (2026-08-04) · ✅ **Phase 6 pre-flight COMPLETE 2026-08-05 — campaign READY, NOT yet launched** · G2 plateau LOCKED (`rq1_g2_rate12_mix_ec25` PASS: rate 1.2 + rebalanced mix + `EDGE_CPUS=0.25`); campaign-blocking gates ✅ (per-arm scale-down arming A/B/C/D, Arm D open-loop dry-run, G2 plateau); lan2 asymmetry ⚠️ n=1 caveated; gate (i) sync regression ⚠️ pending (non-blocking). **20-run campaign: launch contract in `run_matrix.md` §9.1; no run started.**
+
+**Campaign execution status (2026-08-05, updated in place):**
+- **NOT LAUNCHED** — all 20 runs pending. Per-block launch commands, per-run
+  checkpoints, and watch-items are in `run_matrix.md` §9.1/§9.2. Readiness
+  revalidated 2026-08-05 (git/VM byte-identical sync, selftests re-run,
+  tooling verified) before any run starts.
 
 **Phase 6 execution record (2026-08-04):**
 - **🛠️ G2 RETUNE (2026-08-04, root-caused collapse → Option A).** The true open-loop G2 (`20260804_165925_rq1_delivery_ep_calib2`) collapsed: lan1 timeout 87.7%, lan2 68.2%, dropped 3.1%/15.5%, lan1 dyn2 OOM-killed + base server restarted, lan1 telemetry silent from w54 → only 14 overload windows detected. **Root cause (not an independent lan1 bug):**
