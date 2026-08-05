@@ -1,0 +1,17 @@
+arm,metric,delta_pp,n_runs,verdict
+ep,failure_rate,-0.38,1,BALANCED (single run — not a pattern)
+ep,timeout_rate,-1.48,1,BALANCED (single run — not a pattern)
+ep,delivered_lan1,354,1,count
+ep,delivered_lan2,354,1,count
+delayed,failure_rate,0.15,1,BALANCED (single run — not a pattern)
+delayed,timeout_rate,0.14,1,BALANCED (single run — not a pattern)
+delayed,delivered_lan1,347,1,count
+delayed,delivered_lan2,347,1,count
+ls,failure_rate,-0.03,1,BALANCED (single run — not a pattern)
+ls,timeout_rate,-3.09,1,BALANCED (single run — not a pattern)
+ls,delivered_lan1,138,1,count
+ls,delivered_lan2,138,1,count
+sp,failure_rate,-1.29,1,BALANCED (single run — not a pattern)
+sp,timeout_rate,-4.59,1,BALANCED (single run — not a pattern)
+sp,delivered_lan1,144,1,count
+sp,delivered_lan2,144,1,count

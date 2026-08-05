@@ -349,14 +349,23 @@ second; root cause verified via ground-truth `resource_stats`/`client_requests`
 — identical demand (~1680 reqs) in both arms, difference is the controller's
 view, not the workload; **fix = `idle_tail` phase** (420 s near-idle after
 demand_drop) so the lossy arm observes idle, the guard releases, and C7 is
-measurable); Arm D pending (its dry-run doubles as D's arming check); (g) Arm
-D dry-run (delivered fraction ∈ [0.30, 0.36],
-delivery-delay p50 < 2 s — the sampled-push selftest assertion) — **⚠️
-INVALIDATED — RE-RUN PENDING** (sync-driver evidence only from
-`20260804_162043_rq1_delivery_sp_calib`; open-loop re-run required); (h) lan2
+measurable); **Arm D `armD_dryrun` ✅ PASS — 8 real removals in `idle_tail`
+(lan1 storage dyn1 + compute dyn6/dyn2/dyn4; lan2 storage dyn3/dyn5/dyn1)**; (g)
+Arm D dry-run (delivered fraction ∈ [0.30, 0.36],
+delivery-delay p50 < 2 s — the sampled-push selftest assertion) — **✅ PASS
+2026-08-05** (`armD_dryrun`: delivered fraction 0.3333 both LANs, delivery-delay
+p50 0.438 s / p95 0.83 s / max 0.92 s, 0 gap/err — the open-loop re-run
+replaces the invalidated sync-driver evidence from
+`20260804_162043_rq1_delivery_sp_calib`); (h) lan2
 asymmetry diagnostic on the
-calibration runs (`rq1v2_p4_01_lan2_asymmetry.py`) — pending on valid open-loop
-calibration runs; (i) legacy `sync`-mode
+calibration runs (`rq1v2_p4_01_lan2_asymmetry.py`) — **✅ PASS 2026-08-05: all
+four arms BALANCED** (v1's Arm C lan2 plateau asymmetry does NOT reproduce under
+v2 open-loop). Per-arm plateau |lan2−lan1|: A failure −0.38 pp / timeout −1.48
+pp; B +0.15 / +0.14 pp; C −0.03 / −3.09 pp; D −1.29 / −4.59 pp — all under the
+2 pp threshold; delivered-window counts equal per LAN (A 354/354, B 347/347, C
+138/138, D 144/144); offered ratio 1.00 all arms. Retained as
+`lan2_asymmetry_preflight.csv` (n=1/arm — pre-flight, not a replicate verdict);
+(i) legacy `sync`-mode
 regression smoke.
 
 **Per-arm env verification (Phase-6 gate):** A/B: `TELEMETRY_SOURCE`; C:
