@@ -25,7 +25,7 @@ runs; 5 counterbalanced blocks (seeds 2001–2005, orders in
 
 | Run | Arm | Status | Cumulative analysis | Conclusions | Changes made | Expectations |
 | --- | --- | --- | --- | --- | --- | --- |
-| Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | 🚧 in progress | Gates (a)–(c) ✅; **G2 calib2 retune → calib4 pool-12 → calib6 NEGATIVE → workload re-anchored (churn guard + open-loop rate sweep)** | **Root cause of the open-loop collapse identified (not a lan1 bug):** RQ1 envs predated the 2026-08-03 data-path fix → Mongo pool 1 (serialized DB) → DB explosion → 256 MB OOM → lan1 telemetry silence → no scale-up; plus rate 5.0 = 120 req/s/LAN ≈ 3× sustainable. **Calib4/calib6:** pool 6 **and** pool 12 both still collapse at rate 3.0 → real root cause = control-loop churn (absent-cleanup/scale-down removing live nodes during overload → RS reconfig → DB stalls, self-amplifying); **driver-mismatch finding**: control/RQ2 “proven-stable” rates were sync/closed-loop; open-loop was never rate-calibrated. | Env ×4: pool-12 block; phases file (rate to be re-anchored by sweep); `rq1_launch_run.sh` launcher; **churn guard `_HOUSEKEEPING_OVERLOAD_GATE` (controller, default ON, all RQs)** | **Open-loop rate sweep (Arm A, seed 2001, pool 12 held): rates 2.0 / 2.5 / 3.0** — pick the highest rate with bounded overload (failure ≤ 5–10%, stable fleet, overload detected) before any block |
+| Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | 🚧 in progress | Gates (a)–(c) ✅; **G2 sweep → pool-6 FAIL → three-fix re-anchor ✅ PASS (2026-08-05)** | **Root cause chain:** (1) RQ1 envs predated the 2026-08-03 data-path fix → Mongo pool 1 (serialized DB) → OOM → lan1 telemetry silence; (2) rate 5.0 = 120 req/s/LAN ≈ 3× sustainable; (3) churn = amplifier not root cause (0-removal stable-fleet runs still collapse); (4) DB-demand hypothesis disproved at face value but **`feed_ranking` actually costs 3 DB ops/req (per-LAN fan-out) → rate 1.5 = 54 DB ops/s/LAN, ~29% above RQ2's ~42**; (5) pool size DISPROVED (pool 6 ≡ 12); (6) **root cause = compute-tier saturation** at `EDGE_CPUS=0.15` (edge CPU 55–73% med, peaks 99%; 70% CPU-heavy mix). | Env ×4: pool-6 block; phases rate 1.2 + rebalanced mix; `rq1_launch_run.sh` (`EDGE_CPUS=0.25`); **churn guard + hysteresis (controller, default ON, all RQs)** | **G2 gate `rq1_g2_rate12_mix_ec25` ✅ PASS — plateau LOCKED** (p50 2.32/1.46 s, timeout 8.9/7.4%, completion 88.5/90.4%, delivery 124/124, scale-up+down fire). **Next: per-arm scale-down arming, Arm D dry-run, lan2 asymmetry diagnostic → 20-run campaign** |
 | Blocks 1–5 — 20 runs | — | ⏳ | — | — | — | See `run_matrix.md` §9 |
 
 **🛠️ G2 RETUNE (2026-08-04, Option A) — collapse root-caused + fixed.** The
@@ -84,8 +84,37 @@ run artifacts).** `rq1_g2_rate20` (rate 2.0, pool 12, open-loop, Arm A):
   12 = 48 concurrent Mongo ops thrash storage at `STORAGE_CPUS=0.08`; RQ2's
   proven config is pool 6 (6 conns/edge, “scales with edges × pool”). **Pool
   reverted 12 → 6 in all 4 env files + launcher.** Gate run `rq1_g2_rate15_p6`
-  (rate 1.5 + pool 6 + churn guard) launched.
+  (rate 1.5 + pool 6 + churn guard) **EXECUTED — GATE ❌ FAILED: pool size
+  DISPROVED as root cause** (see §G2 gate result below).
 
+**G2 gate result — `rq1_g2_rate15_p6` (`20260805_065605`, exit 0, ❌ FAIL):**
+rate 1.5 + pool 6 + churn guard + hysteresis ran with a **perfectly stable
+fleet (0 removals)**, **no OOM**, **lossless telemetry (124/124 delivered both
+LANs, 0 missed overload)**, **0 dropped**, overload fully detected (lan1
+115/124, lan2 119/124) and scale-up fired to dyn5/dyn6 — yet the plateau data
+plane **still collapsed**: lan1 p50 16.2 s / timeout 68.3% / completion 31.0%;
+lan2 p50 16.8 s / timeout 66.4% / completion 32.6%. This is **statistically
+identical to pool 12 at the same rate** (p50 15.6/16.9 s, timeout 62–67%,
+completion 33–37%) ⇒ **pool size is definitively NOT the root cause.**
+Secondary failure: scale-down decisions fired in `demand_drop` but every one
+was an `absent` no-op — **no real removal ever executed**. Open: RQ1's compute
+endpoints (`feed_ranking` 40% + `service_pressure` 30% at `EDGE_CPUS=0.15`)
+vs RQ2's pure-DB mix; scale-down no-op root cause. **No campaign block may
+start until the plateau is stabilized.**
+**G2 gate result — `rq1_g2_rate12_mix_ec25` (`20260805_074127`, exit 0, ✅
+PASS):** the three-fix plateau re-anchor (rate 1.5→1.2, mix rebalance
+feed/service 0.7→0.4, `EDGE_CPUS` 0.15→0.25) finally stabilized the plateau at
+RQ2-comparable service quality: lan1 p50 2.32 s / p95 12.7 s / timeout 8.9% /
+failure 0.92% / completion 88.5%; lan2 p50 1.46 s / p95 8.3 s / timeout 7.4%
+/ failure 0.53% / completion 90.4%. Delivery lossless (124/124 both LANs, 0
+missed), dropped 0, no OOM, overload detected (lan1 66/124, lan2 120/124),
+fleet scaled up (12 adds) **and scale-down executed real removals** (storage
+dyn1 + 3 compute in `recovery_gap` — earlier `absent` no-ops were a symptom
+of the collapse, not a separate bug). Root cause confirmed: **compute tier
+saturation at `EDGE_CPUS=0.15`** (edge CPU 55–73% med, peaks 99%) driven by
+`feed_ranking` (3 DB ops/req, not 2) + `service_pressure` (pure CPU) at 70%
+mix share — the plateau demanded ~54 DB ops/s/LAN at rate 1.5, ~29% above
+RQ2's proven ~42. **Plateau LOCKED for the campaign.**
 **�🚨 G2 calibration re-run (Arm A `event_preserving`, TRUE open-loop)
 `20260804_165925_rq1_delivery_ep_calib2` — exit 0, INVALIDATED by the collapse
 (see retune above).**

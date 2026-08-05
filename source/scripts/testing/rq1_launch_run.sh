@@ -19,8 +19,18 @@
 # Pool size (2026-08-05 G2 sweep): pool 12 (rate 2.0/1.5 + churn guard) still
 # collapsed (p50 16-17s) — 4 edges x 12 = 48 concurrent Mongo ops thrash the
 # storage tier at STORAGE_CPUS=0.08. Reverted to pool 6 (6 conns/edge = RQ2's
-# proven config: ba_db_cal4 at rate 1.5 completes 87%/p50 2s). Rate 1.5 + pool
-# 6 + churn guard = the RQ2-comparable bounded-overload test.
+# proven config: ba_db_cal4 at rate 1.5 completes 87%/p50 2s).
+#
+# Plateau calibration (2026-08-05, rq1_g2_rate15_p6 FAIL): pool 6 + rate 1.5 +
+# churn guard still collapsed (p50 16s, timeout 66-68%) with a STABLE fleet ->
+# pool size disproved as root cause. Root cause re-investigation: the compute
+# tier is the bottleneck (edge CPU 55-73% med, peaks 99% at EDGE_CPUS=0.15),
+# not storage. feed_ranking actually costs 3 DB ops (1 user_profiles + 1
+# content_items.find per LAN x 2) not 2 -> plateau demand = 54 DB ops/s/LAN at
+# rate 1.5, ~29% above RQ2's proven ~42. Fixes applied together: rate 1.5->1.2
+# (~35 DB ops/s), mix rebalanced (feed_ranking 0.4->0.2, service_pressure
+# 0.3->0.2, content_lookup 0.2->0.35, content_update 0.05->0.15,
+# content_aggregate 0.05->0.1), EDGE_CPUS 0.15->0.25.
 set -u
 cd ~/efficient-storage-in-edge-scenarios || exit 1
 ENV_FILE="$1"
@@ -34,7 +44,7 @@ exec sudo -n make -C source/scripts setup_network create_clients setup_test_data
   PHASES_CONFIG=testing/phases_override/phases_rq1_stress_plateau.json \
   CLIENTS=24 CONTENT_ITEMS=3000 USERS=100 DATA_SEED=42 \
   TRAFFIC_DRIVER_MODE=open_loop CURL_MAX_TIME=300 INFLIGHT_WINDOW=1024 DRAIN_S=30 \
-  STORAGE_CPUS=0.08 EDGE_CPUS=0.15 WAN_RTT_MS=185 RANDOM_SEED="$SEED" \
+  STORAGE_CPUS=0.08 EDGE_CPUS=0.25 WAN_RTT_MS=185 RANDOM_SEED="$SEED" \
   EDGE_MONGO_READ_PREFERENCE=secondaryPreferred EDGE_MONGO_MAX_POOL_SIZE=6 VIP_DATA_PER_CONNECTION_FLOWS=1 \
   $EXTRA \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1

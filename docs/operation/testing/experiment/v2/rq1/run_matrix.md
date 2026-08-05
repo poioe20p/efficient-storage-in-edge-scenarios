@@ -276,7 +276,37 @@ backpressures and hides data-plane collapse; RQ1's open-loop driver (fixed load
    **Pool reverted 12 → 6 in all 4 env files + launcher** (failed calibration
    runs deleted; v1 campaign + pre-flight kept). Rate 1.5 + pool 6 + churn
    guard = the exact RQ2-comparable bounded-overload test. **Gate run
-   `rq1_g2_rate15_p6` in progress.**
+   `rq1_g2_rate15_p6` EXECUTED — ❌ FAILED.**
+
+   **Gate result (`20260805_065605_rq1_g2_rate15_p6`, exit 0):** stable fleet
+   (0 removals, adds to dyn5/dyn6 caps), no OOM, telemetry lossless (124/124
+   both LANs, 0 missed), dropped 0, overload detected (lan1 115/124, lan2
+   119/124), scale-up fired — but **plateau collapsed identically to pool 12**:
+   lan1 p50 16.2 s / timeout 68.3% / completion 31.0%; lan2 p50 16.8 s /
+   timeout 66.4% / completion 32.6% (vs pool 12 rate-1.5: p50 15.6/16.9 s,
+   timeout 62–67%, completion 33–37%). ⇒ **pool size DISPROVED as root cause.**
+   Secondary: every `demand_drop` scale-down decision was an `absent` no-op —
+   no real removal executed. Open hypotheses: RQ1 compute endpoints
+   (`feed_ranking`/`service_pressure` CPU cost at `EDGE_CPUS=0.15`) vs RQ2
+   pure-DB mix; scale-down no-op. **No campaign block until plateau stabilized.**
+6. **Plateau re-anchor — three-fix combo (`rq1_g2_rate12_mix_ec25`): ✅ PASS.**
+   Root cause of the remaining collapse confirmed as **compute-tier saturation**
+   at `EDGE_CPUS=0.15`: edge CPU 55–73% med / peaks 99%; `feed_ranking` actually
+   costs **3 DB ops/req** (1 `user_profiles` + 1 `content_items.find` per LAN ×
+   2) not 2 ⇒ plateau demand at rate 1.5 = **54 DB ops/s/LAN** (~29% above
+   RQ2's proven ~42); 70% of the mix was CPU-heavy endpoints. **Fixes applied
+   together**: plateau rate 1.5→1.2 (~35 DB ops/s), mix rebalanced
+   (feed 0.4→0.2, service 0.3→0.2, lookup 0.2→0.35, update 0.05→0.15, agg
+   0.05→0.1), `EDGE_CPUS` 0.15→0.25 (launcher).
+
+   **Gate result (`20260805_074127_rq1_g2_rate12_mix_ec25`, exit 0): ✅ PASS —
+   plateau LOCKED.** lan1 p50 2.32 s / p95 12.7 s / timeout 8.9% / failure
+   0.92% / completion 88.5%; lan2 p50 1.46 s / p95 8.3 s / timeout 7.4% /
+   failure 0.53% / completion 90.4%. Delivery lossless (124/124, 0 missed),
+   dropped 0, no OOM, overload detected (lan1 66/124, lan2 120/124), 12 adds +
+   **4 real removals** (scale-down works). Remaining observation: lan1 overload
+   detection 66/124 vs lan2 120/124 — same lan1-vs-lan2 asymmetry pattern to
+   track via `rq1v2_p4_01_lan2_asymmetry.py` (not a gate blocker: 0 missed).
 
 **Pre-flight (hard gates, fail-fast; blocks do not start until all pass):**
 (a) `make driver_selftest` (host + netns) — ✅ passed; (b) `make
