@@ -110,14 +110,18 @@ be carried into the launch prefix / command of the **main 9 runs** (identical
 across arms) and recorded in the run log; otherwise the main runs silently fall
 back to un-calibrated values, invalidating criteria 5/6.
 
-## 5. Phases (`phases_stress_plateau.json`, 1200 s — control group)
+## 5. Phases (`phases_rq1_stress_plateau.json`, 1620 s — v2 LOCKED)
 
-Reuses the validated control-group workload
-(`source/scripts/testing/phases_override/phases_stress_plateau.json`); no
-per-RQ1 phase file. The single sustained `compute_plateau` at rate 5.0 gives RQ1
-a clean demand-shift boundary (baseline→plateau) for reaction latency and ~60
-overload windows for observability; the 420 s `demand_drop` gives the
-scale-down runway and drains Arm B's `DELAY_S` hold queue.
+**v2 (2026-08-05 LOCKED):** the campaign uses the per-RQ1 phase file
+`source/scripts/testing/phases_override/phases_rq1_stress_plateau.json`
+(rate 1.2 plateau + rebalanced mix + `idle_tail` 420 s — table below). The
+control-group file `phases_stress_plateau.json` (rate 5.0, 1200 s) is the
+**v1 / supporting reference** only. The single sustained `compute_plateau` gives
+RQ1 a clean demand-shift boundary (baseline→plateau) for reaction latency and
+overload observability; `recovery_gap`/`demand_drop` give the scale-down runway
+and drain Arm B's `DELAY_S` hold queue; `idle_tail` (added 2026-08-05) gives the
+lossy arms a clean-idle window so the churn guard releases and C7 is measurable
+for every arm.
 
 | Phase | Duration | Rate/client | Client frac | Mix focus | Purpose |
 |---|---|---|---|---|---|
@@ -177,7 +181,13 @@ completes.
 **Structure:** 4 arms × 5 replicates = **20 runs**, 5 counterbalanced blocks
 of 4 (seeds **2001–2005** = driver `RANDOM_SEED` base; distinct-order
 verification — re-sample a block's seed on collision). Orders are recorded in
-a **new** `counterbalance_order_v2.csv` (distinct from any prior order file).
+`counterbalance_order_v2.csv` (distinct from any prior order file).
+**Counterbalancing (re-balanced 2026-08-05, pre-launch):** blocks 1–4 form a
+**balanced Latin square** (each arm in each position exactly once, each arm
+preceded by each other arm exactly once) and block 5 completes the balance so
+every arm occupies **every position ≥1× and ≤2×** across the campaign, with no
+arm repeating back-to-back across a block boundary. (An earlier draft had Arm C
+`ls` always 3rd/4th — fixed before any run; per-block seeds unchanged.)
 
 | Arm | `TELEMETRY_SOURCE` | Env override | Suffix |
 |---|---|---|---|
@@ -211,26 +221,26 @@ idle_tail + drains). Blocks are **sequential** (one VM, one run at a time).
 
 | Blk | Pos | Arm | Env file | Label | Seed | Command |
 |----|----|-----|----------|-------|------|---------|
-| 1 | 1 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_1` | 2001 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_1 2001` |
-| 1 | 2 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_1` | 2001 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_1 2001` |
+| 1 | 1 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_1` | 2001 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_1 2001` |
+| 1 | 2 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_1` | 2001 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_1 2001` |
 | 1 | 3 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_1` | 2001 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_1 2001` |
 | 1 | 4 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_1` | 2001 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_1 2001 POLL_INTERVAL_S=30` |
-| 2 | 1 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_2` | 2002 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_2 2002` |
-| 2 | 2 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_2` | 2002 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_2 2002` |
-| 2 | 3 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_2` | 2002 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_2 2002` |
-| 2 | 4 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_2` | 2002 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_2 2002 POLL_INTERVAL_S=30` |
-| 3 | 1 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_3` | 2003 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_3 2003` |
+| 2 | 1 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_2` | 2002 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_2 2002` |
+| 2 | 2 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_2` | 2002 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_2 2002 POLL_INTERVAL_S=30` |
+| 2 | 3 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_2` | 2002 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_2 2002` |
+| 2 | 4 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_2` | 2002 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_2 2002` |
+| 3 | 1 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_3` | 2003 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_3 2003 POLL_INTERVAL_S=30` |
 | 3 | 2 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_3` | 2003 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_3 2003` |
-| 3 | 3 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_3` | 2003 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_3 2003 POLL_INTERVAL_S=30` |
-| 3 | 4 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_3` | 2003 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_3 2003` |
-| 4 | 1 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_4` | 2004 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_4 2004` |
+| 3 | 3 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_3` | 2003 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_3 2003` |
+| 3 | 4 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_3` | 2003 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_3 2003` |
+| 4 | 1 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_4` | 2004 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_4 2004` |
 | 4 | 2 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_4` | 2004 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_4 2004` |
 | 4 | 3 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_4` | 2004 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_4 2004 POLL_INTERVAL_S=30` |
-| 4 | 4 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_4` | 2004 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_4 2004` |
-| 5 | 1 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_5` | 2005 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_5 2005` |
+| 4 | 4 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_4` | 2004 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_4 2004` |
+| 5 | 1 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_5` | 2005 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_5 2005` |
 | 5 | 2 | B delayed | `rq1_delayed.env` | `rq1_delivery_delayed_5` | 2005 | `bash rq1_launch_run.sh rq1_delayed.env rq1_delivery_delayed_5 2005` |
-| 5 | 3 | A ep | `rq1_event_preserving.env` | `rq1_delivery_ep_5` | 2005 | `bash rq1_launch_run.sh rq1_event_preserving.env rq1_delivery_ep_5 2005` |
-| 5 | 4 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_5` | 2005 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_5 2005 POLL_INTERVAL_S=30` |
+| 5 | 3 | C ls | `rq1_latest_state.env` | `rq1_delivery_ls_5` | 2005 | `bash rq1_launch_run.sh rq1_latest_state.env rq1_delivery_ls_5 2005 POLL_INTERVAL_S=30` |
+| 5 | 4 | D sp | `rq1_sampled_push.env` | `rq1_delivery_sp_5` | 2005 | `bash rq1_launch_run.sh rq1_sampled_push.env rq1_delivery_sp_5 2005` |
 
 Per-run checkpoint (after each run, before the next): confirm the run folder
 contains `phases_snapshot.json` with rate 1.2 + `idle_tail`, the
@@ -264,6 +274,22 @@ started** (this section is the launch contract, not a record of execution).
   accumulation, so strict per-run container recreation is required to keep
   delivery logs per-run clean; (4) `dropped` > 1% rule applies per run as
   documented.
+- **Plateau-stability contingency (pre-registered 2026-08-05, decision rule):**
+  per replicate, the `compute_plateau` (600 s, rate 1.2) is judged **STABLE**
+  iff **all** of: (i) plateau completion ≥ 80% on both LANs; (ii) plateau
+  timeout rate ≤ 15% on both LANs; (iii) **no** telemetry silence — 0 missed
+  windows on either LAN; (iv) overload labeled on ≥ 40% of plateau windows on
+  **each** LAN (the gate run's lan1 66/124 ≈ 53% is the floor reference). A
+  replicate failing any of (i)–(iv) is flagged `plateau_unstable` and
+  root-caused (watch item 1) before the next run. If **≥ 2 replicates of the
+  same arm** (or ≥ 3 total) are flagged, the campaign **pauses**: the cause is
+  root-caused and the config re-anchored via the same three-fix procedure as
+  the 2026-08-05 re-anchor (rate/mix/`EDGE_CPUS`); **any config change
+  invalidates all completed blocks** (the config is the factorial constant) and
+  the campaign restarts from Block 1 with a new readiness record. A single
+  flagged replicate that root-causes to an operational artifact (cleanup /
+  container-recreation failure, C1 violation) is re-run in place without
+  touching the config.
 - **Analysis after the campaign**: per-run `rq1_delivery_per_run.py` → group
   by arm with `rq1_delivery_comparison.py` (4-arm graph suite) → stats with
   `rq1v2_p3_01_stats.py` (n=5, exact MWU, no scipy needed) → lan2 asymmetry

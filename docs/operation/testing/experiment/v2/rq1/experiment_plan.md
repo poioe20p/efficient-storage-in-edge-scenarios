@@ -140,11 +140,11 @@ ssh cloud-vm "cd ~/efficient-storage-in-edge-scenarios && \
   make chain: open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`,
   `CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`),
   `PHASES_CONFIG=testing/phases_override/phases_rq1_stress_plateau.json`
-  (rate 3.0), and the Mongo data-path block
-  (`EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`, `EDGE_MONGO_MAX_POOL_SIZE=12`,
-  `VIP_DATA_PER_CONNECTION_FLOWS=1`). All knobs are make command-line variables
-  so they survive sudo `env_reset`. Arm C additionally passes `POLL_INTERVAL_S=30`
-  as the optional extra-args slot.
+  (rate 1.2 — 2026-08-05 LOCKED; see `run_matrix.md` §9), and the Mongo
+  data-path block (`EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`,
+  `EDGE_MONGO_MAX_POOL_SIZE=6`, `VIP_DATA_PER_CONNECTION_FLOWS=1`). All knobs
+  are make command-line variables so they survive sudo `env_reset`. Arm C
+  additionally passes `POLL_INTERVAL_S=30` as the optional extra-args slot.
 - **Arm C poll interval (critical):** `build_network_setup.sh` passes
   `-e POLL_INTERVAL_S="${POLL_INTERVAL_S:-10}"` and Docker `-e` overrides the
   env file — so the `POLL_INTERVAL_S=30` in `rq1_latest_state.env` alone is
@@ -299,11 +299,12 @@ Full detail in [`analysis_focus.md`](analysis_focus.md) §4–§6. Summary:
       smoke-tested on synthetic runs.
 - [ ] Files synced to cloud VM (`ssh cloud-vm`, repo at `~/efficient-storage-in-edge-scenarios`)
 
-  > **Placement (rebase 2026-08-01):** the workload is the control group's
-  > `source/scripts/testing/phases_override/phases_stress_plateau.json` (the
-  > canonical control-group regime), so the old placement deviation for a
-  > per-RQ1 phase file is **resolved** (no per-RQ1 phase file). The per-arm env
-  > files stay under this v2/rq1 folder (`env/`); the harness consumes them via
+  > **Placement (2026-08-05):** the v2 campaign uses the per-RQ1 phase file
+  > `source/scripts/testing/phases_override/phases_rq1_stress_plateau.json`
+  > (rate 1.2 + rebalanced mix + `idle_tail`, LOCKED) — a distinct, named
+  > configuration regime from the control group's `phases_stress_plateau.json`
+  > (rate 5.0, the v1/supporting reference). The per-arm env files stay under
+  > this v2/rq1 folder (`env/`); the harness consumes them via
   > `OSKEN_ENV_OVERRIDE_FILE` with a relative path, and each run still records the
   > merged result in `controller_env_snapshot.env`.
 

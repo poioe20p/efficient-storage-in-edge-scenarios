@@ -28,7 +28,9 @@
 # not storage. feed_ranking actually costs 3 DB ops (1 user_profiles + 1
 # content_items.find per LAN x 2) not 2 -> plateau demand = 54 DB ops/s/LAN at
 # rate 1.5, ~29% above RQ2's proven ~42. Fixes applied together: rate 1.5->1.2
-# (~35 DB ops/s), mix rebalanced (feed_ranking 0.4->0.2, service_pressure
+# (~45 DB ops/s/LAN — corrected accounting 2026-08-05: content_lookup=2 ops,
+# feed_ranking=3 ops; at/above RQ2's ~42 cliff, so plateau stability is watched
+# per replicate), mix rebalanced (feed_ranking 0.4->0.2, service_pressure
 # 0.3->0.2, content_lookup 0.2->0.35, content_update 0.05->0.15,
 # content_aggregate 0.05->0.1), EDGE_CPUS 0.15->0.25.
 set -u

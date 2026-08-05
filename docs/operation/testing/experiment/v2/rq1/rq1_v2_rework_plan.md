@@ -7,6 +7,12 @@
   checkpoints, and watch-items are in `run_matrix.md` §9.1/§9.2. Readiness
   revalidated 2026-08-05 (git/VM byte-identical sync, selftests re-run,
   tooling verified) before any run starts.
+- **Counterbalance re-balanced 2026-08-05 (pre-launch):** within-block order
+  regenerated as a balanced Latin square (blocks 1–4) + block 5 completion —
+  every arm now occupies every position ≥1× and ≤2× (an earlier draft had Arm
+  C `ls` always 3rd/4th). New orders in `counterbalance_order_v2.csv` and
+  `run_matrix.md` §9.1; per-block seeds (2001–2005) unchanged; no run started
+  before the re-balance.
 
 **Phase 6 execution record (2026-08-04):**
 - **🛠️ G2 RETUNE (2026-08-04, root-caused collapse → Option A).** The true open-loop G2 (`20260804_165925_rq1_delivery_ep_calib2`) collapsed: lan1 timeout 87.7%, lan2 68.2%, dropped 3.1%/15.5%, lan1 dyn2 OOM-killed + base server restarted, lan1 telemetry silent from w54 → only 14 overload windows detected. **Root cause (not an independent lan1 bug):**

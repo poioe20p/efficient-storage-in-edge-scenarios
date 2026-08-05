@@ -61,10 +61,11 @@ Headline tradeoff (Cliff's delta only, no significance claim): B–D (`delayed`
 vs `sp`), A–C (`ep` vs `ls`).
 
 Metrics: usable-capacity latency, `timeout_rate`, `failure_rate`
-(completed-only), time-to-recover (scale-down from `recovery_gap` start),
-info-age at decision. ≥ 3 defined runs/cell to test; no censored value enters
-MWU; latency percentiles descriptive-only with a censoring flag. Implemented
-in `docs/research_questions/v2/rq1/rq1v2_p3_01_stats.py`.
+(completed-only), time-to-recover (scale-down from `recovery_gap` start —
+**guard-interaction reporting rule pre-registered in §0.6**), info-age at
+decision. ≥ 3 defined runs/cell to test; no censored value enters MWU; latency
+percentiles descriptive-only with a censoring flag. Implemented in
+`docs/research_questions/v2/rq1/rq1v2_p3_01_stats.py`.
 
 ### 0.5 Reporting rules
 
@@ -81,6 +82,39 @@ in `docs/research_questions/v2/rq1/rq1v2_p3_01_stats.py`.
   counts). Pre-flight: run against the open-loop calibration runs to check
   whether the v1 asymmetry reproduces before blocks start. Full root-cause:
   after the campaign. No Arm C quality claim until resolved or bounded.
+
+### 0.6 Pre-registered reporting rule — scale-down timing (churn-guard interaction, 2026-08-05)
+
+The `idle_tail` phase (420 s, rate 0.05) was added to
+`phases_rq1_stress_plateau.json` so the lossy arms (C `poll`, D `sampled_push`)
+observe a clean-idle window and the controller's churn guard
+(`_HOUSEKEEPING_OVERLOAD_GATE`, hysteresis lookback 5) releases, letting
+scale-down arm/fire — without it C/D show zero scale-down (`rq1_g2_armC_arm`
+first-run gate failure). This makes C/D scale-down timing a **guard-interaction
+claim**, not a pure delivery-semantics claim. Pre-registered reporting rule (no
+post-hoc reframing after data):
+
+1. **Primary scale-down metrics** are reported per arm and per LAN as (a)
+   `scale_down_latency_s` (decision-log, from `recovery_gap` start) and (b)
+   `removal_latency_s` (first dynamic-compute removal in `container_events`),
+   jointly per §0.5 — but only for arms where the first real removal lands in
+   `recovery_gap` or `demand_drop` (A/B expected; C/D only if the guard
+   released naturally before `idle_tail`).
+2. **Guard-release marker:** every run records the phase in which the first
+   real removal occurs. Any run whose first removal falls in `idle_tail` is
+   reported with an explicit `guard_release` marker, and its scale-down timing
+   is **not** compared against A/B's natural-recovery timing as if it were the
+   same quantity.
+3. **C7 verdict:** C7 (≥ 1 real scale-down decision/LAN) is reported per arm as
+   **pass / fail / guard-conditioned**. A `guard-conditioned` C7 (scale-down
+   fired only after `idle_tail` released the guard) is a PASS for completeness
+   but is labelled guard-interaction evidence; the results narrative must state
+   that C/D scale-down timing partly reflects guard-release mechanics.
+4. **Narrative rule:** the time-to-recover comparison is written as "arms that
+   observe a clean recovery window (A/B) scale down in `recovery_gap` /
+   `demand_drop`; lossy/stale arms (C/D) recover only after the guard releases
+   on a clean-idle window (`idle_tail`)" — never as an unqualified arm
+   difference in recovery speed.
 
 ## 1. Artifact contract (per run, per LAN)
 

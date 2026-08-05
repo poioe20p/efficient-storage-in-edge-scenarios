@@ -18,10 +18,11 @@
 
 **Config:** open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`,
 `CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`); 4 arms × 5 = 20
-runs; 5 counterbalanced blocks (seeds 2001–2005, orders in
-`counterbalance_order_v2.csv`); Arm C `POLL_INTERVAL_S=30` on the shell; Arm D
-`rq1_sampled_push.env` (`SAMPLE_EVERY=3`). **Workload (2026-08-04 G2 retune):
-`phases_rq1_stress_plateau.json` (plateau rate 3.0)** — see retune note below.
+runs; 5 counterbalanced blocks (seeds 2001–2005, balanced Latin-square orders
+in `counterbalance_order_v2.csv`); Arm C `POLL_INTERVAL_S=30` on the shell;
+Arm D `rq1_sampled_push.env` (`SAMPLE_EVERY=3`). **Workload (2026-08-05
+LOCKED): `phases_rq1_stress_plateau.json` (plateau rate 1.2 + rebalanced mix +
+`idle_tail` 420 s)** — see the G2 re-anchor record below.
 
 | Run | Arm | Status | Cumulative analysis | Conclusions | Changes made | Expectations |
 | --- | --- | --- | --- | --- | --- | --- |
