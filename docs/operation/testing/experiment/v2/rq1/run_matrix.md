@@ -122,7 +122,7 @@ scale-down runway and drains Arm B's `DELAY_S` hold queue.
 | Phase | Duration | Rate/client | Client frac | Mix focus | Purpose |
 |---|---|---|---|---|---|
 | `baseline` | 60 s | 1.0 | 0.1 | lookup 0.6 / feed 0.25 / pressure 0.15 | establish |
-| `compute_plateau` | 600 s | 1.2 | 1.0 | lookup 0.35 / feed 0.2 / pressure 0.2 / upd 0.15 / agg 0.1 | induce overload + scale-up (rate + mix re-anchored 2026-08-05: ~35 DB ops/s/LAN, below RQ2's ~42 cliff) |
+| `compute_plateau` | 600 s | 1.2 | 1.0 | lookup 0.35 / feed 0.2 / pressure 0.2 / upd 0.15 / agg 0.1 | induce overload + scale-up (rate + mix re-anchored 2026-08-05: ~45 DB ops/s/LAN — corrected accounting: `content_lookup`=2 ops with requester, `feed_ranking`=3 ops; note this is at/above RQ2's ~42 cliff, so plateau stability must be watched per replicate) |
 | `recovery_gap` | 120 s | 0.5 | 0.05 | baseline mix | post-plateau lull; A/B first scale-down lands here; drain Arm B hold queue (≥ `DELAY_S`+`WINDOW_S`) |
 | `demand_drop` | 420 s | 1.0 | 0.1 | baseline mix | trigger scale-down (storage reclaim in-window); drain Arm B residual |
 | `idle_tail` | 420 s | 0.05 | 0.05 | baseline mix | **Added 2026-08-05** — near-idle tail so the lossy arms (C poll, D sampled_push) observe a clean-idle window, the churn guard releases, and scale-down can arm/fire (C7 measurable for every arm). Fixes Arm C's zero-scale-down gate failure (`rq1_g2_armC_rerun`). |
@@ -296,9 +296,9 @@ backpressures and hides data-plane collapse; RQ1's open-loop driver (fixed load
    costs **3 DB ops/req** (1 `user_profiles` + 1 `content_items.find` per LAN ×
    2) not 2 ⇒ plateau demand at rate 1.5 = **54 DB ops/s/LAN** (~29% above
    RQ2's proven ~42); 70% of the mix was CPU-heavy endpoints. **Fixes applied
-   together**: plateau rate 1.5→1.2 (~35 DB ops/s), mix rebalanced
+   together**: plateau rate 1.5→1.2, mix rebalanced
    (feed 0.4→0.2, service 0.3→0.2, lookup 0.2→0.35, update 0.05→0.15, agg
-   0.05→0.1), `EDGE_CPUS` 0.15→0.25 (launcher).
+   0.05→0.1), `EDGE_CPUS` 0.15→0.25 (launcher). **DB-op accounting corrected (2026-08-05):** `content_lookup`=2 ops/req (with requester) + `feed_ranking`=3 ops/req ⇒ 1.55 ops/req ⇒ ~45 DB ops/s/LAN at rate 1.2 — the earlier “~35, below RQ2's 42” margin was wrong; the plateau PASS is empirical (compute-CPU saturation was the root cause), not margin-backed.
 
    **Gate result (`20260805_074127_rq1_g2_rate12_mix_ec25`, exit 0): ✅ PASS —
    plateau LOCKED.** lan1 p50 2.32 s / p95 12.7 s / timeout 8.9% / failure
@@ -349,7 +349,7 @@ second; root cause verified via ground-truth `resource_stats`/`client_requests`
 — identical demand (~1680 reqs) in both arms, difference is the controller's
 view, not the workload; **fix = `idle_tail` phase** (420 s near-idle after
 demand_drop) so the lossy arm observes idle, the guard releases, and C7 is
-measurable); **Arm D `armD_dryrun` ✅ PASS — 8 real removals in `idle_tail`
+measurable); **Arm D `armD_dryrun` ✅ PASS — 7 real removals in `idle_tail`
 (lan1 storage dyn1 + compute dyn6/dyn2/dyn4; lan2 storage dyn3/dyn5/dyn1)**; (g)
 Arm D dry-run (delivered fraction ∈ [0.30, 0.36],
 delivery-delay p50 < 2 s — the sampled-push selftest assertion) — **✅ PASS
@@ -358,15 +358,17 @@ p50 0.438 s / p95 0.83 s / max 0.92 s, 0 gap/err — the open-loop re-run
 replaces the invalidated sync-driver evidence from
 `20260804_162043_rq1_delivery_sp_calib`); (h) lan2
 asymmetry diagnostic on the
-calibration runs (`rq1v2_p4_01_lan2_asymmetry.py`) — **✅ PASS 2026-08-05: all
-four arms BALANCED** (v1's Arm C lan2 plateau asymmetry does NOT reproduce under
-v2 open-loop). Per-arm plateau |lan2−lan1|: A failure −0.38 pp / timeout −1.48
-pp; B +0.15 / +0.14 pp; C −0.03 / −3.09 pp; D −1.29 / −4.59 pp — all under the
-2 pp threshold; delivered-window counts equal per LAN (A 354/354, B 347/347, C
-138/138, D 144/144); offered ratio 1.00 all arms. Retained as
-`lan2_asymmetry_preflight.csv` (n=1/arm — pre-flight, not a replicate verdict);
+calibration runs (`rq1v2_p4_01_lan2_asymmetry.py`) — **⚠️ CAVEATED 2026-08-05:**
+all four arms returned BALANCED **at n=1** (structural n=1 default, not a
+replicate verdict). Per-arm plateau |lan2−lan1| failure pp: A −0.38, B +0.15,
+C −0.03, D −1.29 (all < 2); **timeout pp: A −1.48, B +0.14, C −3.09, D −4.59 —
+C and D exceed the 2 pp threshold (lan2 lower)**. Delivered-window counts in the
+CSV (354/347/138/144) are raw delivery-log rows spanning setup/drain, not the
+universe-bounded per-run delivered counts (A 124/124, C/D 55/165) — equal-per-LAN
+symmetry holds but absolute values differ from the analyzer's counts. Retained as
+`lan2_asymmetry_preflight.csv`; the campaign replicates are the real verdict.
 (i) legacy `sync`-mode
-regression smoke.
+regression smoke — **⚠️ still pending (non-blocking for the open-loop campaign)**.
 
 **Per-arm env verification (Phase-6 gate):** A/B: `TELEMETRY_SOURCE`; C:
 `TELEMETRY_SOURCE=poll` **and** shell `POLL_INTERVAL_S=30`; D:

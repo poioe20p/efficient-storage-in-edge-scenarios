@@ -4,6 +4,24 @@
 **Parent (implementation plan)**: [`docs/research_questions/v2/rq1/rq1_prepation.md`](../../../../research_questions/v2/rq1/rq1_prepation.md) (Design B, **IMPLEMENTED** 2026-07-31)
 **Thesis RQ1**: [`tese/Notes/thesis_overview.md`](../../../../../../tese/Notes/thesis_overview.md) §6 RQ1
 
+> **🚨 LOCKED-CONFIG AMENDMENT (2026-08-05) — supersedes the workload/resource
+> values below for v2.** After the G2 calibration campaign, the v2 workload and
+> resource caps were re-anchored and **locked**; the historical values below
+> (rate 5.0/3.0 plateau, `EDGE_CPUS=0.15`, `phases_stress_plateau.json`) are the
+> v1/early-v2 record and are NOT what v2 runs. The authoritative v2 config is:
+> - **Phases**: `source/scripts/testing/phases_override/phases_rq1_stress_plateau.json`
+>   — `compute_plateau` **rate 1.2**, rebalanced mix (lookup 0.35 / feed 0.2 /
+>   pressure 0.2 / update 0.15 / agg 0.1), plus a **`idle_tail` phase** (420 s,
+>   rate 0.05, client_fraction 0.05) appended after `demand_drop` so the lossy
+>   arms (C/D) can observe idle and fire scale-down (gate-f fix, 2026-08-05).
+> - **Resource caps**: `EDGE_CPUS=0.25 STORAGE_CPUS=0.08 WAN_RTT_MS=185`
+>   (compute tier was the saturation bottleneck at 0.15; gate
+>   `rq1_g2_rate12_mix_ec25` PASS).
+> - **DB-op accounting**: `feed_ranking`=3 ops/req, `content_lookup`=2 ops/req
+>   (with requester) ⇒ ~45 DB ops/s/LAN at rate 1.2 (at/above RQ2's ~42 — the
+>   plateau PASS is empirical, not a safety-margin claim).
+> - Full provenance: `rq1_v2_rework_plan.md` Phase-6 record; `run_matrix.md` §5/§7.
+
 > **RQ1 v2 (final evidence):** the 9-run v1 campaign below becomes the
 > **v1 / supporting record** once the v2 campaign completes. v2 adds a fourth
 > arm (D, sampled-push — the missing fresh+lossy cell), runs n=5 per arm under
