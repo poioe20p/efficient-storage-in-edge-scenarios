@@ -16,10 +16,11 @@
 # finding: dynamic spawns had pool 6 via the env file, but base servers stayed
 # at pool 1 -> DB serialization -> latency collapse persisted).
 #
-# Pool size (2026-08-04 G2 calib4 finding): 6 sat at the DB-path knife's edge
-# for rate 3.0 / 70% DB mix (~50 DB ops/s/LAN demand vs ~48 capacity) -> queue
-# -> 60s VIP timeouts -> collapse. Pool 12 (~96 DB ops/s) keeps rate 3.0 with
-# ~2x headroom; storage CPU ~25% provides ~4x serving headroom.
+# Pool size (2026-08-05 G2 sweep): pool 12 (rate 2.0/1.5 + churn guard) still
+# collapsed (p50 16-17s) — 4 edges x 12 = 48 concurrent Mongo ops thrash the
+# storage tier at STORAGE_CPUS=0.08. Reverted to pool 6 (6 conns/edge = RQ2's
+# proven config: ba_db_cal4 at rate 1.5 completes 87%/p50 2s). Rate 1.5 + pool
+# 6 + churn guard = the RQ2-comparable bounded-overload test.
 set -u
 cd ~/efficient-storage-in-edge-scenarios || exit 1
 ENV_FILE="$1"
@@ -34,6 +35,6 @@ exec sudo -n make -C source/scripts setup_network create_clients setup_test_data
   CLIENTS=24 CONTENT_ITEMS=3000 USERS=100 DATA_SEED=42 \
   TRAFFIC_DRIVER_MODE=open_loop CURL_MAX_TIME=300 INFLIGHT_WINDOW=1024 DRAIN_S=30 \
   STORAGE_CPUS=0.08 EDGE_CPUS=0.15 WAN_RTT_MS=185 RANDOM_SEED="$SEED" \
-  EDGE_MONGO_READ_PREFERENCE=secondaryPreferred EDGE_MONGO_MAX_POOL_SIZE=12 VIP_DATA_PER_CONNECTION_FLOWS=1 \
+  EDGE_MONGO_READ_PREFERENCE=secondaryPreferred EDGE_MONGO_MAX_POOL_SIZE=6 VIP_DATA_PER_CONNECTION_FLOWS=1 \
   $EXTRA \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1

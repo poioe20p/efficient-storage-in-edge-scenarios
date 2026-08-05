@@ -78,8 +78,13 @@ run artifacts).** `rq1_g2_rate20` (rate 2.0, pool 12, open-loop, Arm A):
   ~42 — ~29% above the cliff; all RQ1 endpoints collapse uniformly (shared
   queue behind the DB layer).
 - **Re-anchor: rate 1.5** (`rq1_g2_rate15` ≈ 40 DB ops/s, just below RQ2's
-  sustainable point) — expected bounded overload (p50 ~2 s, ~87% completion),
-  the regime where delivery arms can differentiate. **Gate run pending.**
+  sustainable point). **`rq1_g2_rate15` (pool 12 + guard) STILL COLLAPSED**
+  (p50 15.6/16.9 s, timeout 62–67%, completion 33–37%) — disproving the
+  DB-demand hypothesis. **Root cause of the remaining gap: pool 12.** 4 edges ×
+  12 = 48 concurrent Mongo ops thrash storage at `STORAGE_CPUS=0.08`; RQ2's
+  proven config is pool 6 (6 conns/edge, “scales with edges × pool”). **Pool
+  reverted 12 → 6 in all 4 env files + launcher.** Gate run `rq1_g2_rate15_p6`
+  (rate 1.5 + pool 6 + churn guard) launched.
 
 **�🚨 G2 calibration re-run (Arm A `event_preserving`, TRUE open-loop)
 `20260804_165925_rq1_delivery_ep_calib2` — exit 0, INVALIDATED by the collapse

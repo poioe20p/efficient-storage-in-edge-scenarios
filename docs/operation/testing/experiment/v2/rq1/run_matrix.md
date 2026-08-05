@@ -266,10 +266,17 @@ backpressures and hides data-plane collapse; RQ1's open-loop driver (fixed load
    15.3–17.5 s) → shared-path queueing behind the DB layer (per-op read ~190
    ms even at baseline — a platform constant in the edge DB wrapper, not WAN
    netem, which only applies on the inter-LAN router).
-4. **Re-anchor: rate 1.5.** RQ1 at rate 1.5 ≈ **40 DB ops/s** (just below
-   RQ2's sustainable 42) → expected bounded overload (p50 ~2 s, ~87%
-   completion) — the regime where delivery arms can differentiate on decision
-   quality. **Next gate run: `rq1_g2_rate15`.**
+4. **rate-1.5 test (`rq1_g2_rate15`, pool 12 + guard): STILL COLLAPSED** — p50
+   15.6/16.9 s, timeout 62–67%, completion 33–37%, overload 120/123. This
+   disproved the DB-demand hypothesis (RQ1 ~40 DB ops/s vs RQ2's stable ~42).
+5. **Pool 6 re-anchor (`rq1_g2_rate15_p6`):** RQ2's proven config is
+   `EDGE_MONGO_MAX_POOL_SIZE=6` (6 conns/edge; its env comment: “so storage
+   serving scales with edges × pool”). 4 edges × pool 12 = 48 concurrent Mongo
+   ops thrash the storage tier at `STORAGE_CPUS=0.08` → per-op latency explodes.
+   **Pool reverted 12 → 6 in all 4 env files + launcher** (failed calibration
+   runs deleted; v1 campaign + pre-flight kept). Rate 1.5 + pool 6 + churn
+   guard = the exact RQ2-comparable bounded-overload test. **Gate run
+   `rq1_g2_rate15_p6` in progress.**
 
 **Pre-flight (hard gates, fail-fast; blocks do not start until all pass):**
 (a) `make driver_selftest` (host + netns) — ✅ passed; (b) `make
