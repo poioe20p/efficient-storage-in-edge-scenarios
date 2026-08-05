@@ -188,10 +188,10 @@ a **new** `counterbalance_order_v2.csv` (distinct from any prior order file).
 
 **Launch (per run, cloud VM):** `TRAFFIC_DRIVER_MODE=open_loop
 CURL_MAX_TIME=300 INFLIGHT_WINDOW=1024 DRAIN_S=30`; workload =
-**`phases_rq1_stress_plateau.json`** (2026-08-04 G2 retune, Option A:
-`compute_plateau` rate **3.0** — see retune note; a per-RQ1 copy of the
-control group's `phases_stress_plateau.json`, which stays at rate 5.0 for the
-control-group record). **Each run's launch prefix
+**`phases_rq1_stress_plateau.json`** (2026-08-05 LOCKED config: `compute_plateau`
+rate **1.2**, rebalanced mix, plus the `idle_tail` phase — see §5/§7 and the
+rework-plan Phase-6 record; the historical rate 3.0/5.0 values below are the
+early-v2/control record). **Each run's launch prefix
 sets `RANDOM_SEED=<block seed>` (2001–2005), NOT the v1-fixed 42** — do not
 copy the §4 command verbatim; the counterbalance order file records the
 per-run seed. **Arm C: `POLL_INTERVAL_S=30`
