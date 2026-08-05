@@ -122,9 +122,10 @@ scale-down runway and drains Arm B's `DELAY_S` hold queue.
 | Phase | Duration | Rate/client | Client frac | Mix focus | Purpose |
 |---|---|---|---|---|---|
 | `baseline` | 60 s | 1.0 | 0.1 | lookup 0.6 / feed 0.25 / pressure 0.15 | establish |
-| `compute_plateau` | 600 s | 5.0 | 1.0 | feed 0.4 / pressure 0.3 / lookup 0.2 | induce overload + scale-up |
+| `compute_plateau` | 600 s | 1.2 | 1.0 | lookup 0.35 / feed 0.2 / pressure 0.2 / upd 0.15 / agg 0.1 | induce overload + scale-up (rate + mix re-anchored 2026-08-05: ~35 DB ops/s/LAN, below RQ2's ~42 cliff) |
 | `recovery_gap` | 120 s | 0.5 | 0.05 | baseline mix | post-plateau lull; A/B first scale-down lands here; drain Arm B hold queue (≥ `DELAY_S`+`WINDOW_S`) |
 | `demand_drop` | 420 s | 1.0 | 0.1 | baseline mix | trigger scale-down (storage reclaim in-window); drain Arm B residual |
+| `idle_tail` | 420 s | 0.05 | 0.05 | baseline mix | **Added 2026-08-05** — near-idle tail so the lossy arms (C poll, D sampled_push) observe a clean-idle window, the churn guard releases, and scale-down can arm/fire (C7 measurable for every arm). Fixes Arm C's zero-scale-down gate failure (`rq1_g2_armC_rerun`). |
 
 ## 6. Between-run procedure
 
@@ -339,7 +340,17 @@ lan2 asymmetry). **No campaign block may start until the lan1 asymmetry is
 root-caused and G2 is retuned**; (f) **per-arm
 scale-down arming check** (esp. Arm D — its ~30 s delivery cadence stretches
 the 3-of-6 below-window accumulation; must fire ≥ 1 scale-down decision/LAN —
-the v1 P3 failure mode); (g) Arm D dry-run (delivered fraction ∈ [0.30, 0.36],
+the v1 P3 failure mode); **✅ PASS 2026-08-05:** Arm A `rate12_mix_ec25` (4
+real removals), Arm B `armB` (real storage removals in recovery_gap), Arm C
+`armC_rerun` (7 real removals in the new `idle_tail` — the first Arm C run
+`rq1_g2_armC_arm` fired ZERO scale-downs because the poll's stale view kept the
+overload label ≥5% through demand_drop → churn guard suppressed until the last
+second; root cause verified via ground-truth `resource_stats`/`client_requests`
+— identical demand (~1680 reqs) in both arms, difference is the controller's
+view, not the workload; **fix = `idle_tail` phase** (420 s near-idle after
+demand_drop) so the lossy arm observes idle, the guard releases, and C7 is
+measurable); Arm D pending (its dry-run doubles as D's arming check); (g) Arm
+D dry-run (delivered fraction ∈ [0.30, 0.36],
 delivery-delay p50 < 2 s — the sampled-push selftest assertion) — **⚠️
 INVALIDATED — RE-RUN PENDING** (sync-driver evidence only from
 `20260804_162043_rq1_delivery_sp_calib`; open-loop re-run required); (h) lan2

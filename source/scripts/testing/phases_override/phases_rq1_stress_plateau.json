@@ -50,6 +50,18 @@
         "feed_ranking": 0.25,
         "service_pressure": 0.15
       }
+    },
+    {
+      "name": "idle_tail",
+      "duration_s": 420,
+      "rate_per_client": 0.05,
+      "cross_region_ratio": 0.0,
+      "client_fraction": 0.05,
+      "mix": {
+        "content_lookup": 0.6,
+        "feed_ranking": 0.25,
+        "service_pressure": 0.15
+      }
     }
   ]
 }
