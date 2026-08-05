@@ -59,7 +59,29 @@ all 4 env files + `source/scripts/testing/rq1_launch_run.sh`** (launcher
 formalized from temp `_rq1_launch.sh`; ~96 DB ops/s, ~2× headroom).
 **Re-validation run pending — no campaign block may start until it passes.**
 
-**🚨 G2 calibration re-run (Arm A `event_preserving`, TRUE open-loop)
+**�️ G2 SWEEP (2026-08-04/05) — churn guard + rate re-anchor (evidence from
+run artifacts).** `rq1_g2_rate20` (rate 2.0, pool 12, open-loop, Arm A):
+- First attempt (current-window guard): plateau p50 16.5/19.2 s, timeout
+  76–78%, completion ~22%, delivery 125/125; guard active (100 suppressions)
+  but overload label flickers → absent-cleanup still removed nodes (19 adds /
+  11 removes, 52 `scale_down absent` lan2).
+- Re-run (hysteresis guard, `_HOUSEKEEPING_OVERLOAD_LOOKBACK=5`): p50
+  16.3/17.5 s, timeout 70–73%, failure 11–19%, completion 27–29%, **0
+  removals** (stable base+3 dyn fleet), multiple backends served, DB spikes
+  3–23 s (per_node_stats), baseline DB reads already ~190 ms (platform
+  constant in the edge DB wrapper; netem only on the inter-LAN router).
+  ⇒ **churn = amplifier, not root cause.**
+- **RQ2 comparison (decisive):** RQ2 open-loop data-bound `ba_db_cal4` (rate
+  1.5, 600 s) = 86.8% completion, p50 1.98 s, p90 11.5 s — same platform/pool/
+  WAN, and it churned (12 removes) yet stayed stable. RQ1's 40% `feed_ranking`
+  (2 DB ops/request) puts RQ1 at ~54 DB ops/s at rate 2.0 vs RQ2's sustainable
+  ~42 — ~29% above the cliff; all RQ1 endpoints collapse uniformly (shared
+  queue behind the DB layer).
+- **Re-anchor: rate 1.5** (`rq1_g2_rate15` ≈ 40 DB ops/s, just below RQ2's
+  sustainable point) — expected bounded overload (p50 ~2 s, ~87% completion),
+  the regime where delivery arms can differentiate. **Gate run pending.**
+
+**�🚨 G2 calibration re-run (Arm A `event_preserving`, TRUE open-loop)
 `20260804_165925_rq1_delivery_ep_calib2` — exit 0, INVALIDATED by the collapse
 (see retune above).**
 

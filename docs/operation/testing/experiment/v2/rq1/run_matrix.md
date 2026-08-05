@@ -228,7 +228,10 @@ collapse**: overload → bursty completions → sparse telemetry presence →
 absent-node cleanup + scale-down removed LIVE compute/storage nodes mid-overload
 → RS reconfig + fleet shrink (25 adds/17 removes; compute fleet ~1 node for
 76/125 windows) → DB ops stall 6–16 s → worse overload (self-amplifying; every
-DB spike coincided with a churn event). **Driver-mismatch finding:** the
+DB spike coincided with a churn event). *(Updated 2026-08-05: the rate-2.0
+re-run with the hysteresis guard removed ALL removals and the plateau still
+collapsed — the churn was an amplifier, not the root cause; see sweep below.)*
+**Driver-mismatch finding:** the
 control-group / RQ2 “proven-stable” rates (5.0 / 1.5) were measured with the
 legacy SYNC (closed-loop) driver (13-col CSVs, no `status`), which
 backpressures and hides data-plane collapse; RQ1's open-loop driver (fixed load
@@ -236,16 +239,37 @@ backpressures and hides data-plane collapse; RQ1's open-loop driver (fixed load
 
 **Fix (2026-08-04): churn guard + open-loop rate sweep.**
 1. **Controller churn guard** (all RQs; `_HOUSEKEEPING_OVERLOAD_GATE` default
-   ON): while the LAN is overloaded, `_run_housekeeping` suppresses absent-node
-   cleanup AND scale-down (they destroy live capacity under sparse telemetry);
-   scale-up still runs; cleanup/scale-down resume once overload clears.
-2. **Open-loop rate sweep** (Arm A reference, seed 2001, pool 12 held): edit
-   `phases_rq1_stress_plateau.json` rate in place (canonical-file rule); 3 runs
-   `rq1_g2_rate20` / `rq1_g2_rate25` / `rq1_g2_rate30` (2.0 / 2.5 / 3.0 → 34 /
-   42 / 50 DB ops/s/LAN). **Decision rule:** pick the highest rate with bounded
-   overload — overload detected (arms must differentiate), failure ≤ 5–10%,
-   stable fleet (no dyn-churn), DB spikes bounded (< ~2 s). Re-confirm the
-   chosen rate at pool 6 for control/RQ2 parity, then lock the plateau.
+   ON, hysteresis `_HOUSEKEEPING_OVERLOAD_LOOKBACK=5`): while the LAN is
+   overloaded (current OR any of the last 5 delivered windows),
+   `_run_housekeeping` suppresses absent-node cleanup AND scale-down (they
+   destroy live capacity under sparse telemetry); scale-up still runs.
+2. **Open-loop rate sweep** (Arm A reference, seed 2001, pool 12 held), edit
+   `phases_rq1_stress_plateau.json` rate in place. **Run `rq1_g2_rate20`
+   (rate 2.0, current-window guard): COLLAPSED** — p50 16.5/19.2 s, timeout
+   76–78%, completion ~22%; guard engaged (100 suppressions) but the overload
+   label flickers on lull windows (sparse telemetry) → absent-cleanup still
+   fired (19 adds/11 removes; 52 `scale_down absent` on lan2). **Hysteresis
+   added** (suppress if ANY of last 5 windows overloaded).
+   **Re-run `rq1_g2_rate20` (hysteresis guard): STILL COLLAPSED with a STABLE
+   fleet** — p50 16.3/17.5 s, timeout 70–73%, failure 11–19%, completion
+   27–29%, **0 removals** (guard fully effective; 12 adds = base+3 dyn),
+   multiple backends served, DB spikes 3–23 s. ⇒ **churn is an amplifier, not
+   the root cause.**
+3. **RQ2-comparison root cause (decisive):** RQ2 open-loop data-bound
+   (`ba_db_cal4`, rate 1.5, 600 s) completes **86.8%** at p50 **1.98 s** with
+   the same platform/pool-6/WAN — and it churned (12 removes) yet stayed
+   stable. RQ1 at rate 2.0 collapses (~27%). The difference is **DB-op
+   demand**: RQ1's mix is 40% `feed_ranking` (2 DB ops/request:
+   user_profiles.find_one + content_items.find) ⇒ **~54 DB ops/s at rate 2.0**
+   vs RQ2's proven-sustainable **~42 DB ops/s** (rate 1.5, 100% DB mix) — RQ1
+   sits ~29% above the cliff. All RQ1 endpoints collapse uniformly (p50
+   15.3–17.5 s) → shared-path queueing behind the DB layer (per-op read ~190
+   ms even at baseline — a platform constant in the edge DB wrapper, not WAN
+   netem, which only applies on the inter-LAN router).
+4. **Re-anchor: rate 1.5.** RQ1 at rate 1.5 ≈ **40 DB ops/s** (just below
+   RQ2's sustainable 42) → expected bounded overload (p50 ~2 s, ~87%
+   completion) — the regime where delivery arms can differentiate on decision
+   quality. **Next gate run: `rq1_g2_rate15`.**
 
 **Pre-flight (hard gates, fail-fast; blocks do not start until all pass):**
 (a) `make driver_selftest` (host + netns) — ✅ passed; (b) `make
