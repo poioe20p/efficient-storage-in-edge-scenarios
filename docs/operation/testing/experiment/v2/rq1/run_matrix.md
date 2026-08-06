@@ -314,7 +314,27 @@ started** (this section is the launch contract, not a record of execution).
   hot, the temperature is a descriptive covariate. Campaign resumes at run 7
   (`ep_2`, Block 2) through all 20 runs; **lan1 asymmetry promoted to a
   first-class post-campaign root-cause target** (`rq1v2_p4_01_lan2_asymmetry.py`
-  at n=5).- **Analysis after the campaign**: per-run `rq1_delivery_per_run.py` → group
+  at n=5).
+- **2026-08-06 PLATFORM FIX — shared edge-server bind-delay artifact removed;
+  campaign restarted.** Root-caused across RQ1/RQ2/RQ3: the Flask `edge_server`
+  dev-server (`app.run()`) intermittently took ~10 s to bind after "Serving
+  Flask app", so a spawned backend was in the VIP pool while unservable — a
+  shared artifact that contaminated RQ1/RQ2 (no readiness gate) and RQ3
+  (direct arm). Fix in `source/docker/edge_server/source/app.py`: bind
+  synchronously via `werkzeug.serving.make_server` + `serve_forever` in a
+  background thread, and start the `app_ready` probe only after the socket is
+  bound. Verified on the VM: container → port accept **0.47 s** (was ~10 s).
+  **Consequence:** the edge_server image changed ⇒ per the config-invalidation
+  rule, **campaign runs 1–10 (buggy platform) are invalidated** and retained
+  only as buggy-platform characterization evidence; the campaign **restarts
+  from Block 1** on the fixed platform. **Validation run
+  `rq1_delivery_ep_validation` (20260806_090419, Arm A, seed 2001) — ✅ PASS:**
+  **0 `http=000` rows** (was 18–428/run), plateau completion **93.2/93.8%**,
+  timeout **3.8/3.5%**, p50 1.15/1.36 s, delivery 164/164 **0 missed**,
+  overload detected 126/122. Same seed as the buggy hot run 1 (timeout
+  19.6/15.5%, p50 4.3/2.5 s) ⇒ the bind delay was a primary driver of the
+  observed plateau heat and the lan1 collapses (runs 6/8).
+- **Analysis after the campaign**: per-run `rq1_delivery_per_run.py` → group
   by arm with `rq1_delivery_comparison.py` (4-arm graph suite) → stats with
   `rq1v2_p3_01_stats.py` (n=5, exact MWU, no scipy needed) → lan2 asymmetry
   re-run at n=5.
