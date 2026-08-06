@@ -289,8 +289,32 @@ started** (this section is the launch contract, not a record of execution).
   the campaign restarts from Block 1 with a new readiness record. A single
   flagged replicate that root-causes to an operational artifact (cleanup /
   container-recreation failure, C1 violation) is re-run in place without
-  touching the config.
-- **Analysis after the campaign**: per-run `rq1_delivery_per_run.py` → group
+  touching the config.- **2026-08-06 AMENDMENT — rule re-scoped to collapse screening (triggered by
+  the pre-registered pause at 3 flags).** The campaign started 2026-08-05
+  21:47; runs 1 (`ep_1`), 5 (`delayed_2`), 6 (`ls_2`) flagged under the strict
+  80/15 rule → the ≥3-total pause fired after run 6 (2026-08-06 01:17). Per-run
+  root-cause: **not** operational (C1 fresh state, no controller restart, no
+  OOM, scale-up fired; config/phase/env/driver verified every run) — the flags
+  are the two pre-registered watch-items: **(a) plateau marginality** (~45 DB
+  ops/s/LAN at/above RQ2's ~42 cliff: replicates flip hot (timeout 16–27%) vs
+  healthy (6–10%) under identical config+seed — runs 1/5/6 vs 2/3/4);
+  **(b) lan1 asymmetry reproduces** (run 6: lan1 overload labeling stops at
+  window ~96 → 34% of windows, below the 40% criterion; lan2 continues to
+  ~159). **Decision (user-approved 2026-08-06):** re-anchoring rejected — the
+  G2 sweep shows no stable-and-overloaded rate below 1.2 (rate 1.5 collapses;
+  a lower rate likely falls below the overload threshold and destroys RQ1's
+  observability axis). The rule is re-scoped to **collapse screening**: a
+  replicate is **DROPPED (invalid)** only iff any of: plateau completion < 60%
+  either LAN, OR plateau timeout > 40% either LAN, OR OOM, OR (A/B) any missed
+  window (telemetry silence), OR (C/D) delivered fraction deviating > ±0.1
+  from design (0.333). **All 6 completed runs remain valid** under this rule.
+  The strict 80/15 numbers are **retained and reported as
+  `plateau_temperature`** — per-replicate completion/timeout are always shown
+  in the results table and graphs; hot replicates are never dropped for being
+  hot, the temperature is a descriptive covariate. Campaign resumes at run 7
+  (`ep_2`, Block 2) through all 20 runs; **lan1 asymmetry promoted to a
+  first-class post-campaign root-cause target** (`rq1v2_p4_01_lan2_asymmetry.py`
+  at n=5).- **Analysis after the campaign**: per-run `rq1_delivery_per_run.py` → group
   by arm with `rq1_delivery_comparison.py` (4-arm graph suite) → stats with
   `rq1v2_p3_01_stats.py` (n=5, exact MWU, no scipy needed) → lan2 asymmetry
   re-run at n=5.
