@@ -8,8 +8,11 @@ Current evaluation families:
 - [v2/README.md](v2/README.md) — **thesis-framing v2 campaign**: the validated
   control group (`control_group.md` + retune) and the RQ1/RQ2/RQ3 evaluation
   campaigns under the current `thesis_overview.md` framing.
+- [v3/README.md](v3/README.md) — **v3 campaigns rebased on the storage-bind
+  locked configuration** (2026-08-07): RQ2 bottleneck-aware scaling and the
+  RQ3 storage-replica benefit at the locked storage config.
 - [stability/README.md](stability/README.md) — validation-first family for the current implemented architecture, with small reserve-specific tuning follow-ups after usability is already proved.
-- [rq1_evaluation/experiment_plan.md](rq1_evaluation/experiment_plan.md) — full RQ1 telemetry delivery cadence evaluation. Push vs. poll at three intervals, measuring decision staleness, reaction latency, transient service quality, and control-plane overhead. Requires the golden config and the fixed `consumed_at` collector.
+- [v2/rq1/experiment_plan.md](v2/rq1/experiment_plan.md) — RQ1 telemetry delivery semantics evaluation (v2): 4-arm factorial (event-preserving, delayed, poll, sampled-push) under the open-loop driver; measures overload observability, scaling response, and transient service quality.
 
 What `stability` means here:
 
