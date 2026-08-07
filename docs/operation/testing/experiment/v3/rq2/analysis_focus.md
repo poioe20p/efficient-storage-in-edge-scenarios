@@ -14,6 +14,15 @@ benefit of the first storage add:
   drops. Report the pre/post window p50/p95 (SG-4 style) and the timeout
   trajectory (30 s buckets) — the F4a/F4b signature is: elevated p50/p95 +
   timeouts pre-add → sharp drop ~60–120 s after the replica is ready.
+- **Pinned windows (fix 7):** pre-add = episode start → first storage add
+  (`container_events` `added`); post-add = first add **ready** (`node_ready`
+  log) + 120 s → episode end (fallback ready = add + 40 s). Report p50/p95 per
+  window + the 30 s-bucket trajectory.
+- **Scale-down (fix 3):** ≥ 1 storage teardown in `demand_drop` (elasticity
+  bidirectional); record scale-down timing vs load drop.
+- **Pool diagnostic (fix 1):** P3 (pool 12) outcome — if pool 12 also
+  binds → relieves, pool 48 is not required and the config can simplify;
+  otherwise pool 48 is the documented serving-path capacity mechanism.
 - **Spread**: `client_requests.backend_id` distribution must show ≥ 2 active
   backends per LAN (the dynamic secondary carries a material share); per-node
   storage CPU must show load on primary **and** secondary.
@@ -43,9 +52,13 @@ Report `storage_fired`/`compute_fired` counts and the classification margin.
 - LAN symmetry (F2): per-LAN spawns and storage CPU ≤ 3× asymmetry.
 - Cost side: spawn counts, resource deltas (node-minutes) per arm.
 
-## 5. Not a claim
+## 5. Claim shaping (open-ended)
 
-Pool-48 fan-out is the enabler for read spread; the thesis frames it as the
-serving-path capacity mechanism (documented in
-[`storage_bind_probe_record.md`](storage_bind_probe_record.md)), not as a
-separate variable.
+No single signal is pre-privileged. The claim follows the mechanism relation
+— *worse trigger awareness ⇒ worse user service quality* — and the thesis is
+shaped from whichever signals the data shows improve/decline when the correct
+tier scales (latency, timeout, throughput, CPU), including results beyond
+pre-registered expectations. Wrong-action cells are read for their designed
+degradation. Pool-48 fan-out is framed as the serving-path capacity mechanism
+(documented in [`storage_bind_probe_record.md`](storage_bind_probe_record.md)),
+not as a separate claim.

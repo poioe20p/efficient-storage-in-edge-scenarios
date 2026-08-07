@@ -8,35 +8,42 @@ the v3 RQ2 campaign (storage-bind locked config, tag `rq2-v3-campaign-20260807`)
 
 ## 1. Per-cell configuration
 
-| Cell | Env file (staged `~/rq2_env/`) | Phases file | EDGE_CPUS | STORAGE_CPUS | Verified by |
-|---|---|---|---|---|---|
-| `cf_cb` | `rq2_compute_first.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | cb_1/cb_2 (B1, v2 record) |
-| `cf_db` | `rq2_compute_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | F4a/F4b (B2, storage-bind record) |
-| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | 0.30 | 0.15 | v2 Series-C |
-| `sf_db` | `rq2_storage_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | F4a/F4b + preflight |
-| `ba_cb` | `rq2_bottleneck_aware.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | v2 Series-C |
-| `ba_db` | `rq2_bottleneck_aware.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | F4a/F4b (db config) |
+| Cell | Env file (staged `~/rq2_env/`) | Phases file | EDGE_CPUS | STORAGE_CPUS | Pool | Verified by |
+|---|---|---|---|---|---|---|
+| `cf_cb` | `rq2_compute_first.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 | cb_1/cb_2 (B1, v2 record) |
+| `cf_db` | `rq2_compute_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **48** | F4a/F4b (B2) + preflight P4 |
+| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | 0.30 | 0.15 | 12 | v2 Series-C |
+| `sf_db` | `rq2_storage_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **48** | F4a/F4b + preflight P1/P2/P3 |
+| `ba_cb` | `rq2_bottleneck_aware.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 | v2 Series-C |
+| `ba_db` | `rq2_bottleneck_aware.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **48** | F4a/F4b (db config) + preflight P5 |
 
-Shared: `EDGE_MONGO_MAX_POOL_SIZE=48`, `EDGE_MONGO_READ_PREFERENCE=
-secondaryPreferred`, `VIP_DATA_PER_CONNECTION_FLOWS=1`, `WAN_RTT_MS=185`,
-`RANDOM_SEED=42`. Readiness gate (D9a) on in all three arm envs
-(`READINESS_PROPAGATION=direct`, `EDGE_APP_READY_EVENT=1`).
+Pool is per-cell (shell, `tools/run_rq2_campaign.py` `CELLS`): 12 for cb,
+48 for db. Arm envs (dynamic edges) keep `EDGE_MONGO_MAX_POOL_SIZE=12`.
+Shared: `EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`,
+`VIP_DATA_PER_CONNECTION_FLOWS=1`, `WAN_RTT_MS=185`. Readiness gate (D9a) on
+in all three arm envs (`READINESS_PROPAGATION=direct`, `EDGE_APP_READY_EVENT=1`).
 
-## 2. Preflight (2 runs)
+## 2. Preflight (5 runs)
 
 | # | Label | Cell | Seed | Purpose |
 |---|---|---|---|---|
-| P1 | `rq2_sf_db_preflight_1` | `sf_db` | 2001 | storage bind → relief at locked config |
+| P1 | `rq2_sf_db_preflight_1` | `sf_db` | 2001 | storage bind → relief + **scale-down** at locked config |
 | P2 | `rq2_sf_db_preflight_2` | `sf_db` | 2001 | same-seed reproducibility |
+| P3 | `rq2_sf_db_preflight_pool12` | `sf_db` @ pool 12 | 2001 | pool-isolation diagnostic (is pool 48 required?) |
+| P4 | `rq2_cf_db_preflight_1` | `cf_db` | 2001 | wrong-action sanity (suppressed storage, no collapse) |
+| P5 | `rq2_ba_db_preflight_1` | `ba_db` | 2001 | classifier picks storage; benefit ≈ P1 |
 
-Pass = both runs satisfy experiment_plan §6 (B2, M1, M2, V1, I1, I2, D1–D3,
-F2; timeout ≤ 5 %) with consistent direction and comparable magnitude.
+Pass = `experiment_plan.md` §5–§6 (P1/P2: full req-check + scale-down;
+P4: timeout ≤ 10 %; P5: storage fires + benefit).
 
 ## 3. Main matrix (36 runs)
 
 Executed in counterbalanced order from
 [`counterbalance_order_v2.csv`](counterbalance_order_v2.csv): 6 blocks × 6
-cells, run labels `rq2_<cell>_1..6`. Block seeds 2001–2006.
+cells, run labels `rq2_<cell>_1..6`. Block seeds 2001–2006. Traffic seed per
+run from the CSV `traffic_seed` column: `RANDOM_SEED=42` for `_1.._5`, 43 for
+`_6` (cross-seed arm). The orchestrator reads it and passes `RANDOM_SEED=` per
+run.
 
 ## 4. Launch command
 

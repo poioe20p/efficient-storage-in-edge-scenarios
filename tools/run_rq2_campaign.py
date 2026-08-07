@@ -29,36 +29,36 @@ import sys
 import time
 
 
-# cell -> (env file, phases file, shell CPU vars) relative to the VM repo
-# layout. CPU vars are the calibrated per-cell config.
-#   Compute-bound cells (cf_cb/ba_cb/sf_cb): Series-C 2026-08-06 (B1 validated).
-#   Data-bound cells (cf_db/sf_db/ba_db): storage-bind locked config 2026-08-07
-#   (F4a/F4b PASS: edge 1.20 / storage 0.15 / rate 5.0 / lookup-heavy / pool 48).
+# cell -> (env file, phases file, shell CPU+pool vars) relative to the VM repo
+# layout. Pool is per-cell (fix 4): cb cells at the B1-validated 12; db cells
+# at 48 (the storage-bind read-spread enabler, F4a/F4b). CPU: cb = Series-C
+# (B1-validated), db = storage-bind locked config 2026-08-07 (edge 1.20 /
+# storage 0.15 / rate 5.0 / lookup-heavy).
 CELLS: dict[str, tuple[str, str, str]] = {
     "cf_cb": ("rq2_compute_first.env", "phases_rq2_compute_bound.json",
-               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15"),
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "cf_db": ("rq2_compute_first.env", "phases_rq2_data_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20"),
+               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=48"),
     "sf_cb": ("rq2_storage_first.env", "phases_rq2_compute_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=0.30"),
+               "STORAGE_CPUS=0.15 EDGE_CPUS=0.30 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "sf_db": ("rq2_storage_first.env", "phases_rq2_data_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20"),
+               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=48"),
     "ba_cb": ("rq2_bottleneck_aware.env", "phases_rq2_compute_bound.json",
-               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15"),
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "ba_db": ("rq2_bottleneck_aware.env", "phases_rq2_data_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20"),
+               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=48"),
 }
 
 REPO = "~/efficient-storage-in-edge-scenarios"
 METRICS = f"{REPO}/source/scripts/testing/metrics"
 ACTIVE_RUN = f"{METRICS}/active_run.json"
 
-# Shared shell env (pool 48 after the 2026-08-07 storage-bind lock — the
-# read-spread enabler for the data-bound cells; CPU vars are per-cell and
-# prepended by launch()).
-BASE_ENV = ("WAN_RTT_MS=185 RANDOM_SEED=42 "
+# Shared shell env. RANDOM_SEED and EDGE_MONGO_MAX_POOL_SIZE are per-run:
+# the seed comes from the order CSV's traffic_seed column (42 for _1.._5, 43
+# for the _6 cross-seed arm) and the pool is per-cell in CELLS (fix 4).
+BASE_ENV = ("WAN_RTT_MS=185 "
             "EDGE_MONGO_READ_PREFERENCE=secondaryPreferred "
-            "EDGE_MONGO_MAX_POOL_SIZE=48 VIP_DATA_PER_CONNECTION_FLOWS=1")
+            "VIP_DATA_PER_CONNECTION_FLOWS=1")
 
 
 def ssh(host: str, cmd: str, timeout: int = 15) -> subprocess.CompletedProcess | None:
@@ -109,10 +109,10 @@ def is_run_completed(host: str, label: str) -> bool:
 
 
 def launch(host: str, label: str, cell: str, env: str, phases: str,
-           cpus: str) -> bool:
+           cpus: str, seed: str) -> bool:
     """Launch one run via nohup. Returns True if the make chain started."""
     remote = (
-        f"cd {REPO} && nohup sudo -n {cpus} {BASE_ENV} "
+        f"cd {REPO} && nohup sudo -n RANDOM_SEED={seed} {cpus} {BASE_ENV} "
         f"make -C source/scripts setup_network create_clients setup_test_data "
         f"run_experiment "
         f"OSKEN_ENV_OVERRIDE_FILE=../../rq2_env/{env} "
@@ -166,7 +166,7 @@ def main() -> int:
 
     with open(args.order, newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
-    plan = [(r["run_label"], r["cell"]) for r in rows]
+    plan = [(r["run_label"], r["cell"], r.get("traffic_seed", "42")) for r in rows]
 
     log = args.log
     def out(msg: str) -> None:
@@ -177,7 +177,7 @@ def main() -> int:
                 f.write(line + "\n")
 
     if args.start_at:
-        idx = next((i for i, (lab, _) in enumerate(plan) if lab == args.start_at), None)
+        idx = next((i for i, (lab, _, _) in enumerate(plan) if lab == args.start_at), None)
         if idx is None:
             out(f"[error] start_at label {args.start_at} not in order file")
             return 1
@@ -185,7 +185,7 @@ def main() -> int:
 
     out(f"RQ2 campaign orchestrator: {len(plan)} remaining runs on {args.host}")
 
-    for i, (label, cell) in enumerate(plan, 1):
+    for i, (label, cell, seed) in enumerate(plan, 1):
         env, phases, cpus = CELLS[cell]
         # Skip runs already completed/failed in a run folder (covers runs that
         # finished while active_run.json pointed at a different run).
@@ -210,11 +210,11 @@ def main() -> int:
         while attempts <= args.max_retries:
             attempts += 1
             out(f"[{i}/{len(plan)}] {label} ({cell}) attempt {attempts}/{args.max_retries+1}")
-            up = launch(args.host, label, cell, env, phases, cpus)
+            up = launch(args.host, label, cell, env, phases, cpus, seed)
             if not up:
                 out(f"  launch not confirmed for {label}; waiting 30s then checking again")
                 time.sleep(30)
-                up = launch(args.host, label, cell, env, phases, cpus)
+                up = launch(args.host, label, cell, env, phases, cpus, seed)
             code, note = wait_completion(args.host, label, args.poll_interval,
                                          args.timeout_per_run)
             if code == 0:

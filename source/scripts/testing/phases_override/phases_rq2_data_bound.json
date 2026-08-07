@@ -38,7 +38,7 @@
     },
     {
       "name": "demand_drop",
-      "duration_s": 240,
+      "duration_s": 360,
       "rate_per_client": 1.0,
       "cross_region_ratio": 0.0,
       "client_fraction": 0.1,
