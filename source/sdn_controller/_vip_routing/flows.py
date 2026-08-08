@@ -362,11 +362,9 @@ def install_vip_dnat_snat(
             )
         else:
             logger.warning(
-                "dnat/snat: mac=%s not reachable from dpid=%s, skipping — "
-                "requesting topology re-learn",
+                "dnat/snat: mac=%s not reachable from dpid=%s, skipping",
                 real_backend_mac, datapath.id,
             )
-            controller._topo_correction_needed = True
             return
 
     # --- DNAT rule ---

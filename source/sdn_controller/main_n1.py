@@ -730,16 +730,12 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                                 rs_name=f"rs_net{lan}",
                                 primary_container=f"edge_storage_server_n{lan}"))
 
-                    classifier_suppressed = (not selected
-                                             and self._policy_gate.last_suppressed() is not None
-                                             and (compute_v.fired or storage_v.fired))
                     strict_suppressed = (self._policy_gate.strict_enabled()
                                          and self._policy_gate.strict_committed() is not None
                                          and not selected
                                          and (compute_v.fired or storage_v.fired))
 
                     reason = ("action" if selected
-                              else "classifier_suppressed" if classifier_suppressed
                               else "strict_suppressed" if strict_suppressed
                               else "budget_exhausted"
                               if any((compute_v.fired and not self._policy_gate.budget_available("compute"),

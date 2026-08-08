@@ -67,10 +67,6 @@ class PolicyGate:
         self._single_fire_streak: dict[Tier, int] = {"compute": 0, "storage": 0}
         self._relief_streak = 0
         self._suppressed: Tier | None = None
-        # Ba one-fired suppression: tier the classifier suppressed in the most
-        # recent select() because it is not the declared bottleneck (None when
-        # nothing was suppressed). Consumed for the decision-log reason.
-        self._suppressed_by_classifier: Tier | None = None
         if self._strict and self.mode == "bottleneck_aware":
             logger.info(
                 "policy_gate: STRICT sticky-commit ON "
@@ -93,7 +89,6 @@ class PolicyGate:
         - bottleneck_aware: both fired → the classified tier; one fired → that
           tier; none fired → ().
         """
-        self._suppressed_by_classifier = None
         if self.mode == "dual":
             return tuple(
                 t for t, v in (("compute", compute_v), ("storage", storage_v))
@@ -109,18 +104,9 @@ class PolicyGate:
         if compute_v.fired and storage_v.fired:
             return (self.classify(compute_v, storage_v),)
         if compute_v.fired:
-            # Commit to the declared bottleneck: when the classifier (using
-            # both tiers' scores/eligibility) declares the OTHER tier, suppress
-            # this fire so the ba arm scales one tier per episode.
-            if self.classify(compute_v, storage_v) == "compute":
-                return ("compute",)
-            self._suppressed_by_classifier = "compute"
-            return ()
+            return ("compute",)
         if storage_v.fired:
-            if self.classify(compute_v, storage_v) == "storage":
-                return ("storage",)
-            self._suppressed_by_classifier = "storage"
-            return ()
+            return ("storage",)
         return ()
 
     def _select_strict(self, compute_v: ScaleUpVerdict,
@@ -171,21 +157,13 @@ class PolicyGate:
             self._suppressed = fired[0] if fired else None
             return ()
 
-        # 4. Not committed yet -> per-window behavior, but still commit to the
-        #    classifier's declared bottleneck (suppress a fire whose tier is
-        #    not the classified bottleneck).
+        # 4. Not committed yet -> current per-window behavior.
         if compute_v.fired and storage_v.fired:
             return (self.classify(compute_v, storage_v),)
         if compute_v.fired:
-            if self.classify(compute_v, storage_v) == "compute":
-                return ("compute",)
-            self._suppressed_by_classifier = "compute"
-            return ()
+            return ("compute",)
         if storage_v.fired:
-            if self.classify(compute_v, storage_v) == "storage":
-                return ("storage",)
-            self._suppressed_by_classifier = "storage"
-            return ()
+            return ("storage",)
         return ()
 
     def strict_enabled(self) -> bool:
@@ -195,11 +173,6 @@ class PolicyGate:
     def strict_committed(self) -> Tier | None:
         """The tier currently committed to (None when not committed)."""
         return self._committed
-
-    def last_suppressed(self) -> Tier | None:
-        """Tier suppressed by the ba classifier in the most recent select()
-        (None when nothing was suppressed this window)."""
-        return self._suppressed_by_classifier
 
     def classify(self, compute_v: ScaleUpVerdict,
                  storage_v: ScaleUpVerdict) -> Tier:
