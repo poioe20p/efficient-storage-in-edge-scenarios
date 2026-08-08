@@ -14,6 +14,7 @@ from ..scaling_config import (
     _VIP_WARM_SERVER_SECONDS,
     _VIP_WARM_STORAGE_SECONDS,
     _VIP_FLOW_ISOLATION,
+    _VIP_SERVER_PER_CONNECTION,
 )
 
 # Re-export for convenience (used by selection.py)
@@ -184,14 +185,18 @@ def unregister_server_backend(controller, mac: str) -> None:
                 controller._vip_server_client_map.pop(c, None)
 
 
-def delete_vip_server_client_flows(controller, client_ip: str) -> None:
+def delete_vip_server_client_flows(controller, client_ip: str,
+                                   client_port: int = 0) -> None:
     """Delete a client's VIP_SERVER DNAT+SNAT flows (RQ3 flow isolation).
 
     Resolves the client MAC from ARP-learned state and deletes the exact
     recorded DNAT/SNAT pair (from ``_vip_server_client_map``) so the next
-    request from that client triggers a fresh backend selection. Handles this
-    controller's own per-LAN ``VIP_SERVER`` only (cross-network server flows
-    are out of scope for RQ3).
+    request from that client triggers a fresh backend selection. In
+    per-connection mode (``VIP_SERVER_PER_CONNECTION_FLOWS=1``) the binding is
+    keyed by ``(client_mac, client_port)`` and only that connection's flow
+    pair is deleted; otherwise (default) the per-client binding is used.
+    Handles this controller's own per-LAN ``VIP_SERVER`` only (cross-network
+    server flows are out of scope for RQ3).
     """
     client_mac = controller._ip_to_mac.get(client_ip)
     if client_mac is None:
@@ -199,11 +204,14 @@ def delete_vip_server_client_flows(controller, client_ip: str) -> None:
             "vip_server: flow delete for unknown client ip=%s — skipping", client_ip,
         )
         return
+    key = ((client_mac, client_port)
+           if (_VIP_SERVER_PER_CONNECTION and client_port) else client_mac)
     with controller._warm_lock:
-        binding = controller._vip_server_client_map.get(client_mac)
+        binding = controller._vip_server_client_map.get(key)
     if binding is None:
         logger.debug(
-            "vip_server: no binding for client ip=%s — skipping", client_ip,
+            "vip_server: no binding for client ip=%s:%s — skipping",
+            client_ip, client_port,
         )
         return
     for datapath in controller.datapaths:
@@ -219,8 +227,8 @@ def delete_vip_server_client_flows(controller, client_ip: str) -> None:
     # Pop only if the binding is still the one we deleted — a concurrent
     # Thread-1 re-selection may have installed a newer binding meanwhile.
     with controller._warm_lock:
-        if controller._vip_server_client_map.get(client_mac) is binding:
-            controller._vip_server_client_map.pop(client_mac, None)
+        if controller._vip_server_client_map.get(key) is binding:
+            controller._vip_server_client_map.pop(key, None)
 
 
 def unregister_storage_backend(controller, mac: str, domain: str) -> None:

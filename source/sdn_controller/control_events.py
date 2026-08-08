@@ -46,8 +46,10 @@ class ControlEventDispatcher:
             if event.get("event_type") == "request_complete":
                 self._request_complete_count += 1
                 client_ip = event.get("client_ip")
+                client_port = event.get("client_port") or 0
                 if client_ip:
-                    vip_routing.delete_vip_server_client_flows(client_ip)
+                    vip_routing.delete_vip_server_client_flows(
+                        client_ip, client_port)
         if (self._request_complete_count == 0
                 and not self._flow_guard_warned
                 and uptime_s > _FLOW_ISOLATION_WARMUP_S):

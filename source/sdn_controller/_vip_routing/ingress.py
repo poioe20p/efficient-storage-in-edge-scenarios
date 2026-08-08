@@ -10,6 +10,7 @@ from .config import (
     _ROUTER_MAC, _ROUTER_OVS_PORT, _VIP_DATA_PER_CONNECTION, logger,
 )
 from . import flows, selection
+from ..scaling_config import _VIP_SERVER_PER_CONNECTION
 
 
 def _iter_vip_bindings(controller):
@@ -164,6 +165,13 @@ def _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_p
         )
         return True
 
+    # Per-connection mode (VIP_SERVER_PER_CONNECTION_FLOWS=1, RQ3 arms): scope
+    # the flow to this connection's client source port so each fresh request
+    # connection gets its own DNAT/SNAT pair. Per-client mode (default) passes
+    # client_port=None and keeps the original byte-identical behavior.
+    tcp_pkt = pkt.get_protocol(tcp_lib.tcp) if ip_proto == 6 else None
+    client_port = (tcp_pkt.src_port
+                   if (_VIP_SERVER_PER_CONNECTION and tcp_pkt is not None) else None)
     flows.install_vip_dnat_snat(
         controller,
         datapath, in_port, pkt,
@@ -174,6 +182,7 @@ def _handle_vip_server(controller, datapath, in_port, pkt, src_mac, src_ip, ip_p
         vip_mac=vip_mac,
         real_backend_ip=server_ip,
         real_backend_mac=server_mac,
+        client_port=client_port,
     )
 
     logger.info(

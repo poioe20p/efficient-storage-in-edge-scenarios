@@ -25,6 +25,9 @@ class ClientVipBinding:
     pair, so ``delete_vip_server_client_flows`` can delete the EXACT pair on
     the next request's ``request_complete`` control event. ``snat_eth_src`` is
     the exact ``eth_src`` used on the SNAT rule (backend MAC or router MAC).
+    ``client_port`` is 0 for per-client mode (RQ1/RQ2) and the client's
+    ephemeral source port for per-connection mode
+    (``VIP_SERVER_PER_CONNECTION_FLOWS=1``, RQ3 arms).
     """
     client_mac: str
     client_ip: str
@@ -33,6 +36,7 @@ class ClientVipBinding:
     vip_ip: str
     vip_mac: str
     snat_eth_src: str
+    client_port: int = 0
 
 # --- Backend-selection policy mode (RQ2) ---
 _BACKEND_SELECTION_POLICY = os.environ.get(
@@ -55,6 +59,18 @@ _W_STORAGE_HOPS        = float(os.environ.get("W_STORAGE_HOPS",        "0.3"))
 
 _VIP_IDLE_TIMEOUT = int(os.environ.get("VIP_IDLE_TIMEOUT", "30"))
 _VIP_HARD_TIMEOUT = int(os.environ.get("VIP_HARD_TIMEOUT", "120"))
+
+# Data-plane forward-flow idle timeout (per-connection and per-client VIP_DATA
+# flows). Default 10 preserves the historical hard-coded behavior for all RQs;
+# RQ1 v3 opts in to VIP_DATA_IDLE_TIMEOUT=120 (2026-08-07 post-campaign root
+# cause): under load, requests queue at the edge (compute + DB, served p50
+# 2-6 s) and an in-flight connection idle >10 s loses its forward flow; the
+# late response can then not be forwarded and the connection dies
+# (http=000 "unknown" population — 100% of RQ1 plateau failures). A longer
+# idle lets queued-but-alive connections survive to be served (they become
+# slow-served instead of dropped). hard_timeout stays per-branch. Other RQs
+# are unaffected unless they set this variable.
+_VIP_DATA_IDLE_TIMEOUT = int(os.environ.get("VIP_DATA_IDLE_TIMEOUT", "10"))
 
 # Per-connection VIP_DATA flow matching (Approach B, 2026-08-03).
 # 0 (default) = per-CLIENT forward rules (one backend per edge server; the

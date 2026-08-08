@@ -1,11 +1,15 @@
-# RQ3 Storage-Replica Benefit — Experiment Plan (v3 draft)
+# RQ3 — Experiment Plan (v3): compute-only verdict, storage extension closed
 
-**Status:** 📝 Draft for review — **no run started** (2026-08-07).
+**Status:** ✅ **DECIDED (2026-08-08) — storage extension CLOSED.** RQ3 is
+evaluated on **compute only** (thesis RQ3, already complete 2026-08-06); the
+storage-replica scale-up extension returned a **4-run preflight null** and is
+**not carried forward**. No storage campaign runs.
 **Scope:** (1) carry forward (amend) the **established compute scale-up benefit**
-from the saturation probe; (2) evaluate the **storage replica scale-up benefit**
-under a read-write mix where writes clog the primary and reads offload to
-replicas; (3) pre-register the decision rule: **if storage scale-up does not
-produce a measurable benefit, storage should not scale up**.
+from the saturation probe (compute RQ3 complete); (2) evaluate the **storage
+replica scale-up benefit** under a read-write mix where writes clog the primary
+and reads offload to replicas — **evaluated, null, closed**; (3) the
+pre-registered decision rule fired: **no benefit → storage should not scale up**
+(RQ3-storage-3).
 **Basis:** compute probe results in
 [`rq3_saturation/experiment_plan.md`](../rq3_saturation/experiment_plan.md)
 (2026-08-07, cells P-A′…P-B2) + the verified architecture: `/content` write
@@ -206,14 +210,37 @@ run-to-run catch-up variance (direct fast cluster 35.3–40.6 s vs discovery
 within the 300 s plateau. Per the v2/rq3 C9 precedent, the honest null is
 accepted and the claim narrows to the delivery-layer timing differential.
 
+**Probe-number corrections (honest SG-4 window guards, 2026-08-07):** all probe
+benefit numbers above are the ORIGINAL unguarded estimates. Under the SG-4
+guards (post window `[w+10, w+70]` inside the plateau; `n_pre`/`n_post` ≥ 50),
+the corrected per-run medians are **M2 +14.8 %, M1b +49.5 %, S-E +42.3 %
+(PASS)** and **M1 n=1 clean steady-state (FAIL)** — M1's +44.7 % was inflated
+by promotions whose windows fell outside the 300 s probe plateau (e.g.
+`lan2_dyn7` promoted 12:23:19, after plateau end 12:22:10). M1 is therefore
+**re-run at the campaign 600 s phases**; the preflight/campaign numbers are the
+evidence. The benefit direction is stable across the three usable probes
+(+14.8…+49.5 %), consistent with the R-stor-3 mechanism (primary connection
+share post ≈ 34–44 %, offload +1…+25 % per promotion).
+
 | Gate | Criterion | Purpose |
 |---|---|---|
 | **SG-1** Driver clean | canceled+dropped < 5 % of offered; http=000 ≈ 0 in `baseline` (plateau timeouts = treatment regime, RQ3-sat calibration) | 48-client driver envelope |
 | **SG-2** Primary under pressure | primary write/read latency p95 **rises** across the plateau (primary is the bottleneck); no storage collapse (timeout rate < ~10 % whole-plateau) | the clog exists and is safe |
 | **SG-3** Storage scale-up fires | ≥ 1 storage replica admitted per LAN during `storage_plateau` | the mechanism is exercised |
-| **SG-4** **Benefit** | after replica admission: pool latency p50/p95 **drops ≥ 10 %** over `[spawn−60, spawn]` vs `[admitted+10, admitted+70]` — steady-state admissions only (ramp guard, compute-probe precedent) | **the benefit gate** |
+| **SG-4** **Benefit** | after replica admission: pool latency p50/p95 **drops ≥ 10 %** over `[spawn−60, spawn]` vs `[admitted+10, admitted+70]` — steady-state admissions only (ramp guard: promotion ≥ 120 s into the plateau, **post window `[w+10, w+70]` must stay inside the plateau, `n_pre`/`n_post` ≥ 50**) | **the benefit gate — counts only when the R-stor-3 read-offload co-gate also passes** |
 | **SG-5** Quantization intact | evaluated on **S-E**: direct `SECONDARY → promoted` ≲ 1 s (measured **0.00 s**); discovery 1–6 s (avg ~3.9 s — below the ≥ 5 s expectation because the storage bootstrap telemetry lands inside the 10 s window) | propagation treatment |
 | SG-6 | whole-run canceled/dropped < 5 %; driver cleanliness only | same as SG-1 |
+
+**Hardening (pre-campaign, 2026-08-07):** the M1 probe's 153×
+`NotPrimaryOrSecondary` burst (12:17:32–12:18:01, reads on `edge_server_n2`)
+is the `prefer_secondary` selection routing reads to a RECOVERING (non-SECONDARY)
+member during a replica-set reconfig. Fixed in `_vip_routing/selection.py`:
+reads now offload to **SECONDARY-only** members.
+`tools/rq3stor_window_burst_check.py` verifies whether any burst touches an
+SG-4 window before M1's +44.7 % is carried forward. Residual risk (documented):
+`member_state` is telemetry (~1 window old), so an in-flight connection to a
+member demoted mid-reconfig can still fail once; new connections re-select per
+flow (`VIP_DATA_PER_CONNECTION_FLOWS=1`).
 
 ### 5.2 Escalation / de-escalation / stop
 
@@ -246,6 +273,36 @@ the propagation claim and the benefit (R-stor-1/SG-4) as the headline; no
 designed-cadence arm is added (a slower discovery cadence would be a
 tautological knob-setting, not a system property).
 
+### 5.4 Preflight verdict — storage benefit NULL at the locked campaign config
+
+The 2-run preflight planned in `run_matrix.md` §3 was expanded to **4 runs**
+(2026-08-07/08, `cloud-vm-rq3`, full-length 600 s plateau @ rate 0.6) to
+resolve run-to-run noise and the SG-2 config artifact (baseline rate 1.0 → 0.4
+fix). Full gates on every run:
+
+| Run | Arm / baseline | SG-4 (benefit) | SG-2 (V1) | D1 (NotPrimary) | Verdict |
+|---|---|---|---|---|---|
+| P1 `20260807_152020_rq3stor_preflight_direct` | direct / 1.0 | +38.2 % (⚠ transient artifact) | FAIL | ⚠ 31× (burst, demand_drop) | ❌ artifact |
+| P2 `20260807_161136_rq3stor_preflight_disc` | disc / 1.0 | +3.6 % | FAIL | ✅ 0 | ❌ FAIL |
+| P1-fix `20260807_173547_rq3stor_preflight_direct_fix` | direct / 0.4 | +0.6 % | FAIL | ✅ 0 | ❌ FAIL |
+| P2-fix `20260807_234234_rq3stor_preflight_disc_fix` | disc / 0.4 | **−1.9 %** | FAIL | ✅ 0 | ❌ FAIL |
+
+**Investigation (why P1 "passed"):** P1's +38.2 % was driven by an
+early-plateau transient latency spike (pool p95 4.4–5.0 s in the first ~120 s;
+pre_p95 4236 ms in the evaluated pre-windows) that subsided regardless of
+replica admission. Both runs converge to the same steady-state plateau p95
+(~1.1–1.2 s). Storage primary CPU stays ~50–65 % across the plateau in **both**
+arms — adding replicas relieves neither latency nor CPU. R-stor-3 (read
+offload) passes in all 4 runs (replicas do offload reads), but the offload
+never converts into user-visible benefit. **No sustained storage-scale-up
+benefit at the locked config — the honest, cross-arm, cross-baseline verdict
+is NULL.**
+
+**Governance outcome (RQ3-storage-3, pre-registered):** storage scale-up is
+**not beneficial** under this workload → **storage should not scale up**.
+Elastic capacity is wasted and only adds oplog load. No storage campaign is
+run; RQ3's thesis claim is carried by the compute campaign (complete).
+
 ---
 
 ## 6. The governance rule — storage should not scale if it doesn't benefit
@@ -267,7 +324,17 @@ demonstrably matter.
 
 ---
 
-## 7. Phase 2 — campaign (if SG-4 benefit is shown)
+## 7. Phase 2 — campaign (NOT RUN: SG-4 benefit null at campaign config)
+
+> **Decision (2026-08-08): no storage campaign.** The 4-run preflight
+> (P1/P2/P1-fix/P2-fix, §5.4) showed **no measurable storage benefit** at the
+> locked campaign config: SG-4 median p95 drop −1.9…+3.6 % across the three
+> honest runs (P1's +38.2 % was a proven early-plateau transient-spike
+> artifact; both arms, both baseline settings). Per the governance rule (§6)
+> and RQ3-storage-3, **storage should not scale up under this workload** — the
+> negative-benefit finding is the deliverable. RQ3's thesis claim rests on the
+> compute campaign (already complete). The planned 12-run storage matrix below
+> is retained for reference only and will NOT be launched.
 
 - **Arms:** `direct` (`rq3stor_direct.env`) vs `discovery`
   (`rq3stor_discovery.env`), n = 6/arm → 12 runs, counterbalanced blocks
@@ -298,22 +365,32 @@ plateau, ramp guard).
 |---|---|---|
 | **R-stor-1** (primary benefit) | Pool-wide request latency p50/p95, `[spawn−60, spawn]` vs `[admitted+10, admitted+70]` (replica admission) | **drop ≥ 10 %** (primary queue relief) |
 | R-stor-2 (supporting) | Primary CPU / write-latency pre → post | drop |
-| R-stor-3 (supporting) | Read offload: replica request share pre → post | rises (reads moved off the primary) |
+| **R-stor-3** (hard co-gate) | Read offload: PRIMARY connection share pre → post (window_log) | **drops ≥ 20 % relative OR lands ≤ 60 % post-admission** — per-run + cross-run per mode; SG-4 counts only when this passes |
 | R-stor-4 (context) | Replica RAM / member count | sane growth |
 | **C-stor-1** (consequence) | Gap-window latency p95 / timeout rate `[spawn, min(promoted, plateau_end)]` | **discovery > direct** (primary stays clogged during the catch-up gap) |
 | C-stor-2 | Gap-window failure rate | same direction |
-| **T-stor-1** (timing) | `SECONDARY → promoted` | direct ≈ 0 s vs discovery ≈ poll cadence (≥ 5 s) |
+| **T-stor-1** (timing) | `SECONDARY → promoted` (delivery layer) | direct ≈ 0 s (measured **0.00 s**, 29/29) vs discovery 1–6 s (avg ~3.9 s) |
 | T-stor-2 | `spawn → first read served by replica` | direct faster |
 | **V-stor-1** (governance) | SG-4 benefit met / not met | **verdict: storage scales (or does not) by measured benefit** |
+
+**Unit of analysis = RUN** (per-run median over that run's steady-state
+promotions — not per-promotion pooling). **Headline = latency** (R-stor-1 p95
+drop ≥ 10 %); the timeout branch is secondary (reported, not gated).
+Cross-run per mode: median + direction consistency (≥ 2 of 6 consistent,
+reproducibility principle) + bootstrap CI. **Paired per seed** (direct_N ↔
+disc_N share block seed N): exact permutation test on the paired deltas +
+Cliff's δ (v2/rq3 stats convention). Evaluated by
+`tools/rq3stor_campaign_analysis.py` (per-run + cross-run per mode).
 
 ---
 
 ## 9. Campaign gates (G1–G8, mirror RQ3-sat conventions)
 
 G1 driver clean; G2 primary pressure band (SG-2); G3 scale-up fires ≥ 1/LAN;
-G4 relief (R-stor-1, ≥ 10 %); G5 quantization (T-stor-1); G6 consequence
-direction (C-stor-1); G7 no storage collapse; G8 no cross-RQ gate contamination
-(key on the storage-specific env, per lessons-learned).
+G4 relief (R-stor-1, ≥ 10 %, **with the R-stor-3 read-offload co-gate**);
+G5 quantization (T-stor-1); G6 consequence direction (C-stor-1); G7 no storage
+collapse; G8 no cross-RQ gate contamination (key on the storage-specific env,
+per lessons-learned).
 
 ---
 
@@ -325,9 +402,10 @@ direction (C-stor-1); G7 no storage collapse; G8 no cross-RQ gate contamination
 | `source/scripts/testing/phases_override/phases_rq3_storage_probe.json` | fast probe harness (rate 0.6) | done |
 | `source/scripts/testing/controller_env_overrides/rq3stor_{direct,discovery}.env` | storage propagation mode | done |
 | `docs/operation/testing/experiment/v3/rq3/env/*` | mirrored envs (launcher path) | done (probes) |
-| `source/sdn_controller/control_events.py`, `scaling_config.py`, `main_n1.py`, `main_n2.py`, `_vip_routing/selection.py` | `STORAGE_PROPAGATION` + `STORAGE_READ_POLICY` mode switches | **done** (probe-verified) |
+| `source/sdn_controller/control_events.py`, `scaling_config.py`, `main_n1.py`, `main_n2.py`, `_vip_routing/selection.py` | `STORAGE_PROPAGATION` + `STORAGE_READ_POLICY` mode switches (**+ SECONDARY-only read-offload hardening**, §5.1) | **done** (probe-verified + hardened) |
 | `source/scripts/testing/rq3stor_launch_run.sh` | launcher (RQ3-sat precedent) | done |
 | `tools/rq3stor_probe_gate.py`, `rq3stor_relief.py`, `rq3stor_read_dist.py`, `rq3stor_lat_by_endpoint.py`, `rq3stor_req_check.py` | SG gates + R-stor-1 relief + read distribution + endpoint latency + base-requirements check | done |
+| `tools/rq3stor_window_burst_check.py`, `rq3stor_campaign_analysis.py` | SG-4 window-burst verification + per-run/cross-run campaign analysis (R-stor-3 co-gate, paired per seed) | done |
 
 ---
 
@@ -351,6 +429,7 @@ direction (C-stor-1); G7 no storage collapse; G8 no cross-RQ gate contamination
 | Step 1 | Implement `STORAGE_PROPAGATION` mode switch + selftest | done |
 | Step 2 | Phase-1 probe cells S-A..S-E (calibrate mix; SG-1..SG-6; S-E direction) | **done** (S-A..S-E; SG-4 PASS 4/4; timing + consequence recorded §5.1/§5.3) |
 | Step 3 | **SG-4 verdict** — benefit shown → campaign; no benefit → negative-benefit finding + stop | **done: benefit shown → campaign** |
-| Step 3b | **2-run preflight** (P1 direct + P2 disc, seed 3001) vs `testing_requirements.md` (B2/M1/M2/V1/I1/I2/D1/D2/D3 + F1/F2 + G5/G7) | pending — planned (`run_matrix.md` §3) |
-| Step 4 | Phase-2 campaign (12 runs, `v3/rq3/counterbalance_order_v2.csv`) + analysis (results.md, post_run_analysis.md, graphs) | pending — after preflight passes; tagged `rq3-stor-v3-campaign-20260807` |
+| Step 3a | **Hardening**: SECONDARY-only `prefer_secondary` fix + M1 window-burst verification + R-stor-3 co-gate + per-run/cross-run tools | done (fix + tools; M1 verification runs before the number is used) |
+| Step 3b | **4-run preflight** (P1/P2/P1-fix/P2-fix, seeds 3001) vs `testing_requirements.md` (B2/M1/M2/V1/I1/I2/D1/D2/D3 + F1/F2 + G5/G7 + R-stor-3 co-gate) | **done** (2026-08-07/08) — D1/D2/D3/F/I pass; SG-4 benefit NULL → verdict (§5.4) |
+| Step 4 | Phase-2 storage campaign (12 runs) | **NOT RUN — SG-4 null ⇒ no storage campaign** (compute RQ3 already complete) |
 | Step 5 | Thesis doc updates (rq3.md, conclusions, thesis_overview) | pending |

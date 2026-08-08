@@ -3,7 +3,7 @@
     {
       "name": "baseline",
       "duration_s": 60,
-      "rate_per_client": 1.0,
+      "rate_per_client": 0.4,
       "cross_region_ratio": 0.0,
       "client_fraction": 0.1,
       "mix": {

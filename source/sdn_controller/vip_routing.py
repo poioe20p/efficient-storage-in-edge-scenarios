@@ -172,14 +172,18 @@ class VipRoutingMixin:
         """Pick the storage node with the lowest WSM cost from the domain's pool."""
         return selection.select_storage(self, domain, client_mac)
 
-    def delete_vip_server_client_flows(self, client_ip: str) -> None:
+    def delete_vip_server_client_flows(self, client_ip: str,
+                                       client_port: int = 0) -> None:
         """Delete a client's VIP_SERVER DNAT+SNAT flows (RQ3 flow isolation).
 
-        Forces one fresh backend-selection event per measured request. Handles
-        this controller's own per-LAN ``VIP_SERVER`` only (cross-network server
+        Forces one fresh backend-selection event per measured request. In
+        per-connection mode (``VIP_SERVER_PER_CONNECTION_FLOWS=1``)
+        ``client_port`` scopes the delete to the exact connection's flow pair;
+        otherwise (default) the per-client binding is used. Handles this
+        controller's own per-LAN ``VIP_SERVER`` only (cross-network server
         flows are out of RQ3 scope — see D8).
         """
-        return state.delete_vip_server_client_flows(self, client_ip)
+        return state.delete_vip_server_client_flows(self, client_ip, client_port)
 
     # ------------------------------------------------------------------
     # Public API — telemetry integration (called from Thread 2)
