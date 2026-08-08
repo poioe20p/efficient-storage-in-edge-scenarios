@@ -199,6 +199,27 @@ _STRICT_RELEASE_N = int(os.environ.get("STRICT_RELEASE_N", "3"))
 # Unknown value → log error + fall back to "off" (deliberate, documented).
 _READINESS_PROPAGATION = os.environ.get("READINESS_PROPAGATION", "off")
 
+# ── RQ3 v3 storage-replica propagation (storage replica benefit) ─────────
+# STORAGE_PROPAGATION selects storage-replica VIP read-pool promotion timing:
+#   "both"      → current behavior (DEFAULT): promote on the rs_secondary_ready
+#                 control event AND on telemetry-detected SECONDARY fallback.
+#   "direct"    → promote ONLY on the `rs_secondary_ready` control event
+#                 (lifecycle notification; no telemetry promotion).
+#   "discovery" → promote ONLY on telemetry `member_state == SECONDARY`
+#                 (periodic discovery; quantization = telemetry cadence).
+# Unknown value → log error + fall back to "both" (deliberate, documented).
+_STORAGE_PROPAGATION = os.environ.get("STORAGE_PROPAGATION", "both")
+
+# ── RQ3 v3 storage read routing (read offload) ──────────────────────────
+# STORAGE_READ_POLICY selects how the VIP routes storage READS across the pool:
+#   "wsm"              → current WSM cost selection over the whole pool, incl. the
+#                        primary (DEFAULT; primary wins on 0 lag + lower CPU).
+#   "prefer_secondary" → skip the PRIMARY for read selection when any secondary
+#                        exists (reads offload to replicas; writes still go to the
+#                        primary via the dedicated write client).
+# Unknown value → log error + fall back to "wsm" (deliberate, documented).
+_STORAGE_READ_POLICY = os.environ.get("STORAGE_READ_POLICY", "wsm")
+
 # Per-attempt /ready HTTP timeout (seconds).
 _READINESS_PROBE_TIMEOUT_S = float(os.environ.get("READINESS_PROBE_TIMEOUT_S", "5.0"))
 # Abandon a pending backend that is not ready within this many seconds of

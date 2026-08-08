@@ -71,26 +71,34 @@ def _add_backend_identity(response):
     if os.environ.get("EDGE_FLOW_ISOLATION", "0") == "1":
         if request.path not in SKIP_COUNTING_PATHS:
             client_ip = request.remote_addr
+            # WSGI REMOTE_PORT is the client's ephemeral source port (DNAT
+            # only rewrites the destination), so the controller can scope the
+            # flow delete to this exact connection when
+            # VIP_SERVER_PER_CONNECTION_FLOWS=1. 0 = unavailable (ignored).
+            client_port = int(request.environ.get("REMOTE_PORT") or 0)
             server_mac = _get_server_mac()
             threading.Thread(
                 target=_emit_request_complete,
-                args=(process_state, client_ip, server_mac),
+                args=(process_state, client_ip, client_port, server_mac),
                 daemon=True,
             ).start()
     return response
 
 
-def _emit_request_complete(process_state, client_ip: str, server_mac: str) -> None:
+def _emit_request_complete(process_state, client_ip: str, client_port: int,
+                           server_mac: str) -> None:
     """Emit a request_complete control event (RQ3 flow isolation).
 
     Runs in a background thread after the response is flushed; never touches
-    the (torn-down) request context.
+    the (torn-down) request context. ``client_port`` is the connection's
+    source port (per-connection flow delete); 0 if unavailable.
     """
     try:
         process_state.metric_sender.send({
             "event_type": "request_complete",
             "server_id": server_mac,
             "client_ip": client_ip,
+            "client_port": client_port,
             "ts": time.time(),
         })
     except Exception:
@@ -131,9 +139,54 @@ if __name__ == "__main__":
         CONFIG.max_idle_ms,
         CONFIG.tau_dados_ms,
     )
+    # ── RQ3 readiness/servability fix (2026-08-06) ────────────────────────
+    # Bind the HTTP server synchronously with werkzeug.serving.make_server
+    # (instead of the opaque app.run()), then start the accept loop in a
+    # background thread, and only THEN start the app_ready probe. This makes
+    # the readiness predicate mean actual servability: the app_ready event and
+    # /ready 200 can only fire once the socket is bound and the server is
+    # accepting connections. Previously app.run()'s dev-server reloader path
+    # intermittently took ~10 s to bind after "Serving Flask app", so the
+    # event (fired on the MongoDB-ping predicate) preceded servability by up
+    # to ~10 s — the RQ3 direct-arm handover artifact (http=000 fast-fails,
+    # identity-check violations, admitted→first-flow lag), which also
+    # contaminated RQ1/RQ2 runs (no readiness gate). Fix verified: bind delay
+    # ~0 and event strictly after bind.
+    from werkzeug.serving import make_server
+    # ── bind-delay diagnostic (temp, 2026-08-06) ──────────────────────────
+    # Times the make_server sub-steps so a residual ~10 s intermittent bind
+    # stall (seen during active runs) can be attributed: getaddrinfo (DNS) vs
+    # importlib.metadata (disk) vs socket bind+listen. Behavior-neutral.
+    import socket as _socket
+    _t0 = time.perf_counter()
+    _ai = _socket.getaddrinfo(
+        CONFIG.bind_host, CONFIG.bind_port, _socket.AF_INET,
+        _socket.SOCK_STREAM, _socket.IPPROTO_TCP,
+    )
+    _t1 = time.perf_counter()
+    import importlib.metadata as _im
+    _im.version("werkzeug")
+    _t2 = time.perf_counter()
+    server = make_server(
+        CONFIG.bind_host, CONFIG.bind_port, app, threaded=True,
+    )
+    _t3 = time.perf_counter()
+    log.info(
+        "bind-timing getaddrinfo=%.3fs importlib.metadata=%.3fs make_server(bind+listen)=%.3fs total=%.3fs",
+        _t1 - _t0, _t2 - _t1, _t3 - _t2, _t3 - _t0,
+    )
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    log.info("edge-server listening: http://%s:%d", CONFIG.bind_host, CONFIG.bind_port)
     # RQ3 readiness probe — background thread marks app_ready after a real
     # MongoDB round-trip so the controller's /ready gate can admit this node.
+    # Started only after the server socket is bound (above), so the event
+    # cannot precede servability.
     threading.Thread(
         target=_run_app_ready_probe, args=(process_state, CONFIG), daemon=True,
     ).start()
-    app.run(host=CONFIG.bind_host, port=CONFIG.bind_port, threaded=True)
+    # Keep the main thread alive; serve_forever runs in its own daemon thread.
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        server.shutdown()

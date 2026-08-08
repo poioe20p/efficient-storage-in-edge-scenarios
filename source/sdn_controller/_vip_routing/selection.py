@@ -12,6 +12,14 @@ from .config import (
     logger,
 )
 from ..scaling_config import _VIP_WARM_SERVER_SECONDS, _VIP_WARM_STORAGE_SECONDS
+from ..scaling_config import _STORAGE_READ_POLICY
+
+# Reads offload to SECONDARY members only. Non-SECONDARY states (RECOVERING,
+# STARTUP, STARTUP2, ROLLBACK, or stale/None telemetry) are NOT offload
+# targets: routing reads to them produced NotPrimaryOrSecondary bursts during
+# replica-set reconfigs (RQ3 storage M1 probe: 153x at 12:17:32). The primary
+# only serves reads when no SECONDARY is visible (normal WSM fallback).
+_READY_READ_STATES = frozenset({"SECONDARY"})
 
 
 def _unknown_stats_default():
@@ -253,7 +261,27 @@ def select_storage(
     best_cost = float("inf")
     tied: list[dict] = []
 
+    # Read offload (RQ3 v3): prefer_secondary routes reads away from the PRIMARY
+    # to SECONDARY members only. Writes keep the dedicated write client; the
+    # primary only serves reads when no SECONDARY is visible.
+    if _STORAGE_READ_POLICY == "prefer_secondary":
+        has_secondary = any(
+            (controller._storage_stats.get(m) or None) is not None
+            and (controller._storage_stats[m].member_state or "") in _READY_READ_STATES
+            for m in pool
+        )
+    else:
+        has_secondary = False
+
     for mac, entry in pool.items():
+        if has_secondary:
+            st = controller._storage_stats.get(mac)
+            if st is not None and (st.member_state or "") not in _READY_READ_STATES:
+                logger.debug(
+                    "select_storage(%s): prefer_secondary — skipping non-SECONDARY mac=%s state=%s",
+                    domain, mac, (st.member_state or ""),
+                )
+                continue
         stats = controller._storage_stats.get(mac)
 
         # Unknown stats default depends on policy mode (RQ2).

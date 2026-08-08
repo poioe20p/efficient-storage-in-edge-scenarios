@@ -32,6 +32,7 @@ declare -A RESERVED_SUFFIX=( [1]="1 252 253 254" [2]="1 252 253 254" )
 LAN=""
 COUNT=""
 PREFIX="test_client"
+SYN_RETRIES=""
 PID_OVS=""
 
 usage() {
@@ -47,6 +48,8 @@ Required:
 
 Optional:
   --prefix <name>    Namespace name prefix (default: test_client)
+  --syn-retries <N>  Set net.ipv4.tcp_syn_retries in each client netns (opt-in;
+                     unset = kernel default, RQ2/RQ3 unchanged)
   -h, --help         Show this help
 
 Examples:
@@ -204,6 +207,16 @@ create_client() {
 	sudo ip netns exec "$ns_name" ip addr add "${ip}/24" dev eth0
 	sudo ip netns exec "$ns_name" ip route add default via "$gateway"
 
+	# Opt-in: raise the client kernel SYN-retry ceiling (RQ1 v3 P0-4 lesson).
+	# Default tcp_syn_retries=6 abandons a stalled handshake at ~127 s
+	# (1+2+4+8+16+32+64 s) — under edge overload the accept path saturates and
+	# dropped SYNs kill the connection before the server can accept or the
+	# aiohttp 300 s cap fires. Setting it above the cap (9 -> ~511 s) turns
+	# stalls into slow-successes or genuine 300 s timeouts. Unset = historical.
+	if [[ -n "$SYN_RETRIES" ]]; then
+		sudo ip netns exec "$ns_name" sysctl -w net.ipv4.tcp_syn_retries="$SYN_RETRIES" >/dev/null
+	fi
+
 	# Machine-readable result — one line per client
 	echo "RESULT_NS=${ns_name} RESULT_IP=${ip} RESULT_MAC=${mac}"
 }
@@ -239,6 +252,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--prefix)
 			PREFIX="$2"
+			shift 2
+			;;
+		--syn-retries)
+			SYN_RETRIES="$2"
 			shift 2
 			;;
 		-h|--help)

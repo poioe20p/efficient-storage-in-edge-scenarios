@@ -749,6 +749,20 @@ verify_rq3_run() {
     esac
 
     local _fail=0 _lan _adm _f
+    # RQ3 measurement runs are identified by VIP_FLOW_ISOLATION=1 (per-connection
+    # flows + flow-delete measurement). Runs that enable the readiness gate but
+    # keep per-client flows (RQ2: VIP_FLOW_ISOLATION=0, the D5 design) must NOT be
+    # subjected to RQ3-specific flow-validation / EDGE_FLOW_ISOLATION requirements —
+    # only the gate-relevant checks (min-admissions, EDGE_APP_READY_EVENT) apply.
+    local _flowiso _rq3_meas
+    _flowiso="$(grep -E '^VIP_FLOW_ISOLATION=' "$_snap" | head -1 | cut -d= -f2 || true)"
+    _rq3_meas=0
+    [[ "$_flowiso" == "1" ]] && _rq3_meas=1
+    if [[ "$_rq3_meas" -eq 1 ]]; then
+        echo "  [rq3] VIP_FLOW_ISOLATION=1 — full RQ3 flow-isolation run"
+    else
+        echo "  [rq3] VIP_FLOW_ISOLATION=0 — readiness-gate-only run (RQ3 flow-isolation checks skipped)"
+    fi
     # 1) Min-admissions per LAN (>= 1 admitted backend each)
     for _lan in 1 2; do
         _f="${RUN_DIR}/admission_log_lan${_lan}.csv"
@@ -765,18 +779,24 @@ verify_rq3_run() {
         fi
     done
 
-    # 2) Flow-validation gate (0 = valid; 1 = hard; 2 = instrumentation-degraded)
-    if [[ -f "${RUN_DIR}/client_requests.csv" ]]; then
-        python3 "${REPO_ROOT}/docs/research_questions/v2/rq3/rq3_flow_validation.py" "${RUN_DIR}"
-        local _rc=$?
-        if [[ $_rc -eq 1 ]]; then
-            echo "  [rq3] FAIL: flow-validation hard violation (exit 1)" >&2
-            _fail=1
-        elif [[ $_rc -eq 2 ]]; then
-            echo "  [rq3] DEGRADED: flow-isolation coverage < 0.9 (recorded, not a hard fail)" >&2
+    # 2) Flow-validation gate (0 = valid; 1 = hard; 2 = instrumentation-degraded).
+    #    RQ3-measurement-only: per-connection flow checks assume VIP_FLOW_ISOLATION=1
+    #    (per-client RQ2 flows are reused by design and would false-fail Check D).
+    if [[ "$_rq3_meas" -eq 1 ]]; then
+        if [[ -f "${RUN_DIR}/client_requests.csv" ]]; then
+            python3 "${REPO_ROOT}/docs/research_questions/v2/rq3/rq3_flow_validation.py" "${RUN_DIR}"
+            local _rc=$?
+            if [[ $_rc -eq 1 ]]; then
+                echo "  [rq3] FAIL: flow-validation hard violation (exit 1)" >&2
+                _fail=1
+            elif [[ $_rc -eq 2 ]]; then
+                echo "  [rq3] DEGRADED: flow-isolation coverage < 0.9 (recorded, not a hard fail)" >&2
+            fi
+        else
+            echo "  [rq3] WARN: client_requests.csv missing — flow-validation skipped" >&2
         fi
     else
-        echo "  [rq3] WARN: client_requests.csv missing — flow-validation skipped" >&2
+        echo "  [rq3] flow-validation skipped (not an RQ3 flow-isolation run)" >&2
     fi
 
     # 3) Edge-container env verification (controller env + live dynamic edges).
@@ -784,15 +804,17 @@ verify_rq3_run() {
     _e1="$(docker exec osken printenv EDGE_APP_READY_EVENT 2>/dev/null || echo 0)"
     _e2="$(docker exec osken printenv EDGE_FLOW_ISOLATION 2>/dev/null || echo 0)"
     echo "  [rq3] controller env: EDGE_APP_READY_EVENT=$_e1 EDGE_FLOW_ISOLATION=$_e2"
-    if [[ "$_e2" != "1" ]]; then
-        echo "  [rq3] FAIL: EDGE_FLOW_ISOLATION=1 required for RQ3 runs (controller env)" >&2
+    if [[ "$_rq3_meas" -eq 1 && "$_e2" != "1" ]]; then
+        echo "  [rq3] FAIL: EDGE_FLOW_ISOLATION=1 required for RQ3 flow-isolation runs" >&2
         _fail=1
+    elif [[ "$_rq3_meas" -eq 0 && "$_e2" != "0" ]]; then
+        echo "  [rq3] WARN: EDGE_FLOW_ISOLATION=$_e2 — non-zero in a readiness-gate-only run" >&2
     fi
     if [[ "$_prop" == "direct" && "$_e1" != "1" ]]; then
         echo "  [rq3] FAIL: direct arm requires EDGE_APP_READY_EVENT=1 (controller env)" >&2
         _fail=1
     fi
-    _dyn="$(docker ps --format '{{.Names}}' | grep -E '^edge_server_lan[12]_dyn' | head -1)"
+    _dyn="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^edge_server_lan[12]_dyn' | head -1 || true)"
     if [[ -n "$_dyn" ]]; then
         _de="$(docker exec "$_dyn" printenv EDGE_APP_READY_EVENT 2>/dev/null || echo 0)"
         echo "  [rq3] dynamic edge ${_dyn}: EDGE_APP_READY_EVENT=$_de"

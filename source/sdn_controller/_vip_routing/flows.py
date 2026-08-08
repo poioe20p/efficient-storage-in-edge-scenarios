@@ -2,12 +2,13 @@
 
 from .config import (
     _VIP_IDLE_TIMEOUT, _VIP_HARD_TIMEOUT,
+    _VIP_DATA_IDLE_TIMEOUT,
     _VIP_DATA_PER_CONNECTION,
     _ROUTER_OVS_PORT, _ROUTER_MAC,
     ClientVipBinding,
     logger,
 )
-from ..scaling_config import _VIP_FLOW_ISOLATION
+from ..scaling_config import _VIP_FLOW_ISOLATION, _VIP_SERVER_PER_CONNECTION
 
 
 # Flow cookies for VIP_DATA forward rules, keyed by domain.
@@ -47,11 +48,11 @@ def install_vip_data_forward_rule(
     the match also carries ``tcp_src`` so a pooled edge client
     (``EDGE_MONGO_MAX_POOL_SIZE>1``) fans its connections out to different
     storage backends.  These flows are installed on the connection SYN only
-    and never idle/hard-expire, so an established connection is NEVER
-    re-pinned to a different backend mid-stream (which would DNAT an
-    already-committed conntrack connection to a new backend port and break
-    it).  They are cleaned by the domain-cookie bulk delete on
-    unregister_storage_backend.
+    and expire on ``_VIP_DATA_IDLE_TIMEOUT`` idle (hard_timeout=0), so an
+    established connection is NEVER re-pinned mid-stream while it is active
+    (re-pinning would DNAT an already-committed conntrack connection to a new
+    backend port and break it).  They are cleaned by the domain-cookie bulk
+    delete on unregister_storage_backend.
 
     Uses ct(commit, nat(dst=backend_ip)) so OVS tracks each connection
     independently.  Multiple per-client/per-connection forward rules share
@@ -124,15 +125,17 @@ def install_vip_data_forward_rule(
         # packet-ins and the controller re-installs to the SAME backend via
         # the binding map (see ingress._handle_vip_data) — never a fresh
         # select.  Cleanup also happens via the domain-cookie bulk delete on
-        # unregister_storage_backend.
-        idle_timeout = 10
+        # unregister_storage_backend.  Idle is env-driven (_VIP_DATA_IDLE_
+        # TIMEOUT, raised from 10 s 2026-08-07) so a connection waiting on a
+        # slow/queued backend is not dropped mid-request.
+        idle_timeout = _VIP_DATA_IDLE_TIMEOUT
         hard_timeout = 0
     else:
         # NOTE: No delete-before-install.  When this client re-selects (e.g.
         # after idle timeout or backend unregister), the new rule has the same
         # match (eth_src + ipv4_src + VIP fields) and OVS overwrites the old
         # one automatically via the same-priority/same-match rule.
-        idle_timeout = 10                          # 10s (down from 30s)
+        idle_timeout = _VIP_DATA_IDLE_TIMEOUT
         hard_timeout = 120                         # unchanged
 
     controller._install_flow(
@@ -254,22 +257,30 @@ def delete_vip_server_client_flows(controller, datapath, binding: ClientVipBindi
     parser = datapath.ofproto_parser
     ofproto = datapath.ofproto
 
-    dnat_match = parser.OFPMatch(
-        eth_type=0x0800,
-        eth_src=binding.client_mac,
-        eth_dst=binding.vip_mac,
-        ipv4_src=binding.client_ip,
-        ipv4_dst=binding.vip_ip,
-        ip_proto=6,
-    )
-    snat_match = parser.OFPMatch(
-        eth_type=0x0800,
-        eth_src=binding.snat_eth_src,
-        eth_dst=binding.client_mac,
-        ipv4_src=binding.backend_ip,
-        ipv4_dst=binding.client_ip,
-        ip_proto=6,
-    )
+    dnat_fields = {
+        "eth_type": 0x0800,
+        "eth_src": binding.client_mac,
+        "eth_dst": binding.vip_mac,
+        "ipv4_src": binding.client_ip,
+        "ipv4_dst": binding.vip_ip,
+        "ip_proto": 6,
+    }
+    snat_fields = {
+        "eth_type": 0x0800,
+        "eth_src": binding.snat_eth_src,
+        "eth_dst": binding.client_mac,
+        "ipv4_src": binding.backend_ip,
+        "ipv4_dst": binding.client_ip,
+        "ip_proto": 6,
+    }
+    # Per-connection binding (VIP_SERVER_PER_CONNECTION_FLOWS=1): delete the
+    # exact connection pair (tcp_src on forward, tcp_dst on reply) so a
+    # sibling connection's flow is never touched.
+    if binding.client_port:
+        dnat_fields["tcp_src"] = binding.client_port
+        snat_fields["tcp_dst"] = binding.client_port
+    dnat_match = parser.OFPMatch(**dnat_fields)
+    snat_match = parser.OFPMatch(**snat_fields)
     for match in (dnat_match, snat_match):
         mod = parser.OFPFlowMod(
             datapath=datapath,
@@ -311,7 +322,7 @@ def install_vip_dnat_snat(
     controller, datapath, in_port, pkt, *,
     client_mac, client_ip, ip_proto, vip_ip, vip_mac,
     real_backend_ip, real_backend_mac,
-    idle_timeout=None, hard_timeout=None,
+    client_port=None, idle_timeout=None, hard_timeout=None,
 ) -> None:
     """Install a DNAT + SNAT flow rule pair and Packet-Out the first packet.
 
@@ -324,9 +335,12 @@ def install_vip_dnat_snat(
               ipv4_src=backend, ipv4_dst=client, ip_proto)
         → set_field(eth_src=VIP_mac, ipv4_src=VIP_ip), output to client port
 
-    Transport ports are excluded so one steady-state VIP_DATA
-    rule can cover concurrent connections from the same web server without
-    tier-transition inconsistency.
+    Transport ports are excluded in per-client mode so one steady-state
+    rule can cover concurrent connections from the same client. When
+    ``client_port`` is set (VIP_SERVER per-connection mode,
+    ``VIP_SERVER_PER_CONNECTION_FLOWS=1``), the DNAT/SNAT pair is scoped to
+    the client's ephemeral source port so each fresh request connection gets
+    its own exact flow pair.
     """
     parser  = datapath.ofproto_parser
     ofproto = datapath.ofproto
@@ -365,6 +379,12 @@ def install_vip_dnat_snat(
         "ipv4_dst": vip_ip,
         "ip_proto": ip_proto,
     }
+    # Per-connection mode: scope the DNAT to the client's ephemeral source
+    # port so each fresh request connection gets its own flow pair (the
+    # request_complete delete then targets exactly that connection, never a
+    # sibling's flow).
+    if _VIP_SERVER_PER_CONNECTION and client_port:
+        dnat_fields["tcp_src"] = client_port
     dnat_match = parser.OFPMatch(**dnat_fields)
     # Cross-network: the frame must be addressed to the router's LAN MAC so
     # the router's kernel IP stack accepts it for L3 forwarding.  Sending
@@ -409,6 +429,10 @@ def install_vip_dnat_snat(
         "ipv4_dst": client_ip,
         "ip_proto": ip_proto,
     }
+    # Per-connection mode: scope the SNAT (backend→client reply) to this
+    # connection's client port (the reply's TCP dst).
+    if _VIP_SERVER_PER_CONNECTION and client_port:
+        snat_fields["tcp_dst"] = client_port
     snat_match = parser.OFPMatch(**snat_fields)
     snat_actions = [
         parser.OFPActionSetField(eth_src=vip_mac),
@@ -430,8 +454,14 @@ def install_vip_dnat_snat(
     # old exact DNAT+SNAT pair (on every datapath) so the previous backend's
     # SNAT rule does not linger with a different match.
     if _VIP_FLOW_ISOLATION:
+        # Per-connection mode keys the map by (client_mac, client_port) so
+        # concurrent requests from one client are independent; per-client mode
+        # keys by client_mac (the newest selection wins), preserving D5's
+        # original design for runs without VIP_SERVER_PER_CONNECTION_FLOWS=1.
+        _key = ((client_mac, client_port)
+                if (_VIP_SERVER_PER_CONNECTION and client_port) else client_mac)
         with controller._warm_lock:
-            old = controller._vip_server_client_map.get(client_mac)
+            old = controller._vip_server_client_map.get(_key)
             if old is not None and (old.backend_mac != real_backend_mac
                                     or old.vip_ip != vip_ip):
                 try:
@@ -442,7 +472,7 @@ def install_vip_dnat_snat(
                         "vip_server: failed to delete old binding for client=%s",
                         client_mac,
                     )
-            controller._vip_server_client_map[client_mac] = ClientVipBinding(
+            controller._vip_server_client_map[_key] = ClientVipBinding(
                 client_mac=client_mac,
                 client_ip=client_ip,
                 backend_mac=real_backend_mac,
@@ -450,6 +480,7 @@ def install_vip_dnat_snat(
                 vip_ip=vip_ip,
                 vip_mac=vip_mac,
                 snat_eth_src=snat_eth_src,
+                client_port=client_port or 0,
             )
 
     logger.info(

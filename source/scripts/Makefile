@@ -16,6 +16,7 @@ MONGO_LAN2   ?= mongodb://10.0.1.4:27018/
 CONTENT_ITEMS ?= 100
 USERS         ?= 45
 CLIENTS      ?= 3
+CLIENT_TCP_SYN_RETRIES ?=
 SNAPSHOT_DIR ?= testing/data/workload_snapshot
 SKIP_CLIENTS  ?= 1
 SKIP_SEED     ?= 1
@@ -49,9 +50,11 @@ setup_network:
 ## Create $(CLIENTS) namespace-based test clients on each LAN
 create_clients:
 	bash network/clients/create_test_clients.sh \
-	  --lan 1 --count $(CLIENTS) --prefix lan1_client
+	  --lan 1 --count $(CLIENTS) --prefix lan1_client \
+	  $(if $(CLIENT_TCP_SYN_RETRIES),--syn-retries $(CLIENT_TCP_SYN_RETRIES))
 	bash network/clients/create_test_clients.sh \
-	  --lan 2 --count $(CLIENTS) --prefix lan2_client
+	  --lan 2 --count $(CLIENTS) --prefix lan2_client \
+	  $(if $(CLIENT_TCP_SYN_RETRIES),--syn-retries $(CLIENT_TCP_SYN_RETRIES))
 
 ## Remove test clients from both LANs, then stop all running containers
 teardown_clients:

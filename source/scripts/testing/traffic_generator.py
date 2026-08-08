@@ -717,6 +717,22 @@ async def _worker_main(args):
     window = max(1, args.in_flight_window)
     drain_s = max(0.0, args.drain_s)
 
+    # RQ1 v3: opt-in TCP-handshake timeout override (2026-08-07). aiohttp's
+    # DEFAULT_TIMEOUT is ClientTimeout(total=300, sock_connect=30): a stalled
+    # handshake aborts at exactly 30 s — a client-side measurement artifact
+    # that dominated the plateau failure metric (~5 % of requests, load- and
+    # run-dependent; NOT a system property). Unset keeps the historical
+    # aiohttp default (RQ2/RQ3 runs unchanged); RQ1 sets
+    # AIOHTTP_SOCK_CONNECT_TIMEOUT=300 so the handshake is bounded by the same
+    # window as the request (CURL_MAX_TIME), turning handshake stalls into
+    # slow-latency (real quality signal) or a genuine failure at the request
+    # cap instead of a 30 s phantom.
+    _sock_connect_env = os.environ.get("AIOHTTP_SOCK_CONNECT_TIMEOUT")
+    _session_timeout = aiohttp.ClientTimeout(
+        total=curl_max_time,
+        sock_connect=float(_sock_connect_env) if _sock_connect_env else 30,
+    )
+
     connector = aiohttp.TCPConnector(force_close=True)
     # RQ3 flow validation reads the client source port per request. Reading it
     # from the response after the request often returns nothing under flow
@@ -741,7 +757,8 @@ async def _worker_main(args):
             return protocol
 
     session = aiohttp.ClientSession(
-        connector=_PortRecordingConnector(force_close=True))
+        connector=_PortRecordingConnector(force_close=True),
+        timeout=_session_timeout)
     sem = asyncio.Semaphore(window)
     pending: set = set()
     stop_dispatch = asyncio.Event()

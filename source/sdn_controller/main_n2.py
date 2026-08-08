@@ -45,6 +45,7 @@ from .scaling_config import (
     _CROSS_REGION_DB_P95_THRESHOLD_MS,
     _MAX_CROSS_REGION_STORAGE,
     _READINESS_PROPAGATION,
+    _STORAGE_PROPAGATION,
     _READINESS_PROBE_TIMEOUT_S,
     _READINESS_PROBE_MAX_S,
     _READINESS_PROBE_RETRY_S,
@@ -326,16 +327,25 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         )
         self._node_registry.mark_storage_reserve_prepare_submitted(lan)
 
-    def _handle_storage_reserve_trigger(self, summary: TelemetrySummary, lan: int, reason: str) -> bool:
+    def _handle_storage_reserve_trigger(self, summary: TelemetrySummary, lan: int, reason: str) -> str | None:
         """Route a same-LAN storage trigger through the reserve model.
 
-        Returns True if the trigger was handled by the reserve (activating or
-        waiting), meaning the caller should NOT submit a separate DataAlert.
-        Returns False if the reserve model is disabled — caller should fall
-        through to normal Thread 3 submission.
+        Returns:
+          - "activated" — a READY reserve was consumed into active service
+            (the caller MUST treat this as the storage action and not submit
+            a separate DataAlert).
+          - "waiting"   — the reserve is PREPARING/NONE and the trigger was
+            latched; the caller MUST NOT submit a DataAlert (activation will
+            fire automatically once the standby is READY).
+          - None        — the reserve model is disabled; the caller should
+            fall through to the normal Thread 3 (cold-spawn) submission.
+
+        Truthiness is preserved (both strings are truthy), so existing call
+        sites that only test ``if self._handle_storage_reserve_trigger(...)``
+        keep working unchanged.
         """
         if not _STORAGE_PERSISTENT_RESERVE_ENABLED:
-            return False
+            return None
 
         slot = self._node_registry.get_storage_reserve_slot(lan)
 
@@ -343,7 +353,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             info = self._node_registry.consume_ready_storage_reserve(lan)
             if info is None:
                 logger.warning("[reserve] READY_RESERVED but consume returned None for lan=%d", lan)
-                return False
+                return None
             # Activate: add to VIP, clear standby flag, record activation.
             self._promote_storage_backend(info.mac, f"n{lan}")
             info.standby_reserved = False
@@ -353,13 +363,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                         lan, info.name, info.ip, info.mac, reason)
             # Immediately start preparing the next reserve.
             self._try_prepare_storage_reserve(summary, lan)
-            return True
+            return "activated"
 
         # Reserve is PREPARING or NONE — latch pending and wait.
         self._node_registry.latch_storage_reserve_activation(lan, reason, _STORAGE_RESERVE_PENDING_WINDOWS)
         # If NONE, also submit preparation now.
         self._try_prepare_storage_reserve(summary, lan)
-        return True
+        return "waiting"
 
     def _pick_compute_scale_down_candidate(self) -> NodeInfo | None:
         now_wall = time.time()
@@ -475,10 +485,13 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         # 2. Dispatch control events
         self._control_events.process_drain_events(summary, self._elasticity)
-        self._control_events.process_secondary_events(
-            summary, self._node_registry, self._promote_storage_backend,
-            on_reserve_ready_fn=self._on_reserve_ready,
-        )
+        # RQ3 v3 storage propagation: 'discovery' suppresses the
+        # rs_secondary_ready event path (telemetry-only promotion).
+        if _STORAGE_PROPAGATION != "discovery":
+            self._control_events.process_secondary_events(
+                summary, self._node_registry, self._promote_storage_backend,
+                on_reserve_ready_fn=self._on_reserve_ready,
+            )
         # RQ3 flow isolation: request_complete → per-client flow delete.
         # Called alongside the other control-event handlers and BEFORE the
         # mini-summary early-return below (request_complete arrives on control
@@ -516,12 +529,15 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         )
 
         # 4. Fallback VIP promotion
-        self._control_events.promote_storage_from_telemetry(
-            summary, self._node_registry,
-            self._local_storage_macs_n1, self._local_storage_macs_n2,
-            self._promote_storage_backend,
-            on_reserve_ready_fn=self._on_reserve_ready,
-        )
+        # RQ3 v3 storage propagation: 'direct' suppresses the telemetry
+        # SECONDARY fallback (event-only promotion).
+        if _STORAGE_PROPAGATION != "direct":
+            self._control_events.promote_storage_from_telemetry(
+                summary, self._node_registry,
+                self._local_storage_macs_n1, self._local_storage_macs_n2,
+                self._promote_storage_backend,
+                on_reserve_ready_fn=self._on_reserve_ready,
+            )
 
         try:
             lan = int(summary.network_id.replace("lan", ""))
@@ -676,10 +692,19 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                                 self._elasticity.submit_cancel_compute_drain()
                                 self._log_decision("cancel", "compute_drain", summary.window_id)
                         elif tier == "storage":
-                            # keep the existing reserve branch FIRST, as today:
-                            #   if self._handle_storage_reserve_trigger(summary, lan, "load"): continue
-                            # (defensive only — unreachable in RQ2 runs:
-                            #  STORAGE_PERSISTENT_RESERVE_ENABLED=0)
+                            # Storage persistent reserve (2026-08-07 D8 reversal):
+                            # the RQ2 storage scale-up routes through the reserve
+                            # model — activate the ready standby (fast path) or
+                            # latch+wait while PREPARING. Never cold-spawn while
+                            # the reserve is enabled. A reserve activation IS the
+                            # storage action, so it consumes the tier budget
+                            # (mirrors the policy gate's action accounting).
+                            reserve_result = self._handle_storage_reserve_trigger(
+                                summary, lan, "load")
+                            if reserve_result is not None:
+                                if reserve_result == "activated":
+                                    self._policy_gate.consume_budget("storage")
+                                continue
                             self._scaling_policy.commit_storage_scale_up()
                             self._policy_gate.consume_budget("storage")
                             self._elasticity.submit(DataAlert(
