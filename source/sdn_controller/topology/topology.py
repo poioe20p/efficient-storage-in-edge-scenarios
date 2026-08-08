@@ -92,6 +92,14 @@ class TopologyMixin:
         self._topology_initialized       = False
         self._topology_tick:     int     = 0
 
+        # Grace retention for host_attachment (see get_sws_links_hosts): a host
+        # missing from a topology poll is kept for this many consecutive polls
+        # before removal, so a transiently-incomplete snapshot during dyn-node
+        # churn does not drop VIP backends and break DNAT reachability.
+        self._host_attach_grace_ticks = max(
+            1, int(os.environ.get("TOPOLOGY_HOST_GRACE_TICKS", "3")))
+        self._host_missing_ticks: dict[str, int] = {}
+
         self._router_mac_blocklist = {
             "00:00:00:00:00:aa", "00:00:00:00:00:bb",
             "00:00:00:00:00:cc", "00:00:00:00:00:dd",
@@ -418,25 +426,59 @@ class TopologyMixin:
         return self._topology_api_app
 
     def get_sws_links_hosts(self):
-        """Rebuild net, hosts, links, and host_attachment from OS-Ken topology API."""
-        self.links = []
-        self.hosts = []
-        self.net.clear()
-        self.host_attachment = {}
+        """Rebuild net, hosts, links, and host_attachment from OS-Ken topology API.
 
+        Grace retention: a host that was previously known but is missing from
+        this poll is kept in ``host_attachment``/``self.hosts`` for
+        ``_host_attach_grace_ticks`` consecutive polls before removal. During
+        dynamic-node churn the OS-Ken topology snapshot can transiently omit
+        backends (e.g. while a veth is being attached/detached); without this
+        the wholesale rebuild drops VIP backends and DNAT/SNAT flow installs
+        are skipped until the next complete poll. A host is only evicted after
+        it has been absent for the full grace window.
+        """
         topo_api_app = self._get_topology_api_app()
         if topo_api_app is None:
+            # Keep the previous attachment rather than wipe it on a transient
+            # topology-API absence.
             return
 
         host_list = get_host(topo_api_app, None) or []
-        self.hosts = [
+        polled = [
             (host.mac, host.port.dpid, host.port.port_no)
             for host in host_list
             if getattr(host, "port", None) is not None
             and host.mac not in self._router_mac_blocklist
         ]
+        polled_macs = {mac for mac, _, _ in polled}
+        prev_attachment = dict(self.host_attachment)
 
-        for mac, dpid, port_no in self.hosts:
+        # Consecutive-missing tracking: increment for previously-known hosts
+        # missing from this poll, reset for hosts seen again.
+        missing = set(prev_attachment) - polled_macs
+        for mac in missing:
+            self._host_missing_ticks[mac] = self._host_missing_ticks.get(mac, 0) + 1
+        for mac in polled_macs:
+            self._host_missing_ticks.pop(mac, None)
+        retained = {
+            mac for mac in missing
+            if self._host_missing_ticks[mac] <= self._host_attach_grace_ticks
+        }
+        for mac in list(self._host_missing_ticks):
+            if mac not in polled_macs and mac not in retained:
+                self._host_missing_ticks.pop(mac, None)
+
+        self.links = []
+        self.hosts = []
+        self.net.clear()
+        self.host_attachment = {}
+
+        for mac, dpid, port_no in polled:
+            self.hosts.append((mac, dpid, port_no))
+            self.host_attachment[mac] = (dpid, port_no)
+        for mac in retained:
+            dpid, port_no = prev_attachment[mac]
+            self.hosts.append((mac, dpid, port_no))
             self.host_attachment[mac] = (dpid, port_no)
 
         for host in self.hosts:

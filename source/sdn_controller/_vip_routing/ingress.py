@@ -309,9 +309,11 @@ def _handle_vip_data(controller, datapath, in_port, pkt, src_mac, src_ip, ip_pro
             )
         else:
             logger.warning(
-                "vip_data(%s): mac=%s not reachable from dpid=%s, skipping",
+                "vip_data(%s): mac=%s not reachable from dpid=%s, skipping — "
+                "requesting topology re-learn",
                 domain, storage_mac, datapath.id,
             )
+            controller._topo_correction_needed = True
             return True
 
     # Install/update the per-client or per-connection forward rule with conntrack
