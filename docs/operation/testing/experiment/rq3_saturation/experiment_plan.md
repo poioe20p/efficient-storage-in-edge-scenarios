@@ -1,6 +1,7 @@
 # RQ3 Saturation Re-Run — Experiment Plan
 
-**Status:** ✅ Approved for documentation — plan only, **no run started** (2026-08-06).
+**Status:** � **CONFIG LOCKED — P4 (2026-08-09) after full tuning matrix; reproducibility re-run in progress.** The tuning matrix (`run_matrix.md`) established the relief-validated config: **`service_pressure 1.0` mix + `EDGE_CPUS 0.15` + rate 1.5 + 48 clients**. P4 shows **measured CPU relief on both arms** (direct −18.9 pp, discovery −32.5 pp old-backend CPU pre→post, both ≥ 10 pp — B1 CPU leg met) with PG-1/3/6 clean, D1/D2/D3 clean, at n=2. PG-2 (65–92 % band) is not met (~42 % sub-max median — the compute-pure ceiling); B1 is the base gate and passes. A **P4 reproducibility re-run (n=2 more)** is in progress to confirm the relief is stable before the campaign.
+**History:** preflight n=1 (2026-08-08, 0.6/0.2/0.2 mix) hit the saturation band but relief was null (DB co-bottleneck, T_db 197 ms vs T_proc 74 ms); the mix was revised to `service_pressure 1.0` (2026-08-08) which cleaned the driver but under-saturated at 0.25 (24 %); the matrix then swept EDGE_CPUS (0.25→0.20→0.15) — relief appeared at 0.15 (P4).
 **Scope:** Re-run the RQ3 readiness-propagation evaluation (direct vs discovery)
 under a **saturation-capable configuration** where compute scale-up produces
 visible relief and the admission-timing differential becomes consequential.
@@ -436,16 +437,16 @@ replacement seed (≤ 1 void/arm). G6–G8 are campaign-level verdicts.
 - Phase 0 tooling edits 0-1..0-4 done and verified against the v2 artifacts.
 - SSH with `ServerAliveInterval=60` (lessons-learned) for all launches.
 
-**Probe-locked values (filled after Phase 1):**
+**Probe-locked values (filled after Phase 1 + tuning matrix):**
 
 | Locked parameter | Value |
 |---|---|
-| EDGE_CPUS | **0.25** |
+| EDGE_CPUS | **0.15** (locked 2026-08-09 at P4 — the matrix swept 0.25→0.20→0.15; relief appears only at 0.15, the RQ2-cb-identical value. Was 0.25) |
 | plateau rate_per_client | **1.5** (72 req/s) |
-| plateau mix | `service_pressure 0.60 / content_lookup 0.20 / feed_ranking 0.20` (after the P-A storage-collapse finding, §3.2) |
+| plateau mix | **`service_pressure 1.0`** (compute-pure — the 0.6/0.2/0.2 mix is 40 % DB-bound (T_db 197 ms vs T_proc 74 ms) so compute adds cannot relieve; mirrors RQ2 cb with proven B1 relief p50 2421→3 ms) |
 | INFLIGHT_WINDOW | 1024 (raise only if the probe requires) |
 | READINESS_EVENT_FALLBACK_S | **20.0** (direct arm; 5.0 → raised after P-B's probe_fallback contamination) |
-| probe cells run / date | P-A (2026-08-06, original mix — FAIL PG-1/PG-2, storage collapse); P-A′ (2026-08-07, corrected mix — storage collapse fixed; window_log-authoritative eval: PG-1 PASS 3.7 % / PG-2 PASS pooled 69 % / PG-3 PASS 14 adm / PG-4 FAIL −9.7 pp relief (n=9) / PG-6 PASS; **resource_stats.csv degraded under 48-client load** → analysis uses window_log); P-B (rate 1.5 — PG-1/2/3/6 PASS; PG-4 FAIL −9.3 pp relief (n=12); **direct arm contaminated** 44 % probe_fallback → fallback raised 5→20 s); P-D (rate 1.5 / EDGE_CPUS 0.20 — relief collapsed −1.8 pp, stalls up to 81 s → rejected); P-E (discovery 1.5/0.25 seed 3003 — gap-window null); P-E2 (discovery 1.5/0.25 seed 3002 — plateau 17.3 % vs P-B 11.4 %, later shown to be burst noise); P-B2 (direct 1.5/0.25 seed 3002, fallback-fixed — event_fraction 0.786 (stalls up to ~30 s), **plateau 27.7 % burst → C6 is noise**); **verdict: relief ~9–10 pp real; timing real; consequence null at achievable saturation** |
+| **matrix cells / verdict** | **P1** (0.25, 0.6/0.2/0.2, n=2): PG-2 PASS 67.8/65.1 %, **relief null** (DB co-bottleneck). **P2** (0.25, 1.0, n=2): driver very clean, **PG-2 FAIL 24 %** (under-saturated). **P3** (0.20, 1.0, n=2): PG-2 FAIL 31 %. **P4 (0.15, 1.0, n=2): RELIEF MET — old-backend CPU pre→post −18.9 pp (direct) / −32.5 pp (discovery); PG-1/3/6 + D1/D2/D3 clean; PG-2 ~42 % (band not met — compute-pure ceiling). B1 base gate PASS.** P5 not run (rate 1.2 would lower load, cannot help). Full detail: `run_matrix.md`. |
 
 ---
 

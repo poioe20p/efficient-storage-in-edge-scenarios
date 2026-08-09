@@ -1,64 +1,90 @@
-# RQ3 v3 — Analysis Focus (CLOSED: compute-only verdict, storage benefit null)
+# RQ3 v3 — Analysis Focus: Compute Saturation Campaign (pre-registered)
 
-Part of [`experiment_plan.md`](experiment_plan.md). **Status (2026-08-08):**
-storage-replica scale-up evaluated via a 4-run preflight → **no measurable
-benefit** → storage extension **closed, not carried forward**. RQ3's thesis
-claim is evaluated on **compute only** (complete).
+Part of [`experiment_plan.md`](experiment_plan.md). **Status (2026-08-09):**
+compute saturation campaign **PLANNED — ready to launch** (n=7/arm, 14 runs,
+config P4). Pre-registered analysis contract for the campaign — decided
+**before** results are known. Storage extension **CLOSED** (see Appendix A).
 
-## 1. Headline claim — storage scale-up does NOT benefit (governance verdict)
+## 1. Headline claim (campaign) — scale-up relieves the compute tier
 
-- **RQ3-storage-3 / V-stor-1 (DECIDED)**: storage **should not scale** under
-the locked read-write mix. The 4-run preflight showed **no sustained
-benefit**: honest SG-4 medians P2 +3.6 %, P1-fix +0.6 %, P2-fix −1.9 %
-(FAIL); P1's +38.2 % was a proven early-plateau transient-spike artifact.
-Both arms' steady-state plateau p95 converge to ~1.1–1.2 s; storage primary
-CPU stays ~50–65 % (no relief). R-stor-3 passes in all 4 runs (reads do
-offload) but the offload never converts into user-visible latency/CPU
-benefit.
-- **No storage campaign** is run; the negative-benefit finding is the
-deliverable (elastic capacity is wasted and only adds oplog load).
-- **RQ3 thesis claim = compute only** (readiness propagation, complete): the
-storage extension is closed and not carried forward.
+- **R1 (primary, B1 CPU leg)**: old-backend compute CPU drops **≥ 10 pp**
+  `[spawn−60, spawn]` → `[admitted+10, admitted+70]` (steady-state, plateau).
+  Preflight already showed this at n=2/arm: **direct −18.9/−10.3 pp,
+  discovery −32.5/−26.7 pp**. Campaign decides the headline at n=7/arm.
+- **R2**: old-backend T_proc drop (supporting).
+- **R3**: pool latency p50/p95 drop or stable-not-worse (secondary; latency
+  is NOT the required leg — CPU is).
+- **Statistical contract (pre-registered)**:
+  - Unit = RUN; per-run medians over that run's steady-state admissions.
+  - Cross-arm (n=7 vs 7): **exact MWU (permutation) + Cliff's δ** on per-run
+    relief values.
+  - Within-run: **paired sign test** on per-admission (pre, post) relief.
+  - Paired by block: **paired exact permutation** (direct_N vs disc_N share
+    block seed N, `counterbalance_order.csv`).
+  - Success: majority of admissions relieved per run, and cross-arm relief
+    positive with p < 0.05.
+- **PG-2 re-framing (pre-registered)**: saturation gate re-anchored to
+  **pooled sub-max CPU ≥ 30 % AND relief ≥ 10 pp**. ~40 % is the documented
+  compute-pure ceiling (autoscaler fires at 70–88 %, so the tier cannot be
+  pressed further without the DB co-bottleneck that nullifies relief).
 
-## 2. Propagation claim — direct vs discovery timing (secondary)
+## 2. Timing claim — direct vs discovery readiness propagation (re-confirm)
 
-- **T-stor-1**: `SECONDARY → promoted` delivery latency — direct **0.00 s**
-  (event, measured 29/29) vs discovery **1.0–6.0 s** (telemetry window, avg
-  ~3.9 s, measured 9/9). Campaign confirms the delivery-layer differential.
-- **C-stor-1 (consequence)**: expected **null** — `spawn → promote` totals
-  are dominated by the RS initial-sync catch-up (~35–41 s) in both arms, so
-  no gap-window latency/timeout excess is measurable within the 600 s
-  plateau. This is a mechanism-backed null (catch-up dominance), NOT
-  under-saturation — mirroring the v2/rq3 conclusion.
-- **No designed-cadence arm**: a slower discovery cadence would be a
-  tautological knob-setting, not a system property.
+- **T1**: `ready → admitted` — direct ≈ 0.001–3 s (event) vs discovery
+  ≈ 5–7 s (10 s poll + fallback 20 s). Expected d ≈ −1.000 (v2: d=−1.000,
+  n=6). Campaign re-confirms at the saturation config.
+- **T2**: `spawn → first success` — direct faster; absolute differential ≥ v2.
+- **C1 (consequence, pre-registered NULL + autoscaler-bounded)**: gap-window
+  `[spawn_started, min(admitted, plateau_end)]` timeout_rate = **0.000** in
+  both arms. The tier is admission-gated and the autoscaler caps the ceiling
+  (fires at 70–88 %), so a timing differential cannot convert into sustained
+  user-visible harm. Reported, not a gate.
+- **C2**: gap-window failure_rate = null.
 
-## 3. Base-requirements gates (per `testing_requirements.md`)
+## 3. Base-requirements gates (per `testing_requirements.md`, per run)
 
-- **D1** data path: controller + storage/server `NotPrimary` = 0 (⚠ M1 had a
-  153-occurrence transient burst at RS-reconfig on `edge_server_n2` — did not
-  reproduce; watch for recurrence and flag if it does).
-- **D2** no restart/crash; **D3** provenance snapshots (phases + env) per run.
-- **F1** telemetry continuity (plateau resource rows ≈ 45–50/2 LANs);
-  **F2** LAN symmetry (offered lan1 ≈ lan2).
-- **I1** demand ≈ 8.3–8.5 k completed plateau requests/run; **I2** outcome
-  classes counted distinctly (completed/timeout/canceled).
+- **G1** ≥ 20 gap requests/LAN · **G2** ≥ 1 admitted backend/LAN ·
+  **G3** direct event fraction ≥ 0.80 · **G4** flow checks A/B/D hard, C ≥ 0.85
+- **G5** driver clean (canceled < 5 %, http000 ≈ 0 baseline) · **G8** no
+  plateau scale-down churn
+- **D1** `NotPrimary` = 0 · **D2** no restart/crash · **D3** provenance
+  snapshots (phases + env) per run
+- **M1** scale-up fires per LAN · **M2** added nodes serve ≥ 1 request
+- **V1** compute CPU rises in plateau (bottleneck evidenced)
+- **I1** ≥ 5 000 completed plateau/LAN · **I2** outcome classes distinct
+- **PG-1** driver clean · **PG-2** re-anchored sub-max CPU ≥ 30 % ·
+  **PG-3** ≥ 1 add/LAN · **PG-6** no collapse
 
 ## 4. Mechanism checks (supporting)
 
-- **R-stor-3 is a HARD co-gate** (per-run + cross-run per mode): PRIMARY
-  connection share (window_log) must drop ≥ 20 % relative OR land ≤ 60 %
-  post-admission. SG-4 benefit counts only when it passes — latency relief
-  without read offload is unexplained and does not count.
-- **R-stor-2** primary CPU / write latency drop pre → post.
-- **R-stor-4** replica RAM / member count sane growth.
-- Pressure band (V1): plateau p95 is run-to-run noisy (1.2–11.2 s in probes);
-  do not over-index on the band magnitude, rely on the pre/post relief delta.
+- Relief is **window_log-authoritative** (`rq3sat_relief_windowlog.py`),
+  cross-checked with `rq3_camp_prepost_resources.py --steady-s 120`
+  (resource_stats).
+- Autoscaler interaction: relief must come from scale-up, not from load
+  drop — confirmed by steady-state plateau (rate held 72 req/s across the
+  admission window) and G8 (no scale-down churn mid-plateau).
+- Do not over-index on absolute CPU band; rely on the pre/post relief delta
+  (run-to-run absolute CPU is noisy).
 
-## 5. Expected outputs (revised — storage campaign not run)
+## 5. Expected outputs
 
-`run_matrix.md` §3 (preflight record + closed verdict), plan §5.4 (4-run
-preflight verdict + artifact investigation), and this document replace the
-storage campaign outputs (results.md / post_run_analysis.md / graphs for the
-12-run storage matrix). The compute RQ3 campaign outputs already exist
-(`tese/research_questions/rq3/rq3_evaluation_conclusions.md`).
+Per-run analyzer (`rq3_admission_analysis.py`, phase=`compute_plateau`) →
+T1/T2/C1/C2 per run; relief tools → R1/R2/R3; gates via `rq3sat_probe_gate.py`.
+Campaign deliverables: `results.md`, `post_run_analysis.md`, graphs
+(`relief_cpu_prepost.png`, `timing_campaign.png`, saturation family), then
+thesis update in `tese/research_questions/rq3/*`.
+
+---
+
+## Appendix A — Storage analysis focus (CLOSED, 2026-08-08)
+
+The storage-replica scale-up extension was closed after a 4-run preflight
+showed **no sustained benefit** (honest SG-4 medians P2 +3.6 %, P1-fix
++0.6 %, P2-fix −1.9 %; P1's +38.2 % was a proven early-plateau transient
+artifact). R-stor-3 (read offload) passed all 4 runs but never converted
+into user-visible benefit; storage primary CPU stayed ~50–65 % (no relief).
+Per governance rule RQ3-storage-3 → **storage should not scale → no storage
+campaign**. Full storage analysis contract (T-stor-1 delivery differential,
+C-stor-1 catch-up-dominated null, R-stor gates, D1 watch on the M1
+153-occurrence reconfig burst) is retained in git history of this file and in
+[`experiment_plan_storage_closed.md`](experiment_plan_storage_closed.md).

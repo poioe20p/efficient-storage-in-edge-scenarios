@@ -1,0 +1,15 @@
+block,position,cell,run_label,seed
+1,1,direct,rq3sat_camp_direct_1,3001
+1,2,disc,rq3sat_camp_disc_1,3001
+2,1,disc,rq3sat_camp_disc_2,3002
+2,2,direct,rq3sat_camp_direct_2,3002
+3,1,direct,rq3sat_camp_direct_3,3003
+3,2,disc,rq3sat_camp_disc_3,3003
+4,1,disc,rq3sat_camp_disc_4,3004
+4,2,direct,rq3sat_camp_direct_4,3004
+5,1,direct,rq3sat_camp_direct_5,3005
+5,2,disc,rq3sat_camp_disc_5,3005
+6,1,disc,rq3sat_camp_disc_6,3006
+6,2,direct,rq3sat_camp_direct_6,3006
+7,1,direct,rq3sat_camp_direct_7,3007
+7,2,disc,rq3sat_camp_disc_7,3007

@@ -19,9 +19,7 @@
       "cross_region_ratio": 0.0,
       "client_fraction": 1.0,
       "mix": {
-        "service_pressure": 0.6,
-        "content_lookup": 0.2,
-        "feed_ranking": 0.2
+        "service_pressure": 1.0
       }
     },
     {
