@@ -48,6 +48,7 @@ Requirements MUST be **absolutely clear** before any approach or plan is produce
 - Read the relevant `docs/operation/` overview and implementation files for current subsystem state
 - Check the corresponding `source/sdn_controller/` modules for existing patterns
 - Review `docs/operation/todo.md` for pending work and context
+- When the plan touches the testing/experiment surface, review `docs/operation/testing/testing_requirements.md` so planned changes respect the base-requirements floor (benefit, mechanism, validity, integrity)
 - List every ambiguity, assumption, and open decision you find
 - **Ask clarifying questions and iterate** with the user until nothing is ambiguous — expect back-and-forth
 - Restate the locked requirements in a short bullet list and get confirmation before moving on
@@ -103,6 +104,7 @@ Present the full plan and **wait for the user to approve** before any file is cr
 - **DO** consider how the change fits into the SDN controller event flow, container lifecycle, and data pipeline
 - **DO** follow existing code conventions: Python style, shell script patterns (see `.github/instructions/shell.instructions.md`), Docker image structure
 - **DO** keep output token-efficient — concise bullets over prose, no redundant restatement
+- **DO** place temporary one-time files (scratch scripts, one-shot probes, ad-hoc analysis) in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and delete them after they have served their purpose. This is an explicit exception to the approval gate: throwaway scratch files in `temp/` do not require prior approval.
 
 ## Output Format
 

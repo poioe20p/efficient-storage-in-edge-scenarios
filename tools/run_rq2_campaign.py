@@ -30,23 +30,24 @@ import time
 
 
 # cell -> (env file, phases file, shell CPU+pool vars) relative to the VM repo
-# layout. Pool is per-cell (fix 4): cb cells at the B1-validated 12; db cells
-# at 48 (the storage-bind read-spread enabler, F4a/F4b). CPU: cb = Series-C
-# (B1-validated), db = storage-bind locked config 2026-08-07 (edge 1.20 /
-# storage 0.15 / rate 5.0 / lookup-heavy).
+# layout. Pool is per-cell (fix 4): 12 for ALL cells. Db cells use pool 12
+# (locked 2026-08-08, P3/P3b evidence): B2 p95 leg 0.42x/0.49x vs 0.63x/0.77x
+# at pool 48, timeout 0.068-0.074% vs 0.085-0.090%; pool 48 was the pre-P3
+# shell config. CPU: cb = Series-C (B1-validated), db = storage-bind locked
+# config 2026-08-07 (edge 1.20 / storage 0.15 / rate 5.0 / lookup-heavy).
 CELLS: dict[str, tuple[str, str, str]] = {
     "cf_cb": ("rq2_compute_first.env", "phases_rq2_compute_bound.json",
                "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "cf_db": ("rq2_compute_first.env", "phases_rq2_data_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=48"),
+               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "sf_cb": ("rq2_storage_first.env", "phases_rq2_compute_bound.json",
                "STORAGE_CPUS=0.15 EDGE_CPUS=0.30 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "sf_db": ("rq2_storage_first.env", "phases_rq2_data_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=48"),
+               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "ba_cb": ("rq2_bottleneck_aware.env", "phases_rq2_compute_bound.json",
                "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "ba_db": ("rq2_bottleneck_aware.env", "phases_rq2_data_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=48"),
+               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=12"),
 }
 
 REPO = "~/efficient-storage-in-edge-scenarios"
@@ -56,9 +57,24 @@ ACTIVE_RUN = f"{METRICS}/active_run.json"
 # Shared shell env. RANDOM_SEED and EDGE_MONGO_MAX_POOL_SIZE are per-run:
 # the seed comes from the order CSV's traffic_seed column (42 for _1.._5, 43
 # for the _6 cross-seed arm) and the pool is per-cell in CELLS (fix 4).
+# D3 overload-label re-anchor for RQ2 (2026-08-07, fix 8): the aggregator
+# defaults (OVERLOAD_CPU_PCT=5.0, OVERLOAD_PEAK_LATENCY_MS=1000) collide with
+# the data-bound baselines — storage idles at 6-9% CPU and the demand_drop
+# tail latency is ~1.0-1.4s — so `overload` stayed true through demand_drop
+# and the churn guard suppressed scale-down (P1 miss). OVERLOAD_CPU_PCT=30 +
+# OVERLOAD_PEAK_LATENCY_MS=2000 keep the label on during the episode (avg
+# CPU ~42%, peak 8.8s+) and off during demand_drop (~5%, ~1.3s), letting
+# scale-down fire while the guard stays active. RQ1/RQ3 keep the defaults.
+# 2026-08-08: EDGE_MEMORY=512m added (was default 256m) after the ba_db_2
+# MEMCG OOM-kill under concurrent churn (see ba_db_2_incident.md) — raised
+# for static edges via the build scripts; the arm env files carry the same
+# value for dynamic edges. Runs 1-14 ran at 256m; runs 15+ run at 512m.
 BASE_ENV = ("WAN_RTT_MS=185 "
+            "EDGE_MEMORY=512m "
             "EDGE_MONGO_READ_PREFERENCE=secondaryPreferred "
-            "VIP_DATA_PER_CONNECTION_FLOWS=1")
+            "VIP_DATA_PER_CONNECTION_FLOWS=1 "
+            "OVERLOAD_CPU_PCT=30 "
+            "OVERLOAD_PEAK_LATENCY_MS=2000")
 
 
 def ssh(host: str, cmd: str, timeout: int = 15) -> subprocess.CompletedProcess | None:
@@ -96,14 +112,25 @@ def is_run_running(host: str, label: str) -> bool:
 
 
 def is_run_completed(host: str, label: str) -> bool:
-    """True if a run folder for ``label`` already exists AND is marked
-    completed/failed in its run_status.json. Checks the folder directly, so it
-    works even when active_run.json points at a later run."""
+    """True if a V3 run folder for ``label`` exists AND is completed/failed.
+
+    Only v3-era folders count: a folder qualifies only if its
+    controller_env_snapshot.env carries the v3 marker
+    STORAGE_PERSISTENT_RESERVE_ENABLED=1 (the D8 reversal, 2026-08-07). The
+    v2 campaign (2026-08-06) used the SAME run labels (rq2_<cell>_1..3) with
+    the reserve off, so those folders must NOT satisfy this check — the v3
+    campaign re-runs every cell/replicate from scratch. This guards against
+    the 2026-08-08 near-miss where v2 folders were wrongly treated as
+    completed and 13 runs were skipped.
+    """
     r = ssh(host, (
-        f"ls -dt {METRICS}/*_{label} 2>/dev/null | head -1 | "
-        f"xargs -r grep -h '\"status\"' "
-        f"--include=run_status.json -r 2>/dev/null | "
-        f"grep -qE 'completed|failed' && echo DONE || echo NOT"
+        f"found=NOT; "
+        f"for d in $(ls -dt {METRICS}/*_{label} 2>/dev/null); do "
+        f"  if grep -q 'STORAGE_PERSISTENT_RESERVE_ENABLED=1' "
+        f"'$d'/controller_env_snapshot.env 2>/dev/null && "
+        f"grep -qE '\"(status)\": \"(completed|failed)\"' "
+        f"'$d'/run_status.json 2>/dev/null; then found=DONE; break; fi; "
+        f"done; echo $found"
     ))
     return bool(r is not None and r.stdout.strip() == "DONE")
 

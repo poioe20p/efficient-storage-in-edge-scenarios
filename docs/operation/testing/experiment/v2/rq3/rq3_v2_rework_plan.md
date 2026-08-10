@@ -179,8 +179,9 @@ runs on `cloud-vm-rq3` (new VM — setup status to be verified before Phase 6).
    the edge containers** (`docker exec printenv` — never in
    `controller_env_snapshot.env`); driver knobs from the run log's printed
    config line. `rq3_flow_validation.py` gate policy: **Checks A and B hard**
-   (any violation fails the run), **Check C hard at coverage ≥ 0.9** (below ⇒
-   instrumentation-degraded run), **Check D** with a pre-registered allowance:
+   (any violation fails the run), **Check C hard at coverage ≥ 0.85** (below ⇒
+   instrumentation-degraded run; amended 2026-08-05 from 0.9 — Round 5b),
+   **Check D** with a pre-registered allowance:
    ≤ 1% reused-source-port requests is tolerated and reported (the bounded
    async-delete caveat of `rq3_preparation.md` D5); **> 1% fails the run**
    (one-connection-per-request is a precondition for flow isolation).
@@ -550,3 +551,52 @@ the ≥ 3-defined-runs cell minimum, exclusions recorded.
   (calibration skipped); report() no longer uses tee; Stage-7 log string is
   the driver's actual banner; Stage-1.6 ordering noted; run-matrix calibration
   budget note added.
+
+**Round 4 (2026-08-04, calibration run 20260804_212441 — Check C root cause +
+per-connection flow fix)**:
+
+- 🔴 **Check C delete coverage 0.40** (gate ≥ 0.9): the flow-isolation delete
+  is async (~1 s pipeline) while the calibrated spike dispatches every 333 ms,
+  so the next request's SYN re-matched the still-present per-client flow and
+  shared its flow-generation (deletes ≈ flow-installs 1392 ≈ 1571, but 2932
+  compute completions). D5's "bounded" async-delete caveat was systematic at
+  the calibrated rate, not occasional. **Fix:** per-connection VIP_SERVER
+  flows behind the new `VIP_SERVER_PER_CONNECTION_FLOWS` knob (default 0 =
+  per-client, RQ1/RQ2 byte-identical; RQ3 arms = 1): each fresh connection
+  gets its own `tcp_src`-scoped DNAT/SNAT pair, the edge emits `client_port`
+  in `request_complete`, and the delete targets exactly `(client_ip,
+  client_port)` — coverage returns to ≈ 1.0. Files: `flows.py`, `state.py`,
+  `ingress.py`, `config.py` (`ClientVipBinding.client_port`),
+  `control_events.py`, `scaling_config.py`, `edge_server/source/app.py`.
+- 🟡 Analyzer/marker contract unchanged (still greps `request_complete: client
+  flows deleted`); preflight `assert_matrix` now asserts
+  `VIP_SERVER_PER_CONNECTION_FLOWS=1` on all arm files.
+
+**Round 5 (2026-08-05, campaign-scope amendment — user-approved, 24 h budget)**:
+
+- 🔵 Replicates raised to **n=6 per mode** (was direct/discovery ×5,
+  discovery_15 ×3): `direct` × 6, `discovery` × 6, `discovery_15` × 6 = **18
+  runs**. Primary blocks 6 of 2 (seeds 2001–2006, counterbalance order sampled
+  per block seed; disc leads 4, direct leads 2 — both ≥ 2 ✓); sensitivity
+  `disc15` × 6 (seed 2007) consecutive after primary. Order generated
+  deterministically by `tools/gen_rq3_counterbalance.py` and recorded in
+  `docs/operation/testing/experiment/v2/rq3/counterbalance_order_v2.csv`.
+  Runtime ≈ 6–7.5 h + ≤ 3 voids — fits the 24 h window. §2.9, Phase 5.1,
+  `run_matrix.md`.
+
+**Round 5b (2026-08-05, Check C gate amendment — user-approved option 1)**:
+
+- 🔵 **Check C hard threshold lowered 0.9 → 0.85**, pre-registered before
+  continuing (recorded in `rq3_flow_validation.py`, §2.8, preflight G4,
+  measurement contract G4, `analysis_focus.md`, `run_matrix.md`).
+- 🔵 **Justification**: the coverage shortfall is edge→controller
+  `request_complete` **delivery loss** (~10–14 %), orthogonal to the
+  treatment — every delivered event → delete (1:1); Check A/B/D already
+  protect validity (no pre-admission traffic, no post-removal traffic, one
+  fresh connection per request). Direct-mode Check C distribution across the
+  first campaign runs: **0.88 / 0.89 / 0.91 / 0.92 / 0.96** — the old 0.9
+  gate sat in the middle of the distribution, failing runs by ≤ 2 pp.
+- 🔵 **Applies retroactively**: B1-R2 `rq3_direct_1` (0.88) and B4-R2
+  `rq3_direct_4` (0.89) are **valid** runs under the amended gate; the B1
+  replacement (seed 2011, 0.91) is recorded as an **extra direct replicate**
+  (primary analysis uses the 6 scheduled direct cells B1–B6).

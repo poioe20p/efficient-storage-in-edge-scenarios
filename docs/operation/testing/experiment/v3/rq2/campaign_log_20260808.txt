@@ -1,0 +1,74 @@
+[2026-08-08 15:34:42] RQ2 campaign orchestrator: 36 remaining runs on cloud-vm-rq2
+[2026-08-08 15:34:44] [1/36] rq2_ba_cb_1 (ba_cb) attempt 1/2
+[2026-08-08 16:03:15]   rq2_ba_cb_1 completed (run_id=20260808_144043_rq2_ba_cb_1)
+[2026-08-08 16:03:18] [2/36] rq2_cf_cb_1 (cf_cb) attempt 1/2
+[2026-08-08 16:32:17]   rq2_cf_cb_1 completed (run_id=20260808_150918_rq2_cf_cb_1)
+[2026-08-08 16:32:19] [3/36] rq2_sf_cb_1 (sf_cb) attempt 1/2
+[2026-08-08 16:59:11]   rq2_sf_cb_1 completed (run_id=20260808_153709_rq2_sf_cb_1)
+[2026-08-08 16:59:13] [4/36] rq2_ba_db_1 (ba_db) attempt 1/2
+[2026-08-08 17:23:51]   rq2_ba_db_1 completed (run_id=20260808_160403_rq2_ba_db_1)
+[2026-08-08 17:23:54] [5/36] rq2_sf_db_1 (sf_db) attempt 1/2
+[2026-08-08 17:47:42]   rq2_sf_db_1 completed (run_id=20260808_162841_rq2_sf_db_1)
+[2026-08-08 17:47:45] [6/36] rq2_cf_db_1 (cf_db) attempt 1/2
+[2026-08-08 18:12:15]   rq2_cf_db_1 completed (run_id=20260808_165235_rq2_cf_db_1)
+[2026-08-08 18:12:17] [7/36] rq2_ba_db_2 (ba_db) attempt 1/2
+[2026-08-08 18:36:48]   rq2_ba_db_2 completed (run_id=20260808_171707_rq2_ba_db_2)
+[2026-08-08 18:36:50] [8/36] rq2_cf_cb_2 (cf_cb) attempt 1/2
+[2026-08-08 19:04:53]   rq2_cf_cb_2 completed (run_id=20260808_174246_rq2_cf_cb_2)
+[2026-08-08 19:04:55] [9/36] rq2_sf_cb_2 (sf_cb) attempt 1/2
+[2026-08-08 19:31:40]   rq2_sf_cb_2 completed (run_id=20260808_180942_rq2_sf_cb_2)
+[2026-08-08 19:31:42] [10/36] rq2_sf_db_2 (sf_db) attempt 1/2
+[2026-08-08 19:55:36]   rq2_sf_db_2 completed (run_id=20260808_183622_rq2_sf_db_2)
+[2026-08-08 19:55:38] [11/36] rq2_ba_cb_2 (ba_cb) attempt 1/2
+[2026-08-08 20:24:23]   rq2_ba_cb_2 completed (run_id=20260808_190137_rq2_ba_cb_2)
+[2026-08-08 20:24:25] [12/36] rq2_cf_db_2 (cf_db) attempt 1/2
+[2026-08-08 20:49:03]   rq2_cf_db_2 completed (run_id=20260808_192913_rq2_cf_db_2)
+[2026-08-08 20:49:05] [13/36] rq2_cf_cb_3 (cf_cb) attempt 1/2
+[2026-08-08 21:18:24]   rq2_cf_cb_3 completed (run_id=20260808_195506_rq2_cf_cb_3)
+[2026-08-08 21:18:26] [14/36] rq2_ba_cb_3 (ba_cb) attempt 1/2
+[2026-08-08 22:07:26] RQ2 campaign orchestrator: 22 remaining runs on cloud-vm-rq2
+[2026-08-08 22:07:28] [1/22] rq2_cf_db_3 (cf_db) attempt 1/2
+[2026-08-08 22:32:05]   rq2_cf_db_3 completed (run_id=20260808_211212_rq2_cf_db_3)
+[2026-08-08 22:32:07] [2/22] rq2_sf_db_3 (sf_db) attempt 1/2
+[2026-08-08 22:55:41]   rq2_sf_db_3 completed (run_id=20260808_213653_rq2_sf_db_3)
+[2026-08-08 22:55:43] [3/22] rq2_sf_cb_3 (sf_cb) attempt 1/2
+[2026-08-08 23:22:09]   rq2_sf_cb_3 completed (run_id=20260808_220026_rq2_sf_cb_3)
+[2026-08-08 23:22:11] [4/22] rq2_ba_db_3 (ba_db) attempt 1/2
+[2026-08-08 23:47:24]   rq2_ba_db_3 completed (run_id=20260808_222658_rq2_ba_db_3)
+[2026-08-08 23:47:26] [5/22] rq2_ba_cb_4 (ba_cb) attempt 1/2
+[2026-08-09 00:15:42]   rq2_ba_cb_4 completed (run_id=20260808_225325_rq2_ba_cb_4)
+[2026-08-09 00:15:44] [6/22] rq2_cf_cb_4 (cf_cb) attempt 1/2
+[2026-08-09 00:44:28]   rq2_cf_cb_4 completed (run_id=20260808_232145_rq2_cf_cb_4)
+[2026-08-09 00:44:30] [7/22] rq2_cf_db_4 (cf_db) attempt 1/2
+[2026-08-09 01:09:00]   rq2_cf_db_4 completed (run_id=20260808_234910_rq2_cf_db_4)
+[2026-08-09 01:09:02] [8/22] rq2_sf_db_4 (sf_db) attempt 1/2
+[2026-08-09 01:32:36]   rq2_sf_db_4 completed (run_id=20260809_001344_rq2_sf_db_4)
+[2026-08-09 01:32:38] [9/22] rq2_ba_db_4 (ba_db) attempt 1/2
+[2026-08-09 01:57:01]   rq2_ba_db_4 completed (run_id=20260809_003720_rq2_ba_db_4)
+[2026-08-09 01:57:03] [10/22] rq2_sf_cb_4 (sf_cb) attempt 1/2
+[2026-08-09 02:23:48]   rq2_sf_cb_4 completed (run_id=20260809_010152_rq2_sf_cb_4)
+[2026-08-09 02:23:50] [11/22] rq2_sf_db_5 (sf_db) attempt 1/2
+[2026-08-09 02:47:51]   rq2_sf_db_5 completed (run_id=20260809_012832_rq2_sf_db_5)
+[2026-08-09 02:47:53] [12/22] rq2_cf_cb_5 (cf_cb) attempt 1/2
+[2026-08-09 03:16:17]   rq2_cf_cb_5 completed (run_id=20260809_015345_rq2_cf_cb_5)
+[2026-08-09 03:16:19] [13/22] rq2_ba_cb_5 (ba_cb) attempt 1/2
+[2026-08-09 03:45:10]   rq2_ba_cb_5 completed (run_id=20260809_022213_rq2_ba_cb_5)
+[2026-08-09 03:45:13] [14/22] rq2_cf_db_5 (cf_db) attempt 1/2
+[2026-08-09 04:09:22]   rq2_cf_db_5 completed (run_id=20260809_024959_rq2_cf_db_5)
+[2026-08-09 04:09:24] [15/22] rq2_ba_db_5 (ba_db) attempt 1/2
+[2026-08-09 04:34:09]   rq2_ba_db_5 completed (run_id=20260809_031409_rq2_ba_db_5)
+[2026-08-09 04:34:11] [16/22] rq2_sf_cb_5 (sf_cb) attempt 1/2
+[2026-08-09 05:01:19]   rq2_sf_cb_5 completed (run_id=20260809_033902_rq2_sf_cb_5)
+[2026-08-09 05:01:35] [17/22] rq2_ba_cb_6 (ba_cb) attempt 1/2
+[2026-08-09 05:29:38]   rq2_ba_cb_6 completed (run_id=20260809_040726_rq2_ba_cb_6)
+[2026-08-09 05:29:40] [18/22] rq2_sf_db_6 (sf_db) attempt 1/2
+[2026-08-09 05:53:55]   rq2_sf_db_6 completed (run_id=20260809_043428_rq2_sf_db_6)
+[2026-08-09 05:53:57] [19/22] rq2_cf_cb_6 (cf_cb) attempt 1/2
+[2026-08-09 06:21:52]   rq2_cf_cb_6 completed (run_id=20260809_045947_rq2_cf_cb_6)
+[2026-08-09 06:21:54] [20/22] rq2_sf_cb_6 (sf_cb) attempt 1/2
+[2026-08-09 06:48:18]   rq2_sf_cb_6 completed (run_id=20260809_052644_rq2_sf_cb_6)
+[2026-08-09 06:48:21] [21/22] rq2_ba_db_6 (ba_db) attempt 1/2
+[2026-08-09 07:13:05]   rq2_ba_db_6 completed (run_id=20260809_055312_rq2_ba_db_6)
+[2026-08-09 07:13:07] [22/22] rq2_cf_db_6 (cf_db) attempt 1/2
+[2026-08-09 07:37:44]   rq2_cf_db_6 completed (run_id=20260809_061755_rq2_cf_db_6)
+[2026-08-09 07:37:44] RQ2 campaign complete: all remaining runs finished

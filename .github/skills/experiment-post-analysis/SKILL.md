@@ -71,6 +71,10 @@ Author `post_run_analysis.md` with these sections:
 
 - Did the experiment meet its success criteria? Per-criterion verdict
   (✅ met / ❌ missed / ⚠️ inconclusive).
+- A **base-requirements verdict** per run/arm: which
+  `docs/operation/testing/testing_requirements.md` hard gates were met, missed,
+  or inconclusive (with evidence), and whether any miss was a pre-registered
+  expectation.
 - Key evidence: latency numbers, resource metrics, controller behavior.
 - Cross-run trends if multiple runs exist.
 

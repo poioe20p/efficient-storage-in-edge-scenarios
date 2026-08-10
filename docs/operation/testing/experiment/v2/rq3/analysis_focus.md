@@ -23,8 +23,8 @@ the same direction (Cliff's delta sign); otherwise the conclusion is
 ### Secondary / manipulation checks
 - `spawn_to_admitted_median_s` (quantization; must show `direct` ≤ `discovery`),
 - `admitted_to_first_flow` (should be arm-identical — selection function fixed),
-- flow-isolation coverage (Check C ≥ 0.9) and one-connection-per-request
-  (Check D ≤ 1%),
+- flow-isolation coverage (Check C ≥ 0.85 — amended 2026-08-05 from 0.9)
+  and one-connection-per-request (Check D ≤ 1%),
 - `admit_source` event-fraction ≥ 0.80 in `direct` runs (instrumentation gate),
 - post-admission confirming `/ready` probe (readiness-criterion identity).
 

@@ -49,24 +49,45 @@ ssh cloud-vm-rq3 "cd ~/efficient-storage-in-edge-scenarios && \
     rq3sat_discovery.env rq3sat_camp_disc_<n> <block_seed> 0.15"
 ```
 
-## 4. Run log (to fill)
+## 4. Run log (COMPLETE — 14/14, n=7/arm)
 
 | Run | Block | Arm | Seed | Result |
 |---|---|---|---|---|
-| `rq3sat_camp_direct_1` | 1 | direct | 3001 | — |
-| `rq3sat_camp_disc_1` | 1 | discovery | 3001 | — |
-| `rq3sat_camp_disc_2` | 2 | discovery | 3002 | — |
-| `rq3sat_camp_direct_2` | 2 | direct | 3002 | — |
-| `rq3sat_camp_direct_3` | 3 | direct | 3003 | — |
-| `rq3sat_camp_disc_3` | 3 | discovery | 3003 | — |
-| `rq3sat_camp_disc_4` | 4 | discovery | 3004 | — |
-| `rq3sat_camp_direct_4` | 4 | direct | 3004 | — |
-| `rq3sat_camp_direct_5` | 5 | direct | 3005 | — |
-| `rq3sat_camp_disc_5` | 5 | discovery | 3005 | — |
-| `rq3sat_camp_disc_6` | 6 | discovery | 3006 | — |
-| `rq3sat_camp_direct_6` | 6 | direct | 3006 | — |
-| `rq3sat_camp_direct_7` | 7 | direct | 3007 | — |
-| `rq3sat_camp_disc_7` | 7 | discovery | 3007 | — |
+| `rq3sat_camp_direct_1` | 1 | direct | 3001 | ✅ exit 0, gates OK (`20260809_120125`) |
+| `rq3sat_camp_disc_1` | 1 | discovery | 3001 | ✅ exit 0, gates OK (`20260809_124511`) |
+| `rq3sat_camp_disc_2` | 2 | discovery | 3002 | ✅ exit 0, gates OK (`20260809_174834`) |
+| `rq3sat_camp_direct_2` | 2 | direct | 3002 | ✅ exit 0, gates OK (`20260809_132439`) |
+| `rq3sat_camp_direct_3` | 3 | direct | 3003 | ✅ exit 0, gates OK (`20260809_182800`) |
+| `rq3sat_camp_disc_3` | 3 | discovery | 3003 | ✅ exit 0, gates OK (`20260809_190741`) |
+| `rq3sat_camp_disc_4` | 4 | discovery | 3004 | ✅ exit 0, gates OK (`20260809_194653`) |
+| `rq3sat_camp_direct_4` | 4 | direct | 3004 | ✅ exit 0, gates OK (`20260809_202538`) |
+| `rq3sat_camp_direct_5` | 5 | direct | 3005 | ✅ exit 0, gates OK (`20260809_210419`) |
+| `rq3sat_camp_disc_5` | 5 | discovery | 3005 | ✅ exit 0, gates OK (`20260809_214240`) |
+| `rq3sat_camp_disc_6` | 6 | discovery | 3006 | ✅ exit 0, gates OK (`20260809_222103`) |
+| `rq3sat_camp_direct_6` | 6 | direct | 3006 | ✅ exit 0, gates OK (`20260809_230021`) |
+| `rq3sat_camp_direct_7` | 7 | direct | 3007 | ✅ exit 0, gates OK (`20260809_233935`) |
+| `rq3sat_camp_disc_7` | 7 | discovery | 3007 | ✅ exit 0, gates OK (`20260810_001749`) |
+
+> **Campaign status (2026-08-10):** **14/14 runs completed, all exit=0 and all
+> base-requirements gates passed** (M1 scale-up fired per LAN in every run,
+> M2 all added compute nodes served requests, D1 0×NotPrimary, D2 no
+> restart/crash, D3 provenance snapshots present). Run folders retained on
+> `cloud-vm-rq3` under `source/scripts/testing/metrics/`. **Analyzed
+> 2026-08-10** — see [`results.md`](results.md) (T1/T2 timing: MWU p=0.007/0.004,
+> d=−0.84/−0.88; R1 relief: ≥10 pp on 57 % direct / 79 % discovery admissions,
+> per-run median 16.0/19.3 pp; C1/C2 null; all gates pass) and
+> [`post_run_analysis.md`](post_run_analysis.md). Graphs archived to
+> [`graphs/campaign/`](graphs/campaign/); per-run `run_summary.md` in each run
+> folder; per-run windowlog relief CSVs + summary CSVs in
+> [`analysis/`](analysis/).
+
+> **Execution note (2026-08-09, approved):** Block 2 was executed in **inverted
+> within-block order** — `rq3sat_camp_direct_2` ran before `rq3sat_camp_disc_2`
+> (run 3 then run 4), whereas the counterbalance lists `disc_2` first. Seed
+> pairing (both arms share block seed 3002) and all order-insensitive analyses
+> (exact MWU, Cliff's δ, paired-by-seed block test) are unaffected. Consequence:
+> direct leads 5 blocks, discovery leads 2 (vs designed 4/3) — still ≥ 2 each.
+> Blocks 3–7 ran in the designed order.
 
 ## 5. Per-run gates
 

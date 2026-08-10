@@ -1,7 +1,7 @@
 # RQ2 v3 — Analysis Focus
 
 Analysis priorities for the v3 campaign at the storage-bind locked config
-(tag `rq2-v3-campaign-20260807`). **NOT launched** — focus is pre-registered.
+(tag `rq2-v3-campaign-20260808`). **NOT launched** — focus is pre-registered.
 
 ## 1. Primary claim — storage scale-up benefit (B2)
 

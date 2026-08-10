@@ -2,7 +2,6 @@
 description: 'Shell scripting best practices and conventions for bash, sh, zsh, and other shells'
 applyTo: '**/*.sh'
 ---
-
 # Shell Scripting Guidelines
 
 Instructions for writing clean, safe, and maintainable shell scripts for bash, sh, zsh, and other shells.
@@ -19,6 +18,7 @@ Instructions for writing clean, safe, and maintainable shell scripts for bash, s
 - Prefer safe expansions: double-quote variable references (`"$var"`), use `${var}` for clarity, and avoid `eval`
 - Use modern Bash features (`[[ ]]`, `local`, arrays) when portability requirements allow; fall back to POSIX constructs only when needed
 - Choose reliable parsers for structured data instead of ad-hoc text processing
+- Remember to delete temporary one time use files.
 
 ## Error Handling & Safety
 
@@ -97,13 +97,13 @@ main() {
         echo "Error: failed to create temporary directory" >&2
         exit 1
     fi
-    
+  
     echo "============================================================================"
     echo "Script Execution Started"
     echo "============================================================================"
-    
+  
     # Main logic here
-    
+  
     echo "============================================================================"
     echo "Script Execution Completed"
     echo "============================================================================"
@@ -128,5 +128,4 @@ done
 
 # Execute main function
 main "$@"
-
 ```

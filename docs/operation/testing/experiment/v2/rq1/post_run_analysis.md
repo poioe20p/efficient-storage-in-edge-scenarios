@@ -103,3 +103,113 @@ itself violates C8 (ep recovery_gap 0.0/3.8, demand_drop 3.0/0.6).
   C8 ⚠️ (borderline — uniformly low non-surge rates), C9 ✅ (with the
   C > B capacity ordering as a finding). The completeness-vs-info-age tradeoff
   is the headline deliverable for the thesis narrative.
+
+---
+
+# Revision 2026-08-07 — RQ1 v2 campaign (n=5, FINAL evidence)
+
+**Plan**: [experiment_plan.md](experiment_plan.md) (v2 §F) ·
+**Results**: [results.md](results.md) §v2 Campaign ·
+**Graphs**: [`graphs/comparison/`](graphs/comparison/) (25-graph suite, n=5/arm,
+regenerated 2026-08-07) · **Stats**: `rq1_stats_summary_v2.csv` ·
+**Asymmetry**: `lan2_asymmetry_v2_campaign.csv` ·
+**Run summaries**: [`run_summaries/`](run_summaries/) (×20)
+
+## 1. Objective
+
+The v2 campaign completes the RQ1 answer with the missing cell: a full 2×2
+factorial **fresh/stale × complete/lossy** — A `event_preserving`
+(fresh+complete), B `delayed_event_preserving` (+30 s, complete),
+C `poll`/latest-state (stale+lossy, ~1/3), D `sampled_push`
+(`SAMPLE_EVERY=3`, fresh+lossy, ~1/3) — so the delay-vs-loss attribution is
+clean (delay = A−B and D−C edges; loss = A−D and B−C edges). n=5 per arm,
+20 runs, open-loop driver (equal offered load, `CURL_MAX_TIME=300`,
+`INFLIGHT_WINDOW=1024`), 5 counterbalanced blocks (seeds 2001–2005). The v1
+n=3 record above is the supporting/characterization record; this revision is
+the final thesis evidence.
+
+## 2. Mechanism
+
+Workload locked at G2: `phases_rq1_stress_plateau.json` (plateau rate 1.2,
+rebalanced mix, `EDGE_CPUS=0.25`, plus the `idle_tail` 420 s phase added so the
+lossy arms can release the churn guard and fire scale-down), pool 6 + data-path
+fix, `_HOUSEKEEPING_OVERLOAD_GATE` (hysteresis) on. Run folders on `cloud-vm`;
+per-run analysis (`rq1_delivery_per_run.py`, 9 CSVs/run), comparison graphs
+(`rq1_delivery_comparison.py`, n=5/arm), pre-registered stats
+(`rq1v2_p3_01_stats.py`, MWU exact + Cliff's delta on the factorial edges) and
+the lan2-asymmetry diagnostic (`rq1v2_p4_01_lan2_asymmetry.py`, n=5) all ran on
+the VM; analysis outputs synced back, run folders retained on the VM as the
+campaign archive. Two replicates were dropped + re-run for lan2
+`plateau_unstable` (`ls_4`, `sp_5`), retained as characterization.
+
+## 3. Results
+
+Criterion verdicts (n=5, full table in `results.md` §v2 Judgment):
+
+| # | Criterion | Verdict |
+|---|---|---|
+| C1 | Artifact completeness | ✅ all 20 runs; `ack_log` A/B full, D partial, C absent (by design) |
+| C2 | Arm A clean reference | ✅ frac 1.0000, 0 gap/err, all 5 runs both LANs |
+| C3 | Arm B completeness + delay | ✅ frac 1.0000, plateau delay p50 30.001 s exact |
+| C4 | Loss measurable (C frac <0.70 + info-age ≥10 s below B; D frac ∈[0.30,0.36] + sub-second) | ✅ C frac 0.329–0.333, info-age med 20.4 vs B 31.8; D frac 0.331–0.335, delay p50 0.44–0.60 s |
+| C5 | Overload exercised | ✅ universe majority-overload in every arm |
+| C6 | Scale-up response | ✅ 6–12 decisions/LAN, usable capacity in all 40 LANs |
+| C7 | Scale-down (joint decision_log + container_events) | ✅ letter; **guard-conditioned for C/D** (real removals in `idle_tail`; decision-log real removals 0/10 LANs for C/D — G8 gap confirmed at n=5) |
+| C8 | Non-surge transient quality | ⚠️ NULL — non-surge failure 0%, timeout ~0.05% in every arm; mechanical rule flagged UNANTICIPATED on floor noise, re-inspection = null |
+| C9 | Factorial-edge ordering | ✅ primary (capacity) + info-age; plateau timeout/failure edges weak or reversed (bounded-overload plateau) |
+
+**Confirmed findings (n=5, statistics-backed):**
+
+1. **Capacity (the pre-registered primary) orders A 32.0 < B 57.5 < C 81.5 ≈
+   D 85.1 s** — d=−1.0 (p=0.008) on both loss edges and the fresh delay edge;
+   the lossy-level delay edge (D→C) is null. **Loss hurts reaction more than
+   delay** (a 1/3 sample costs ~50 s over the reference regardless of
+   freshness; +30 s delay costs ~25 s on the fresh level, ~0 on the lossy).
+2. **Info-age at decision orders A (1.3–8.6) < D (11–19) < C (18–26) < B
+   (30–39) s.** Delay dominates info-age; the loss_stale info-age reversal
+   (B 31.8 > C 20.4) is structural (B always acts on 30 s-old complete
+   evidence; C's sampled windows are younger on average).
+3. **C8 is a clean NULL** — no delivery arm degrades non-surge service quality
+   (failure 0%, timeout ~0.05% everywhere). The pre-registered rule's
+   UNANTICIPATED flag is floor noise on near-zero rates; substantive verdict:
+   no transient-quality penalty from any delivery semantics.
+4. **Plateau service quality does not discriminate at n=5 under bounded
+   overload** — all arms in a 15–21% timeout / 1–3.5% failure band; failure
+   edges reverse (complete arms slightly higher). The G2-bounded plateau
+   expresses the delivery-semantics effect in *controller reaction*
+   (capacity/info-age), not the plateau data plane.
+5. **C7 is letter-pass for all arms; C/D real removals are guard-conditioned**
+   (§0.6): container_events removals in 39/40 LANs, almost all C/D removals in
+   `idle_tail` (churn-guard release); decision_log real removals only A 7/10
+   and B 3/10 LANs (G8 gap systematic at n=5).
+6. **Lan2 asymmetry migrated from Arm C (v1) to Arm A (v2):** A `ep` plateau
+   failure lan2−lan1 median +2.64 pp (5/5 runs) — the only ASYMMETRIC cell;
+   C is balanced at n=5 (v1's 11–12% lan2 asymmetry does not reproduce).
+   Offered load and delivered windows are equal per LAN ⇒ data-plane effect,
+   not telemetry. Open post-campaign root-cause target.
+7. **Overhead flat and low** (~7–12% CPU, 67–93 MB RSS); complete arms pay
+   ~1–2% more than lossy. Delivery semantics are cheap at the controller.
+
+## 4. Gaps & Next Steps
+
+- **Arm A lan2 plateau failure asymmetry (+2.64 pp)** — root cause open:
+  per-backend/VIP/scale-out timing analysis on the 5 ep runs; the telemetry
+  path and offered load are symmetric, so the cause is in the service/data
+  plane.
+- **Decision-log real-removal gap (G8)** — confirmed systematic at n=5;
+  bounded via container_events in this campaign; a controller-side logging
+  change would close it for future RQs.
+- **Plateau service-quality null** — the bounded-overload plateau was
+  engineered (G2 rate 1.2) for stable runs; it does not express a
+  delay/loss service penalty. If a service-quality penalty needs to be shown,
+  a follow-up would need a stronger overload regime — but that risks the
+  v1-style collapse and is out of scope for the thesis question (which is
+  about observability/response).
+- **C/D scale-down timing** is a guard-interaction quantity (idle_tail
+  release), not a pure delivery-semantics claim — stated explicitly in the
+  results narrative per §0.6.
+- **RQ1 v2 is CLOSED as final evidence.** The completeness-vs-info-age
+  2×2, the capacity ordering (A < B < C ≈ D), the info-age ordering
+  (A < D < C < B), and the C8 null are the thesis deliverables; the
+  lan2-asymmetry item above is the only open follow-up.
+

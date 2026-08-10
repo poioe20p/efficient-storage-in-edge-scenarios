@@ -1,6 +1,6 @@
 # Experiment Plan — RQ2 Bottleneck-Aware Scaling Action
 
-**Date**: 2026-08-02 · **Status**: ✅ **Completed** — 18/18 main runs validated on the fixed data path (2026-08-04); full evaluation in [`results.md`](results.md) and [`post_run_analysis.md`](post_run_analysis.md)
+**Date**: 2026-08-02 · **Status**: ⚠️ **v2 36-run campaign mechanically complete (36/36 exit 0, 2026-08-05) but CONFOUNDED by a load-calibration failure** — offered load exceeded platform capacity in both episodes; re-calibration + re-run required before the v2 results are thesis evidence. Full evaluation in [`results.md`](results.md) and [`post_run_analysis.md`](post_run_analysis.md).
 **Parent (implementation plan)**: [`docs/research_questions/v2/rq2/rq2_preparation.md`](../../../../research_questions/v2/rq2/rq2_preparation.md) (approved; code **IMPLEMENTED** — `PolicyGate`, `ScaleUpVerdict`, `commit_*`, 20-column decision log)
 **Thesis RQ2**: [`tese/Notes/thesis_overview.md`](../../../../../../tese/Notes/thesis_overview.md) §6 RQ2
 **Control group**: [`v2/control_group.md`](../control_group.md) (validated 2026-08-01) — the scale-vs-no-scale reference; RQ2 rebases its platform onto the control config (Option B) and varies `SCALEUP_POLICY`.
@@ -66,9 +66,13 @@ structural gaps (G1–G5, `rq2_v2_rework_plan.md` §1):
 
 **Run-label pattern (v2):** `rq2_<policy>_<episode>_<replicate>` with
 `policy ∈ {cf, sf, ba}`, `episode ∈ {cb, db}`, `replicate ∈ {1..6}` (e.g. `rq2_ba_cb_1`). Block orders live in
-[`counterbalance_order_v2.csv`](counterbalance_order_v2.csv) (seeds
-2001–2006, distinct-order verified; the v1 `counterbalance_order.csv` is
-never overwritten). Full v2 matrix: [`run_matrix.md`](run_matrix.md) §10;
+[`counterbalance_order_v2.csv`](counterbalance_order_v2.csv) (counterbalancing
+**block-seeds 2001–2006**, distinct-order verified; the v1 `counterbalance_order.csv` is
+never overwritten). **Traffic seed is fixed at `RANDOM_SEED=42` across all runs**
+— a deliberate **paired identical-load design**: every cell/replicate receives the
+same deterministic offered load, so replicate variance reflects platform response,
+not load-generator sampling, and the arm comparison is perfectly matched on load
+(see `run_matrix.md` §10.2). Full v2 matrix: [`run_matrix.md`](run_matrix.md) §10;
 v2 measurement contract: [`analysis_focus.md`](analysis_focus.md) §7.
 
 ---
@@ -145,10 +149,10 @@ Full detail in [`run_matrix.md`](run_matrix.md).
 | Stage | Runs | Cells |
 |---|---|---|
 | Pre-flight (tooling + calibration + gate) | 4 | `ba×cb`, `ba×db`, `cf×db`, `sf×cb` (V3 spec) |
-| Main campaign | 18 (3 per cell) | 6 cells × 3 replicates |
+| Main campaign | 36 (6 per cell) | 6 cells × 6 replicates |
 
 Run-label pattern: `rq2_<policy>_<episode>_<suffix>` with
-`policy ∈ {cf, sf, ba}`, `episode ∈ {cb, db}`, `suffix ∈ {preflight, 1..3}`.
+`policy ∈ {cf, sf, ba}`, `episode ∈ {cb, db}`, `suffix ∈ {preflight, 1..6}`.
 
 > **⚠ Block-1 re-run (2026-08-03):** the first Block-1 set
 > (`20260803_114003_rq2_cf_cb_1` … `20260803_141034_rq2_sf_db_1`) ran on the
@@ -174,19 +178,27 @@ Canonical per-run launch (all runs in the cloud VM at
 
 ```bash
 ssh cloud-vm-rq2 "cd ~/efficient-storage-in-edge-scenarios && \
-  nohup sudo -n STORAGE_CPUS=0.08 EDGE_CPUS=0.15 WAN_RTT_MS=185 RANDOM_SEED=42 \
+  nohup sudo -n STORAGE_CPUS=<SC> EDGE_CPUS=<EC> WAN_RTT_MS=185 RANDOM_SEED=42 \
     EDGE_MONGO_READ_PREFERENCE=secondaryPreferred \
-    EDGE_MONGO_MAX_POOL_SIZE=6 \
+    EDGE_MONGO_MAX_POOL_SIZE=12 \
     VIP_DATA_PER_CONNECTION_FLOWS=1 \
     make -C source/scripts setup_network create_clients setup_test_data run_experiment \
     OSKEN_ENV_OVERRIDE_FILE=../../rq2_env/<ENV_FILE> \
     RUN_LABEL=<LABEL> \
     PHASES_CONFIG=testing/phases_override/phases_rq2_<episode>.json \
     CLIENTS=24 CONTENT_ITEMS=3000 USERS=100 \
-    DATA_SEED=42 CURL_MAX_TIME=30 \
+    DATA_SEED=42 CURL_MAX_TIME=300 \
+    TRAFFIC_DRIVER_MODE=open_loop INFLIGHT_WINDOW=1024 DRAIN_S=30 \
     SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1 \
     > /tmp/<LABEL>.log 2>&1 &"
 ```
+
+> **Current canonical command — `run_matrix.md` §4 is authoritative** (updated
+> 2026-08-06 with the Series C calibration): `EDGE_MONGO_MAX_POOL_SIZE=12`,
+> `CURL_MAX_TIME=300`, per-cell `EDGE_CPUS`/`STORAGE_CPUS` (episode-based rule:
+> compute-bound cells 0.15/0.08, data-bound serving path 0.30/0.15), and the
+> readiness admission gate (in the arm env files). `RANDOM_SEED=42` is the fixed
+> traffic seed base (paired identical-load design, see §0 run-label note).
 
 - `OSKEN_ENV_OVERRIDE_FILE` is resolved relative to `source/scripts` (make
   cwd). The command above is the **VM form**: the per-arm env files are synced
@@ -199,7 +211,8 @@ ssh cloud-vm-rq2 "cd ~/efficient-storage-in-edge-scenarios && \
   repo-synced (no staging).
 - **Shell env (data-path fix + Approach B, 2026-08-03):** every RQ2 arm MUST
   launch with `EDGE_MONGO_READ_PREFERENCE=secondaryPreferred`,
-  `EDGE_MONGO_MAX_POOL_SIZE=6` and `VIP_DATA_PER_CONNECTION_FLOWS=1` on the
+  `EDGE_MONGO_MAX_POOL_SIZE=12` (pool 6→12, 2026-08-06 calibration) and
+  `VIP_DATA_PER_CONNECTION_FLOWS=1` on the
   shell (static `edge_server_n1/n2` read them at `setup_network`); the same
   vars are in each arm env file so dynamic spawns inherit them via the
   controller env. See `read_preference_data_path_finding.md` §5/§7. Since
@@ -207,6 +220,18 @@ ssh cloud-vm-rq2 "cd ~/efficient-storage-in-edge-scenarios && \
   so an unset `EDGE_MONGO_READ_PREFERENCE` no longer reverts to `primary`;
   the explicit pre-fix opt-out (`EDGE_MONGO_READ_PREFERENCE=primary`) is used
   only by the G3 negative control.
+- **Per-cell CPU config (2026-08-06, Series C):** `EDGE_CPUS` / `STORAGE_CPUS`
+  are per-cell, following the **episode**, not the arm: compute-bound cells
+  (`cf_cb`, `ba_cb`) 0.15/0.08; data-bound serving path (`cf_db`, `sf_cb`,
+  `sf_db`, `ba_db`) 0.30/0.15. See `run_matrix.md` §4 table (authoritative).
+- **Readiness admission gate (2026-08-06, decision b):** all three arm env
+  files set `READINESS_PROPAGATION=direct` + `EDGE_APP_READY_EVENT=1` (+ probe
+  knobs) — a spawned compute backend is admitted to the VIP pool only once
+  actually serving (`app_ready` after a real MongoDB ping + bound socket),
+  eliminating the `ba_cb` admission-window `http=000` fast-fail artifact
+  (1.67–4.40 % → 0.46–1.12 % verified). RQ3 measurement flags
+  (`VIP_FLOW_ISOLATION`, `VIP_SERVER_PER_CONNECTION_FLOWS`, `EDGE_FLOW_ISOLATION`)
+  stay unset → per-client D5 flows preserved. See `ba_cb_anomaly_claims.md`.
 - Images: **the `edge_server` image must be rebuilt on the VM** after the
   2026-08-03 data-path fix (read preference), because the edge code is baked,
   not volume-mounted: `sudo bash source/scripts/build_images.sh edge_server`
@@ -387,3 +412,6 @@ Full detail in [`analysis_focus.md`](analysis_focus.md) §4–§6. Summary:
 | 2026-08-04 | Local run folders removed; VM holds the 25-folder archive; graphs + evaluation analysis retained in this folder | Keep the workspace lean; the evaluation-level record is the retained deliverable |
 | 2026-08-04 | RQ2 v2 rework documented (Phase 4): open-loop driver, n=5, 8 cells incl. `ba-strict`, `CURL_MAX_TIME=300`/`INFLIGHT_WINDOW=1024`/`DRAIN_S=30`, MWU + Cliff's delta, sync-cost + relief-flatten, `status`-aware reporting; the 18-run campaign is re-framed as the v1/supporting record | Authoritative spec `rq2_v2_rework_plan.md`; v2 matrix `run_matrix.md` §10; orders `counterbalance_order_v2.csv` |
 | 2026-08-04 | **Scope decision:** RQ2 v2 campaign reduced to **18 runs** (6 cells × 3 replicates, 3 blocks, seeds 2001–2003); statistics are **effect-size at n=3** (no α claims; MWU descriptive; SC1–SC6); `ba-strict` implemented but **not run** (follow-up option); matrix, docs, and stats tool updated to match | User time-budget constraint; conclusions scoped to what n=3 supports |
+| 2026-08-04 | **n=6 upgrade:** RQ2 v2 campaign expanded to **36 runs** (6 cells × 6 replicates, 6 blocks, seeds 2001–2006); statistics significance-capable at n=6 (exact MWU min p = 0.0022; Cliff's delta; 6/6 direction); SC1–SC6 kept with the SC6 dual-budget rule pre-registered (`analysis_focus.md` §7.7) | Statistical power for thesis claims; orders verified in `counterbalance_order_v2.csv` |
+| 2026-08-05 | **v2 36-run campaign executed + analyzed on `cloud-vm-rq2`** (36/36 exit 0, 2026-08-05 01:06–17:21 UTC) — **CONFOUNDED**: open-loop offered load (144/72 req/s) exceeded platform capacity in both episodes (aligned arms not healthy; data-bound cross-over inverted; `sf_db` 49.8 % vs `cf_db` 19.7 % timeout). Dataset, stats (n=6), and graphs produced; `results.md` v2 judgment + `post_run_analysis.md` §0 written | Load-calibration failure (G2 validated the drop-free window, not service capacity) — see `results.md` v2 Root Causes; re-calibration + re-run required |
+| 2026-08-06 | **Campaign aborted at run 13 (`rq2_cf_cb_3`), 12/36 completed** — Series-D storage-bind redesign. Block-1 probe gates all PASS (≤5 %; readiness gate + Series C hold); cb episode demonstrates compute scale-up relief (CPU −18/−27 pts, proc_ms −85 %), but the db episode at storage 0.15 leaves the storage tier at only 30–50 % CPU → storage scale-up has **no visible relief** (db ~2 ms before and after spawn) → the H1-db / H2 wrong-action evidence is missing. Decision: make storage the **saturation bottleneck** (db cells `STORAGE_CPUS` 0.15→0.08, edge 0.30, pool 12, rate 1.5 — mirroring RQ1's compute-saturation design), validate via a Series-D probe, then re-run the campaign. The 12 completed runs are retained as the Series-C healthy-calibration / supporting record | Solid-thesis requirement: every scale-up (compute AND storage) must show at least one measurable benefit (CPU/RAM/latency). See `series_d_storage_bind_probe_plan.md` |

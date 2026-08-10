@@ -1,0 +1,15 @@
+[2026-08-08 15:32:36] RQ2 campaign orchestrator: 36 remaining runs on cloud-vm-rq2
+[2026-08-08 15:32:37] [1/36] rq2_ba_cb_1 already completed — skipping
+[2026-08-08 15:32:38] [2/36] rq2_cf_cb_1 already completed — skipping
+[2026-08-08 15:32:39] [3/36] rq2_sf_cb_1 already completed — skipping
+[2026-08-08 15:32:40] [4/36] rq2_ba_db_1 already completed — skipping
+[2026-08-08 15:32:41] [5/36] rq2_sf_db_1 already completed — skipping
+[2026-08-08 15:32:42] [6/36] rq2_cf_db_1 already completed — skipping
+[2026-08-08 15:32:44] [7/36] rq2_ba_db_2 already completed — skipping
+[2026-08-08 15:32:45] [8/36] rq2_cf_cb_2 already completed — skipping
+[2026-08-08 15:32:46] [9/36] rq2_sf_cb_2 already completed — skipping
+[2026-08-08 15:32:47] [10/36] rq2_sf_db_2 already completed — skipping
+[2026-08-08 15:32:48] [11/36] rq2_ba_cb_2 already completed — skipping
+[2026-08-08 15:32:49] [12/36] rq2_cf_db_2 already completed — skipping
+[2026-08-08 15:32:50] [13/36] rq2_cf_cb_3 already completed — skipping
+[2026-08-08 15:32:52] [14/36] rq2_ba_cb_3 (ba_cb) attempt 1/2

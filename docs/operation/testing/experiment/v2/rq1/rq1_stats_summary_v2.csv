@@ -1,0 +1,59 @@
+pair,metric,n_a,n_b,median_a,median_b,mwu_p,clifffs_delta,tested,note
+delay_fresh,capacity_latency_s,5,5,32.04,57.5,0.007937,-1.0000,1,primary; exact
+delay_fresh,timeout_rate,5,5,0.1586,0.1912,0.5476,-0.2800,1,primary; exact
+delay_fresh,failure_rate,5,5,0.02154,0.03317,0.5476,-0.2800,1,primary; exact
+delay_fresh,timeout_rate_nonsurge,5,5,0.0004919,0.00049,0.2937,0.4400,1,primary; exact
+delay_fresh,failure_rate_nonsurge,5,5,0,0,1,0.0000,1,primary; all values equal (degenerate — no separation); exact
+delay_fresh,scale_down_latency_s,2,2,668.7,819.6,,-0.5000,0,primary; missing: <3 runs per cell (2/2 defined)
+delay_fresh,info_age_decision_s,5,5,6.04,31.78,0.007937,-1.0000,1,primary; exact
+delay_lossy,capacity_latency_s,5,5,85.1,81.53,0.6905,0.2000,1,primary; exact
+delay_lossy,timeout_rate,5,5,0.1719,0.2081,0.8413,-0.1200,1,primary; exact
+delay_lossy,failure_rate,5,5,0.01417,0.01611,1,0.0400,1,primary; exact
+delay_lossy,timeout_rate_nonsurge,5,5,0.0009814,0.0004912,0.5159,0.2800,1,primary; exact
+delay_lossy,failure_rate_nonsurge,5,5,0,0,1,0.0000,1,primary; all values equal (degenerate — no separation); exact
+delay_lossy,scale_down_latency_s,0,0,,,,,0,primary; missing: <3 runs per cell (0/0 defined)
+delay_lossy,info_age_decision_s,5,5,18.09,20.44,0.1508,-0.6000,1,primary; exact
+loss_fresh,capacity_latency_s,5,5,32.04,85.1,0.007937,-1.0000,1,primary; exact
+loss_fresh,timeout_rate,5,5,0.1586,0.1719,0.8413,0.1200,1,primary; exact
+loss_fresh,failure_rate,5,5,0.02154,0.01417,0.2222,0.5200,1,primary; exact
+loss_fresh,timeout_rate_nonsurge,5,5,0.0004919,0.0009814,1,0.0000,1,primary; exact
+loss_fresh,failure_rate_nonsurge,5,5,0,0,1,0.0000,1,primary; all values equal (degenerate — no separation); exact
+loss_fresh,scale_down_latency_s,2,0,668.7,,,,0,primary; missing: <3 runs per cell (2/0 defined)
+loss_fresh,info_age_decision_s,5,5,6.04,18.09,0.007937,-1.0000,1,primary; exact
+loss_stale,capacity_latency_s,5,5,57.5,81.53,0.007937,-1.0000,1,primary; exact
+loss_stale,timeout_rate,5,5,0.1912,0.2081,0.8413,-0.1200,1,primary; exact
+loss_stale,failure_rate,5,5,0.03317,0.01611,0.2222,0.5200,1,primary; exact
+loss_stale,timeout_rate_nonsurge,5,5,0.00049,0.0004912,0.8333,-0.1200,1,primary; exact
+loss_stale,failure_rate_nonsurge,5,5,0,0,1,0.0000,1,primary; all values equal (degenerate — no separation); exact
+loss_stale,scale_down_latency_s,2,0,819.6,,,,0,primary; missing: <3 runs per cell (2/0 defined)
+loss_stale,info_age_decision_s,5,5,31.78,20.44,0.007937,1.0000,1,primary; exact
+stale_complete_vs_fresh_lossy,capacity_latency_s,5,5,57.5,85.1,,-1.0000,0,headline; Cliff's delta only — no significance claim
+stale_complete_vs_fresh_lossy,timeout_rate,5,5,0.1912,0.1719,,0.3600,0,headline; Cliff's delta only — no significance claim
+stale_complete_vs_fresh_lossy,failure_rate,5,5,0.03317,0.01417,,0.8400,0,headline; Cliff's delta only — no significance claim
+stale_complete_vs_fresh_lossy,timeout_rate_nonsurge,5,5,0.00049,0.0009814,,-0.5200,0,headline; Cliff's delta only — no significance claim
+stale_complete_vs_fresh_lossy,failure_rate_nonsurge,5,5,0,0,,0.0000,0,headline; all values equal (degenerate — no separation); Cliff's delta only — no significance claim
+stale_complete_vs_fresh_lossy,scale_down_latency_s,2,0,819.6,,,,0,headline; missing: <3 runs per cell (2/0 defined); Cliff's delta only — no significance claim
+stale_complete_vs_fresh_lossy,info_age_decision_s,5,5,31.78,18.09,,1.0000,0,headline; Cliff's delta only — no significance claim
+fresh_complete_vs_stale_lossy,capacity_latency_s,5,5,32.04,81.53,,-1.0000,0,headline; Cliff's delta only — no significance claim
+fresh_complete_vs_stale_lossy,timeout_rate,5,5,0.1586,0.2081,,0.0400,0,headline; Cliff's delta only — no significance claim
+fresh_complete_vs_stale_lossy,failure_rate,5,5,0.02154,0.01611,,0.2800,0,headline; Cliff's delta only — no significance claim
+fresh_complete_vs_stale_lossy,timeout_rate_nonsurge,5,5,0.0004919,0.0004912,,0.5200,0,headline; Cliff's delta only — no significance claim
+fresh_complete_vs_stale_lossy,failure_rate_nonsurge,5,5,0,0,,0.0000,0,headline; all values equal (degenerate — no separation); Cliff's delta only — no significance claim
+fresh_complete_vs_stale_lossy,scale_down_latency_s,2,0,668.7,,,,0,headline; missing: <3 runs per cell (2/0 defined); Cliff's delta only — no significance claim
+fresh_complete_vs_stale_lossy,info_age_decision_s,5,5,6.04,20.44,,-1.0000,0,headline; Cliff's delta only — no significance claim
+ep,plateau_p50,5,,2.113,,,,0,descriptive only (s); min=1.271 max=3.641
+ep,plateau_p95,5,,16.25,,,,0,descriptive only (s); min=12.826 max=28.298
+ep,plateau_p99,5,,28.53,,,,0,descriptive only (s); min=22.32 max=46.07
+delayed,plateau_p50,5,,2.657,,,,0,descriptive only (s); min=1.023 max=5.217
+delayed,plateau_p95,5,,17.81,,,,0,descriptive only (s); min=13.713 max=19.844
+delayed,plateau_p99,5,,30.99,,,,0,descriptive only (s); min=25.257 max=34.438
+ls,plateau_p50,5,,6.084,,,,0,descriptive only (s); min=2.086 max=6.855
+ls,plateau_p95,5,,19.31,,,,0,descriptive only (s); min=8.899 max=22.382
+ls,plateau_p99,5,,32.77,,,,0,descriptive only (s); min=18.15 max=38.827
+sp,plateau_p50,5,,4.775,,,,0,descriptive only (s); min=2.294 max=6.23
+sp,plateau_p95,5,,18.61,,,,0,descriptive only (s); min=9.154 max=21.385
+sp,plateau_p99,5,,31.14,,,,0,descriptive only (s); min=20.697 max=35.967
+ep,removal_latency_s,5,,786.6,,,,0,container_events first removal (joint cross-check)
+delayed,removal_latency_s,5,,589.5,,,,0,container_events first removal (joint cross-check)
+ls,removal_latency_s,2,,945.9,,,,0,container_events first removal (joint cross-check)
+sp,removal_latency_s,1,,197.9,,,,0,container_events first removal (joint cross-check)

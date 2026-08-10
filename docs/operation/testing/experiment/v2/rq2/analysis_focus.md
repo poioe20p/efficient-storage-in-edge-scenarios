@@ -132,9 +132,11 @@ standard). Group by cell (policy × episode) unless noted.
 The RQ2 analyzers are implementation deliverables and live canonically at
 `docs/research_questions/v2/rq2/` (referenced here, **not duplicated** —
 deviating from RQ1's copy-in-experiment-folder pattern to keep a single source
-of truth; the user can override if copies are preferred). Run them locally on
-copied-back run folders. All four first confirm the run is an RQ2 run by
-reading `controller_env_snapshot.env` (`SCALEUP_POLICY` ∈ the three RQ2 arms;
+of truth; the user can override if copies are preferred). Run them on the
+**hosting VM where the run folders live** (analysis never copies run folders
+back — only the analysis outputs are synced to this experiment folder). All
+four first confirm the run is an RQ2 run by reading
+`controller_env_snapshot.env` (`SCALEUP_POLICY` ∈ the three RQ2 arms;
 `dual`/RQ1 runs are skipped).
 
 - **`rq2_bottleneck_validation.py`** (CLI: `<run_dir> [--lan 1|2] [--csv OUT]`)
@@ -171,8 +173,10 @@ names).
   (TTFT from `per_node_stats.csv` first serving window, `rs_secondary_ready`
   as readiness diagnostic).
 
-**Run location:** where the data lives (cloud VM), then `scp` the run folders
-back locally for analysis — same convention as RQ1.
+**Run location:** the full analysis runs **on the hosting VM where the run
+folders live** (`cloud-vm-rq2` for RQ2) — run folders are never copied back;
+only the analysis outputs (per-run rollups, summary CSVs, graphs, summaries)
+are synced to the local experiment folder.
 
 ---
 

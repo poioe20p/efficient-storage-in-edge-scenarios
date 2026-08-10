@@ -209,6 +209,8 @@ The experiment compares:
 
 The experiment is limited to compute backends because the current storage path has a distinct MongoDB SECONDARY readiness event. Both conditions use the same readiness probe, routing cost function, load-balancing weights, pool state, workload, and resource limits. Warm-lease priority and slow-start ramps are disabled in both conditions. The experiment does not compare the controller with Kubernetes, HAProxy, or another external load balancer. It isolates only the propagation of readiness information.
 
+**Storage-replica scale-up was evaluated as an extension and closed (2026-08-08).** A read-write-mix probe of the storage readiness/offload path (4-run preflight, `docs/operation/testing/experiment/v3/rq3/`) found **no measurable benefit** at the locked config: replicas promoted and offloaded reads (R-stor-3 passed) but produced no user-visible latency/CPU relief (SG-4 null in 3 honest runs; the one positive was a transient-spike artifact). Per the pre-registered RQ3-storage-3 governance rule, **storage should not scale up under this workload**, and the extension is not carried forward. RQ3's thesis claim remains the compute readiness-propagation result.
+
 The request driver schedules fresh TCP connections after backend readiness. The RQ3 experiment uses a dedicated flow-isolation mode in which each measurement request receives a unique connection tuple and the controller removes its corresponding VIP flow after the response. Existing flows are excluded before the timing interval begins. This guarantees one fresh backend-selection event per measured request and prevents flow affinity from being mistaken for a readiness-propagation effect.
 
 This RQ is motivated by work such as Wang et al.'s SDNFV architecture, which documents synchronization before load-balancer inclusion, and by SDN load-balancing literature that generally assumes an already available backend pool.
@@ -223,6 +225,32 @@ Primary measurements include:
 - time from scale decision to usable capacity.
 
 **Required extension:** add a compute readiness probe and pending-backend registry; delay all pool admission until readiness succeeds; suppress direct admission in the discovery condition; and decouple propagation from backend-selection policy, warm-lease priority, and ramp behavior. **Implemented** (2026-08-04) and extended by the v2 protocol: the `direct` arm is genuinely event-driven (the edge emits an `app_ready` control event at readiness; the controller admits on the event with no probe before admission — measured via an `admit_source` admission-log column), and a `discovery_15` sensitivity cell shows the quantization cost scales with the discovery period. Primary consequence metrics are anchored to the **admission gap** (pool-wide old-backend `timeout_rate`/`failure_rate` over `[spawn_started, admitted]`), where the propagation quantization tail is observable, rather than the new backend's post-admission window.
+
+**Evaluation complete (2026-08-05).** The v2 **18-run campaign** (`direct` × 6, `discovery` × 6, `discovery_15` × 6) confirmed the timing claim (spawn→admitted 0.17 s vs 9.62 s vs 15.22 s; exact MWU p = 0.0022, full separation) and reproduced the pre-registered consequence null (gap-window timeouts/failures 0.000 on every arm). A declared **post-hoc boundary probe** (rates 8/12/25 req/s/client) then tested whether the consequence materializes under load: it remains null up to and including **~88 % old-backend CPU** at rate 25, where the open-loop driver's own delivery collapses (drain-cancel explosion ~44-50 %, flow-isolation gate voids) — the platform's practical limit is the driver, not the compute. The probe's clean high-load **rate-12 cell was extended to n=6/arm (2026-08-06, 8 additional runs, all gates pass)**, making the **timing-under-load claim statistically significant**: scale→first median **2.17 s direct vs 6.01 s discovery** (full separation, exact MWU p = 0.0022, Cliff's d = −1.000), with the consequence null on **6×6 all-zero** rate-12 runs. **Root cause +
+fix (2026-08-06):** the campaign's direct-arm http=000 / ~10 s handover
+artifact is the edge app's intermittent ~10 s Werkzeug dev-server bind delay —
+the `app_ready` event fires on a MongoDB-ping predicate up to ~10 s before the
+HTTP server binds (a harness artifact, not a propagation cost); the same delay
+intermittently contaminates RQ1/RQ2 runs (no readiness gate; RQ2 worst —
+~10.3 s on every backend, directly corrupting TTFT/initial-share). The app now
+binds before readiness (`make_server`; readiness = servability); image rebuilt
+and smoke-verified on `cloud-vm-rq3`; `cloud-vm-rq2` requires the same rebuild
+before its next campaign. Evidence: `docs/operation/testing/experiment/v2/rq3/` (`results.md` §7, `post_run_analysis.md` §5, `run_matrix.md` §5, `rq3_probe_summary.csv`, `graphs/probe/`).
+
+**Fixed-image re-run (2026-08-06).** With the servability fix verified, the
+primary pair was re-run at the canonical rate 3.0, **n=6/arm, 12 runs**
+(seeds 2310–2321, `rq3_camp_{direct,disc}_{1..6}`): the direct-arm http=000 /
+handover artifact is **gone** (0×000, `useful_share=1.000` in all 47
+backends), readiness→admission is **0.001 s vs 6.98 s** (p < 0.0001,
+d = −1.000), and the **end-to-end spawn→first differential is now
+significant** — pooled p = 0.0005 (d = −0.594) and perfect within bind strata
+(fast-bind 1.69 vs 9.16 s; slow-bind 11.46 vs 18.28 s; d = −1.000), after
+controlling for a residual ~10 s container-bind stall that is now fully
+instrumented (raw `socket.bind()`/`listen()` under network-namespace churn,
+~50-75 % of spawns, random, both arms) and documented as a shared infra cost.
+Evidence: `results.md` §8, `post_run_analysis.md` §6, `run_matrix.md` §6,
+`graphs/campaign_fixed/*.png`,
+`graphs/campaign_fixed/campaign_stratified_per_backend.csv`.
 
 ---
 

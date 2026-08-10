@@ -55,6 +55,20 @@ The **Appendix** captures prerequisites, checkpoints, validity threats, and the 
 
 Always read the template first when authoring a new plan. Omit optional appendix subsections that add nothing for the experiment at hand.
 
+## Base Requirements (mandatory in every plan)
+
+Every plan engages with `docs/operation/testing/testing_requirements.md` (the
+base-requirements floor):
+
+- State which base requirements apply to the run(s) and how each is checked —
+  the evidence artifact that answers it.
+- Define the plan-specific magnitudes (benefit %, minimum request count N, any
+  ceilings, LAN-symmetry bound). The base doc is relative — numbers live in the
+  plan.
+- If a run is pre-registered to show **no** benefit (mis-aligned arm, no-benefit
+  verdict), say so explicitly so the analyzer does not misread it as a gate
+  failure.
+
 ## Working Style
 
 - Keep the plan lean: short sections, concrete values, no filler. Omit optional sections that add nothing for this experiment.
@@ -86,6 +100,7 @@ Before finalizing any experiment plan, invoke the `auto-review` skill (`.github/
 - **DO** keep the plan concise; split into linked files only when a single file becomes unwieldy.
 - **DO** ask for clarification when intent or success criteria are ambiguous.
 - **DO** declare requirements, outline the plan, and wait for user approval before editing or creating any file.
+- **DO** place temporary one-time files (scratch scripts, one-shot probes, ad-hoc analysis) in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and delete them after they have served their purpose. This is an explicit exception to the approval gate: throwaway scratch files in `temp/` do not require prior approval.
 
 ## Output Format
 

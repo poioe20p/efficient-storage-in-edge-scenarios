@@ -1,0 +1,19 @@
+With the resource question the base idea is:
+- Does the trigger info matter?
+Question then constrained to compute and storage.
+
+So we have then 3 secnarios
+- Compute bound demand
+- Storage bound demand
+- COmpute + Storage bound demand
+
+(How is each defined? What makes each bound to what?
+Perphas we need a run or 2 to proof it?)
+
+For each type of load we have a mode where only compute or only storage or 
+both are scalable.
+
+RQ2 therefore does
+not test *whether* the right resource is better — it tests whether a controller can
+reliably **detect** the right resource from the telemetry it already has, and whether
+that detection is worth more than the cost of being wrong.

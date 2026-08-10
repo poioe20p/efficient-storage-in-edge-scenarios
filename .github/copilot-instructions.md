@@ -18,5 +18,5 @@ Disregard development cost, as it's not actually important.
 
 ## Temporary Scripts — Clean Up
 
-- Temporary scripts created as tools for a one-time use (e.g., data extraction, one-shot analysis, ad-hoc fixes) must be deleted after they have served their purpose.
+- **Temporary one-time files** (scratch scripts, one-shot probes, ad-hoc analysis) must be placed in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and deleted after they have served their purpose. This is an explicit exception to the ask-and-clarify gate: throwaway scratch files in `temp/` do not require prior approval.
 - If a script proves reusable, keep it and give it a proper name and location (e.g., under `tools/`).

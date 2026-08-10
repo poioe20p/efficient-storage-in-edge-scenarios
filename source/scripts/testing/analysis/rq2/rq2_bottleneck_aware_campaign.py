@@ -49,13 +49,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
-from ..client_status import is_failure
+from ..client_status import is_completed, is_failure, is_timeout
 
 # ---------------------------------------------------------------------------
 # Constants / conventions
 # ---------------------------------------------------------------------------
 
-RUN_RE = re.compile(r"(\d{8}_\d{6})_rq2_(cf|sf|ba)_(cb|db)_([1-3])$")
+RUN_RE = re.compile(r"(\d{8}_\d{6})_rq2_(cf|sf|ba)_(cb|db)_([1-6])$")
 
 POLICIES = ["cf", "sf", "ba"]
 EPISODES = ["cb", "db"]
@@ -338,12 +338,22 @@ def read_resource_summary(run_dir: Path, episode_phase: str) -> dict:
 
 
 def read_failure_rate(run_dir: Path, episode_phase: str) -> dict:
-    out: dict = {"episode_pct": None, "lan1_pct": None, "lan2_pct": None}
+    """Episode-phase status-aware rates (v2 contract, analysis_focus.md §7.1).
+
+    - timeout_rate = ``status=timeout`` / offered (primary degradation stat)
+    - failure_rate = completed & ``http_status`` not in ("200","") / completed
+    - dropped/canceled are counted in offered but excluded from latency/failure
+    """
+    out: dict = {"episode_pct": None, "lan1_pct": None, "lan2_pct": None,
+                 "timeout_pct": None, "offered": 0, "completed": 0,
+                 "timeout": 0}
     path = run_dir / "client_requests.csv"
     if not path.exists():
         return out
     totals: Counter = Counter()
+    completed: Counter = Counter()
     fails: Counter = Counter()
+    timeouts: Counter = Counter()
     with open(path, encoding="utf-8", errors="replace") as fh:
         reader = csv.DictReader(fh)
         header = reader.fieldnames
@@ -353,15 +363,26 @@ def read_failure_rate(run_dir: Path, episode_phase: str) -> dict:
             lan = row.get("client_lan", "")
             totals["all"] += 1
             totals[lan] += 1
-            if is_failure(row, header):
-                fails["all"] += 1
-                fails[lan] += 1
+            if is_completed(row, header):
+                completed["all"] += 1
+                completed[lan] += 1
+                if is_failure(row, header):
+                    fails["all"] += 1
+                    fails[lan] += 1
+            elif is_timeout(row, header):
+                timeouts["all"] += 1
+                timeouts[lan] += 1
     if totals["all"]:
-        out["episode_pct"] = 100.0 * fails["all"] / totals["all"]
-    if totals["lan1"]:
-        out["lan1_pct"] = 100.0 * fails["lan1"] / totals["lan1"]
-    if totals["lan2"]:
-        out["lan2_pct"] = 100.0 * fails["lan2"] / totals["lan2"]
+        out["episode_pct"] = (100.0 * fails["all"] / completed["all"]
+                               if completed["all"] else None)
+        out["timeout_pct"] = 100.0 * timeouts["all"] / totals["all"]
+        out["offered"] = totals["all"]
+        out["completed"] = completed["all"]
+        out["timeout"] = timeouts["all"]
+    if totals["lan1"] and completed["lan1"]:
+        out["lan1_pct"] = 100.0 * fails["lan1"] / completed["lan1"]
+    if totals["lan2"] and completed["lan2"]:
+        out["lan2_pct"] = 100.0 * fails["lan2"] / completed["lan2"]
     return out
 
 
@@ -481,7 +502,10 @@ def load_run_from_dataset(row: dict) -> dict:
                 "storage_max": _opt_float(row.get("ep_storage_max"))},
         "fail": {"episode_pct": _opt_float(row.get("ep_failure_pct")),
                  "lan1_pct": _opt_float(row.get("ep_failure_lan1_pct")),
-                 "lan2_pct": _opt_float(row.get("ep_failure_lan2_pct"))},
+                 "lan2_pct": _opt_float(row.get("ep_failure_lan2_pct")),
+                 "timeout_pct": _opt_float(row.get("ep_timeout_pct")),
+                 "offered": _opt_int(row.get("ep_offered")),
+                 "completed": _opt_int(row.get("ep_completed"))},
         "sel_actions": {"compute": _opt_int(row.get("sel_compute")) or 0,
                         "storage": _opt_int(row.get("sel_storage")) or 0,
                         "none": _opt_int(row.get("sel_none")) or 0},
@@ -505,6 +529,7 @@ def write_dataset(runs: list[dict], out_path: Path) -> None:
         "ep_p50_ms", "ep_p95_ms", "ep_p99_ms",
         "ep_server_mean", "ep_server_max", "ep_storage_mean", "ep_storage_max",
         "ep_failure_pct", "ep_failure_lan1_pct", "ep_failure_lan2_pct",
+        "ep_timeout_pct", "ep_offered", "ep_completed",
         "sel_compute", "sel_storage", "sel_none",
         "reason_none", "reason_budget_exhausted", "reason_other",
     ]
@@ -549,6 +574,8 @@ def write_dataset(runs: list[dict], out_path: Path) -> None:
                 "ep_storage_mean": r["res"]["storage_mean"], "ep_storage_max": r["res"]["storage_max"],
                 "ep_failure_pct": r["fail"]["episode_pct"],
                 "ep_failure_lan1_pct": r["fail"]["lan1_pct"], "ep_failure_lan2_pct": r["fail"]["lan2_pct"],
+                "ep_timeout_pct": r["fail"].get("timeout_pct"),
+                "ep_offered": r["fail"].get("offered"), "ep_completed": r["fail"].get("completed"),
                 "sel_compute": r["sel_actions"].get("compute", 0), "sel_storage": r["sel_actions"].get("storage", 0),
                 "sel_none": r["sel_actions"].get("none", 0),
                 "reason_none": r["sel_reasons"].get("none", 0),
@@ -962,12 +989,12 @@ def graph_counterbalance(runs, out_dir):
                    alpha=0.85, edgecolor="black", linewidth=0.5, zorder=5)
         ax.annotate(r["policy"], (repl, y_pos[cell]), textcoords="offset points",
                     xytext=(0, -13), ha="center", fontsize=7, color="black")
-    ax.set_xticks([1, 2, 3])
-    ax.set_xticklabels(["block 1", "block 2", "block 3"], fontsize=11)
+    ax.set_xticks([1, 2, 3, 4, 5, 6])
+    ax.set_xticklabels([f"block {i}" for i in range(1, 7)], fontsize=11)
     ax.set_yticks(list(range(len(y_labels))))
     ax.set_yticklabels(y_labels, fontsize=10)
     ax.set_xlabel("replicate (block order)", fontsize=12)
-    ax.set_title("Counterbalance: per-run cell across the 3 blocks (policy colors)",
+    ax.set_title("Counterbalance: per-run cell across the 6 blocks (policy colors)",
                  fontsize=13, fontweight="bold")
     _style_ax(ax)
     _legend_outside(ax, *_policy_handles_labels())
@@ -1014,7 +1041,7 @@ def main():
             wanted = set(args.run_dirs)
             all_runs = [d for d in all_runs if d.name in wanted]
         if not all_runs:
-            print("No RQ2 main-campaign runs found (pattern: <ts>_rq2_<p>_<e>_<1|2|3>).")
+            print("No RQ2 main-campaign runs found (pattern: <ts>_rq2_<p>_<e>_<1..6>).")
             return 1
         runs = [load_run(d, vm_per_run) for d in all_runs]
         print(f"Loading {len(runs)} runs from {metrics_dir} ...")
@@ -1024,9 +1051,9 @@ def main():
     for r in runs:
         RUNS_BY_CELL[r["cell"]].append(r)
 
-    missing = [f"{c}:{len(RUNS_BY_CELL[c])}" for c in CELLS if len(RUNS_BY_CELL[c]) != 3]
+    missing = [f"{c}:{len(RUNS_BY_CELL[c])}" for c in CELLS if len(RUNS_BY_CELL[c]) != 6]
     if missing:
-        print(f"[WARN] replicate counts != 3: {', '.join(missing)}")
+        print(f"[WARN] replicate counts != 6: {', '.join(missing)}")
     for r in runs:
         if r["g2"] is None:
             print(f"[WARN] {r['run_id']}: no bottleneck-validation verdict")

@@ -1,0 +1,17 @@
+arm,metric,delta_pp,n_runs,verdict
+ep,failure_rate,2.64,5,ASYMMETRIC
+ep,timeout_rate,1.74,5,BALANCED
+ep,delivered_lan1,2171,5,count
+ep,delivered_lan2,2171,5,count
+delayed,failure_rate,-0.38,5,BALANCED
+delayed,timeout_rate,0.18,5,BALANCED
+delayed,delivered_lan1,2141,5,count
+delayed,delivered_lan2,2141,5,count
+ls,failure_rate,0.06,5,BALANCED
+ls,timeout_rate,0.73,5,BALANCED
+ls,delivered_lan1,686,5,count
+ls,delivered_lan2,686,5,count
+sp,failure_rate,0.44,5,BALANCED
+sp,timeout_rate,-0.94,5,BALANCED
+sp,delivered_lan1,728,5,count
+sp,delivered_lan2,728,5,count

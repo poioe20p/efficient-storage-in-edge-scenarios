@@ -67,6 +67,7 @@ When the user asks about citations, papers, or references:
 - **DO NOT** make claims about the system's behavior without verifying against the source code or docs
 - **ALWAYS** distinguish between "what the system does" (verified from code/docs) and "what the thesis should argue" (research framing)
 - **NEVER** edit ANY file without first presenting the proposed changes and receiving explicit confirmation from the user — this applies to ALL files (`tese/*.tex`, `docs/*.md`, `.github/**`, source code, configuration, etc.), not just LaTeX
+- **DO** place temporary one-time files (scratch scripts, one-shot probes, ad-hoc analysis) in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and delete them after they have served their purpose. This is an explicit exception to the approval gate: throwaway scratch files in `temp/` do not require prior approval.
 
 ## Output Conventions
 

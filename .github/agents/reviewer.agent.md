@@ -58,6 +58,7 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 - **DO NOT** make assumptions about intent. If intent is unclear, flag it as ambiguous.
 - **DO NOT** summarize, praise, or contextualize beyond the issue list.
 - **ONLY** report issues. No preamble, no conclusion, no recommendations.
+- **Temporary one-time files** (scratch scripts, one-shot probes, ad-hoc analysis) belong in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/`. Flag any scratch file placed in the repo root, `source/`, or `tools/` instead of `temp/` as a violation.
 
 ## Output Format
 

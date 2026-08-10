@@ -196,3 +196,11 @@ preflight showed no sustained benefit. **RQ3 is compute-only.** Full record:
 [`experiment_plan_storage_closed.md`](experiment_plan_storage_closed.md) +
 [`run_matrix_storage_closed.md`](run_matrix_storage_closed.md) (storage log) +
 [`analysis_focus.md`](analysis_focus.md) Appendix A.
+
+---
+
+## Changelog
+
+| Date | Change | Rationale |
+| --- | --- | --- |
+| 2026-08-10 | Campaign analyzed and completed (14 runs, n=7/arm). Results in [`results.md`](results.md): R1 relief ≥10 pp on majority of admissions per arm (direct 57 %, discovery 79 %), R2 T_proc drop (direct −60 %, discovery −74 %), T1/T2 direct faster (MWU p=0.007/0.004, d=−0.84/−0.88), C1/C2 null (0.000), all base + plan gates pass. Documented: T1 per-run-median separation 3.4 s (per-position 6.1–6.3 s; cold-start overlap), steady-state guard unsatisfiable at P4 (relief measured on ramp-phase admissions, method-identical to the P4/repro4 baseline). | First analysis of the completed saturation campaign (results.md §Judgment) |

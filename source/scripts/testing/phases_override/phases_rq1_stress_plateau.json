@@ -14,16 +14,16 @@
     },
     {
       "name": "compute_plateau",
-      "duration_s": 600,
+      "duration_s": 180,
       "rate_per_client": 1.2,
       "cross_region_ratio": 0.0,
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
+        "service_pressure": 0.3,
         "content_lookup": 0.35,
-        "feed_ranking": 0.2,
-        "service_pressure": 0.2,
-        "content_update": 0.15,
+        "feed_ranking": 0.15,
+        "content_update": 0.1,
         "content_aggregate": 0.1
       }
     },

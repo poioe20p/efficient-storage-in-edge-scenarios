@@ -245,3 +245,8 @@ tools/
 docs/operation/testing/experiment/rq3_evaluation/v6/metrics
 docs/operation/testing/experiment/rq2_evaluation/v5/graphs
 docs/operation/testing/experiment/rq3_evaluation/v6/graphs
+docs/operation/testing/experiment/v2/rq2/analysis/vm_per_run
+docs/operation/testing/experiment/v2/rq2/analysis/run_summaries
+temp_*
+docs/operation/testing/experiment/v2/control_group_retune/graphs
+temp/

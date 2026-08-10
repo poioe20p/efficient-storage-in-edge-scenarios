@@ -89,6 +89,10 @@ assert_matrix() {
     for f in "$@"; do
         assert_env_key "$f" "EDGE_FLOW_ISOLATION" "1"
         assert_env_key "$f" "VIP_FLOW_ISOLATION" "1"
+        # Per-connection VIP_SERVER flows (RQ3): required so the async
+        # request_complete delete never collides with the next request's flow
+        # (Check C coverage ~1.0 under the calibrated spike rate).
+        assert_env_key "$f" "VIP_SERVER_PER_CONNECTION_FLOWS" "1"
         assert_env_key "$f" "EDGE_READY_PORT" "5000"
         assert_env_key "$f" "BACKEND_SELECTION_POLICY" "topology_host"
         assert_env_key "$f" "VIP_WARM_SERVER_SECONDS" "0"

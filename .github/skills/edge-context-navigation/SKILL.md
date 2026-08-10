@@ -36,3 +36,9 @@ this navigation order to minimize token usage and maximize relevance:
 
 5. **Avoid full-repo dumps** — do not read entire directories or grep widely
    without a target. Lead with the topic → find the doc → read selectively.
+
+## Testing Base Requirements
+
+When a task involves running, designing, or analyzing experiments, the base
+requirements floor is `docs/operation/testing/testing_requirements.md` — read
+it before gating or evaluating any run.

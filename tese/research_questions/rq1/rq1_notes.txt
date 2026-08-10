@@ -1,0 +1,40 @@
+With the research question, I get the idea that:
+- Different ways of observing overload should lead to different efficiency in scaling
+benefit and in user side quality of service mainly latency
+- The different ways of observing overload are based on varying information age and
+loss of info at random.
+
+Dumbed down rq:
+"If the controller sees demand late, or misses the intermediate demand evidence entirely,
+ its scale-out decisions are worse — but which failure, delay or missing evidence, actually hurts?"
+
+Why:
+- Essentially acroos the SOTA no papers distinguish and or highlit the effects of delivery old info
+against delivering some parts of the info.
+
+So more detailed we evaluate 3 modes:
+- Event-preserving reference (A: ep) — every completed telemetry window delivered exactly once, in source order (fresh + complete).
+- Delayed event-preserving (B: delayed) — same ordered windows, fixed pre-registered delay (+30 s), no burst replay (stale + complete).
+- Latest-state polling (C: ls, poll-30) — consumer gets only the most recent completed window; intermediate windows are not delivered (fresh + lossy, ~1/3).
+- Sampled-push (D: sp, /3) — periodic sampling of the window stream (fresh + lossy, ~1/3).
+
+Looks good, allows us to know:
+- Allows us to understand each one's impact on user service quality and scaling efficiency.
+- Gives us 2 different ways of telemetry delivery and links to the scaling decision module and 
+evaluates that interface by varying the source.
+
+In terms of delivery-semantics machinery:
+- We have a script that allows us to guarantee event comms in the exact ways we
+want.
+
+Conclusions
+So to me the biggest thing is user facing latency and scaling reaction latency and to me this indicates that requests
+ queue on overloadded edge servers where if there is no scaling then those queued requests take longer to complete is this
+  a valid simplified concluson form rq1 evaluation campaign?
+
+delivery semantics → what/when the controller sees the surge (observability)
+  → when added capacity becomes USABLE relative to the 180 s episode (H1: A 29 < B 59 < C 78 ≈ D 83 s)
+  → the base fleet carries the overload for that gap (compute-bound bottleneck, V1/B1 floor)
+  → requests queue on the saturated edge servers
+  → a tail of requests completes slowly → episode p95 rises ~9× (A ~3–5 s vs C/D ~31–40 s, 7/7 separation)
+  → once capacity arrives, the queue drains → non-surge phases stay clean (H3)

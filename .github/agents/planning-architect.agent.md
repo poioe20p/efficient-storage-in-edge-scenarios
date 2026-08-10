@@ -61,6 +61,7 @@ Present the full plan and **wait for the user to approve** before any file is cr
 - **DO** use the `todo` tool to track plan steps once approved and implementation begins
 - **DO** ground your analysis in the actual codebase — read files, search for patterns, understand existing conventions before proposing changes
 - **DO** consider how the change fits into the existing system architecture and workflow
+- **DO** place temporary one-time files (scratch scripts, one-shot probes, ad-hoc analysis) in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and delete them after they have served their purpose. This is an explicit exception to the approval gate: throwaway scratch files in `temp/` do not require prior approval.
 
 ## Output Format
 

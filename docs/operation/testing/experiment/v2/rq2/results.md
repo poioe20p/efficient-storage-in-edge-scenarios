@@ -1,13 +1,19 @@
 # Results — RQ2 Bottleneck-Aware Scaling
 
-**Date**: 2026-08-04 · **Experiment Plan**: [experiment_plan.md](experiment_plan.md)
+**Date**: 2026-08-05 · **Experiment Plan**: [experiment_plan.md](experiment_plan.md)
 
-> **RQ2 v2 (final evidence):** the 18-run v2 campaign — open-loop driver,
-> 6 cells, `CURL_MAX_TIME=300`/`INFLIGHT_WINDOW=1024`/
-> `DRAIN_S=30`, effect-size statistics at n=3 (Cliff's delta + 3/3 direction
-> consistency; no α claims), sync-cost + relief-flatten — is the final RQ2 evidence. Its timeline,
-> per-cell tables, and judgment (below) fill in as the campaign runs (spec:
-> [`rq2_v2_rework_plan.md`](rq2_v2_rework_plan.md) Phase 5).
+> **RQ2 v2 (final evidence):** the **36-run v2 campaign** — open-loop driver,
+> 6 cells × 6 replicates, `CURL_MAX_TIME=300`/`INFLIGHT_WINDOW=1024`/
+> `DRAIN_S=30`, significance-capable statistics at n=6 (exact MWU, Cliff's
+> delta, 6/6 direction), sync-cost + relief-flatten — **completed mechanically
+> (36/36 exit 0) but is CONFOUNDED by a load-calibration failure**: the
+> open-loop offered load exceeded the platform's sustainable capacity in both
+> episodes, so **no cell operated in a healthy baseline regime**. The
+> pre-registered SC1–SC6 evaluation below is therefore **not a clean
+> validation**; the campaign must be re-calibrated (load / concurrency) and
+> re-run before any thesis conclusion is drawn from it (spec:
+> [`rq2_v2_rework_plan.md`](rq2_v2_rework_plan.md) Phase 5; `results.md` §v2
+> Judgment, Root Causes).
 >
 > **v1 / supporting record:** the 18-run campaign (2026-08-04) is retained in
 > the **Appendix** with its caveats (latency-coupled driver, 30 s censoring,
@@ -15,77 +21,225 @@
 
 ## RQ2 v2 (final evidence)
 
-**Status:** ⏳ Planned — Phase 4 docs complete; Phase 5 campaign execution
-pending on the cloud VM (`rq2_v2_rework_plan.md` Phase 5).
+**Status:** ⚠️ **Completed (36/36 exit 0, all gates passed) but confounded** —
+see the v2 Judgment: the open-loop load exceeded platform capacity in both
+episodes, inverting the data-bound cross-over and leaving no healthy baseline.
+Analysis date 2026-08-05 on `cloud-vm-rq2` (run folders archived there; only
+analysis outputs are retained locally).
 
 **Config:** open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`, `CURL_MAX_TIME=300`,
-`INFLIGHT_WINDOW=1024`, `DRAIN_S=30`); n = 3 per cell; 6 cells × 3 replicates =
-18 runs; 3 counterbalanced blocks (seeds 2001–2003, orders in
-[`counterbalance_order_v2.csv`](counterbalance_order_v2.csv)); **per-run driver
-self-test gate** (enforced inside `run_traffic()` — fail-fast on every run);
-effect-size statistics at n=3 (no α claims); `sync_cost.csv` +
-`relief_flatten.csv` per run.
+`INFLIGHT_WINDOW=1024`, `DRAIN_S=30`); **n = 6 per cell; 6 cells × 6 replicates
+= 36 runs**; 6 counterbalanced blocks (seeds 2001–2006, orders in
+[`counterbalance_order_v2.csv`](counterbalance_order_v2.csv)); episode rate
+3.0 req/s/client (cb) / 1.5 req/s/client (db), 48 active clients; **per-run
+driver self-test gate** (fail-fast on every run); significance-capable
+statistics at n=6 (exact MWU, min p = 0.0022; Cliff's delta; 6/6 direction);
+`sync_cost.csv` + `relief_flatten.csv` per run.
 
 ### v2 Run Timeline
 
 | Run | Date | Status | Cumulative Analysis | Conclusions | Changes Made | Expectations for This Run |
 |-----|------|--------|---------------------|-------------|--------------|--------------------------|
-| Pre-flight (Phase-5 gates): driver selftest (host + netns), concurrency stress, G2 calibration (`ba_cb`, `ba_db`), sync-mode regression | — | ⏳ | — | — | — | All gates pass before any block starts |
-| Block 1 — 6 runs (seed 2001) | — | ⏳ | — | — | — | See `counterbalance_order_v2.csv` block 1 |
-| Block 2 — 6 runs (seed 2002) | — | ⏳ | — | — | — | Replicate consistency |
-| Block 3 — 6 runs (seed 2003) | — | ⏳ | — | — | — | Final replicate confirmation |
+| Pre-flight gates: driver selftest, concurrency stress, G2 calibration (`ba_cb`, `ba_db`), sync regression | 2026-08-04 | ⚠️ | — | Gates passed; **calibration runs already show the overload that later dominates the campaign** (`ba_cb_cal2` ep p50 ≈ 3.1 s / 15 % timeout; `ba_db_cal2` ep p50 ≈ 67 s / 22 % timeout) | — (baseline of the 36-run v2 campaign) | All gates pass; rates tuned to ≤ 3 req/s/client so `window/rate > 300 s` |
+| Block 1 — 6 runs (seed 2001) | 2026-08-04 22:07 – 08-05 01:39 | ⚠️ | Calibration overload signal | All runs exit 0; every cell overloaded (ep timeout 8–50 %); data-bound storage path at 3–11 s db latency | — | Replicate the calibration's health |
+| Block 2 — 6 runs (seed 2002) | 2026-08-05 02:08–04:32 | ⚠️ | Block 1: universal overload, not cell-specific | Overload reproducible; `ba_db` consistently the least-degraded cell | — | Replicate consistency |
+| Block 3 — 6 runs (seed 2003) | 2026-08-05 05:02–07:24 | ⚠️ | Blocks 1–2: aligned arms are not healthy references | Cross-over not reproduced; `sf_db` (aligned) timeout 43–53 % | — | Replicate-3 confirmation |
+| Block 4 — 6 runs (seed 2004) | 2026-08-05 07:54–10:17 | ⚠️ | 3 blocks: `ba_db` robust, fixed arms inverted in db | 6/6 `ba_db` lowest timeout in db | — | Replicate consistency |
+| Block 5 — 6 runs (seed 2005) | 2026-08-05 10:45–13:08 | ⚠️ | 4 blocks: overload stable across seeds | `sf_db` 43–53 % vs `cf_db` 16–22 % timeout (inverted) | — | Replicate consistency |
+| Block 6 — 6 runs (seed 2006) | 2026-08-05 13:35–15:58 | ⚠️ | 5 blocks: full-campaign overload picture | 36/36 exit 0; campaign confounded; re-run required | — | Final replicate confirmation |
 
-Status legend: ✅ = run valid and passed its gates · ⏳ = planned / not run ·
-⚠️ = valid run with expected H2 degradation (mis-aligned arms) · ❌ = invalid.
+Status legend: ✅ = run valid and passed its gates · ⚠️ = run valid but the
+cell is **not** a clean health reference (overload regime) · ❌ = invalid.
 
 ### v2 Measurements — Per-Cell
 
 Measurements are presented without judgment (all judgment is in **v2
-Judgment**). All values are episode-phase medians/rates unless noted; latency
-in ms. **Unified denominators:** offered = all rows; timeout rate =
+Judgment**). All values are episode-phase medians over the 6 replicates unless
+noted. **Unified denominators:** offered = all rows; timeout rate =
 `status=timeout`/offered (the **primary degradation statistic**, defined for
 every run); failure rate = completed & `http_status` not in (`"200"`, `""`)
-/ completed; dropped/canceled are reported separately and **excluded from
-latency and failure**. Latency percentiles are descriptive only (censoring
-flag where the 300 s cap binds); no censored value enters MWU. Full per-run
-rows: `analysis/campaign_dataset.csv` (rebuilt for v2) + `stats_summary.csv`
-(`rq2v2_p2_03_stats.py`).
+/ completed; dropped/canceled reported separately and **excluded from latency
+and failure**. **Latency is reported in seconds** (the v2 dataset stores
+seconds in the `ep_pXX_ms` columns, v1 convention; the `CURL_MAX_TIME=300` s
+cap is the censoring bound, not 30 s). Latency percentiles are descriptive
+only; no censored value enters MWU. Full per-run rows:
+`analysis/campaign_dataset.csv` (v2, 36 rows) + `stats_summary.csv`
+(`rq2v2_p2_03_stats.py`). Graphs: `graphs/20260805/`.
 
-| Cell | r1 | r2 | r3 |
-|---|--:|--:|--:|
-| `cf_cb` — offered / completed / timeout% / failure% / p50 / p95 / p99 / node-min / TTFT | … | … | … | … | … |
-| `cf_db` | … | … | … | … | … |
-| `sf_cb` | … | … | … | … | … |
-| `sf_db` | … | … | … | … | … |
-| `ba_cb` | … | … | … |
-| `ba_db` | … | … | … |
+| Cell | actions (c/s) | budget used (c/s, per LAN max) | classifier-vs-episode agree % | relief (recovered/actions) | median recovery (s) | node-min/1000 (c + s) | episode offered | timeout % | failure % | ep p50 (s) | ep p95 (s) | ep p99 (s) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `cf_cb` | 8 / 0 | 4 / 0 | 50.9 | 5 / 8 | 65.2 | 1.579 + 0.000 | 86 112 | 19.1 | 1.52 | 3.0 | 18.3 | 45.6 |
+| `cf_db` | 8 / 0 | 4 / 0 | 78.6 | 6 / 8 | 85.0 | 2.841 + 0.000 | 43 114 | 19.7 | 4.98 | 108.1 | 207.4 | 254.4 |
+| `sf_cb` | 0 / 1 | 0 / 0 | 63.6 | 0 / 1 | — | 0.000 + 0.088 | 86 113 | 23.0 | 0.53 | 3.3 | 18.9 | 60.7 |
+| `sf_db` | 0 / 6 | 0 / 4 | 77.6 | 4 / 6 | 75.0 | 0.000 + 2.404 | 43 125 | 49.8 | 10.97 | 19.9 | 95.0 | 151.8 |
+| `ba_cb` | 8 / 1 | 4 / 1 | 50.8 | 6 / 9 | 35.1 | 1.545 + 0.104 | 86 113 | 18.8 | 1.64 | 2.9 | 18.1 | 49.9 |
+| `ba_db` | 8 / 8 | 4 / 4 | 77.9 | 6 / 16 | 39.8 | 3.269 + 2.543 | 43 126 | 10.3 | 1.25 | 2.6 | 16.1 | 27.7 |
 
-_Per-cell subsections (one per cell, mirroring the v1 appendix metric rows)
-are added as the campaign completes._
+Per-run episode timeout % (all 6 replicates) — the primary degradation statistic:
+
+| Cell | r1 | r2 | r3 | r4 | r5 | r6 |
+|---|---:|---:|---:|---:|---:|---:|
+| `cf_cb` | 7.24 | 14.12 | 15.38 | 22.80 | 23.25 | 28.04 |
+| `cf_db` | 15.61 | 16.86 | 19.17 | 20.29 | 22.20 | 22.35 |
+| `sf_cb` | 14.01 | 17.98 | 19.08 | 26.85 | 34.88 | 37.98 |
+| `sf_db` | 43.20 | 45.29 | 48.66 | 50.95 | 51.08 | 53.26 |
+| `ba_cb` | 6.90 | 15.10 | 16.41 | 21.29 | 21.95 | 24.88 |
+| `ba_db` | 8.65 | 9.14 | 9.55 | 11.11 | 12.74 | 12.86 |
+
+Per-run episode failure % (completed-only):
+
+| Cell | r1 | r2 | r3 | r4 | r5 | r6 |
+|---|---:|---:|---:|---:|---:|---:|
+| `cf_cb` | 0.37 | 0.59 | 1.15 | 1.90 | 3.49 | 3.56 |
+| `cf_db` | 0.07 | 0.41 | 1.56 | 8.40 | 13.28 | 17.62 |
+| `sf_cb` | 0.09 | 0.15 | 0.15 | 0.90 | 1.74 | 2.47 |
+| `sf_db` | 6.94 | 7.33 | 10.77 | 11.18 | 11.75 | 12.35 |
+| `ba_cb` | 0.50 | 0.93 | 1.51 | 1.77 | 1.85 | 2.26 |
+| `ba_db` | 0.07 | 1.13 | 1.24 | 1.27 | 1.54 | 1.66 |
+
+v2-only metrics (medians over runs that produced the artifact):
+
+| Cell | sync members (n) | sync duration (s) | storage CPU during sync (%) | relief-flatten actions | plateau within window | recovered below threshold | relief signal |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `ba_db` | 10 | 9.9–10.2 | 62–68 | 16 | 9–11 | 4–11 | 10–11 |
+| `sf_db` | 7–9 | 9.8–10.4 | 54–70 | 5–7 | 2–4 | 2–4 | 3–4 |
+| `ba_cb` | 3–4 | 2.9–9.5 | 13–20 | 9–10 | 5–7 | 3–7 | 5–7 |
+| `cf_cb` / `cf_db` | 2 | 3.6–7.7 | — | 7–8 | 5–8 | 3–8 | 5–8 |
+| `sf_cb` | 2–3 | 4.9–9.7 | 13–21 | 0–1 | 0 | 0 | 0 |
 
 ### v2 Judgment
 
-Template — filled per run/campaign as results land (structure mirrors the v1
-appendix):
+**Headline: the 36-run campaign is CONFOUNDED by a load-calibration failure,
+not a clean evaluation.** Every conclusion below is framed as agreement or
+divergence from the plan's expectations (`experiment_plan.md` §5, SC1–SC6).
 
-1. **Artifact + decision-log contract** — incl. open-loop knobs in every env
-   snapshot, and `reason="strict_suppressed"` where the committed tier
-   suppressed a fire in `ba-strict` cells.
-2. **Episode induction valid (G2).**
-3. **Fixed-arm suppression** (cf/sf never select the forbidden tier).
-4. **Bottleneck-aware selects the pressured tier** — agreement above chance;
-   classifier asymmetry reported honestly (cb ≈ chance, db strong).
-5. **Budget binds** (4/tier/LAN; caps 6/6 above).
-6. **Relief in the targeted tier** — below-threshold recovery **plus** the
-   relief-flatten secondary signal (`relief_flatten.csv`).
-7. **Scale-down + fire-keyed protection (T9.8).**
-8. **Cross-over + open-loop contrast** — offered ≈ completed across arms
-   (no latency-coupled load divergence); per-run `timeout_rate` is the primary
-   degradation statistic; no 30 s cap artifact in p99.
-9. **Efficiency / node-minutes** — claim narrowed to "robust, not cheapest".
-10. **Stats** — MWU + Cliff's delta on all pre-registered primary pairs with
-    missing-value exclusions recorded; **sync-cost measured** per added storage
-    member (`sync_cost.csv`).
+**The overload (evidence):**
+- Offered episode rate = 48 clients × 3.0 (cb) / 1.5 (db) req/s = **144 / 72
+  req/s**. Sustained service rate during the episode: `cf_cb` ≈ 119 req/s
+  (86 112 offered / 600 s, 15–28 % timeouts), `sf_db` ≈ 34 req/s, `cf_db` ≈
+  36 req/s, `ba_db` ≈ 62 req/s. Offered **exceeds** capacity in both episodes.
+- The platform is **healthy at the lower rates of the same run**: baseline /
+  `demand_drop` (1.0 req/s/client = 48 req/s) show p50 ≈ 7 ms, while the
+  episode (144 req/s) shows p50 ≈ 2.8 s in the same run (`cf_cb_1`). This is
+  queue-overload, not a permanent regression.
+- The **G2 calibration runs themselves already showed the overload**
+  (`ba_cb_cal2` ep p50 ≈ 3.1 s / 15 % timeout; `ba_db_cal2` ep p50 ≈ 67 s /
+  22 % timeout) and were accepted — the calibration validated the
+  client-side `window/rate > 300 s` (drop-avoidance) condition but **not the
+  platform's ability to serve the offered load**.
+- Data-bound storage path: median `avg_time_db_ms` = **3 s (`ba_db`) to 11 s
+  (`sf_db`)** during the episode (v1's data-bound episode was ~100–250 ms) —
+  MongoDB saturated under the open-loop driver's concurrency (up to
+  `INFLIGHT_WINDOW=1024` per client vs the sync driver's 1 in-flight/client).
+- **0× `NotPrimaryOrSecondary`** across all 36 runs (the data-path fix holds)
+  and no controller restart — so the saturation is genuine capacity, not a
+  read-preference defect.
+
+**Criterion-by-criterion (per plan §5):**
+
+1. **Artifact + decision-log contract — ✅ met (36/36).** All artifacts present
+   and non-empty per LAN; full 20-column `scale_up` rows; open-loop knobs in
+   every env snapshot; one `scale_up` row per evaluated window.
+2. **Episode induction valid (G2) — ✅ met (36/36).** Median proc-vs-db
+   dominance matches every episode label (independent `window_log` validator).
+3. **Fixed-arm suppression — ✅ met.** `cf` never selects storage (cf_cb/cf_db
+   storage = 0), `sf` never selects compute (sf_cb/sf_db compute = 0);
+   suppressed fires still logged with `*_fired`/`rejected_action`.
+4. **Bottleneck-aware selects the pressured tier (SC4) — ✅ met (as
+   reported).** Classifier-vs-episode agreement: `ba_db` 77.9 % (6/6 above
+   chance), `ba_cb` 50.8 % ≈ chance — the honest cb/db asymmetry
+   pre-registered in the plan. `ba` selects compute in cb (8/LAN) and both
+   tiers in db (8+8/LAN).
+5. **Budget binds (SC5 mechanics) — ✅ met.** 4/tier/LAN exhausted in every
+   scaled cell (cf 4/0, sf 0/4 in db, ba 4/4 in db, ba 4/1 in cb); caps 6/6
+   above the budget; `reason="budget_exhausted"` reachable; T9.8 fire-keyed
+   scale-down protection OK in all runs.
+6. **Relief in the targeted tier — ⚠️ inconclusive under overload.** In-tier
+   recovery 5–6/8 (cf cells), 4/6 (`sf_db`), 6/16 (`ba_db`); relief-flatten
+   `relief_signal` 63–69 % of actions in `ba_db`/`sf_db` and 56–70 % in
+   `ba_cb`/`cf_cb`; `sf_cb` shows none (0–1 actions). Because every cell is
+   overloaded, "relief" (score below threshold / plateau) does not translate
+   into service health (episode p50 ≥ 2.6 s even in the best cell).
+7. **Scale-down + fire-keyed protection (T9.8) — ✅ met.** Scale-down present
+   where the allowed tier scaled; no cooldown-gated violation in any run.
+8. **Cross-over + open-loop contrast (SC1) — ❌ NOT reproduced.** The
+   pre-registered headline ("aligned beats mis-aligned on p95 + timeout_rate,
+   6/6, Cliff's δ ≥ 0.6") fails:
+   - **cb**: `cf` (19.1 %) vs `sf` (23.0 %) timeout — direction correct but
+     small (MWU p = 0.394, δ = −0.33; not 6/6).
+   - **db**: **INVERTED** — aligned `sf_db` 49.8 % vs mis-aligned `cf_db`
+     19.7 % timeout, 6/6 in the **wrong** direction (MWU p = 0.0022, δ = 1.0).
+     The aligned storage-first arm is the worst cell; `cf_db`'s compute
+     scale-out keeps requests in-flight (completing slowly, p50 = 108 s)
+     instead of timing out. The v1 cross-over direction does **not** survive
+     the open-loop overload.
+   - `offered ≈ completed + timeout` across arms confirms the open-loop
+     driver preserved the offered load (no latency-coupled divergence) — the
+     G1 confound is genuinely removed, which is exactly why the overload is
+     now visible.
+9. **Efficiency / node-minutes (SC6) — ❌ as written → pre-registered
+   dual-budget finding applies.** `ba_db` node-minutes/1000 = 5.812 vs aligned
+   `sf_db` 2.404 and mis-aligned `cf_db` 2.841 — `ba` spends **both** budgets
+   (8 compute + 8 storage in db), matching the pre-campaign evidence and the
+   plan §7.7 pre-registered rule. Per that rule this is reported **as a
+   finding, not a shortfall**: `ba_db` is the only cell that keeps timeout ≤
+   12.9 % in db (aligned `sf_db` ≥ 43 %) and p50 ≤ 2.6 s, so `ba` delivers
+   quality **without knowing the episode**, at a **budget-bounded** resource
+   cost (4/tier/LAN — the same ceiling each fixed arm hits on its own tier).
+   The efficiency narrative reframes to "avoids the mis-configured outcome at
+   a bounded, budget-capped cost", exactly as pre-registered.
+10. **Stats — ⚠️ reported, but interpretability limited.** Exact MWU at n=6
+    reached significance on several pairs (min p = 0.0022), but the headline
+    pairs are either not significant (cb timeout, p = 0.394) or significant in
+    the **anti-hypothesis** direction (db aligned-vs-misaligned, p = 0.0022,
+    inverted). Significance without a healthy baseline cannot support the
+    plan's claims. `sync_cost` measured: storage initial-sync ≈ 10 s at 54–70 %
+    storage CPU in data-bound cells — a real, quantified action cost.
+
+**Confirmed (multi-run) vs hypothesis (single-run):**
+- **Confirmed (36/36):** open-loop driver preserves offered load; episode
+  induction valid; budget binds; T9.8 intact; 0× NotPrimary; no restart;
+  data-bound storage path saturates under open-loop concurrency (3–11 s db
+  latency).
+- **Confirmed (6/6 each):** `ba_db` is the least-degraded data-bound cell on
+  timeout (8.7–12.9 %) and failure (≤ 1.66 %); `sf_db` (aligned) is the worst
+  (43–53 % timeout) — a robust inversion of the plan's SC1 expectation.
+- **Hypothesis:** the exact mechanism of the ~120 req/s compute-bound ceiling
+  (CPU 43 % at 0.4 ms service time — a non-CPU bottleneck, likely WAN/network
+  emulation or aggregator serialization) and the storage saturation driver
+  need targeted investigation before re-running.
+
+### v2 Root Causes
+
+| # | Issue | Impact | Status |
+|---|-------|--------|--------|
+| 1 | **Open-loop load calibration failure** — episode rates 3.0/1.5 req/s/client (144/72 req/s) exceed platform capacity (~119 cb, ~35–62 db req/s); calibration validated only the drop-free window, not service capacity | All cells overloaded (ep timeout 7–53 %); no healthy baseline; SC1/SC2/SC6 uninterpretable as pre-registered | Confirmed (36/36 + calibration runs) — **must be fixed before re-run** |
+| 2 | **Storage tier saturated under open-loop concurrency** — db latency 3–11 s vs v1's ~100–250 ms; `STORAGE_CPUS=0.08` + pool 6 cannot serve the open-loop in-flight concurrency | Data-bound episode collapses; aligned `sf_db` 49.8 % timeout; storage scale-out provides little relief | Confirmed (db cells, 6/6) — candidate fix: lower episode rate, raise storage CPU/pool, or bound concurrency |
+| 3 | **Non-CPU compute-bound ceiling (~120 req/s at 43 % CPU / 0.4 ms service)** — mechanism unidentified | Compute-bound overload even with headroom | Hypothesis — needs targeted capacity probe |
+| 4 | **2/6 `sf_cb` runs spawn zero nodes** (storage signal never fires in cb under open-loop) | `sf_cb` relief absent in 2 runs; mis-aligned arm cannot even act | Expected H2 variant — documented |
+
+### v2 Next Actions
+
+1. **Do not treat this campaign as final RQ2 evidence.** Re-calibrate the
+   load: lower episode rates (target a healthy aligned-arm baseline, e.g.
+   ≤ 1.0 req/s/client cb) **and** validate service capacity in the G2 gate
+   (not just the drop-free window); consider bounding open-loop concurrency
+   or raising `STORAGE_CPUS`/pool for the data-bound episode.
+2. **Investigate the ~120 req/s compute-bound ceiling** (WAN emulation,
+   aggregator, VIP flow pinning) before re-running — a capacity probe at
+   0.5/1.0/2.0/3.0 req/s/client on `cf_cb`.
+3. **Re-run the 36-run campaign** on the re-calibrated load; only then
+   evaluate SC1–SC6 as pre-registered (incl. the SC6 dual-budget rule).
+4. Keep this dataset as the **overload-characterization record**: it proves
+   the open-loop driver's confound-removal and bounds the platform's capacity
+   envelope.
+5. Update `post_run_analysis.md` after the re-run.
+
+### v2 Changelog
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-08-05 | 36-run campaign analyzed on `cloud-vm-rq2`; dataset + stats + graphs produced; results recorded | Campaign mechanically complete but confounded by load calibration — full SC1–SC6 evaluation with the overload finding |
 
 ---
 

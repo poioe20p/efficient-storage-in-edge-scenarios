@@ -39,6 +39,7 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 
 - Run and monitor the experiment's runs exactly as its plan specifies.
 - Run all experiment commands inside `ssh <HOST>` from `~/efficient-storage-in-edge-scenarios`.
+- **Temporary one-time files** (scratch scripts, one-shot probes, ad-hoc analysis) must be placed in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and deleted after they have served their purpose.
 - Do not run experiment shell commands on the Windows host unless the user explicitly asks for a host-only check that does not affect the run.
 - Prefer `source/scripts/testing/run_experiment.sh` unless the plan or user specifies another command under `source/scripts/testing/`.
 - For the standard full path, prefer one combined VM command via non-interactive sudo, e.g. `sudo -n make setup_network create_clients setup_test_data run_experiment RUN_LABEL=<label> SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1`.
@@ -173,7 +174,7 @@ If any gate fails, report the specific failure and wait for the user before laun
 - Do not modify files inside the active run folder.
 - Prefer non-interactive commands in general. Avoid workflows that wait for user input when a non-interactive equivalent exists.
 - Do not send `Ctrl+C`, cleanup commands, container restarts, or other process-control actions while the run is active unless the stop/restart rules below explicitly authorize intervention.
-- `metrics_stats.py` appends summary CSVs. Run it only after completion, or on a copied snapshot outside the active run folder when the live plan explicitly allows snapshot-based analysis.
+- `metrics_stats.py` appends summary CSVs (append mode), so never run it during an active run. Analysis tools — including `metrics_stats.py`, summaries, and metrics comparisons — are the **Edge Experiment Analyzer**'s job and run on the hosting VM only after completion. If the live plan explicitly allows snapshot-based analysis, the snapshot stays on the hosting VM (never copied locally) and is deleted after that analysis is done.
 - When a checkpoint indicates likely failure, explain the evidence and recommend continue, stop, or restart per the plan's criteria. Do not act unless the stop/restart rules below authorize intervention.
 
 ## Stop And Restart Rules
@@ -190,18 +191,31 @@ If any gate fails, report the specific failure and wait for the user before laun
 - Edits are allowed only between runs and only within the scope the plan or user approved.
 - Prefer the smallest change that follows the plan, and run the narrowest validation before the next run.
 
+## Base Requirements Gate (fail-fast)
+
+Every run is checked against `docs/operation/testing/testing_requirements.md`
+— the base-requirements floor. After the watchdog reports completion (exit 0),
+before handoff to the analyzer, check the hard gates the artifacts immediately
+show: mechanism fires (M1), usable capacity (M2), provenance snapshots present
+(D3), data-path clean (D1), no mid-run restart/crash (D2).
+
+- If a hard gate is clearly missed, **do not silently start the next run** —
+  surface the failure and wait; the plan may define a retry/rework path.
+- Leave benefit and workload-validity judgments to the analyzer — the runner
+  checks only what the run artifacts directly show.
+
 ## Post-Run Handoff
 
 1. Resolve the completed run folder under `source/scripts/testing/metrics/`.
-2. Copy the run folder back to the local machine with `scp`/`rsync` unless the user asked to keep it only on the cloud host. Verify the local copy before deleting the remote folder to reclaim space.
-3. For cleanup of transient request CSVs and controller logs, summaries, and metrics comparisons, hand off to the **Edge Experiment Analyzer** agent.
+2. Keep the run folder on the hosting VM — run artifacts never leave the VM. Do **not** copy the run folder back to the local machine and never delete remote run folders; they are the campaign archive. Only analysis outputs (summary CSVs, rollups, graphs, summaries) are synced back to the local experiment folder, by the **Edge Experiment Analyzer** agent.
+3. Hand off to the **Edge Experiment Analyzer** agent for cleanup of transient request CSVs and controller logs, and for producing summaries and metrics comparisons.
 
 ## Output Format
 
 - Keep run reports concrete and operational.
 - When proposing or confirming edits, list exact files and expected effects.
 - During live monitoring, report only the plan's checkpoint question, the evidence, and the recommended action.
-- After a run, summarize: whether it completed, the next run per the plan, and copy-back/retention status.
+- After a run, summarize: whether it completed, the next run per the plan, and the retention status (run folder retained on the hosting VM; only analysis outputs sync back to the local repo).
 
 ## Lessons Learned
 

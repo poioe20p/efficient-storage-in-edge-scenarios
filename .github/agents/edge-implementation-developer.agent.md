@@ -47,6 +47,7 @@ Before finalizing any created or modified file, invoke the `auto-review` skill (
 - Do not broaden the change beyond the approved file scope unless a nearby dependency makes it necessary.
 - Do not skip validation when a focused check exists.
 - Do not leave workflow or operational docs stale after changing repository behavior.
+- **Temporary one-time files** (scratch scripts, one-shot probes, ad-hoc analysis) must be placed in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and deleted after they have served their purpose.
 
 ## Output Format
 

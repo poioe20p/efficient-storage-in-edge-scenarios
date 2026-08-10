@@ -80,26 +80,65 @@ All runs in the cloud VM at `~/efficient-storage-in-edge-scenarios`:
 
 ```bash
 ssh cloud-vm-rq2 "cd ~/efficient-storage-in-edge-scenarios && \
-  nohup sudo -n STORAGE_CPUS=0.08 EDGE_CPUS=0.15 WAN_RTT_MS=185 RANDOM_SEED=42 \
+  nohup sudo -n STORAGE_CPUS=<SC> EDGE_CPUS=<EC> WAN_RTT_MS=185 RANDOM_SEED=42 \
     EDGE_MONGO_READ_PREFERENCE=secondaryPreferred \
-    EDGE_MONGO_MAX_POOL_SIZE=6 \
+    EDGE_MONGO_MAX_POOL_SIZE=12 \
     VIP_DATA_PER_CONNECTION_FLOWS=1 \
     make -C source/scripts setup_network create_clients setup_test_data run_experiment \
     OSKEN_ENV_OVERRIDE_FILE=../../rq2_env/<ENV_FILE> \
     RUN_LABEL=<LABEL> \
     PHASES_CONFIG=testing/phases_override/phases_rq2_<episode>.json \
     CLIENTS=24 CONTENT_ITEMS=3000 USERS=100 \
-    DATA_SEED=42 CURL_MAX_TIME=30 \
+    DATA_SEED=42 CURL_MAX_TIME=300 \
+    TRAFFIC_DRIVER_MODE=open_loop INFLIGHT_WINDOW=1024 DRAIN_S=30 \
     SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1 \
     > /tmp/<LABEL>.log 2>&1 &"
 ```
+
+> **Calibrated per-cell CPU config (2026-08-06, Series C — supersedes the
+> pre-calibration "identical across all runs" 0.15/0.08):** the storage-first
+> serving path (sf cells and the ba data-bound cell) needs
+> `EDGE_CPUS=0.30` + `STORAGE_CPUS=0.15` to serve the calibrated 72 req/s
+> healthily (probe G-C4 PASS: timeout 0.02 %, p50 8.4 ms, db 2.4 ms); the
+> compute-first path (cf cells, ba compute-bound cell) keeps 0.15/0.08. See
+> `recalibration_probe_plan.md` §8 for the full gate evidence.
+
+| Cell | `<ENV_FILE>` | `EDGE_CPUS` | `STORAGE_CPUS` | Status |
+|---|---|---|---|---|
+| `cf_cb` | `rq2_compute_first.env` | 0.15 | 0.08 | ✅ re-verified @ 1.5 post-fix (0.70 %) |
+| `cf_db` | `rq2_compute_first.env` | **0.30** | **0.15** | ✅ re-verified @ 1.5 post-fix (0.49 %) — **CORRECTED 2026-08-06**: was 0.15/0.08 → 22.21 % collapse (storage tier cannot serve the db episode at 0.08) |
+| `sf_cb` | `rq2_storage_first.env` | **0.30** | **0.15** | ✅ re-verified @ 1.5 post-fix (0.00 %, clean) |
+| `sf_db` | `rq2_storage_first.env` | **0.30** | **0.15** | ✅ @ 1.5 PASS (G-C4) |
+| `ba_cb` | `rq2_bottleneck_aware.env` | 0.15 | 0.08 | ✅ @ 1.5 WITH readiness gate (2026-08-06): 0.46 % + 1.12 % (2 runs) — PASS ≤ 5 %; admission fast-fails gone, residual 300 s-timeouts contained (see `ba_cb_anomaly_claims.md`) |
+| `ba_db` | `rq2_bottleneck_aware.env` | **0.30** | **0.15** | ✅ re-verified @ 1.5 post-fix (0.08 %) |
+
+> **Episode-based config rule (2026-08-06):** CPU config follows the **episode**, not the arm. Data-bound cells (`cf_db`, `sf_db`, `ba_db`) all need `0.30/0.15` because the db episode's data path is the storage tier (0.08 CPU cannot serve 72 req/s — cf_db at 0.15/0.08 collapsed 22.21 %; at 0.30/0.15 → 0.49 %). Compute-bound cells: `cf_cb`/`ba_cb` 0.15/0.08, `sf_cb` 0.30/0.15 (single serving server).
+
+> **Readiness admission gate (2026-08-06, decision b — ba_cb artifact mitigation):**
+> all three arm env files now set `READINESS_PROPAGATION=direct` +
+> `EDGE_APP_READY_EVENT=1` (+ probe knobs), admitting a spawned compute
+> backend into the VIP pool **only once it is actually serving** (`app_ready`
+> after a real MongoDB ping + bound socket). Mirrors RQ3's direct gate WITHOUT
+> RQ3 measurement instrumentation — `VIP_FLOW_ISOLATION` /
+> `VIP_SERVER_PER_CONNECTION_FLOWS` / `EDGE_FLOW_ISOLATION` stay unset (0), so
+> per-client D5 `VIP_SERVER` flows are preserved. Purely env-level (no image
+> rebuild; the controller propagates `EDGE_APP_READY_EVENT` to dynamic spawns
+> via `compute_node_manager.py`). Targets the ba_cb admission-window `000`
+> fast-fails (freshly-spawned backends admitted before they serve).
 
 - **The three data-path vars are REQUIRED on the shell** (static
   `edge_server_n1/n2` read them at `setup_network`): without them the static
   edges silently revert to the pre-fix path — this is exactly what invalidated
   the first Block-1 set (see the note at the top of this file). They are also
   set in each arm env file (verified) so **dynamic** spawns inherit them via
-  the controller env.
+  the controller env. `EDGE_MONGO_MAX_POOL_SIZE` is now **12** in all three
+  arm env files (2026-08-06, pool 6→12 calibration — see
+  `recalibration_probe_plan.md` §8).
+- **`EDGE_CPUS` / `STORAGE_CPUS` are now PER-CELL** (2026-08-06): the storage-
+  first serving path requires 0.30/0.15, the compute-first path 0.15/0.08
+  (see the per-cell table above). Do NOT launch all cells with identical
+  CPU vars — that was the pre-calibration config that confounded the db
+  serving path at 72 req/s.
 - `OSKEN_ENV_OVERRIDE_FILE` is resolved relative to `source/scripts` (make
   cwd). The command above is the **VM form**: the per-arm env files are synced
   to `~/efficient-storage-in-edge-scenarios/rq2_env/`, so the path is
@@ -344,9 +383,11 @@ calibration re-runs.
 ## 10. RQ2 v2 matrix (final evidence — 36 runs)
 
 This section **supersedes §1–§9 as the primary RQ2 run configuration**; the
-36-run v2 campaign is the final thesis evidence (n=6, 2026-08-04 scope
+36-run v2 campaign is the primary evidence record (n=6, 2026-08-04 scope
 upgrade). The 18-run v1 campaign remains the supporting record. Spec:
-`rq2_v2_rework_plan.md` (Phases 1–3 implemented; Phase 5 in execution).
+`rq2_v2_rework_plan.md` (Phases 1–3 implemented; Phase 5 **executed 2026-08-05**
+— 36/36 runs completed but **confounded by load calibration**, see
+`results.md` v2 Judgment; re-run pending re-calibration).
 
 ### 10.1 Structure
 
@@ -377,7 +418,10 @@ seed on collision until distinct). The verified final orders are recorded in
 the v1 `counterbalance_order.csv` is **never overwritten**). `RANDOM_SEED=42`
 remains the traffic seed **base**; in open-loop mode each per-netns worker
 seeds `random.seed(base + ns_index)` (per-client request-type sequences stay
-distinct). The analyst audits order from run-folder names;
+distinct). **Deliberate paired design:** the traffic seed is fixed at 42 across
+all runs so every cell/replicate receives the **identical offered load**;
+replicate variance therefore reflects platform response, not load-generator
+sampling, and the arm comparison is perfectly matched on load. The analyst audits order from run-folder names;
 `rq2_decision_analysis.py` reports each run's cell but does **not** check
 block order — that is the runner's/analyst's responsibility.
 
@@ -411,11 +455,19 @@ through to the supervisor/workers):
 
 Env mapping (all four files synced to `~/rq2_env/`):
 
-| Cell(s) | `<ENV_FILE>` |
-|---|---|
-| `cf_cb`, `cf_db` | `rq2_compute_first.env` |
-| `sf_cb`, `sf_db` | `rq2_storage_first.env` |
-| `ba_cb`, `ba_db` | `rq2_bottleneck_aware.env` |
+| Cell(s) | `<ENV_FILE>` | `EDGE_CPUS` | `STORAGE_CPUS` |
+|---|---|---|---|
+| `cf_cb` | `rq2_compute_first.env` | 0.15 | 0.08 |
+| `cf_db` | `rq2_compute_first.env` | **0.30** | **0.15** |
+| `sf_cb`, `sf_db` | `rq2_storage_first.env` | **0.30** | **0.15** |
+| `ba_cb` | `rq2_bottleneck_aware.env` | 0.15 | 0.08 |
+| `ba_db` | `rq2_bottleneck_aware.env` | **0.30** | **0.15** |
+
+> **Per-cell CPU config (2026-08-06 calibration, Series C):** the storage-first
+> serving path (sf cells + `ba_db`) is calibrated to `0.30/0.15`; compute-first
+> cells keep `0.15/0.08`. `EDGE_MONGO_MAX_POOL_SIZE=12` in all env files. All
+> main 36 runs carry these per-cell shell vars (see §4 table); do not launch
+> all cells with the same CPU vars.
 
 ### 10.4 Between-run procedure and wall-clock
 

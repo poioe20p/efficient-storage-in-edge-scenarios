@@ -26,18 +26,14 @@ Before deleting controller logs, parse and retain `elasticity_events.csv` and
 `node_lifecycle_timings.csv`. Leave every other file in the run folder intact.
 
 **Analysis location rule**: the full analysis (all graph CLIs + log parsing)
-always runs **where the controller logs reside**. If the run folder is on
-`cloud-vm` and controller logs are still present, run the entire analysis on
-`cloud-vm` — then clean up and optionally copy back. If controller logs have
-already been copied locally (or the run was local to begin with), run the
-analysis locally. Never delete controller logs before the analysis that depends
-on them completes.
-
-When the run folder lives on `cloud-vm`, this skill is also the default remote
-size-reduction step. Unless the user says controller logs still need to be kept
-or the remote folder must remain in place, copy the reduced run folder back to
-the local machine after cleanup, verify the copy succeeded, and then delete the
-remote run folder to reclaim cloud disk space.
+always runs **on the hosting VM where the run folders and controller logs
+reside** (`cloud-vm` for RQ1, `cloud-vm-rq2` for RQ2, `cloud-vm-rq3` for RQ3).
+Run folders are **never copied back** to the local machine and remote run
+folders are **never deleted** — they are the campaign archive. Only the
+**analysis outputs** (summary CSVs, per-run analyzer rollups, `analysis/`
+PNGs, `run_summary.md`) are synced back to the local experiment folder under
+`docs/operation/testing/experiment/<category>/<experiment_name>/`. Never
+delete controller logs before the analysis that depends on them completes.
 
 ## Input Resolution
 
@@ -144,6 +140,17 @@ When controller logs exist, parse them before cleanup and keep both CSV outputs:
 python source/scripts/tools/parse_elasticity_logs.py "<run_dir>/controller_lan1.log" "<run_dir>/controller_lan2.log" -o "<run_dir>/elasticity_events.csv" --timings-output "<run_dir>/node_lifecycle_timings.csv"
 ```
 
+## Base Requirements Gate Check (mandatory, before writing run_summary.md)
+
+Every run is checked against `docs/operation/testing/testing_requirements.md`
+before `run_summary.md` is written. Record each hard gate as met / missed /
+inconclusive with the artifact that supports it; a missed hard gate ⇒ the run
+is **not thesis evidence** (❌) unless the plan pre-registered a justified
+exception. Flags are reported only. Reproducibility (n≥2, consistent direction,
+fixed seeds) applies to every measured claim. Magnitudes are plan-defined —
+never invent thresholds; if the plan lacks a magnitude, state it as a
+limitation.
+
 ## Full Analysis Command Sequence (single run)
 
 When the user requests a "full analysis" or "run the complete analysis" for a
@@ -239,19 +246,11 @@ python -m source.scripts.testing.analysis.rq1.cli.overhead --run-dir "<run_dir>"
 `cli_overview`, `cli_simple_run`, `cli_phase_summary`, `cli_endpoint_breakdown`,
 `cli_scale_down`, `cli_lifecycle_gantt`, `cli_cpu_drivers`, `cli_tdb_drivers`.
 
-**After ALL runs in the RQ1 campaign are analyzed**, regenerate the
-cross-mode comparison graphs as a mandatory final step:
-
-```powershell
-python -m source.scripts.testing.analysis.rq1.scripts.generate_comparison_graphs \
-    --run-dirs-push <push_run1> <push_run2> <push_run3> \
-    --run-dirs-poll5 <poll5_run1> <poll5_run2> <poll5_run3> \
-    --run-dirs-poll12 <poll12_run1> <poll12_run2> <poll12_run3> \
-    --run-dirs-poll30 <poll30_run1> <poll30_run2> <poll30_run3> \
-    --output-dir <comparison_output_dir>
-```
-
-Then archive the comparison PNGs to
+**After ALL runs in the campaign are analyzed**, regenerate the cross-mode
+comparison graphs as a mandatory final step — use the generic, plan-driven
+`cross-mode-comparison` skill (`.github/skills/cross-mode-comparison/SKILL.md`),
+which resolves the arm vocabulary and comparison script from the experiment
+plan. Archive the comparison PNGs to
 `docs/operation/testing/experiment/<category>/<experiment_name>/graphs/comparison/`.
 
 ### Minimum output expected after full analysis
@@ -415,24 +414,27 @@ and the summary is based on the data that will be removed.
   `analysis/`.
 5. Verify that no `controller_lan[0-9].log` files remain in that run folder.
 
-## Cloud Copy-Back Procedure
+## Analysis-Output Sync-Back (cloud run folders)
 
-Use this procedure when the analyzed run folder is on `cloud-vm`.
+Use this procedure when the analyzed run folder is on a cloud VM.
 
-1. Run the **full analysis on `cloud-vm`** first — the controller logs are
-   there and the analysis depends on them. Do NOT copy the folder before
-   running the analysis.
+1. Run the **full analysis on the hosting VM** — the run folders and
+   controller logs are there and the analysis depends on them. Do NOT copy any
+   run folder before running the analysis.
 2. After the full analysis (including `elasticity_events.csv` and
    `node_lifecycle_timings.csv` from log parsing) is complete, run the cleanup
-   procedure above to delete `controller_lan[0-9].log`.
-3. Copy the reduced run folder (with all retained artifacts and `analysis/`
-   PNGs) back to the local machine with `scp`, `rsync`, or a similar tool.
-4. Verify the local copy exists and contains the expected summary, CSVs, and
-   `analysis/` PNGs.
-5. Unless the user asked to retain the remote copy, delete the remote run
-   folder only after the local copy is verified.
-6. If transfer verification fails, keep the remote run folder and report the
-   failure instead of deleting it.
+   procedure above to delete `controller_lan[0-9].log` on the VM.
+3. Sync only the **analysis outputs** back to the local experiment folder with
+   `scp`, `rsync`, or a similar tool: `run_summary.md`, summary CSVs
+   (`latency_summary.csv`, `resource_summary.csv`, `elasticity_events.csv`,
+   `node_lifecycle_timings.csv`), per-run analyzer rollups, and the
+   `analysis/` PNGs →
+   `docs/operation/testing/experiment/<category>/<experiment_name>/`.
+4. Verify the local copies exist and contain the expected summaries, CSVs, and
+   PNGs.
+5. The remote run folder is **always retained** on the hosting VM (campaign
+   archive) — it is never deleted.
+6. If the sync-back fails, re-run it; never delete the remote run folder.
 
 ## Completion Checks
 
@@ -454,7 +456,7 @@ Use this procedure when the analyzed run folder is on `cloud-vm`.
 - `analysis/summary.md` exists when the corresponding analysis CLIs were runnable.
 - The transient client request CSV and controller log files have been removed
   from the run folder after the summary was produced.
-- If the cloud copy-back workflow was used, the verified local copy exists and
-  the remote run folder was deleted only when the user did not request remote
-  retention.
+- If the analysis-output sync-back workflow was used, the verified local
+  analysis outputs exist under the experiment folder; the remote run folders
+  remain on the hosting VM (retained archive).
 - No unrelated files were deleted.

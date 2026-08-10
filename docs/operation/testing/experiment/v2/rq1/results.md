@@ -6,15 +6,19 @@
 > under the open-loop driver, and applies the pre-registered statistics
 > (factorial-edge MWU + Cliff's delta, non-surge C8 verdict). Authoritative
 > spec: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md); v2 contracts in
-> `analysis_focus.md` §0. This section is the v2 template — populate it
-> per the campaign (timeline + per-arm tables + judgment), mirroring the v1
-> sections below under the v2 contracts.
+> `analysis_focus.md` §0. The v2 campaign is **COMPLETE — 20/20 valid runs
+> (2026-08-07)**; the v2 section below is the final record. The v1 9-run
+> campaign and the pre-flight ground below it remain the
+> supporting/characterization record.
 
 ---
 
-## v2 Campaign (20 runs) — TEMPLATE
+## v2 Campaign (20 runs) — FINAL
 
-**Status**: 🔄 **IN PROGRESS — restarting from Block 1 on the fixed platform** (2026-08-06); buggy-platform runs 1–10 invalidated by the shared bind-delay fix · Plan: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md) · Matrix: [`run_matrix.md`](run_matrix.md) §9
+**Status**: ✅ **COMPLETE — 20/20 valid runs** (2026-08-06 → 2026-08-07, VM
+`cloud-vm`) · buggy-platform runs 1–10 invalidated by the shared bind-delay
+fix (retained as characterization); two replicates dropped + re-run for lan2
+`plateau_unstable` (`ls_4`, `sp_5`) · Plan: [`rq1_v2_rework_plan.md`](rq1_v2_rework_plan.md) · Matrix: [`run_matrix.md`](run_matrix.md) §9
 
 **Config:** open-loop driver (`TRAFFIC_DRIVER_MODE=open_loop`,
 `CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30`); 4 arms × 5 = 20
@@ -27,7 +31,7 @@ LOCKED): `phases_rq1_stress_plateau.json` (plateau rate 1.2 + rebalanced mix +
 | Run | Arm | Status | Cumulative analysis | Conclusions | Changes made | Expectations |
 | --- | --- | --- | --- | --- | --- | --- |
 | Pre-flight gates (driver/analyzer/sampled-push selftests, concurrency stress, G2 calibration, per-arm scale-down arming, Arm D dry-run, lan2 diagnostic, sync regression) | — | ✅ campaign-blocking gates PASS 2026-08-05 (gate i sync regression pending, non-blocking) | Gates (a)–(c) ✅; **G2 sweep → pool-6 FAIL → three-fix re-anchor ✅ PASS (2026-08-05)**; per-arm scale-down arming A/B/C/D ✅; Arm D dry-run ✅; lan2 asymmetry ⚠️ n=1 caveated | **Root cause chain:** (1) RQ1 envs predated the 2026-08-03 data-path fix → Mongo pool 1 (serialized DB) → OOM → lan1 telemetry silence; (2) rate 5.0 = 120 req/s/LAN ≈ 3× sustainable; (3) churn = amplifier not root cause (0-removal stable-fleet runs still collapse); (4) DB-demand hypothesis revised — `feed_ranking`=3 ops/req (per-LAN fan-out) AND `content_lookup`=2 ops/req (with requester) ⇒ 1.55 ops/req ⇒ **~45 DB ops/s/LAN at rate 1.2** (at/above RQ2's ~42; earlier "~35 below cliff" margin was wrong — plateau PASS is empirical, not margin-backed); (5) pool size DISPROVED (pool 6 ≡ 12); (6) **root cause = compute-tier saturation** at `EDGE_CPUS=0.15` (edge CPU 55–73% med, peaks 99%; 70% CPU-heavy mix). | Env ×4: pool-6 block; phases rate 1.2 + rebalanced mix + **`idle_tail` (420 s, rate 0.05)** so lossy arms can fire scale-down; `rq1_launch_run.sh` (`EDGE_CPUS=0.25`); **churn guard + hysteresis (controller, default ON, all RQs)** | **G2 gate `rq1_g2_rate12_mix_ec25` ✅ PASS — plateau LOCKED** (p50 2.32/1.46 s, timeout 8.9/7.4%, completion 88.5/90.4%, delivery 124/124, scale-up+down fire). Per-arm scale-down ✅ A/B/C/D (real removals). **Campaign-blocking pre-flight GREEN — 20-run campaign READY, NOT launched** (watch: lan1 detection 66/124, plateau ~45 DB ops/s at/above RQ2 cliff, idle_tail guard-release mechanics for C/D) |
-| Blocks 1–5 — 20 runs | — | 🔄 **0/20 on fixed platform** (buggy-platform runs 1–10 invalidated by the 2026-08-06 bind-delay fix; kept as characterization) | Validation `rq1_delivery_ep_validation` (seed 2001) ✅: 0 `http=000`, completion 93.2/93.8%, timeout 3.8/3.5%, 164/164 0 missed | Bind delay (shared `app.py` `make_server` fix) was a primary driver of the earlier plateau heat + lan1 collapses (runs 6/8) | Platform fix in `edge_server` image; campaign restarts from Block 1 | Per-run checkpoints + `rq1_delivery_per_run.py`; stats at n=5 via `rq1v2_p3_01_stats.py`; lan2 asymmetry diagnostic at n=5 |
+| Blocks 1–5 — 20 runs (seeds 2001–2005) | — | ✅ **20/20 valid** (all per-run gates passed) | Validation `rq1_delivery_ep_validation` (seed 2001) ✅: 0 `http=000`, completion 93.2/93.8%, 164/164 0 missed; then all 5 counterbalanced blocks ran clean | Bind delay (shared `app.py` `make_server` fix) was a primary driver of the earlier plateau heat + lan1 collapses (runs 6/8); platform fix validated, then all 20 runs passed their per-run gates | Platform fix in `edge_server` image; campaign restarted from Block 1 | Per-run checkpoints + `rq1_delivery_per_run.py` ✅; comparison graphs n=5 ✅; stats via `rq1v2_p3_01_stats.py` n=5 ✅; lan2 asymmetry diagnostic n=5 ✅ — full record in §v2 Campaign below |
 
 **🛠️ G2 RETUNE (2026-08-04, Option A) — collapse root-caused + fixed.** The
 true open-loop G2 (`20260804_165925_rq1_delivery_ep_calib2`) collapsed:
@@ -131,18 +135,299 @@ RQ2's proven ~42. **Plateau LOCKED for the campaign.**
 - Delivered 41/124 = 0.3306 per LAN; delivery-delay p50 242 ms; scale-down fired both LANs; info-age at scale-up p50 340 ms.
 - **Sync-driver evidence only — open-loop re-run pending.**
 
-**Verdict template (populate after the campaign):**
+---
 
-- C1–C6 (artifact, Arm A clean reference, Arm B delay, Arm C loss, **Arm D
-  delivered fraction ∈ [0.30, 0.36] + sub-second delivery delay**, overload,
-  scale-up): pending.
-- **C7 scale-down** — per-arm ≥ 1 decision/LAN, reported from `decision_log`
-  **and** `container_events` jointly (bounded claim; `removal_latency_s`
-  cross-check in the stats output).
-- **C8 non-surge** — cross-arm comparison; verdict via
-  `rq1v2_p3_01_stats.py` (DELAY PENALTY / NULL / UNANTICIPATED).
-- **C9 ordering** — factorial edges on usable-capacity latency, timeout_rate,
-  failure_rate, time-to-recover, info-age at decision (MWU + Cliff's delta).
+## v2 Campaign — Main Campaign (20 runs, n=5 per arm)
+
+**Status**: ✅ complete · Run folders on `cloud-vm` under
+`source/scripts/testing/metrics/` (campaign archive — never copied back).
+Per-run analysis CSVs under `<run>/analysis/rq1_delivery/`; per-run
+`run_summary.md` synced to [`run_summaries/`](run_summaries/); comparison
+graphs at [`graphs/comparison/`](graphs/comparison/); stats at
+`rq1_stats_summary_v2.csv`; lan2 asymmetry at `lan2_asymmetry_v2_campaign.csv`.
+
+### Run Timeline (v2)
+
+| Block (seed) | Run | Arm | Timestamp | Status |
+| --- | --- | --- | --- | --- |
+| 1 (2001) | `ep_1` | A | `20260806_095252` | ✅ |
+| 1 (2001) | `delayed_1` | B | `20260806_104531` | ✅ (103903, 114928 dropped) |
+| 1 (2001) | `sp_1` | D | `20260806_120422` | ✅ |
+| 1 (2001) | `ls_1` | C | `20260806_124220` | ✅ |
+| 2 (2002) | `delayed_2` | B | `20260806_132038` | ✅ |
+| 2 (2002) | `ls_2` | C | `20260806_135921` | ✅ |
+| 2 (2002) | `ep_2` | A | `20260806_143720` | ✅ |
+| 2 (2002) | `sp_2` | D | `20260806_151516` | ✅ |
+| 3 (2003) | `ls_3` | C | `20260806_155259` | ✅ |
+| 3 (2003) | `sp_3` | D | `20260806_163106` | ✅ |
+| 3 (2003) | `delayed_3` | B | `20260806_170911` | ✅ |
+| 3 (2003) | `ep_3` | A | `20260806_174713` | ✅ |
+| 4 (2004) | `sp_4` | D | `20260806_182504` | ✅ |
+| 4 (2004) | `ep_4` | A | `20260806_191542` | ✅ |
+| 4 (2004) | `ls_4` | C | `20260806_204429` | ✅ re-run (195315 dropped) |
+| 4 (2004) | `delayed_4` | B | `20260806_212207` | ✅ |
+| 5 (2005) | `ep_5` | A | `20260806_220001` | ✅ |
+| 5 (2005) | `delayed_5` | B | `20260806_223750` | ✅ |
+| 5 (2005) | `ls_5` | C | `20260806_231544` | ✅ |
+| 5 (2005) | `sp_5` | D | `20260807_044234` | ✅ re-run (235332 dropped) |
+
+## Measurements — v2 Campaign
+
+### Delivery Integrity (per run, per LAN; lan1/lan2)
+
+| Run | Universe | Delivered | Frac | Overload missed | In-delay | Gap/Err | Ack |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `ep_1` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 442/432 |
+| `ep_2` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 440/428 |
+| `ep_3` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 440/428 |
+| `ep_4` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 438/426 |
+| `ep_5` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 440/428 |
+| `delayed_1` | 164/163 | 164/163 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 432/420 |
+| `delayed_2` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 436/424 |
+| `delayed_3` | 164/163 | 164/163 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 436/424 |
+| `delayed_4` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 434/422 |
+| `delayed_5` | 164/164 | 164/164 | 1.0000/1.0000 | 0/0 | 0 | 0/0 | 432/420 |
+| `ls_1` | 164/163 | 54/54 | 0.3293/0.3313 | 83/86 | 0 | 0/0 | 0 (by design) |
+| `ls_2` | 164/164 | 54/54 | 0.3293/0.3293 | 76/80 | 0 | 0/0 | 0 (by design) |
+| `ls_3` | 164/164 | 54/54 | 0.3293/0.3293 | 84/81 | 0 | 0/0 | 0 (by design) |
+| `ls_4` | 164/163 | 54/54 | 0.3293/0.3313 | 85/64 | 0 | 0/0 | 0 (by design) |
+| `ls_5` | 165/165 | 55/55 | 0.3333/0.3333 | 88/70 | 0 | 0/0 | 0 (by design) |
+| `sp_1` | 163/163 | 54/54 | 0.3313/0.3313 | 79/84 | 0 | 0/0 | 148/144 |
+| `sp_2` | 165/165 | 55/55 | 0.3333/0.3333 | 78/75 | 0 | 0/0 | 146/142 |
+| `sp_3` | 165/165 | 55/55 | 0.3333/0.3333 | 83/83 | 0 | 0/0 | 148/144 |
+| `sp_4` | 164/164 | 55/55 | 0.3354/0.3354 | 86/76 | 0 | 0/0 | 148/144 |
+| `sp_5` | 165/165 | 55/55 | 0.3333/0.3333 | 84/37 | 0 | 0/0 | 148/144 |
+
+### Delivery delay (plateau p50) & info-age at decision (median) — per run
+
+| Run | Delivery delay p50 (s) | Info-age at decision (s) |
+| --- | --- | --- |
+| `ep_1..5` | 0.367–0.599 (fresh) | 1.3 / 6.0 / 7.8 / 2.8 / 8.6 |
+| `delayed_1..5` | 30.001 (exact, all) | 30.4 / 31.8 / 36.4 / 39.4 / 31.1 |
+| `ls_1..5` | 3.5–8.4 (poll-capped) | 26.1 / 21.8 / 18.6 / 17.6 / 20.4 |
+| `sp_1..5` | 0.44–0.60 (fresh) | 18.9 / 13.1 / 19.4 / 18.1 / 11.0 |
+
+### Reaction timing (per run; lan1/lan2, s)
+
+| Run | Scale-up decision lat | Usable capacity lat |
+| --- | --- | --- |
+| `ep_1` | 23.1 / 31.4 | 23.5 / 32.5 |
+| `ep_2` | 30.9 / 31.3 | 31.6 / 32.5 |
+| `ep_3` | 31.4 / 31.7 | 32.6 / 32.6 |
+| `ep_4` | 32.2 / 33.5 | 32.6 / 34.6 |
+| `ep_5` | 30.3 / 28.6 | 31.4 / 29.4 |
+| `delayed_1` | 57.4 / 55.5 | 58.4 / 56.4 |
+| `delayed_2` | 59.2 / 60.6 | 59.7 / 61.7 |
+| `delayed_3` | 56.7 / 13.9 | 57.5 / 54.5 |
+| `delayed_4` | 56.9 / 56.2 | 57.5 / 57.5 |
+| `delayed_5` | 59.8 / 58.5 | 60.6 / 59.6 |
+| `ls_1` | 81.1 / 81.1 | 81.7 / 81.7 |
+| `ls_2` | 77.0 / 77.0 | 77.6 / 77.6 |
+| `ls_3` | 82.4 / 82.4 | 83.5 / 83.5 |
+| `ls_4` | 80.4 / 80.4 | 81.5 / 81.5 |
+| `ls_5` | 76.1 / 15.7 | 76.6 / 76.6 |
+| `sp_1` | 83.6 / 24.2 | 84.5 / 54.5 |
+| `sp_2` | 6.4 / 63.8 | 67.6 / 64.5 |
+| `sp_3` | 83.4 / 84.5 | 84.6 / 85.6 |
+| `sp_4` | 90.4 / 29.5 | 91.6 / 90.6 |
+| `sp_5` | 26.7 / 84.9 | 87.7 / 85.6 |
+
+### Scale-down — C7 joint check (decision_log + container_events, per run lan1/lan2)
+
+| Run | Decision-log real removals | Container_events removals | First removal phase |
+| --- | --- | --- | --- |
+| `ep_1` | 0 / 0 | 7 / 5 | recovery_gap / idle_tail |
+| `ep_2` | 1 / 2 | 5 / 7 | idle_tail / compute_plateau |
+| `ep_3` | 1 / 0 | 4 / 5 | idle_tail / compute_plateau |
+| `ep_4` | 0 / 1 | 5 / 5 | idle_tail / compute_plateau |
+| `ep_5` | 1 / 1 | 4 / 10 | compute_plateau / compute_plateau |
+| `delayed_1` | 2 / 2 | 7 / 5 | compute_plateau / compute_plateau |
+| `delayed_2` | 0 / 0 | 5 / 7 | idle_tail / compute_plateau |
+| `delayed_3` | 1 / 0 | 10 / 5 | compute_plateau / idle_tail |
+| `delayed_4` | 0 / 0 | 6 / 2 | demand_drop / idle_tail |
+| `delayed_5` | 0 / 0 | 5 / 6 | idle_tail / recovery_gap |
+| `ls_1..3`, `ls_5` | 0 / 0 (all) | 2–3 per LAN | idle_tail / idle_tail |
+| `ls_4` | 0 / 0 | 0 / 4 | — / compute_plateau |
+| `sp_1..4` | 0 / 0 (all) | 1–3 per LAN | idle_tail / idle_tail |
+| `sp_5` | 0 / 0 | 0 / 5 | — / recovery_gap |
+
+### Plateau service quality (per arm, n=5; lan1/lan2)
+
+| Arm | p50 (s) med | p95 (s) med | timeout % med | failure % med |
+| --- | --- | --- | --- | --- |
+| A `ep` | 2.198 / 1.967 | ~14.3 / 14.3 | 15.0 / 16.7 | 0.8 / 3.5 |
+| B `delayed` | 2.684 / 2.014 | ~16.4 / 19.6 | 19.2 / 19.1 | 3.4 / 2.6 |
+| C `ls` | 5.797 / 5.545 | ~17.3 / 19.5 | 20.4 / 21.2 | 1.0 / 1.3 |
+| D `sp` | 4.876 / 4.919 | ~18.7 / 20.5 | 16.0 / 17.0 | 1.2 / 1.8 |
+
+> Descriptive percentiles (per-run LAN-mean, median across runs) from
+> `rq1v2_p3_01_stats.py`: p50 A 2.113 / B 2.657 / C 6.084 / D 4.775 s; p95
+> 16.25 / 17.81 / 19.31 / 18.61 s; p99 28.53 / 30.99 / 32.77 / 31.14 s.
+> Latency percentiles are descriptive-only (censoring flag at CURL_MAX_TIME).
+
+### Overhead (controller CPU %, per run lan1/lan2; RSS 67–93 MB all runs)
+
+| Arm | CPU lan1 / lan2 |
+| --- | --- |
+| A `ep` | 8.7/9.2 · 11.6/6.1 · 11.1/6.8 · 12.3/4.9 · 7.5/10.2 |
+| B `delayed` | 9.4/7.5 · 8.8/9.7 · 8.8/9.8 · 9.5/8.9 · 9.9/7.9 |
+| C `ls` | 8.1/8.7 · 8.9/8.8 · 8.7/8.2 · 9.6/5.0 · 9.0/7.0 |
+| D `sp` | 8.5/8.9 · 9.0/8.4 · 9.8/8.2 · 9.1/7.6 · 10.7/6.2 |
+
+### Offered load (open-loop — equal across arms, G1 fix verified)
+
+Every run offered ≈ 17,265 plateau / 120 baseline / 60 recovery_gap /
+838 demand_drop / 21 idle_tail requests per LAN (ratio 1.00 lan1:lan2 in all
+20 runs). The v1 latency-coupled-driver confound (G1) is gone.
+
+---
+
+## Judgment — v2 Campaign
+
+### Criterion-by-criterion (n=5)
+
+| # | Criterion | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | Artifact completeness | ✅ | All 20 runs: `window_log`/`telemetry_delivery_log`/`decision_log` present + non-empty both LANs; `ack_log` present for A/B (full) and D (partial, delivered windows only, 142–148), absent for C (by design) |
+| 2 | Arm A clean reference (frac ≥ 0.98, 0 gap/err) | ✅ | 1.0000 delivered all 5 runs both LANs; 0 gap, 0 processing_error |
+| 3 | Arm B completeness + delay (frac ≥ 0.98 excl. in-delay; p50 delay ∈ [30,40]) | ✅ | 1.0000 delivered, 0 in-delay-at-run-end, plateau delay p50 30.001 s exact, all 5 runs |
+| 4 | Loss measurable (C frac < 0.70 + info-age ≥ 10 s below B; D frac ∈ [0.30,0.36] + sub-second) | ✅ | C frac 0.329–0.333; C info-age-at-decision med 20.4 vs B 31.8 (≈11 s lower); D frac 0.331–0.335, delay p50 0.44–0.60 s |
+| 5 | Overload exercised (≥ 30% of plateau windows `overload`) | ✅ | 76–88 overload windows missed per LAN in lossy arms (of ~164 universe) ⇒ universe is majority-overload; ep/delayed 0 missed ⇒ full overload observability |
+| 6 | Scale-up response (≥ 1 decision + usable capacity per LAN) | ✅ | 6–12 scale-up decisions/LAN in every run; usable capacity reached in all 40 LANs |
+| 7 | Scale-down (≥ 1 decision/LAN; decision_log + container_events jointly) | ✅ letter / ⚠️ guard-conditioned for C/D | ≥ 1 scale-down decision per LAN in all 40 LANs (mostly `absent` no-ops — G8 logging gap confirmed at n=5); container_events dynamic removals: A 10/10, B 10/10, C 9/10 (`ls_4` lan1 0), D 9/10 (`sp_5` lan1 0) LANs. A/B first removals land in recovery_gap/demand_drop/idle_tail; **C/D removals land almost exclusively in `idle_tail`** (churn-guard release) → guard-conditioned per §0.6. Decision-log real removals: A 7/10, B 3/10, C 0/10, D 0/10 LANs |
+| 8 | Non-surge transient quality (cross-arm; C8) | ⚠️ NULL (mechanical verdict UNANTICIPATED) | Non-surge failure rate **0% in every arm**; non-surge timeout ~0.05% in every arm. `rq1v2_p3_01_stats.py` mechanically returned **UNANTICIPATED** (\|delta\| > 0.2 direction reversals on non-surge timeout: delay_fresh +0.44, delay_lossy +0.28) — re-inspection attributes these to floor noise on near-zero rates (0.00049–0.00098); the substantive reading is a **NULL result** (no arm shows meaningful non-surge degradation) |
+| 9 | Factorial-edge ordering (capacity latency, info-age, timeout, failure) | ✅ primary / partial edges null | Primary **capacity_latency**: A 32.0 < B 57.5 < C 81.5 < D 85.1 s; delay edge A→B d=−1.0 (p=0.008), loss edges A→D / B→C d=−1.0 (p=0.008) ✓✓; delay edge D→C **null** (d=+0.2 — at the lossy level delay adds no measurable capacity penalty). Info-age: delay increases it on both levels (A→B d=−1.0, D→C d=−0.6) ✓; loss increases it on fresh (A→D d=−1.0) but **reverses on stale** (B 31.8 > C 20.4, d=+1.0 — structural: B's full +30 s delay dominates C's sampled delivery). Plateau timeout/failure edges weak (\|d\| ≤ 0.52), failure edges reverse on both levels (A/B higher than C/D) — see Findings |
+
+### Pre-registered statistics (n=5, `rq1_stats_summary_v2.csv`)
+
+- **Primary (MWU exact + Cliff's delta):** capacity_latency — delay_fresh
+  A 32.04 vs B 57.5, p=0.008, d=−1.0; loss_fresh A 32.04 vs D 85.1, p=0.008,
+  d=−1.0; loss_stale B 57.5 vs C 81.53, p=0.008, d=−1.0; delay_lossy D 85.1 vs
+  C 81.53, d=+0.2 (null). info_age_decision — delay_fresh d=−1.0, delay_lossy
+  d=−0.6, loss_fresh d=−1.0, loss_stale d=+1.0 (reversal, structural).
+  Plateau timeout/failure edges all weak (|d| ≤ 0.52; failure edges reverse).
+- **Headline tradeoff (Cliff's delta only):** B (stale+complete) vs D
+  (fresh+lossy) — capacity d=−1.0 (D slower), info-age d=+1.0 (B older),
+  failure d=+0.84 (B higher); A (fresh+complete) vs C (stale+lossy) —
+  capacity d=−1.0 (C slower), info-age d=−1.0 (A fresher), failure d=+0.28.
+- **C8 verdict:** mechanical rule → **UNANTICIPATED**; re-inspection → NULL
+  (see C8 row). All non-surge rates ≈ 0.
+- **Scale-down (time-to-recover):** `scale_down_latency_s` defined in only
+  2/5 ep + 2/5 delayed runs (decision-log removals in recovery_gap); 0/5 for
+  C and D (guard release in idle_tail). `removal_latency_s`
+  (container_events): A n=5 med 786.6 s, B n=5 med 589.5 s, C n=2 med 945.9 s,
+  D n=1 med 197.9 s — the C/D time-to-recover is a **guard-interaction
+  quantity** (§0.6), not comparable to A/B's natural recovery.
+
+### Lan2 asymmetry at n=5 (`lan2_asymmetry_v2_campaign.csv`)
+
+- **Arm A `ep`: ASYMMETRIC on plateau failure rate** (lan2−lan1 median
+  **+2.64 pp**, 5/5 runs with defined deltas); timeout balanced (+1.74 pp).
+- Arms B, C, D: **BALANCED** on both failure and timeout (|delta| ≤ 1.74 pp).
+- v1's Arm C lan2 asymmetry **does not reproduce** at n=5 (C: +0.06 pp
+  failure, +0.73 pp timeout).
+- Offered load is equal per LAN (ratio 1.00, ~86,330/LAN per arm) and
+  delivered-window counts are equal per LAN (A 2171=2171, B 2141=2141,
+  C 686=686, D 728=728) — the asymmetry is a **data-plane** (service) effect,
+  not a telemetry/load-distribution effect, and it has moved from Arm C (v1)
+  to **Arm A (v2)**. First-class post-campaign root-cause target.
+
+### Findings
+
+1. **The completeness×info-age 2×2 is fully realized at n=5.** Delivered
+   fraction A ≈ B (1.0) > C ≈ D (≈ 0.33); delivery delay A ≈ D (sub-second)
+   < C (poll-capped 3.5–8.4 s) < B (30.001 s exact). The factorial is clean:
+   delay varies on both levels (A→B, D→C), loss varies on both levels (A→D,
+   B→C).
+2. **Loss hurts reaction (usable-capacity) more than delay — the headline.**
+   Capacity latency orders A (32.0) < B (57.5) < C (81.5) ≈ D (85.1) s with
+   d=−1.0 on both loss edges and the fresh delay edge (all p=0.008 at n=5);
+   the lossy-level delay edge (D→C) is null. Acting on a 1/3 sample delays
+   usable capacity by ~50 s over the complete reference regardless of
+   freshness; the +30 s delay costs ~25 s on the fresh level and nothing
+   measurable on the lossy level.
+3. **Delay dominates info-age; loss reduces it only on the fresh level.**
+   Info-age at decision: A (1.3–8.6) < D (11.0–19.4) < C (17.6–26.1) < B
+   (30.4–39.4). The loss_stale info-age reversal (B 31.8 > C 20.4) is
+   structural: B always acts on ~30 s-old evidence; C's sampled windows are,
+   on average, younger. Not an anomaly.
+4. **Plateau service quality does not discriminate between arms under
+   bounded overload.** All arms sit in a similar 15–21% plateau timeout band
+   and 1–3.5% failure band (A lan1 p50 best at 2.2 s, C/D worst at ~5–6 s).
+   The pre-registered delay/loss penalty is **not** expressed in plateau
+   timeout (weak edges), and the failure edges reverse (complete arms A/B
+   have slightly higher plateau failure than lossy C/D). Under the G2-bounded
+   plateau (designed for ~15–25% timeout), delivery semantics affect *how the
+   controller reacts* (capacity, info-age), not the plateau data-plane
+   outcome at n=5.
+5. **C8 is a clean NULL.** Non-surge failure 0% and timeout ~0.05% in every
+   arm; the mechanical UNANTICIPATED flag is floor noise on near-zero rates.
+   No delivery arm degrades transient (non-surge) service quality.
+6. **C7 is letter-pass for all arms; real removals are guard-conditioned for
+   C/D.** Container_events shows dynamic-container removals in 39/40 LANs
+   (only `ls_4` lan1 and `sp_5` lan1 have none), but the decision_log records
+   **zero** real (compute/storage) scale-downs for C/D and only 7/10 (A) and
+   3/10 (B) LANs — the G8 logging gap is systematic at n=5. C/D removals land
+   almost exclusively in `idle_tail` (churn-guard release, §0.6); `sp_5`
+   lan2 is the notable exception (first removal in `recovery_gap`).
+7. **Overhead is flat and low; delivery work scales it slightly.** CPU A
+   (median ~11.1/6.8) ≈ B (~9.4/8.9) ≈ C (~8.9/8.7) ≈ D (~9.1/8.4) % with RSS
+   67–93 MB — the complete arms pay ~1–2% more than the lossy arms, matching
+   v1. Delivery semantics cost the controller almost nothing.
+8. **Lan2 asymmetry migrated from Arm C (v1) to Arm A (v2):** A `ep` shows
+   +2.64 pp lan2-vs-lan1 plateau failure (5/5 runs), while C is now balanced.
+   Because delivered windows and offered load are equal per LAN, the cause is
+   in the service/data plane (backend routing or load balance during
+   scale-out), not telemetry — open item for post-campaign root cause.
+
+### Caveats
+
+- **C/D scale-down timing is a guard-interaction claim** (§0.6), not pure
+  delivery semantics: the `idle_tail` phase was added to release the churn
+  guard; most C/D real removals occur there. Time-to-recover is therefore not
+  comparable across arms as a single quantity.
+- **Decision-log real scale-downs are under-reported** (G8): absent
+  no-ops dominate the decision log in all arms; container_events is the
+  reliable removal record. C7 is assessed on the joint basis.
+- **Plateau timeout/failure edges are weak or reversed** at n=5 — the
+  bounded-overload plateau does not express a delay/loss service penalty.
+  This is a designed workload property (G2 locked rate 1.2 for bounded
+  overload), not a failure of the arms.
+- **Info-age at decision** is median-over-decisions; per-run values vary
+  (A 1.3–8.6, B 30–39, C 18–26, D 11–19) but orderings are robust.
+- **C8 UNANTICIPATED flag** is mechanical; the substantive reading is NULL
+  (all non-surge rates ≈ 0). Reported both, per the pre-registered rule.
+- **`ls_4` lan1 and `sp_5` lan1** (the re-runs) have zero container_events
+  removals — single-LAN, single-run; all other C/D LANs reclaim capacity.
+- **Two dropped replicates** (`ls_4` 195315, `sp_5` 235332) retained as
+  characterization for lan2 `plateau_unstable`; not part of n=5.
+
+## Root Causes (v2)
+
+| # | Issue | Impact | Status |
+| --- | --- | --- | --- |
+| 1 | Decision_log scale-down real-removal gap (G8) — `absent` no-ops dominate; C/D log zero real removals | C7 real-removal evidence only via container_events | **Confirmed at n=5** — systematic across all arms; bounded claim in place (no controller change) |
+| 2 | C/D real removals only after `idle_tail` guard release | Time-to-recover not comparable across arms | **Documented** — guard-interaction claim (§0.6), pre-registered |
+| 3 | Arm A lan2 plateau failure asymmetry (+2.64 pp) | Arm A lan2 quality slightly worse at n=5 | **Open** — post-campaign root-cause target (data-plane, not telemetry) |
+| 4 | Plateau timeout/failure edges weak/reversed | No delay/loss service penalty expressed at n=5 | **Explained** — bounded-overload plateau design; not an arm defect |
+
+## Next Actions
+
+1. **Post-run analysis** (`post_run_analysis.md`) — campaign capstone (objective
+   → mechanism → results → gaps).
+2. **Arm A lan2 asymmetry root cause** — per-backend/VIP analysis on the 5 ep
+   runs (backends are balanced per the asymmetry CSV's top-backend listing;
+   look at VIP routing/scale-out timing on lan2).
+3. **Thesis writing** — RQ1 final numbers (capacity ordering A < B < C ≈ D,
+   info-age A < D < C < B, C8 null) from this record.
+4. **Cleanup** — temp gate/analysis scripts removed; run folders remain on
+   `cloud-vm` as the campaign archive.
+
+## Changelog (v2)
+
+| Date | Change | Rationale |
+| --- | --- | --- |
+| 2026-08-07 | **v2 campaign complete (20/20) + full analysis.** Comparison graphs n=5 per arm, `rq1v2_p3_01_stats.py` (n=5), `rq1v2_p4_01_lan2_asymmetry.py` (n=5) run on `cloud-vm`; per-run `run_summary.md` ×20; results synced (`graphs/comparison/`, stats CSVs, summaries); this v2 Final section replaces the template | Close RQ1 v2 as final evidence; record the factorial-edge statistics, the guard-conditioned C7, the C8 null, and the A-lan2 asymmetry finding |
 
 **Appendix — v1 9-run campaign (2026-08-02, supporting record):** the
 sections below remain the archived v1 record with its caveats (latency-coupled
