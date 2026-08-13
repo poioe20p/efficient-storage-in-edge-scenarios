@@ -44,24 +44,24 @@ The seed is a simple realistic observation:
 
 The papers that ground this RQ:
 
-| Paper | What it establishes | Strength | Role in the basis |
-|---|---|---|---|
-| **Wang et al. (SDNFV)** | *"After synchronization completes, the proxy notifies LB-C to include the instance in session allocation."* | `DOCUMENTED` | **The core seed.** The spawn→state-sync→LB-inclusion delay is documented but never varied or measured. |
-| **Pierro & Ullah** — K8s HPA for IoT | Throughput **decreases** as pods are added; names *"service discovery latency"* and *"load balancing distribution inefficiencies"* among orchestration-overhead causes. | `SYMPTOM` | Observed symptom of the spawn→discovery gap, misattributed as "K8s overhead". |
-| **Pourghebleh et al. (2020)** — SD SLR | *"the freshness of the data still remains a problem"* — registry staleness acknowledged, never studied as a latency dimension. | `DOCUMENTED` | Service-discovery version of the same gap. |
-| **Achir et al. (2022)** — SD taxonomy (60+ papers) | **No category** for discovery timing, registration latency, or registry freshness. | `TAXONOMY-GAP` | Even the most comprehensive SD taxonomy lacks the dimension. |
-| **Yaseen (2025)** | Pull-based monitoring → "visibility gaps". | `DOCUMENTED` | The "same gap, three names" cross-domain thread (see below). |
-| **Podolskiy et al. (IaaS)** | Reactive autoscaling *"jeopardizes"* QoS under dynamic load across all three clouds. | `DOCUMENTED` (context) | The LB-discovery lag is one segment of the reactive-scaling lag. |
+| Paper                                                     | What it establishes                                                                                                                                                              | Strength                 | Role in the basis                                                                                              |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| **Wang et al. (SDNFV)**                             | *"After synchronization completes, the proxy notifies LB-C to include the instance in session allocation."*                                                                    | `DOCUMENTED`           | **The core seed.** The spawn→state-sync→LB-inclusion delay is documented but never varied or measured. |
+| **Pierro & Ullah** — K8s HPA for IoT               | Throughput**decreases** as pods are added; names *"service discovery latency"* and *"load balancing distribution inefficiencies"* among orchestration-overhead causes. | `SYMPTOM`              | Observed symptom of the spawn→discovery gap, misattributed as "K8s overhead".                                 |
+| **Pourghebleh et al. (2020)** — SD SLR             | *"the freshness of the data still remains a problem"* — registry staleness acknowledged, never studied as a latency dimension.                                                | `DOCUMENTED`           | Service-discovery version of the same gap.                                                                     |
+| **Achir et al. (2022)** — SD taxonomy (60+ papers) | **No category** for discovery timing, registration latency, or registry freshness.                                                                                         | `TAXONOMY-GAP`         | Even the most comprehensive SD taxonomy lacks the dimension.                                                   |
+| **Yaseen (2025)**                                   | Pull-based monitoring → "visibility gaps".                                                                                                                                      | `DOCUMENTED`           | The "same gap, three names" cross-domain thread (see below).                                                   |
+| **Podolskiy et al. (IaaS)**                         | Reactive autoscaling*"jeopardizes"* QoS under dynamic load across all three clouds.                                                                                            | `DOCUMENTED` (context) | The LB-discovery lag is one segment of the reactive-scaling lag.                                               |
 
 ### The "same gap, three names" (strongest cross-domain evidence)
 
 Three fields independently describe the same blind spot without citing each other:
 
-| Domain | Name for it | Paper |
-|---|---|---|
-| Monitoring | "Visibility gaps" — no knowledge of backend **load** | Yaseen (2025) |
-| Service Discovery | "Freshness still a problem" — no knowledge of backend **existence** | Pourghebleh et al. (2020); Achir et al. (2022) |
-| Load Balancing / Scaling | "Synchronization-before-inclusion delay" — no knowledge of backend **readiness** | Wang et al. (SDNFV); Pierro & Ullah |
+| Domain                   | Name for it                                                                            | Paper                                          |
+| ------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Monitoring               | "Visibility gaps" — no knowledge of backend**load**                             | Yaseen (2025)                                  |
+| Service Discovery        | "Freshness still a problem" — no knowledge of backend**existence**              | Pourghebleh et al. (2020); Achir et al. (2022) |
+| Load Balancing / Scaling | "Synchronization-before-inclusion delay" — no knowledge of backend**readiness** | Wang et al. (SDNFV); Pierro & Ullah            |
 
 RQ3 isolates the **readiness** member of this trio: the path from a backend becoming application-ready to it being eligible for traffic, holding the backend-selection function fixed.
 
@@ -97,10 +97,10 @@ Two primary arms (plus a poll-period sensitivity cell), compute backends only (t
 
 The two arms are the two mechanisms the corpus describes but never isolates — and the admission-side analogue of RQ1's delivery dichotomy:
 
-| Arm | Mechanism | Foundation |
-|---|---|---|
+| Arm                                     | Mechanism                                                                                                                                                                      | Foundation                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Direct lifecycle notification** | Event-driven inclusion: the component that owns the lifecycle (the controller that spawned the backend and verified readiness) immediately registers it into the routing pool. | **Wang et al. (SDNFV)** — *"After synchronization completes, the proxy notifies LB-C to include the instance in session allocation"* — notify-on-complete, i.e. event-driven inclusion. Only possible when the lifecycle owner and the routing plane share an event path (the thesis's co-located apparatus). |
-| **Periodic discovery** | Pull/registry-based: the routing plane learns backend state by polling on a fixed period; admission is quantized to discovery cycles (up to one period of added delay). | Service-discovery field — Pourghebleh et al. ("freshness of the data still remains a problem"), Achir et al. (no discovery-timing category); the K8s-style endpoints/health-check status quo; the "same gap, three names" blind spot. |
+| **Periodic discovery**            | Pull/registry-based: the routing plane learns backend state by polling on a fixed period; admission is quantized to discovery cycles (up to one period of added delay).        | Service-discovery field — Pourghebleh et al. ("freshness of the data still remains a problem"), Achir et al. (no discovery-timing category); the K8s-style endpoints/health-check status quo; the "same gap, three names" blind spot.                                                                                  |
 
 Reasons these two, specifically:
 

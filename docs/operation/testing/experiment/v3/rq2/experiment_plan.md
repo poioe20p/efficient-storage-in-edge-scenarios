@@ -1,5 +1,11 @@
 # RQ2 v3 — Bottleneck-Aware Scaling at the Storage-Bind Config
 
+> **Amendment (2026-08-12, planned):** the `sf_cb` cell will be re-run at the
+> **binding** compute config (`EDGE_CPUS 0.15 / STORAGE_CPUS 0.08`, matching
+> `cf_cb`/`ba_cb`) to resolve a launch-allocation confound in the original cell
+> (`0.30 / 0.15`, which provisioned compute above its binding point).
+> See [sf_cb_rerun_plan.md](sf_cb_rerun_plan.md) and §9 Changelog.
+
 Status: **PLANNED — PREFLIGHT IN PROGRESS (2026-08-08).** P1 ran with the
 original envs; the storage scale-down gate missed (churn guard held because
 the D3 overload label never cleared). P1b re-anchored only `OVERLOAD_CPU_PCT`
@@ -264,16 +270,20 @@ Policies under test (the RQ2 action-selection axis): `fixed_compute_first`
 (cf), `fixed_storage_first` (sf), `bottleneck_aware` (ba) × episodes
 compute-bound (cb) / data-bound (db).
 
-## 3. Locked configuration (tag `rq2-v3-campaign-20260808`)
+## 3. Locked configuration (tag `rq2-v3-campaign-20260808`; sf_cb amended 2026-08-12)
 
 | Cell | Arm env | Phases file | EDGE_CPUS | STORAGE_CPUS | Pool |
 |---|---|---|---|---|---|
 | `cf_cb` | `rq2_compute_first.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 |
 | `cf_db` | `rq2_compute_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** |
-| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | 0.30 | 0.15 | 12 |
+| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | **0.15**¹ | **0.08**¹ | 12 |
 | `sf_db` | `rq2_storage_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** |
 | `ba_cb` | `rq2_bottleneck_aware.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 |
 | `ba_db` | `rq2_bottleneck_aware.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** |
+
+¹ 2026-08-12 amendment: the original `sf_cb` cell launched at `0.30 / 0.15`
+   (a confound that provisioned compute above its binding point); the rerun
+   uses `0.15 / 0.08` per [sf_cb_rerun_plan.md](sf_cb_rerun_plan.md).
 
 Pool is **per-cell** (hardening fix 4): `EDGE_MONGO_MAX_POOL_SIZE=12` applies
 to the static edges of all cells (shell, in `tools/run_rq2_campaign.py`
@@ -434,4 +444,6 @@ cells (`cf_db`, `sf_cb`) are judged against their own pre-registered direction
 
 | Date | Change | Rationale |
 | --- | --- | --- |
+| 2026-08-13 | **DF/DT-p50 time-fraction metrics added (sf_cb_rerun_plan §6.1a), §6.4 decision table amended, per-run checkpoint computes DF, full-campaign DF scan recorded.** Preflight (P8 seed 2001, pilot seed 42) showed the whole-episode aggregate p50 masks time-limited degradation (pilot DF 52 % with aggregate p50 7.6 ms; sf_cb@0.30 originals DF 0 %). Threshold DF ≥ 15 % pre-registered; falsification additionally requires DF < 15 %. The pilot now reads **degradation confirmed (time-fraction leg)** → n=6 batch may proceed. | Linked to preflight record in sf_cb_rerun_plan.md §7; resolves the aggregate-p50 measurement gap found 2026-08-12. |
+| 2026-08-12 | **sf_cb config amendment + rerun pre-registered.** `sf_cb` ran the compute-bound episode at `EDGE_CPUS=0.30 / STORAGE_CPUS=0.15` (vs `0.15 / 0.08` for `cf_cb`/`ba_cb`), provisioning compute above its binding point so the wrong-action cost was never exercised (QoS held ~3 ms; per-node CPU ~2× lower than cf_cb). All other five cells verified correct. Rerun `sf_cb` at `0.15 / 0.08` (n=6, seeds 42×5 + 43, EDGE_MEMORY 512m) per [sf_cb_rerun_plan.md](sf_cb_rerun_plan.md); original sf_cb folders quarantined on the VM (not deleted). | Resolve the sf_cb confound; test the wrong-action expectation at the binding config. |
 | 2026-08-09 | Campaign analysis complete: per-run summaries (35), cell-level B2/B1 synthesis, arm narrative, cross-mode comparison graphs, `results.md`, `post_run_analysis.md`. **Valid pool corrected to 34** — `cf_db_5` (run 25) re-classified as a **second MEMCG OOM incident** (2 compute-node OOM kills @ 512 MB cap, D2 hard-gate violation; same mechanism as `ba_db_2`) and excluded from the cf_db pool (cf_db valid = 1,2,3,4,6). B1 robust (cb cells); B2 p95-leg cell-level CI includes 1.0 for both sf_db and ba_db (pre-registered gate not met), CPU-relief leg robust for sf_db; ba_db tail degradation from post-relief compute churn. | Linked to `results.md` §Judgment, §Root Causes. The 512 MB hardening did not eliminate the edge-server MEMCG OOM under compute churn. |

@@ -1,0 +1,11 @@
+So rq3 is about the interface between auto scaler and the load balancer.
+In essence evaluated how a newly available backend is made awared to the load balancer.
+
+
+2 modes:
+- Direct lifecycle notificaiton event driven notification. ONly possible when there
+is such an event path and it's the least done commonly
+- Periodic discovery based on polling
+
+And we have clear efficient gains in the orchestration part which are valid
+because the rq focuse on that.

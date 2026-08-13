@@ -149,25 +149,44 @@ end-products allowing for much lower latency in provisioning services and applic
 Beyond lower latency, edge computing's inherent geo-distributed servers dispersed geographically and close to users relieves bandwidth pressure on the core networ, since data can be processed and stored locally, at the edge, 
 for quicker responses, only a subset of it is sent to the cloud \parencite{Cao2020OverviewEdgeComputingResearch}, freeing up backbone available bandwidth. 
 
-Despite the advantages edge computing also brings concerns regarding aspects such as resources scarcity as per-site capc
-And the management of distributed egde servers, as Satyanarayanan said in \parencite{Satyanarayanan2017EmergenceEdgeComputing} "The
-dispersion inherent in edge computing raises the complexity of management considerably"
-Resource provision is important because as in \parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}, there is varioation in user requests overtime demanding The
-edge infra to be flexible to adapat to these fluctions in an efficient way.
+Despite these advantages, this geographical distribution also translates into
+less capacity per location and greater complexity in managing the distributed
+edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
+edge computing raises the complexity of management considerably}
+\parencite{Satyanarayanan2017EmergenceEdgeComputing}. This complexity stems
+from the properties that define the edge itself: its resources are dispersed
+across many sites, user demand varies considerably over time, and the requests
+served are heterogeneous in their resource requirements. Luo et al. further
+highlight that, without efficient resource scheduling, this distributed nature
+leads to resource waste
+\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}. Resource
+provisioning therefore becomes increasingly important, since the limited
+capacity of each location must be adjusted over time to suit the constant
+fluctuation of user demand.
 
-So focus on the complexity of managing edge resource/edge servers which is because of the heterogenity in requests, varying demand and distributed nature. You can focus on the ones that matter to you
+The resource management problem is compounded when the services
+themselves are stateful. Unlike stateless microservices, which can be
+replicated freely and absorb traffic immediately, stateful services in a
+geo-distributed edge deployment depend on data co-located with compute:
+a content item ingested at one site is served from the database of that
+site, so a request reaching a server elsewhere must either be served
+remotely, paying WAN latency on every access; or wait for the hot data to
+be replicated locally, paying synchronisation overhead; or require a full
+replica, paying storage and replication cost
+\parencite{Breitbach2019ContextAwareDataTaskPlacement},
+\parencite{Nicolaescu2021StoreEdgeNetworkedDataSEND},
+\parencite{Pelle2022CostLatencyEdgePlatform}.
+Scale-out alone does not solve this: the orchestration system must detect
+when data must be brought closer, deliver that information to the decision
+point, provision the right kind of capacity, and redirect traffic to it —
+and each of these steps introduces delay that directly degrades service
+quality under the time pressure of an ongoing demand shift. 
 
-On the flip side, edge computing is not a replacement for cloud computing \parencite{Cao2020OverviewEdgeComputingResearch}, rather a complitment or extension as cloud computing can be understood as the persistent computing and storage layer to be
-% use tese\literature_review\04_context_edge\An_Overview_on_Edge_Computing_Research.pdf
-% NOTE (2026-08-01): the second file (Nain et al. -optimization study) is NOT in the
-% corpus — acquire or re-verify before citing (see literature_review README "not in corpus").
-
-% there's a huge platora of services and applicatons that present latency and processing requirements that are more suited towards edge computing over cloud computing.
-%Because despite the cloud being abundant in computiresourceng and storage resources, it suffers from higher latency due to the distance to it's users. In constrant, edge computing brings the resoruces closer to the end user thus reduncing latency and also reduces backbone traffic
-%and aproveitar_em_ingles on more bandwidth available.
-%Despite the advanges that edge computing brings, on the flip side, it's an environment where resources are constrainted, with higher limitations
-%for computing and storage, infraestrucutre beign more ephemeral, heteregenrousrs and frequently distributed. This indentifies the importance of
-%resource managment and load balancing among available infrastructureand or resoruces.
+    This thesis uses a Multi-Region Content Discovery Platform — a geo-distributed edge
+deployment — as its experimental workload: content items are ingested
+regionally and discovered globally through tag-based personalized feeds,
+with heterogeneous document types and two stress regimes — one driven by
+data locality, the other by compute-analytics throughput.
 
 
 

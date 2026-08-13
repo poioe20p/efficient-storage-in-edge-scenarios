@@ -41,7 +41,7 @@ CELLS: dict[str, tuple[str, str, str]] = {
     "cf_db": ("rq2_compute_first.env", "phases_rq2_data_bound.json",
                "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "sf_cb": ("rq2_storage_first.env", "phases_rq2_compute_bound.json",
-               "STORAGE_CPUS=0.15 EDGE_CPUS=0.30 EDGE_MONGO_MAX_POOL_SIZE=12"),
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "sf_db": ("rq2_storage_first.env", "phases_rq2_data_bound.json",
                "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "ba_cb": ("rq2_bottleneck_aware.env", "phases_rq2_compute_bound.json",

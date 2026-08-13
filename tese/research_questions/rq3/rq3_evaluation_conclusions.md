@@ -242,3 +242,64 @@ dramatic result**; the two things most likely to draw examiner challenge are
 the **null consequence** (answer it head-on) and the **bind stall** (own it in
 limitations). Written with those, RQ3 is ready; led with "7000×" and burying
 the null, it is not.
+
+---
+
+## 3. Explaining the benefits & generalizability
+
+### 3.1 What the orchestration aspect is
+
+RQ3 studies the **interface between the autoscaler and the load balancer** —
+how a newly ready backend becomes *known to the routing plane*. The
+load-balancing *policy* (backend-selection, weights, pool state) is held
+fixed; only the propagation mechanism varies. The benefit claim is about this
+integration, not about "better load balancing" in the selection sense.
+
+### 3.2 The benefits, made explicit
+
+| Axis | Evidence | What it buys | Who benefits |
+|---|---|---|---|
+| Mechanism responsiveness | ready→admitted ~7 s faster (v2, d=−1.000); per-position separation ~6 s (v3) | removes the poll-period quantization — a tunable design cost | the control loop (converges one poll period sooner) |
+| End-to-end timing | spawn→first success ~6 s sooner (v2, p=0.0005); T2 p=0.004 (v3) | the user's first request after a scale-up arrives sooner | the user during the transition |
+| Resource efficiency (v3 headline) | old-backend CPU relief ≥10 pp on majority of admissions, per arm; T_proc −60/−74 % | less time running hot → energy, cost, thermal/battery headroom at the edge | the operator (cost) and the system (margin) |
+
+The one-sentence explanation: **time-to-useful-capacity is a first-order
+auto-scaling metric** — every second a newly scaled backend is *dark* is a
+second the system pays for capacity without its benefit. Polling makes that
+darkness equal to up to one poll period, deterministically; event-driven
+admission removes it. The C1/C2 null says the *steady* user does not notice
+because the platform is deliberately QoS-bounded — not that the mechanism has
+no value.
+
+### 3.3 Does it generalize?
+
+- **Poll cadence — yes (measured).** The quantization scales with the poll
+  period (10 s → 15 s ⇒ 9.6 → 15.2 s); the mechanism *is* the poll.
+- **Platforms — yes, qualitatively.** Event-vs-poll is the universal
+  dichotomy of every routing plane (readiness probes, health checks, registry
+  sync); direction holds everywhere, magnitude is config-dependent.
+- **Architecture — conditional.** Direct notification needs an event path
+  between the readiness owner and the routing plane: free when co-located
+  (the thesis apparatus); separated stacks pay an integration cost and lose
+  polling's self-healing — which is why they default to polling.
+- **Tiers — no (measured null).** The storage-replica extension was closed
+  after a 4-run preflight (SG-4 null): read offload occurred but no
+  user-visible relief. The benefit does not transfer to the storage tier at
+  the locked read-write mix.
+- **Workload regime — partial.** The timing benefit persists at every load
+  tested (rates 8–25, old CPU up to ~88 %); the *conversion* of the ~7 s
+  delay into user harm under bursty / low-headroom demand is **argued by
+  mechanism, not separately demonstrated** — this is the stated boundary of
+  the C1 null.
+
+### 3.4 Recommended claim
+
+> Event-driven readiness notification removes **up to one poll period** of
+> admission quantization in every poll-based discovery system (mechanism
+> generalizes; magnitude scales with the poll cadence). Its value is largest
+> under fast demand shifts and low headroom, and in co-located architectures
+> where the event path is free. On this platform the benefit is measured as
+> faster usable capacity (≈6–7 s) and ≥10 pp compute-tier relief per arm, with
+> **no user-harm consequence under bounded demand** — and it does **not**
+> extend to the storage tier, which was evaluated and closed as a measured
+> null.

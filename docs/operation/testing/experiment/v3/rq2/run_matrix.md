@@ -17,17 +17,29 @@ the v3 RQ2 campaign (storage-bind locked config, tag `rq2-v3-campaign-20260808`)
 > B2/B1 synthesis + comparison graphs + `results.md` + `post_run_analysis.md`
 > complete (analyzer, 2026-08-09). (Attempt 1 aborted — v2-label collision;
 > fixed, relaunched.)
+>
+> **Amendment (2026-08-12):** the `sf_cb` cell will be re-run at the binding
+> compute config (`EDGE_CPUS 0.15 / STORAGE_CPUS 0.08`) to resolve the launch-
+> allocation confound of the original cell (`0.30 / 0.15`) — PLANNED, not yet
+> launched; see [`sf_cb_rerun_plan.md`](sf_cb_rerun_plan.md). P8 remains 🔄
+> QUEUED as a rerun-support probe.
 
 ## 1. Per-cell configuration
 
-| Cell | Env file (staged `~/rq2_env/`) | Phases file | EDGE_CPUS | STORAGE_CPUS | Pool | Verified by |
+| Cell | Env file (launch source `{REPO}/rq2_env/`) | Phases file | EDGE_CPUS | STORAGE_CPUS | Pool | Verified by |
 |---|---|---|---|---|---|---|
 | `cf_cb` | `rq2_compute_first.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 | cb_1/cb_2 (B1, v2 record) |
 | `cf_db` | `rq2_compute_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** | F4a/F4b (B2) + preflight P4 |
-| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | 0.30 | 0.15 | 12 | v2 Series-C |
+| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | **0.15**¹ | **0.08**¹ | 12 | planned rerun ([sf_cb_rerun_plan.md](sf_cb_rerun_plan.md)) |
 | `sf_db` | `rq2_storage_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** | F4a/F4b + preflight P1/P2/P3 |
 | `ba_cb` | `rq2_bottleneck_aware.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 | v2 Series-C |
 | `ba_db` | `rq2_bottleneck_aware.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** | F4a/F4b (db config) + preflight P5 |
+
+¹ 2026-08-12 amendment: the original `sf_cb` cell launched at `0.30 / 0.15`
+   (a confound — compute provisioned above its binding point); the rerun uses
+   `0.15 / 0.08` per [sf_cb_rerun_plan.md](sf_cb_rerun_plan.md). The launch
+   env is `{REPO}/rq2_env/` (reserve=1); the `~/rq2_env/` copy is STALE
+   (reserve=0) and must not be used (see `sf_cb_rerun_plan.md` §5).
 
 Pool is per-cell (shell, `tools/run_rq2_campaign.py` `CELLS`): 12 for all
 cells (db cells locked 2026-08-08 — P3/P3b evidence: stronger B2 p95 leg
@@ -42,7 +54,12 @@ ba_db_2 MEMCG OOM; runs 1–14 at 256m, runs 15+ at 512m; see
 Readiness gate (D9a) on in all three arm envs (`READINESS_PROPAGATION=direct`,
 `EDGE_APP_READY_EVENT=1`).
 
-## 2. Preflight (7 runs)
+## 2. Preflight (P1–P8; P8 still 🔄 QUEUED)
+
+(P1 was iterated through sub-labels during preflight, ending at P1e; P3 has
+the sub-run P3b — the campaign banner's "P1e/P2/P3/P3b/P4/P5" refers to
+those sub-labels. P8 was queued pre-campaign and remains QUEUED — see
+[sf_cb_rerun_plan.md](sf_cb_rerun_plan.md) §6.2.)
 
 | # | Label | Cell | Seed | Purpose |
 |---|---|---|---|---|
@@ -53,15 +70,17 @@ Readiness gate (D9a) on in all three arm envs (`READINESS_PROPAGATION=direct`,
 | P5 | `rq2_ba_db_preflight_1` | `ba_db` | 2001 | classifier picks storage; benefit ≈ P1 |
 | P6 | `rq2_ba_cb_preflight_1` | `ba_cb` | 2001 | v3 cb validation — B1 direction, compute scaling fires (PASS) |
 | P7 | `rq2_cf_cb_preflight_1` | `cf_cb` | 2001 | v3 cb validation — B1 direction, compute scaling fires (PASS) |
-| P8 | `rq2_sf_cb_preflight_1` | `sf_cb` | 2001 | last unvalidated cell — does storage fire on service_pressure-1.0 cb (wasted-sync vs does-nothing); no collapse | 🔄 QUEUED |
+| P8 | `rq2_sf_cb_preflight_1` | `sf_cb` | 2001 | does storage fire on service_pressure-1.0 cb (wasted-sync vs does-nothing); no collapse — **now a rerun-support probe at 0.15/0.08** (the 36-run campaign completed 2026-08-09 with P8 queued) | 🔄 QUEUED |
 
 Pass = `experiment_plan.md` §5–§6 (P1/P2: full req-check + scale-down;
 P4: timeout ≤ 10 %; P5: storage fires + benefit). P6/P7 (2026-08-08) validate
 compute-bound arms under the v3 shell config (pool 12, OVERLOAD 30/2000,
 reserve enabled, p5fix classifier) — both PASS B1 by a wide margin. P8
-(2026-08-08) closes the sf_cb gap (readiness review): on `service_pressure 1.0`
-the storage signal may never fire — the probe tells whether sf_cb is a
-"wasted-sync" or "does-nothing" cell before the 36-run campaign.
+(2026-08-08) was queued to close the sf_cb gap (readiness review): on
+`service_pressure 1.0` the storage signal may never fire — the probe tells
+whether sf_cb is a "wasted-sync" or "does-nothing" cell. It was superseded as
+a pre-campaign gate (the 36-run campaign completed 2026-08-09 with P8 queued)
+and is now a rerun-support probe at 0.15/0.08 per `sf_cb_rerun_plan.md` §6.2.
 
 ## 3. Main matrix (36 runs)
 
@@ -105,11 +124,17 @@ supersedes the pre-fix `rq2-v3-campaign-20260807`. Recorded at launch
 (2026-08-08) on `cloud-vm-rq2`:
 
 ```
-orchestrator:            268b57998cb3fa7d34f017934a951be7
+orchestrator:            268b57998cb3fa7d34f017934a951be7   (campaign launch 2026-08-08)
+orchestrator (sf_cb rerun amendment 2026-08-12): d45cdb2939d7a010c548fb410d9261b5
 rq2_compute_first.env:   2735f36a069d6a48ebf15cc8d894fa72
-rq2_storage_first.env:   3e18ffcadc4ab21d5352f4950877bbeb
+rq2_storage_first.env (campaign launch, tagged): 3e18ffcadc4ab21d5352f4950877bbeb
+rq2_storage_first.env ({REPO}/rq2_env, current 2026-08-12): c41bd38ef309cc1dd6822757c89dbb52
+rq2_storage_first.env (~/rq2_env, STALE reserve=0): e8a5e9e24d47b0483094118d2bfb3ddf
 rq2_bottleneck_aware.env:4eb3ac058adcb181c8c325cbbd359869
 phases_rq2_data_bound.json:   06a880c5dbfceb78c4ae5639870b5cd5
 phases_rq2_compute_bound.json: d40f5f592375360c76a1d55f4c168200
 controller source:       tag rq2-v3-campaign-20260808 (VM commit 84cbd8be)
 ```
+
+sf_cb rerun 1-row order CSV hashes (`temp/sf_cb_run_1.csv` … `temp/sf_cb_run_6.csv`)
+to be recorded here when created (see `sf_cb_rerun_plan.md`).

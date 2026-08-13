@@ -1,5 +1,6 @@
 With the resource question the base idea is:
-- Does the trigger info matter?
+- Does the trigger info matter? For varying load types when there are multi infra available
+to scale?
 Question then constrained to compute and storage.
 
 So we have then 3 secnarios
@@ -13,7 +14,13 @@ Perphas we need a run or 2 to proof it?)
 For each type of load we have a mode where only compute or only storage or 
 both are scalable.
 
-RQ2 therefore does
-not test *whether* the right resource is better — it tests whether a controller can
-reliably **detect** the right resource from the telemetry it already has, and whether
-that detection is worth more than the cost of being wrong.
+RQ2 therefore does not test *whether* the right resource is better — it
+ tests whether a controller can reliably **detect** the right resource from the telemetry
+it already has, and whether that detection is worth more than the cost of being wrong.
+
+With this evaluation we also prove that there is a conseuqnce in scaling the right
+resources.
+
+So the evidence is:
+- Compute scale up works because in both cf and ba the compute scalng brought latency beenfits
+- Storage scale 

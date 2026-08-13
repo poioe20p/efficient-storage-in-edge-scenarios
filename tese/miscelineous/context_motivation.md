@@ -49,6 +49,17 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > production-motivation). ¶8 gains a SOTA-positioning sentence (the thesis
 > follows the integration direction surveys call for, using standard
 > mechanisms). All three new keys are added to `tese/references.bib`.
+> (2026-08-12) ¶6's data-gravity tail (network locality / serve-remotely /
+> replicate-hot-subset / full-replica options) moved to ¶7, where the
+> stateful-services discussion already carried the compressed version;
+> ¶6 now ends on multi-owner complexity and its title drops "Data Gravity".
+> Pelle kept cited in the merged ¶7 block.
+> (2026-08-13) ¶7 trimmed to roughly half its length: the "data has
+> gravity" example sentence, the "spare capacity / network locality"
+> sentence, and the "adding a server does not solve it / over-provisioning
+> not an option" clauses were removed as redundant; the three
+> serve-remotely / replicate-hot-subset / full-replica options, the
+> detect-to-redirect chain, and the workload intro remain.
 
 ## Reference key → paper → location
 
@@ -143,8 +154,7 @@ evaluate service quality, and reduced backbone traffic connects to the
 data locality trade-offs explored in the experimental workload
 (cross-region reads, tiered data placement).
 
-¶6 — The Costs of Dispersal: Resource Scarcity, Management Complexity,
-and Data Gravity
+¶6 — The Costs of Dispersal: Resource Scarcity and Management Complexity
 
 The dispersal that produces these advantages is also the source of
 edge computing's constraints, and those constraints are intrinsic to
@@ -179,46 +189,30 @@ different owners — a site's servers, the network it attaches to, and
 the gateways in its users' homes are administered by different
 parties — so orchestrating a service across them requires reconciling
 multiple administrative domains
-\parencite{Liu2019SurveyEdgeComputingSystemsTools}. Yet even when
-spare capacity exists elsewhere in the system, the binding constraint
-is not raw compute or memory exhaustion but network locality: scaling
-a service across sites to absorb a demand surge forces requests and
-data to traverse the wide-area link. This is a qualitatively different
-bottleneck from CPU or memory exhaustion. When data has a home — when a
-content item ingested at one site is requested by users of another —
-the orchestration system must decide whether to serve the request
-remotely, paying WAN latency on every access; to replicate the hot data
-subset locally, paying synchronisation overhead; or to provision a full
-replica, paying storage and replication cost
-\parencite{Breitbach2019ContextAwareDataTaskPlacement,Nicolaescu2021StoreEdgeNetworkedDataSEND}.
-These are not stateless scale-out decisions; they are
-data-gravity-aware resource allocation decisions, and they must be
-made under the time pressure of an ongoing demand shift.
+\parencite{Liu2019SurveyEdgeComputingSystemsTools}.
 
 ¶7 — Stateful Services in Geo-Distributed Edge Deployments
 
-The resource management problem is compounded when the services themselves
-are stateful. Stateless microservices can be replicated freely — a new
-instance absorbs traffic immediately. But many applications in a
-geo-distributed edge deployment depend on data co-located with compute. A
-content discovery platform, for instance, ingests content items regionally
-and serves personalized feeds globally.
-The data has gravity: it resides in the database of the region that
-ingested it, and a server in the opposite region that needs that data
-must either fetch it remotely or wait for local replication
-\parencite{Breitbach2019ContextAwareDataTaskPlacement,Pelle2022CostLatencyEdgePlatform}. This means adding a new server in
-response to load does not, by itself, solve the problem. The data must
-be brought closer, and the orchestration system must detect when this is
-necessary, deliver that information to the decision point, provision the
-right kind of capacity, and redirect traffic to it. In resource-constrained
-deployments, where over-provisioning across sites is not an option, each of these
-steps introduces delay that directly degrades the quality of service users
-experience. This thesis uses a Multi-Region Content Discovery Platform —
-a geo-distributed edge deployment — as its experimental workload: content
-items are ingested regionally and discovered globally through tag-based
-personalized feeds, with heterogeneous document types and two stress
-regimes — one driven by data locality, the other by compute-analytics
-throughput.
+The resource management problem is compounded when the services
+themselves are stateful. Unlike stateless microservices, which can be
+replicated freely and absorb traffic immediately, stateful services in a
+geo-distributed edge deployment depend on data co-located with compute:
+a content item ingested at one site is served from the database of that
+site, so a request reaching a server elsewhere must either be served
+remotely, paying WAN latency on every access; or wait for the hot data to
+be replicated locally, paying synchronisation overhead; or require a full
+replica, paying storage and replication cost
+\parencite{Breitbach2019ContextAwareDataTaskPlacement,Nicolaescu2021StoreEdgeNetworkedDataSEND,Pelle2022CostLatencyEdgePlatform}.
+Scale-out alone does not solve this: the orchestration system must detect
+when data must be brought closer, deliver that information to the decision
+point, provision the right kind of capacity, and redirect traffic to it —
+and each of these steps introduces delay that directly degrades service
+quality under the time pressure of an ongoing demand shift. This thesis
+uses a Multi-Region Content Discovery Platform — a geo-distributed edge
+deployment — as its experimental workload: content items are ingested
+regionally and discovered globally through tag-based personalized feeds,
+with heterogeneous document types and two stress regimes — one driven by
+data locality, the other by compute-analytics throughput.
 
 ¶8 — The Orchestration Problem: The Coordination Gap
 

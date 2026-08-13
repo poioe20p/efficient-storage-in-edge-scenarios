@@ -121,9 +121,11 @@ Policy gate that selects one scaling action from a declared bottleneck classific
 > stateful service all three fail: the bottleneck must be *classified* from noisy,
 > delayed, tier-specific telemetry; a storage action carries real replica-sync cost;
 > and pressure can migrate between tiers as actions take effect. RQ2 therefore does
-> not test *whether* the right resource is better — it tests whether a controller can
-> reliably **detect** the right resource from the telemetry it already has, and whether
-> that detection is worth more than the cost of being wrong.
+> not test *whether* the right resource is better — it tests whether a telemetry-driven
+> **action selector** can reliably commit to the right capacity type, and whether that
+> choice is worth more than the cost of being wrong. That is a control-loop question —
+> *which capacity to scale* — that generalizes to any multi-resource scaling decision
+> (compute vs data, CPU vs memory, workers vs queues), not a scenario-specific detector.
 
 **The obvious part vs. the measured part:**
 
@@ -145,6 +147,30 @@ Policy gate that selects one scaling action from a declared bottleneck classific
 that *freshness* degrades scheduling is not profound, but its magnitude had to be
 measured. RQ2 measures the sibling quantity: how much *imperfect, delayed,
 tier-specific information* about which tier to scale is worth in a live system.
+
+### The generalizable claim (action selection, not detection)
+
+Stated at the control-loop level, the thesis claim is: **in a multi-resource
+stateful service, *which capacity type is scaled* is consequential** — scaling the
+wrong tier measurably wastes resources or degrades service, while a telemetry-driven
+action selector commits to the detected bottleneck and recovers the correctly-aligned
+arm's service quality across heterogeneous demand regimes, without knowing the regime
+in advance. The *detection* is the mechanism; the contribution is the
+decision-interface result, which extracts to any multi-resource controller.
+
+The claim must carry three evidence-backed caveats (detailed in
+[`rq2_conclusions.md`](rq2_conclusions.md)):
+
+1. **`sf_cb` is resource-waste only** — the 0.30-vs-0.15 static-compute confound
+   makes the *service* comparison for `sf_cb` unclean; the wrong-action cost there
+   is resource waste (node-minutes), not user-visible degradation.
+2. **`ba` on data-bound is not a clean "matches the aligned arm"** — it matches
+   `sf_db` when the post-relief compute adds stay quiet (`ba_db_1/4/5`) and degrades
+   the tail + timeouts when they fire (`ba_db_3/6`); the churn is a designed,
+   measured cost, not a hidden failure.
+3. **The B2 p95 cell-level gate is not met for either aligned db cell** — the
+   data-bound user-visible claim rests on the mechanism + tier-CPU relief + the
+   tail-free majority, not on a robust p95; the p95 negative is reported in full.
 
 ---
 
