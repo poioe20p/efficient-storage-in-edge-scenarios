@@ -102,7 +102,7 @@ without isolating the mechanism (B), or classifies without a timing dimension
 | Wang et al. (SDNFV) | B | spawn→state-sync→LB-inclusion delay **documented** | never varied or measured as a latency axis |
 | Pierro & Ullah (K8s HPA, IoT) | B | throughput drop on pod add (symptom) | the discovery-latency cause is named, not isolated |
 | Pourghebleh et al. (2020) | A (survey) | registry freshness acknowledged | not measured as a latency dimension |
-| Achir et al. (2022) | A (taxonomy) | SD categories (60+ papers) | **no category for discovery timing / registration latency** |
+| Achir et al. (2022) | A (taxonomy) | SD categories (87 approaches) | **no category for discovery timing / registration latency** |
 | Yaseen (2025) | B | pull-based monitoring → visibility gaps | readiness, not load, is the gap |
 | Podolskiy et al. (IaaS) | B | reactive autoscaling jeopardizes QoS | the LB-discovery lag is one segment, not isolated |
 

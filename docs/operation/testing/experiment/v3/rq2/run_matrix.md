@@ -18,11 +18,15 @@ the v3 RQ2 campaign (storage-bind locked config, tag `rq2-v3-campaign-20260808`)
 > complete (analyzer, 2026-08-09). (Attempt 1 aborted — v2-label collision;
 > fixed, relaunched.)
 >
-> **Amendment (2026-08-12):** the `sf_cb` cell will be re-run at the binding
-> compute config (`EDGE_CPUS 0.15 / STORAGE_CPUS 0.08`) to resolve the launch-
-> allocation confound of the original cell (`0.30 / 0.15`) — PLANNED, not yet
-> launched; see [`sf_cb_rerun_plan.md`](sf_cb_rerun_plan.md). P8 remains 🔄
-> QUEUED as a rerun-support probe.
+> **Amendment (2026-08-12) + rerun complete (2026-08-13):** the `sf_cb` cell was
+> re-run at the binding compute config (`EDGE_CPUS 0.15 / STORAGE_CPUS 0.08`)
+> to resolve the launch-allocation confound of the original cell (`0.30 / 0.15`).
+> The 6-run rerun completed 2026-08-13 (seeds 42×5 + 43; all exit 0, D1/D2/D3
+> clean); see [`sf_cb_rerun_plan.md`](sf_cb_rerun_plan.md) and `results.md`
+> (v2 timeline row). P8 (`rq2_sf_cb_preflight_1`) resolved: Branch A (storage
+> fires on cb, 2 on lan2), quarantined in `_superseded_pilot/`. Rerun verdict:
+> no user-visible wrong-action cost at the tested intensity (DF 8.7–9.1 %);
+> resource-waste + high-compute-utilization-without-relief framing.
 
 ## 1. Per-cell configuration
 
@@ -30,7 +34,7 @@ the v3 RQ2 campaign (storage-bind locked config, tag `rq2-v3-campaign-20260808`)
 |---|---|---|---|---|---|---|
 | `cf_cb` | `rq2_compute_first.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 | cb_1/cb_2 (B1, v2 record) |
 | `cf_db` | `rq2_compute_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** | F4a/F4b (B2) + preflight P4 |
-| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | **0.15**¹ | **0.08**¹ | 12 | planned rerun ([sf_cb_rerun_plan.md](sf_cb_rerun_plan.md)) |
+| `sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | **0.15**¹ | **0.08**¹ | 12 | rerun complete 2026-08-13 ([sf_cb_rerun_plan.md](sf_cb_rerun_plan.md)) |
 | `sf_db` | `rq2_storage_first.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** | F4a/F4b + preflight P1/P2/P3 |
 | `ba_cb` | `rq2_bottleneck_aware.env` | `phases_rq2_compute_bound.json` | 0.15 | 0.08 | 12 | v2 Series-C |
 | `ba_db` | `rq2_bottleneck_aware.env` | `phases_rq2_data_bound.json` | **1.20** | **0.15** | **12** | F4a/F4b (db config) + preflight P5 |
@@ -136,5 +140,19 @@ phases_rq2_compute_bound.json: d40f5f592375360c76a1d55f4c168200
 controller source:       tag rq2-v3-campaign-20260808 (VM commit 84cbd8be)
 ```
 
-sf_cb rerun 1-row order CSV hashes (`temp/sf_cb_run_1.csv` … `temp/sf_cb_run_6.csv`)
-to be recorded here when created (see `sf_cb_rerun_plan.md`).
+sf_cb rerun 1-row order CSV hashes (created 2026-08-12, deleted after the rerun):
+```
+sf_cb_preflight_1.csv: b41313d28c55228ff3c1b9b0fd32dd90
+sf_cb_run_1.csv:       884da160602dbce88d547d0576dcb2b5
+sf_cb_run_2.csv:       b502c8118c7d6a484a76bede066626c7
+sf_cb_run_3.csv:       1120ca8041c1c9bdd6671898878afb04
+sf_cb_run_4.csv:       567813048d43459dcdfd575e0a38e54a
+sf_cb_run_5.csv:       e86aea806ac08ed8acc1e14f2867acf9
+sf_cb_run_6.csv:       14fc0b63f9a9fed4fbd473a8d8d61f06
+```
+
+**P8 resolution (2026-08-12):** `rq2_sf_cb_preflight_1` (seed 2001, 0.15/0.08)
+— Branch A (storage fires on cb; 2 on lan2); DF 9.5 %, agg p50 3.4 ms, timeout
+0.50 %; folder quarantined in `{METRICS}/_superseded_pilot/`. Pilot
+`rq2_sf_cb_pilot` (seed 42, 0.15/0.08): DF 52 %, timeout 10.77 % — the single
+outlier among 8 sf_cb@0.15 runs; quarantined likewise.

@@ -1,12 +1,13 @@
 # Results — RQ2 v3 Bottleneck-Aware Scaling (Storage-Bind Config)
 
-**Date**: 2026-08-09 · **Experiment Plan**: [experiment_plan.md](experiment_plan.md) · **Runs**: 36 (35 analyzed; 1 excluded) — labels `rq2_<cell>_1..6` for cells `cf_cb, sf_cb, ba_cb, cf_db, sf_db, ba_db`
+**Date**: 2026-08-13 (updated for the sf_cb rerun) · **Experiment Plan**: [experiment_plan.md](experiment_plan.md) · **Runs**: 36 campaign + 6 sf_cb rerun @0.15/0.08 (2026-08-12/13) — labels `rq2_<cell>_1..6` for cells `cf_cb, sf_cb, ba_cb, cf_db, sf_db, ba_db`
 
 ## Run Timeline
 
 | Run | Date | Status | Cumulative Analysis | Conclusions | Changes Made | Expectations for This Run |
 |-----|------|--------|---------------------|-------------|--------------|--------------------------|
 | v1 — 35 valid runs (36 − `ba_db_2` − `cf_db_5`) | 2026-08-08/09 | ✅ 34 / ❌ 2 (OOM incidents) | — (initial campaign) | B1 robust; B2 p95-leg CI includes 1.0 (sf_db, ba_db), CPU leg robust (sf_db); ba tail churn; 2 MEMCG OOM incidents | — (baseline, tag `rq2-v3-campaign-20260808`) | (from experiment_plan.md §6; B2 pre-registered n=5 seed-42 CI + seed-43 separate) |
+| v2 — sf_cb rerun @0.15/0.08 (6 runs) | 2026-08-12/13 | ✅ 6/6 | v1 + rerun: the 0.30-vs-0.15 confound is resolved (originals @0.30 DF 0 % — never bound) | **sf_cb@0.15 shows NO user-visible wrong-action cost at the tested (sub-capacity) intensity**: 6/6 falsification-shaped (DF 8.7–9.1 %, p50 ~3.3 ms, timeout 0.22–0.53 %, served ≥99.5 %); resource-side cost = compute tier pinned ~61 % of cap in 93–97 % of windows with 0 adds + wasted storage activations; pilot outlier (DF 52 %, timeout 10.8 %) not reproducible | rerun launcher `CELLS["sf_cb"]` → 0.08/0.15 (VM + local, hash `d45cdb29…`); 6 originals quarantined `_superseded_sf_cb_030/`; DF/DT-p50 criteria added (§6.1a); dataset rebuilt (34 rows); graphs regenerated | (amended §6.1a/§6.4, 2026-08-13; sub-capacity load ⇒ no QoE cost, resource waste only) |
 
 > **Replicate pool note (post-analysis)**: the campaign finished 36 runs; the analyzer excluded **2** as MEMCG OOM harness incidents (D2 hard-gate violation) — `ba_db_2` (run 7, 256 MB cap, incident file `ba_db_2_incident.md`) and `cf_db_5` (run 25, 512 MB cap, confirmed same mechanism). Valid pool = **34 runs**: `cf_cb` 6, `ba_cb` 6, `sf_cb` 6, `sf_db` 6, `ba_db` 5, `cf_db` 5. The `EDGE_MEMORY` split (runs 1–14 @ 256m, 15+ @ 512m) is platform hardening, not a treatment; it does not change the policy-comparison direction (cf_cb_4+ at 512m reproduce the B1 signature).
 
@@ -36,6 +37,21 @@ Measurements are presented without judgment. All latency values are completed-re
 | sf_cb_4 | 42 | 0.00 | 100.0 | 0 | 2 (lan2, wasted) | — | 3.3 | — |
 | sf_cb_5 | 42 | 0.00 | 100.0 | 0 | 2 (lan2, wasted) | — | 3.2 | — |
 | sf_cb_6 | 43 | 0.00 | 100.0 | 0 | 2 (lan1+lan2, wasted) | — | 3.2 | — |
+
+> **Superseded (2026-08-13)**: the six `sf_cb_1..6` rows above ran at the confounded **0.30/0.15** static-compute allocation and are superseded by the corrected-config rerun below (originals quarantined on the VM in `_superseded_sf_cb_030/`; full-campaign scan: their DF = 0 % — the tier never bound).
+
+#### sf_cb rerun @ 0.15/0.08 (corrected config, 2026-08-12/13)
+
+| Run | Seed | Timeout % | Served % | Compute adds | Storage activations | agg p50 (ms) | DF % (buckets ≥1 s) | DT-p50 (ms) | Edge CPU % of cap (p50/max) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rq2_sf_cb_1 | 42 | 0.22 | 99.78 | 0 | 0 | 3.3 | 8.7 (2/23) | 346 | 61.2 / 83.7 |
+| rq2_sf_cb_2 | 42 | 0.37 | 99.63 | 0 | 0 | 3.4 | 8.7 (2/23) | 365 | 61.6 / 86.1 |
+| rq2_sf_cb_3 | 42 | 0.30 | 99.70 | 0 | 1/LAN (wasted) | 3.4 | 8.7 (2/23) | 339 | 61.7 / 85.5 |
+| rq2_sf_cb_4 | 42 | 0.53 | 99.47 | 0 | 1/lan2 (wasted) | 3.4 | 9.1 (2/22) | 412 | 62.4 / 94.0 |
+| rq2_sf_cb_5 | 42 | 0.25 | 99.75 | 0 | 2/lan2 (wasted) | 3.3 | 8.7 (2/23) | 329 | 60.7 / 92.2 |
+| rq2_sf_cb_6 | 43 | 0.45 | 99.55 | 0 | 1/LAN (wasted) | 3.4 | 8.7 (2/23) | 384 | 62.4 / 86.5 |
+
+**Measurement notes (no judgment):** aggregate episode p50 excludes timed-out requests (latency_summary convention); DF = fraction of 30 s episode buckets with per-LAN-averaged bucket-p50 ≥ 1.0 s (§6.1a); DT-p50 = time-weighted mean of the bucket p50 series; Edge CPU = `average_cpu_percent` as % of the 0.15-container cap. D1 = 0, D2 = 0, D3 present on all 6.
 
 ### Data-bound cells (B2 axis)
 
@@ -67,7 +83,7 @@ Measurements are presented without judgment. All latency values are completed-re
 | --- | --- | --- | --- | --- | --- | --- | ---: | ---: |
 | cf_cb | ✅ aligned | compute | **B1 p50 0.001–0.025×** (≫2× drop) | — | 0.001 | — | 0.65–4.06 | 95.3–99.0 |
 | ba_cb | ✅ aligned | compute | **B1 p50 0.001–0.002×** | — | 0.001 | — | 0.49–0.98 | 98.3–99.2 |
-| sf_cb | ❌ wrong-action | compute | no compute add (wasted storage) | — | — | — | 0.00–1.62 | 98.4–100 |
+| sf_cb | ❌ wrong-action | compute | rerun @0.15: no compute add; DF 8.7–9.1 %, p50 ~3.3 ms, timeout 0.22–0.53 % → **no user-visible wrong-action cost at tested intensity**; compute tier ~61 % of cap in 93–97 % windows, 0 adds (resource cost); storage wasted | — | — | — | 0.22–0.53 (rerun) | 99.5–99.8 (rerun) |
 | sf_db | ✅ aligned | data | B2 p95 0.574–1.393 **CI includes 1.0** | 0.879 | CPU 0.57–0.66 **all <0.75** | 0.03–1.36 | 98.6–99.9 |
 | ba_db | ✅ classifier | data | B2 p95 0.897–13.968 **CI includes 1.0** (n=4) | 22.199 | CPU 0.62–0.85 lan1 / 0.62–0.75 lan2 (1 fail) | 0.07–4.42 | 94.2–99.9 |
 | cf_db | ❌ wrong-action | data | no storage scale-up | — | — | — | 0.07–0.31 (excl. incident) | 99.8 |
@@ -92,7 +108,7 @@ All 12 aligned compute replicates (cf_cb, ba_cb) show the pre-add compute satura
 ### Wrong-action arms (pre-registered no-benefit): ✅ judged on their claimed direction
 
 - **cf_db** (compute-first on data-bound): compute scaled (6 adds), storage suppressed (no reserve activation in 5/5 valid), service degraded vs the aligned sf_db (episode p50 ~36–78 ms and p95 ~706–1135 ms vs sf_db p50 ~40–70 ms / p95 ~502–756 ms; cf_db compute adds gave no p50 benefit, p50 ratio 0.13–1.52×). Pre-registered no-benefit direction observed; evidence valid.
-- **sf_cb** (storage-first on compute-bound): no compute scale-up; storage activations were wasted (mostly lan2, late — recovery_gap/demand_drop — or serving nothing). Service stayed healthy (timeout 0–1.62 %, p50 ~3 ms) because the sf env allocates the static compute tier 0.30 cpus (vs 0.15 for cf/ba) — the wrong-action cost here is **resource waste** (storage node-minutes, e.g. sf_cb_6 2.01 storage node-min/1000 req), not user-visible collapse. The sf_cb vs cf_cb/ba_cb comparison is confounded by the higher static compute allocation; this is stated as a limitation, not a measured service-cost difference.
+- **sf_cb** (storage-first on compute-bound): **confound resolved by the 2026-08-12/13 rerun at 0.15/0.08** (the original 0.30/0.15 allocation never bound — DF 0 % in all 6 originals — so the original service comparison was unclean). At the corrected binding config, the rerun (6/6, seeds 42×5 + 43) shows **no user-visible wrong-action cost at the tested (sub-capacity) intensity**: aggregate p50 ~3.3 ms, timeout 0.22–0.53 %, served 99.5–99.8 %, DF 8.7–9.1 % (only the first ~60 s of each episode degrades, then self-resolves). The wrong-action cost is therefore **resource-side**: the compute tier is pinned at ~61 % of the 0.15 cap in 93–97 % of episode windows with 0 compute adds (high utilization without relief), and the storage activations (0–2/run) are consistently **wasted** (no relief needed). Falsification-shaped 6/6 under §6.4 (aggregate p50 < 0.5 s, timeout < 0.65 %, DF < 15 %); the pilot outlier (DF 52 %, timeout 10.8 %) shows a binding-moment degradation is possible but not reproducible at this intensity. The pre-registered "or" (wastes resources **or** degrades service) is satisfied via resource waste; the user-service-quality leg is **not** demonstrated on the cb axis at this load.
 
 ### Base-requirements verdict per arm
 
@@ -119,7 +135,7 @@ All 12 aligned compute replicates (cf_cb, ba_cb) show the pre-add compute satura
 1. **Reframe the B2 claim** for the thesis: the storage reserve **mechanism** (activation, CPU relief, no cold spawn) is reproduced (n=11), but the pre-registered cell-level p95-benefit gate is **not** met — the claim must rest on the CPU-relief leg + tail behavior, or the p95 window contract must be re-examined (tail contamination).
 2. **Platform hardening**: raise/verify the edge `EDGE_MEMORY` cap (or fix memory accounting) — 2 OOM incidents bracket the phenomenon at 256 MB and 512 MB.
 3. **Tail investigation**: isolate the ~0.8 % >10 s completed-request source (probe with storage-CPU-capped windows).
-4. **sf_cb confound**: document the 0.30 vs 0.15 static-compute allocation when comparing sf_cb service quality (resource-waste framing only).
+4. **sf_cb confound → resolved (2026-08-13)**: the 0.30→0.15 rerun at the corrected config confirms the **resource-waste-only** framing — no user-visible wrong-action cost at the tested sub-capacity intensity (DF 8.7–9.1 %; compute tier ~61 % of cap without relief). If the thesis requires the strongest wrong-action form (user QoE collapse on the cb axis), a capacity-exceeding probe (heavier `service_pressure` limit / lower `EDGE_CPUS`) is the pre-registered next step — not required for the claim as stated (the "or" is satisfied via resource waste; cf_db already carries the service-degradation leg on the db axis).
 5. Cross-mode comparison graphs archived (`graphs/comparison/`, 19 PNGs); per-run graphs archived (`graphs/<run_timestamp>/`, 350 PNGs); campaign dataset + synthesis CSVs in `analysis/`.
 
 ## Changelog
@@ -128,3 +144,5 @@ All 12 aligned compute replicates (cf_cb, ba_cb) show the pre-add compute satura
 | --- | --- | --- |
 | 2026-08-09 | Initial results.md for the v3 campaign (36 runs; 34 valid after 2 OOM exclusions). | Per-run analysis, cell-level B2/B1 synthesis, arm narrative. |
 | 2026-08-09 | `cf_db_5` re-classified as MEMCG OOM incident (2 kills @512 MB) and excluded from the cf_db pool. | D2 hard-gate violation; same mechanism as `ba_db_2`. |
+| 2026-08-13 | sf_cb rerun @0.15/0.08 incorporated (6 runs), DF/DT-p50 criteria added (§6.1a), dataset rebuilt (34 rows), comparison graphs regenerated; original sf_cb@0.30 rows marked superseded. | Resolve the 0.30 confound; the rerun shows no user-visible wrong-action cost at the tested intensity — resource-waste + high-utilization-without-relief framing. |
+| 2026-08-13 | Recreated the lost B1/B2 ratio-figure generator as `tools/rq2_v3_ratio_graphs.py` and regenerated `b1_p50_ratio`, `b2_cpu_ratio`, `b2_p95_ratio`, `b2_pre_post_p95` from the rebuilt 34-run dataset. | The ad-hoc 08-09 generator was never saved; recreated for provenance consistency — sf_cb@0.15 has B1 N/A (no compute add) and the db cells are unchanged, so content is unchanged but provenance now matches the rebuilt dataset. |

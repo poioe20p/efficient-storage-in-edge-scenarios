@@ -1,10 +1,13 @@
 # Thesis Structure — Restructure Blueprint for `tese/main.tex`
 
-> **Status:** 2026-07-31 (blueprint) · **2026-08-01 update:** comment-level
-> alignment of `main.tex` is **DONE** (all `%` TODO/note comments updated to the new
-> RQ framing; your prose untouched; section headings unchanged but flagged with
-> in-file `% NOTE` for renaming). The **content rewrite** of each chapter is still
-> pending and happens only after explicit approval, chapter by chapter.
+> **Status:** 2026-07-31 (blueprint) · **2026-08-01:** comment-level alignment of
+> `main.tex` done. **2026-08-02:** the four stale section headings renamed (Results
+> chapter now RQ1→RQ2→RQ3 + "Discussion: Synthesis Across Interfaces"); the in-file
+> `% NOTE` flags removed. **2026-08-13:** the final RQ campaigns are **complete**
+> (RQ1 telemetry delivery semantics, RQ2 bottleneck-aware action, RQ3 readiness
+> propagation) — Ch.6 is written from completed evidence, not from a pending
+> design. The **content rewrite** of each chapter is still pending and happens only
+> after explicit approval, chapter by chapter.
 > **Why:** `main.tex` carried the **pre-reframe** structure: old RQ set
 > (RQ1 telemetry freshness, RQ2 backend selection, RQ3 trigger composition), the
 > "detection→delivery→action" narrative, and the unmeasured ~74 s coordination tax.
@@ -27,8 +30,9 @@
 | RQ2 | Backend **Selection** — topology_host/slowstart/lifecycle | **Bottleneck-Aware Scaling Action** — compute-first/storage-first fixed vs bottleneck-aware choice of compute or storage scale-out |
 | RQ3 | **Trigger Quality** — degradation_score vs cpu_only | **Readiness Propagation & Traffic Admission** — direct lifecycle notification vs periodic discovery |
 
-Old RQ1/RQ2/RQ3 campaigns are **supporting platform/calibration evidence only**
-(`thesis_overview.md` §5). Old backend-selection modes (host/slowstart/lifecycle)
+The **pre-reframe** RQ1/RQ2/RQ3 campaigns are **supporting platform/calibration
+evidence only** (`thesis_overview.md` §5); the **completed campaigns are the
+final evidence**. Old backend-selection modes (host/slowstart/lifecycle)
 are superseded: RQ3 now holds warm-lease priority and slow-start ramps constant
 and varies only the readiness-propagation mechanism (`thesis_overview.md` §6-RQ3).
 
@@ -120,7 +124,7 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | §3.1 Design Requirements (`sec:design_requirements`) | Keep; add "each control-loop interface independently tunable". |
 | §3.2 Architecture (`sec:architecture_overview`) | Keep (two geo-distributed networks + WAN, OVS, double-VIP, 3-thread controller, telemetry pipeline). |
 | §3.3 Elastic Allocation (`sec:elastic_allocation`) | Compute: **replace** the three backend-selection policy modes with the RQ3 readiness-propagation model (direct lifecycle notification vs periodic discovery; warm-lease/slow-start held constant). Data: keep Tier 0→2, Tier 1 Selective Sync described **as capability, out of scope** for evaluation. |
-| §3.4 Monitoring & Decision Engine (`sec:monitoring_decision`) | Keep degradation score; **add** the RQ1 delivery-semantics design (event-preserving / delayed / latest-state; durable window log) and the RQ2 bottleneck classification + policy gate. |
+| §3.4 Monitoring & Decision Engine (`sec:monitoring_decision`) | Keep degradation score; describe the **implemented** RQ1 delivery-semantics design (event-preserving / delayed / latest-state / sampled-push; durable window log) and the RQ2 bottleneck classification + `PolicyGate`. |
 | §3.5 Control Workflow (`sec:control_workflow`) | Keep; extend the end-to-end flow to readiness→admission (`thesis_overview.md` §5 event trace). |
 
 ### Chapter 4 — Implementation (`ch:implementation`)
@@ -128,8 +132,8 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | Section | Action |
 |---|---|
 | §4.1 Experimental infrastructure (`sec:impl_infraestructure`) | Keep (Docker, OVS, tc-netem WAN, cloud VM). Fix typo in section key if desired. |
-| §4.2 Elastic allocation (`sec:impl_elastic`) | **Update.** Compute: readiness-gated registration, pending-backend registry, flow-isolation mode (RQ3); remove/replace old `BACKEND_SELECTION_POLICY` host/slowstart/lifecycle framing. Data: `rs.add()/rs.remove()`, `VIP_DATA`, conntrack (keep). |
-| §4.3 Monitoring & Decision Engine (`sec:impl_monitoring`) | **Update.** Add: sequence-numbered telemetry-window log (RQ1: `delivery_log`, event-preserving/delayed/latest-state sources); bottleneck classification + `PolicyGate` (RQ2); decision log (`_log_decision`). |
+| §4.2 Elastic allocation (`sec:impl_elastic`) | **Update.** Compute: describe as implemented — readiness-gated registration, pending-backend registry, flow-isolation mode, event-driven `app_ready` admission (RQ3); old `BACKEND_SELECTION_POLICY` host/slowstart/lifecycle framing removed. Data: `rs.add()/rs.remove()`, `VIP_DATA`, conntrack (keep); persistent storage reserve. |
+| §4.3 Monitoring & Decision Engine (`sec:impl_monitoring`) | **Update.** Describe as implemented: sequence-numbered telemetry-window log (RQ1: `telemetry_delivery_log_*.csv`, event-preserving/delayed/latest-state/sampled-push sources); bottleneck classification + `PolicyGate` (RQ2); decision log (`_log_decision`); readiness gate + `admit_source` (RQ3). |
 | §4.4 Control Workflow (`sec:impl_control`) | Keep; add readiness→admission handoff. |
 | §4.5 Implementation Validation (`sec:impl_validation`) | Keep (golden-config stability, mechanism validation); reframe to the new extensions. |
 
@@ -140,7 +144,7 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | §5.1 Experimental Objectives (`sec:experimental_objectives`) | **Rewrite** around the three new RQs (vary each interface independently; DSRM framing unchanged). |
 | §5.2 Evaluation Scenarios (`sec:evaluation_scenarios`) | **Rewrite.** Add the **demand model** (purpose map §Demand model): the quantified imposed profile (50× surge, mix shift, duty cycle, recovery), temporal+compositional variability (spatial disabled), step transitions stated. Add the recommended **static/no-adaptation control arm**. Comparison strategy: baselines encode architectural properties, not competing products. |
 | §5.3 Performance Metrics (`sec:performance_metrics`) | **Rewrite** to the new RQ metrics (`thesis_overview.md` §6 per-RQ primary measurements): RQ1 (completed/missed overload windows, information age, decision timing), RQ2 (bottleneck-specific recovery, node-minutes, relief in targeted tier), RQ3 (ready→admitted→first-flow→first-success delays, useful initial request share, **gap-window pool `timeout_rate`/`failure_rate` over `[spawn_started, admitted]`**), plus latency/failure/timeout and control overhead, and — for RQ2 — the **cost of the scaling action itself** (replica-sync bandwidth and transient overload during `rs.add()`). Independent breach detector; per-RQ locks updated to the new controls. |
-| §5.4 Procedure & Statistical Analysis (`sec:experiment_procedure`) | Keep (per-run unit, Mann-Whitney U, Cliff's delta, per-phase aggregation, validity). Open-loop driver requirement + calibration-only status of the sync curl driver: **implemented for RQ2, RQ1, and RQ3** (2026-08-04) — the "calibration/secondary until replaced" caveat lifts for RQ2 (open-loop driver, n=3, sync-cost), for RQ1 (open-loop driver, 4-arm completeness×info-age factorial, n=5, pre-registered Mann–Whitney U + Cliff's delta on the factorial edges, non-surge C8 verdict; stats underpowered considerations same as RQ2 — effect-size driven), and for RQ3 (open-loop driver, **event-driven `direct` vs 10 s `discovery` primary arms at n=5 + a 15 s sensitivity cell**, pre-registered MWU + Cliff's delta on the gap-window consequence metrics, per-arm knob verification, selftest gates). |
+| §5.4 Procedure & Statistical Analysis (`sec:experiment_procedure`) | Keep (per-run unit, Mann-Whitney U, Cliff's delta, per-phase aggregation, validity). Open-loop driver requirement + calibration-only status of the sync curl driver: **implemented and the caveat lifted — all three final campaigns completed**: RQ1 (telemetry delivery semantics, 4 arms × n=7 = 28 runs, seeds 3001–3007); RQ2 (bottleneck-aware action selection, 6 cells × 6 = 36 runs, 34 valid — 2 documented MEMCG OOM incidents); RQ3 (readiness propagation, n=6/arm = 12 runs, plus a 15 s sensitivity cell and a boundary probe). Stats: pre-registered Mann–Whitney U + Cliff's delta on pre-registered edges; CIs reported in full. |
 
 ### Chapter 6 — Experimental Results (`ch:results`)
 
@@ -167,7 +171,7 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 |---|---|
 | §7.1 Conclusions (`sec:conclusions`) | **Rewrite** around the three new RQ findings. |
 | §7.2 Research Contributions (`sec:contributions_revisited`) | Restate the re-derived 5 contributions with results evidence. |
-| §7.3 Limitations (`sec:limitations`) | **Update**: old campaigns calibration-only; RQ1/RQ3 new results pending (protocols implemented 2026-08-04); open-loop driver requirement — **fixed for RQ2, RQ1, and RQ3** (implemented 2026-08-04); n=**3** for RQ2 — MWU underpowered at n=3 (min p=0.10), reported descriptively, conclusions by Cliff's delta + 3/3 direction consistency (scoped); **n=5 primary for RQ3** (direct vs discovery, min exact MWU p ≈ 0.0079 best case; ties/voids raise it — conclusions by Cliff's delta + direction consistency); **action cost measured** for RQ2 (sync-cost collector); RQ3 `direct` arm is **event-driven** (admission on an `app_ready` control event; probe-based fallback measured via `admit_source`); synthetic workload + imposed profile (not production); no SLA claims; single testbed; MongoDB-specific mechanisms. |
+| §7.3 Limitations (`sec:limitations`) | **Update to the completed evidence**: pre-reframe campaigns calibration-only; all three RQ campaigns complete. **RQ2**: storage user-visible p95 benefit **not statistically demonstrated** (pre-registered gate not met; CI includes 1.0; causes: PRE/POST window asymmetry + bottleneck-aware second-tier churn); 2 MEMCG OOM incidents as a platform limitation (256 MB / 512 MB caps); replica-sync **bandwidth not metered** (join time + node-minutes + transient CPU/latency measured instead). **RQ3**: gap-window **user-harm consequence null** at every load (pre-registered-acceptable; "why timing matters" argued by mechanism); container-bind stall (~10 s, both arms, measured covariate, controlled by stratification); storage-replica extension closed as null. **RQ1**: delay arm seed-dependent/bimodal (delay−latest-state n.s.); single regime, single platform; per-run mean-of-LANs unit. Common: synthetic workload + imposed profile (not production); no SLA claims; single testbed; MongoDB-specific mechanisms; n=6–7 per cell/arm (sufficient for observed effect sizes; modest stratum-level precision). |
 | §7.4 Future Work (`sec:future_work`) | Keep + update: end-to-end coordination experiment (now the explicit synthesis target); window-size freshness/noise trade-off; Tier 1 full implementation; data-locality characterization (Tier 0/1/2); larger scale; real traces; ML thresholds; **static-capacity control arm** as a follow-up magnitude study. |
 
 ---
@@ -198,9 +202,10 @@ Status: **comments DONE (2026-08-01)**; prose/heading items still open.
 - [x] TODO comments referencing **old** RQs in §1.3, §5, §6 — replaced with new RQs. *(comments — done)*
 - [x] Old numbers "74 s / 84 s / 31 s / 43 s" in §2.7 and §6.6 comments — removed/reframed
   as measured-segments-only in comments. *(comments — done; content rewrite pending)*
-- [ ] Old backend-selection mode names (`topology_host`, `topology_slowstart`,
-  `topology_lifecycle`) — flagged in comments as the RQ3 apparatus; **section headings**
-  still carry old RQ labels and await your rename decision. *(headings — pending)*
+- [x] Old backend-selection mode names (`topology_host`, `topology_slowstart`,
+  `topology_lifecycle`) — mapped in comments to the RQ3 apparatus, and the four
+  stale **section headings renamed** (2026-08-02) to the current RQ labels.
+  *(comments + headings — done)*
 - [ ] Typos spotted in **prose** (needs your go-ahead): "surprassed" → surpassed,
   "highliting" → highlighting, "arrise" → arise, "complitment" → complement,
   "arquitecture" → architecture (ch.3), "infraestructure" → infrastructure (ch.4).
@@ -217,8 +222,11 @@ Status: **comments DONE (2026-08-01)**; prose/heading items still open.
    separate approval).
 4. Update **Ch.3/Ch.4/Ch.5** (architecture/implementation/methodology) to the new
    extensions.
-5. Results **Ch.6** filled in as new RQ campaigns produce measured segments; the
-   old campaigns remain calibration-only.
+5. Results **Ch.6** written from the **completed RQ campaigns** — evidence
+   sources: `tese/research_questions/{rq1/rq1_conclusions.md,
+   rq2/rq2_conclusions.md, rq3/rq3_evaluation_conclusions.md}`. The
+   **pre-reframe** campaigns remain calibration-only; the completed campaigns
+   are the final evidence.
 6. Update dependent docs that still reference old RQs/framing (e.g. the
    `tese/literature_review/` folder READMEs — already reorganised 2026-08-01 into
    RQ folders — plus `docs/research_questions/*`, `.github/skills/rq*-cross-mode-comparison`)
@@ -233,4 +241,8 @@ Status: **comments DONE (2026-08-01)**; prose/heading items still open.
 - Gap forms + old matrix: `tese/literature_review/global_literature_review.md` (§1–§7; banner flags superseded framing).
 - Corpus (RQ-mapped): `tese/literature_review/README.md` and the folder READMEs.
 - Demand profile: `source/scripts/testing/phases_override/phases_stress_plateau.json` (control group, 2026-08-01).
-- New RQ implementation plans: `docs/research_questions/v2/rq{1,2,3}/rq*_preparation.md`.
+- New RQ implementation plans: `docs/research_questions/rq{1,2,3}/rq*_preparation.md`;
+  current experiment plans: `docs/operation/testing/experiment/v3/rq{1,2,3}/experiment_plan.md`.
+- Final evidence (conclusions): `tese/research_questions/rq1/rq1_conclusions.md`,
+  `tese/research_questions/rq2/rq2_conclusions.md`,
+  `tese/research_questions/rq3/rq3_evaluation_conclusions.md`.

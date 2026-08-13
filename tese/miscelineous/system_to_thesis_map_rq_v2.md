@@ -489,7 +489,7 @@ scale-up is a weighted combination of CPU saturation and processing latency.
 
 The global literature review's gap matrix (§7) identifies four dimensions no
 paper addresses simultaneously. One column — **trigger composition varied?**
-— has zero entries across all 60+ papers in six domains. Every paper that
+— has zero entries across the reviewed corpus. Every paper that
 studies scaling triggers treats the metric as a given: CPU utilization
 (Kubernetes HPA), request rate (AWS ASG), or a pre-defined compound metric
 (OSM POL). None vary what goes into the trigger and measure what happens.

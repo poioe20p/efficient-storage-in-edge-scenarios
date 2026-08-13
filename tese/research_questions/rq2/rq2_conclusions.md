@@ -71,13 +71,17 @@ The headline, stated without spin:
   suppressed (no reserve activation in 5/5 valid); episode p50 ~36–78 ms and
   p95 ~706–1135 ms vs aligned `sf_db` (~40–70 ms / ~502–756 ms) — degraded
   service; compute adds gave no p50 benefit (ratio 0.13–1.52×).
-- **`sf_cb`** (storage-first on compute-bound): no compute scale-up; storage
-  activations were wasted (mostly lan2, late/non-serving). Service stayed
-  healthy (timeout 0–1.62 %, p50 ~3 ms) — **confound**: the sf env allocates
-  0.30 static compute cpus vs 0.15 for cf/ba, so the wrong-action cost here is
-  **resource waste** (storage node-minutes), not user-visible collapse. The
-  service comparison is therefore not clean for this cell; only the
-  resource-waste framing is valid.
+- **`sf_cb`** (storage-first on compute-bound): **confound resolved by the
+  2026-08-12/13 rerun at 0.15/0.08** (the original 0.30 allocation never bound —
+  DF 0 % in all 6 originals). At the corrected config, 6/6 rerun replicates show
+  **no user-visible wrong-action cost at the tested (sub-capacity) intensity**:
+  agg p50 ~3.3 ms, timeout 0.22–0.53 %, DF 8.7–9.1 % (first ~60 s per episode
+  only). The wrong-action cost is **resource-side**: compute tier pinned ~61 % of
+  the 0.15 cap in 93–97 % of episode windows with 0 compute adds, plus wasted
+  storage activations. The "or" (wastes resources **or** degrades service) is
+  satisfied via resource waste; the user-service-quality leg on the cb axis is
+  not demonstrated at this intensity (falsification-shaped 6/6; pilot outlier
+  DF 52 % not reproducible).
 
 ### 2.4 The classifier commits to the correct tier: ✅
 
@@ -182,7 +186,7 @@ crash-exits), both with the **same confirmed mechanism** (kernel `dmesg`
 | Bottleneck-aware selection commits to the detected tier | ba agreement 88–93 % (db), storage-first on cb | ✅ **claim** — "the classifier activated the storage reserve first on the data-bound episode and scaled compute only after storage relief" |
 | Storage scale-up relieves the storage tier (resource side) | CPU ratio 0.57–0.66× (sf_db 12/12), reproduced | ✅ **claim** — "storage CPU fell from ~66–71 % to ~45 % after reserve activation, in every aligned replicate" |
 | Storage scale-up reduces user-visible p95 latency | p95 CI ⊃ 1.0 | ❌ **do NOT claim** — report as "the pre-registered p95 cell-level criterion was not met; the median ratio favoured relief (0.727× for sf_db) but the 95 % CI includes 1.0; two documented causes (tail asymmetry; ba churn)" |
-| Wrong-tier scaling degrades service (cf_db) / wastes resources (sf_cb) | pre-registered no-benefit direction | ✅ **claim** — with the sf_cb 0.30-vs-0.15 confound stated, so only resource-waste framing is used for sf_cb |
+| Wrong-tier scaling degrades service (cf_db) / wastes resources (sf_cb) | pre-registered no-benefit direction | ✅ **claim** — with the sf_cb confound resolved by the 2026-08-13 0.15 rerun; resource-waste framing confirmed at the corrected config (no user-visible cost at tested intensity) |
 | The platform sustains the scaling churn | 34/36 clean; 2 OOM incidents | ⚠️ **claim as a documented limitation** — "2 of 36 runs were excluded as MEMCG OOM platform incidents (256 MB and 512 MB caps); the memory budget is a current platform limitation" |
 
 **Wording rules (consistent with `rq2_evaluation.md` §7):** "consistent across
@@ -217,8 +221,10 @@ result.
    amendment must be pre-registered with rationale, not post-hoc.
 3. **Raise or fix the edge `EDGE_MEMORY` cap** — 2 OOM incidents at 256 MB and
    512 MB; current budget is a platform limitation under compute churn.
-4. **Document the sf_cb 0.30-vs-0.15 static-compute confound** — restricts the
-   sf_cb wrong-action claim to resource waste.
+4. **sf_cb confound → resolved (2026-08-13)** — the 0.15/0.08 rerun confirms the
+   sf_cb wrong-action claim as resource-waste only (no user-visible cost at the
+   tested sub-capacity intensity; DF 8.7–9.1 %; high compute utilization without
+   relief).
 5. Replica-sync **bandwidth** was not metered (join time + node-minutes +
    transient CPU/latency measured instead) — stated limitation.
 

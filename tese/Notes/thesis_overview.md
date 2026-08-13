@@ -89,11 +89,11 @@ These works motivate integrated orchestration, but they do not provide a control
 
 The thesis does not claim that monitoring, auto-scaling, load balancing, or cross-layer orchestration are new research areas. They are established areas. The narrower gap is at the interfaces between them.
 
-| Interface | Open question addressed by this thesis |
-| --- | --- |
-| Telemetry to decision | Does a controller behave differently when demand evidence arrives late but complete, versus when intermediate observations are absent? |
+| Interface                   | Open question addressed by this thesis                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telemetry to decision       | Does a controller behave differently when demand evidence arrives late but complete, versus when intermediate observations are absent?               |
 | Decision to capacity action | Under stateful workloads, does selecting compute or storage scale-out according to the observed bottleneck improve recovery and resource efficiency? |
-| Ready backend to traffic | Once a backend is ready, how much does propagation of readiness to the routing plane affect when that backend becomes usable capacity? |
+| Ready backend to traffic    | Once a backend is ready, how much does propagation of readiness to the routing plane affect when that backend becomes usable capacity?               |
 
 These interfaces matter because user-visible service quality depends on the entire path:
 
@@ -128,18 +128,31 @@ For each demand episode, the experiment records:
 
 This instrumentation distinguishes the time to create a container from the time to create **usable service capacity**.
 
-Existing RQ1, RQ2, and RQ3 campaigns are supporting platform and calibration evidence. Their telemetry-cadence, routing-policy-bundle, and trigger-composition framing is superseded by this document. They are not direct final evidence for the redesigned research questions until the interventions and measurements below are implemented and evaluated.
+The **final RQ campaigns are complete and are the primary evidence** (the
+earlier, pre-reframe RQ1/RQ2/RQ3 campaigns remain supporting/calibration only):
 
-The **RQ2 final protocol is implemented** (2026-08-04): the open-loop driver (§8), the `ba-strict` sticky-commitment arm (implemented, optional follow-up), and the v2 measurement/statistics layer (effect-size statistics at n=3 — Cliff's delta + 3/3 direction consistency, sync-cost, relief-flatten) are in place; the **18-run (6 cells × 3) v2 campaign execution remains**.
-
-The **RQ3 final protocol is implemented** (2026-08-04): the readiness gate and flow-isolation mechanism (`rq3_preparation.md`) plus the v2 evaluation design — event-driven `direct` arm (approach A: admission on an `app_ready` control event, no probe before admission), a 10 s periodic `discovery` arm, and a 15 s sensitivity cell; open-loop driver; pre-registered gap-window consequence metrics; MWU + Cliff's delta mirroring the RQ2 v2 stats layer; per-arm knob verification and selftest gates. The **13-run v2 campaign execution remains** (on `cloud-vm-rq3`).
-
-The **RQ1 final protocol is implemented** (2026-08-04): the 4-arm completeness ×
-info-age factorial (event-preserving, delayed, poll, and a **sampled-push**
-arm that delivers every third window immediately) with the open-loop driver,
-the status-aware measurement contract, and the pre-registered statistics
-(factorial-edge Mann–Whitney U + Cliff's delta, non-surge C8 verdict); the
-**20-run (4 arms × 5) v2 campaign execution remains**.
+- **RQ3 — readiness propagation (complete).** Direct lifecycle notification vs
+  periodic discovery, n=6/arm × 2 = 12 runs: readiness→admission 0.001 s vs
+  6.984 s (p < 0.0001, d = −1.000); spawn→first ~6 s sooner (p = 0.0005);
+  scale-decision→usable capacity 2.17 s vs 6.01 s at rate-12 (p = 0.0022,
+  d = −1.000); gap-window user-harm consequence null (0.000 at every load).
+  Storage-replica extension evaluated and closed as null.
+  Evidence: `tese/research_questions/rq3/rq3_evaluation_conclusions.md`.
+- **RQ1 — telemetry delivery semantics (complete).** Event-preserving, delayed,
+  latest-state, and sampled-push delivery, 4 arms × n=7 = 28 runs: lossy
+  delivery (~1/3 completeness) degrades per-episode p95 ~9× (δ = −1.000,
+  p = 0.0006, perfect separation, 7/7); +30 s delay significant in aggregate
+  (p = 0.0012) but seed-dependent (bimodal); non-surge quality clean in every
+  arm. Evidence: `tese/research_questions/rq1/rq1_conclusions.md`.
+- **RQ2 — bottleneck-aware scaling action (complete).** Compute-first,
+  storage-first, and bottleneck-aware selection, 6 cells × 6 = 36 runs (34
+  valid; 2 documented MEMCG OOM incidents): compute scale-up benefit robust
+  (12/12); storage reserve mechanism + tier-CPU relief reproduced (12/12);
+  **storage user-visible p95 benefit not significant (pre-registered gate not
+  met)**; wrong-tier costs real (compute-first on data-bound demand degrades
+  service; storage-first on compute-bound demand wastes resources); classifier
+  commits to the detected tier (88–93 %).
+  Evidence: `tese/research_questions/rq2/rq2_conclusions.md`.
 
 ---
 
@@ -149,8 +162,7 @@ the status-aware measurement contract, and the pre-registered statistics
 
 > **How do verified event-preserving, delayed event-preserving, and latest-state telemetry delivery semantics affect overload observability, scaling response, and transient service quality in a stateful edge service?**
 
-The experiment compares (full 2×2 factorial, RQ1 v2 protocol implemented
-2026-08-04):
+The experiment compares (4-arm completeness × info-age design):
 
 - an event-preserving reference that delivers every completed telemetry window exactly once in source order (fresh + complete);
 - delayed event-preserving delivery of the same ordered windows, with a fixed, pre-registered delay and no burst replay (stale + complete);
@@ -171,7 +183,9 @@ Primary measurements include:
 - latency distributions and failure rate; and
 - controller and telemetry overhead.
 
-**Required extension:** create a durable, sequence-numbered telemetry-window log with retention, ordered replay, delivery acknowledgement, and shared event identifiers. The current ZMQ PUB/SUB path is not assumed to be event-preserving until sequence validation and gap recovery are implemented.
+**Platform extension (implemented):** a durable, sequence-numbered telemetry-window log with retention, ordered replay, delivery acknowledgement, and shared event identifiers was created, because the ZMQ PUB/SUB path was not assumed to be event-preserving. **Verified per run** (delivery-completeness logged: event-preserving/delayed 1.0, latest-state/sampled-push ≈ 0.33).
+
+**Result:** lossy delivery (latest-state or sampled-push, ~1/3 completeness) degrades per-episode p95 ~9× (δ = −1.000, p = 0.0006, perfect separation, 7/7); +30 s delay is significant in aggregate (p = 0.0012) but seed-dependent (bimodal); non-surge quality is clean in every arm; usable-capacity ordering A 28.5 < B 59.6 < C 79.6 ≈ D 83.2 s. Full evidence: `tese/research_questions/rq1/rq1_conclusions.md`.
 
 ### RQ2 - Bottleneck-Aware Scaling Action
 
@@ -196,7 +210,9 @@ Primary measurements include:
 - number of scale actions; and
 - whether the selected action produces measurable relief in the targeted tier.
 
-**Required extension:** introduce a policy gate that selects one scaling action from a declared bottleneck classification, while logging the known induced episode label, evidence, selected action, rejected action, and action budget for every decision.
+**Platform extension (implemented):** a policy gate that selects one scaling action from a declared bottleneck classification, logging the known induced episode label, evidence, selected action, rejected action, and action budget for every decision. **Evaluated** (6 cells × 6 = 36 runs, 34 valid — see `tese/research_questions/rq2/rq2_conclusions.md`).
+
+**Evidence status — claim boundary:** the compute scale-up benefit is robust (p50 collapses 40–1000× in 12/12 aligned compute-bound replicates) and the storage reserve mechanism + tier-CPU relief are reproduced (12/12; storage CPU ~66–71 % → ~42–49 %). The **user-visible storage p95 benefit is NOT statistically demonstrated** (pre-registered gate not met; CI includes 1.0 for the storage-first and bottleneck-aware data-bound cells; documented causes: PRE/POST window-length asymmetry and the bottleneck-aware arm's post-relief compute churn). Wrong-tier scaling costs are real (compute-first on data-bound demand degrades service; storage-first on compute-bound demand wastes resources). The classifier commits to the detected tier (88–93 %). Two runs were excluded as documented MEMCG OOM platform incidents (256 MB and 512 MB edge-memory caps) — reported as a platform limitation.
 
 ### RQ3 - Readiness Propagation and Traffic Admission
 
@@ -224,9 +240,9 @@ Primary measurements include:
 - transition-window latency and failures; and
 - time from scale decision to usable capacity.
 
-**Required extension:** add a compute readiness probe and pending-backend registry; delay all pool admission until readiness succeeds; suppress direct admission in the discovery condition; and decouple propagation from backend-selection policy, warm-lease priority, and ramp behavior. **Implemented** (2026-08-04) and extended by the v2 protocol: the `direct` arm is genuinely event-driven (the edge emits an `app_ready` control event at readiness; the controller admits on the event with no probe before admission — measured via an `admit_source` admission-log column), and a `discovery_15` sensitivity cell shows the quantization cost scales with the discovery period. Primary consequence metrics are anchored to the **admission gap** (pool-wide old-backend `timeout_rate`/`failure_rate` over `[spawn_started, admitted]`), where the propagation quantization tail is observable, rather than the new backend's post-admission window.
+**Platform extension (implemented):** a compute readiness probe and pending-backend registry; pool admission is delayed until readiness succeeds; direct admission is suppressed in the discovery condition; and propagation is decoupled from backend-selection policy, warm-lease priority, and ramp behavior. Implemented (2026-08-04) and extended: the `direct` arm is genuinely event-driven (the edge emits an `app_ready` control event at readiness; the controller admits on the event with no probe before admission — measured via an `admit_source` admission-log column), and a `discovery_15` sensitivity cell shows the quantization cost scales with the discovery period. Primary consequence metrics are anchored to the **admission gap** (pool-wide old-backend `timeout_rate`/`failure_rate` over `[spawn_started, admitted]`), where the propagation quantization tail is observable, rather than the new backend's post-admission window.
 
-**Evaluation complete (2026-08-05).** The v2 **18-run campaign** (`direct` × 6, `discovery` × 6, `discovery_15` × 6) confirmed the timing claim (spawn→admitted 0.17 s vs 9.62 s vs 15.22 s; exact MWU p = 0.0022, full separation) and reproduced the pre-registered consequence null (gap-window timeouts/failures 0.000 on every arm). A declared **post-hoc boundary probe** (rates 8/12/25 req/s/client) then tested whether the consequence materializes under load: it remains null up to and including **~88 % old-backend CPU** at rate 25, where the open-loop driver's own delivery collapses (drain-cancel explosion ~44-50 %, flow-isolation gate voids) — the platform's practical limit is the driver, not the compute. The probe's clean high-load **rate-12 cell was extended to n=6/arm (2026-08-06, 8 additional runs, all gates pass)**, making the **timing-under-load claim statistically significant**: scale→first median **2.17 s direct vs 6.01 s discovery** (full separation, exact MWU p = 0.0022, Cliff's d = −1.000), with the consequence null on **6×6 all-zero** rate-12 runs. **Root cause +
+**Evaluation complete (2026-08-05).** The **18-run campaign** (`direct` × 6, `discovery` × 6, `discovery_15` × 6) confirmed the timing claim (spawn→admitted 0.17 s vs 9.62 s vs 15.22 s; exact MWU p = 0.0022, full separation) and reproduced the pre-registered consequence null (gap-window timeouts/failures 0.000 on every arm). A declared **post-hoc boundary probe** (rates 8/12/25 req/s/client) then tested whether the consequence materializes under load: it remains null up to and including **~88 % old-backend CPU** at rate 25, where the open-loop driver's own delivery collapses (drain-cancel explosion ~44-50 %, flow-isolation gate voids) — the platform's practical limit is the driver, not the compute. The probe's clean high-load **rate-12 cell was extended to n=6/arm (2026-08-06, 8 additional runs, all gates pass)**, making the **timing-under-load claim statistically significant**: scale→first median **2.17 s direct vs 6.01 s discovery** (full separation, exact MWU p = 0.0022, Cliff's d = −1.000), with the consequence null on **6×6 all-zero** rate-12 runs. **Root cause +
 fix (2026-08-06):** the campaign's direct-arm http=000 / ~10 s handover
 artifact is the edge app's intermittent ~10 s Werkzeug dev-server bind delay —
 the `app_ready` event fires on a MongoDB-ping predicate up to ~10 s before the
@@ -279,7 +295,7 @@ The thesis uses the following methodological requirements:
 - The experimental unit is the independent run, not an individual request or individual scale event.
 - Workload order is randomized or blocked to reduce host-state and time effects.
 - Runs reset persistent containers, data state, manifests, and controller state.
-- Primary comparisons use a scheduled open-loop driver that preserves a pre-specified offered-load process independently of response latency. This requirement follows Schroeder, Wierman & Harchol-Balter, *Open Versus Closed: A Cautionary Tale* (NSDI 2006): closed-loop models mask overload, and a latency-coupled driver makes the offered load differ per arm — as the RQ1 cross-campaign record acknowledges. The current synchronous curl driver is calibration or secondary evidence only until it is replaced for the final RQ campaigns; the RQ2 and RQ1 v2 protocols implement the replacement (see §5).
+- Primary comparisons use a scheduled open-loop driver that preserves a pre-specified offered-load process independently of response latency. This requirement follows Schroeder, Wierman & Harchol-Balter, *Open Versus Closed: A Cautionary Tale* (NSDI 2006): closed-loop models mask overload, and a latency-coupled driver makes the offered load differ per arm — as the RQ1 cross-campaign record acknowledges. The current synchronous curl driver is calibration or secondary evidence only until it is replaced for the final RQ campaigns; the RQ1, RQ2, and RQ3 campaigns implement the replacement (see §5).
 - Offered request load is recorded separately from completed requests.
 - Every treatment uses the same application-readiness criterion.
 - The controller records a common event trace from demand observation through first successful traffic.
@@ -305,19 +321,19 @@ It does not claim:
 
 ## 10. Relationship to Other Documents
 
-| Document | Relationship |
-| --- | --- |
-| `tese/literature_review/README.md` | Corpus index: RQ → folder mapping and the core citation set. |
-| `tese/literature_review/01_telemetry_rq1/README.md` | Telemetry state of the art and the delivery-semantics gap (RQ1). |
-| `tese/literature_review/02_action_selection_rq2/README.md` | Auto-scaling and edge-storage state of the art and the bottleneck-to-action gap (RQ2). |
-| `tese/literature_review/03_readiness_admission_rq3/README.md` | SDN load-balancing and service-discovery state of the art and the readiness-propagation gap (RQ3). |
-| `tese/literature_review/04_context_edge/README.md` | Edge framing and platform context (introduction). |
-| `tese/literature_review/05_context_orchestration/README.md` | Edge orchestration context and integration/scope boundaries. |
-| `tese/literature_review/99_reference/README.md` | Background/reserve sources; not core evidence. |
-| `tese/literature_review/global_literature_review.md` | Evidence ledger (synthesis + gap matrix); §1–§7 framing is superseded — see its banner. |
-| `docs/operation/system_mechanisms.md` | Verified platform architecture and current mechanisms. |
-| `docs/research_questions/` | Prior RQ documents and campaigns using the superseded framing. Replacement RQ definitions, measurement contracts, and experiment designs must be created before final thesis evaluation. |
-| `tese/chapters/` | Thesis chapters; claims in the manuscript must not exceed this overview. |
+| Document                                                        | Relationship                                                                                                                                                                             |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tese/literature_review/README.md`                            | Corpus index: RQ → folder mapping and the core citation set.                                                                                                                            |
+| `tese/literature_review/01_telemetry_rq1/README.md`           | Telemetry state of the art and the delivery-semantics gap (RQ1).                                                                                                                         |
+| `tese/literature_review/02_action_selection_rq2/README.md`    | Auto-scaling and edge-storage state of the art and the bottleneck-to-action gap (RQ2).                                                                                                   |
+| `tese/literature_review/03_readiness_admission_rq3/README.md` | SDN load-balancing and service-discovery state of the art and the readiness-propagation gap (RQ3).                                                                                       |
+| `tese/literature_review/04_context_edge/README.md`            | Edge framing and platform context (introduction).                                                                                                                                        |
+| `tese/literature_review/05_context_orchestration/README.md`   | Edge orchestration context and integration/scope boundaries.                                                                                                                             |
+| `tese/literature_review/99_reference/README.md`               | Background/reserve sources; not core evidence.                                                                                                                                           |
+| `tese/literature_review/global_literature_review.md`          | Evidence ledger (synthesis + gap matrix); §1–§7 framing is superseded — see its banner.                                                                                              |
+| `docs/operation/system_mechanisms.md`                         | Verified platform architecture and current mechanisms.                                                                                                                                   |
+| `docs/research_questions/`                                    | Prior RQ documents and campaigns using the superseded framing. Replacement RQ definitions, measurement contracts, and experiment designs must be created before final thesis evaluation. |
+| `tese/chapters/`                                              | Thesis chapters; claims in the manuscript must not exceed this overview.                                                                                                                 |
 
 ---
 

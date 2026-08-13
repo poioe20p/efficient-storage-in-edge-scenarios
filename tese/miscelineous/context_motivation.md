@@ -60,6 +60,19 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > not an option" clauses were removed as redundant; the three
 > serve-remotely / replicate-hot-subset / full-replica options, the
 > detect-to-redirect chain, and the workload intro remain.
+> (2026-08-13b) ¶7 gains a closing bridge to ¶8: the detect-provision-
+> redirect chain is mapped onto separate monitoring, auto-scaler, and load
+> balancer components, each with its own control loop, so the jump into
+> ¶8 is no longer abrupt. ¶8's opening reworded to "This separation is the
+> norm..." so it picks up the bridge directly.
+> (2026-08-13c) ¶8's opening re-anchored per-source after verification: the
+> component facts are pinned to Llorens (OSM MON/POL/LCM, Prometheus TSDB,
+> OFS flow tables) and Qu (monitoring interval + LB tier as taxonomy
+> dimensions); unsupported tool names (InfluxDB, kube-proxy, HAProxy, HPA)
+> dropped. AdapPF (Huang & Pierre 2023) added as the single corpus paper
+> that varies a monitoring interval experimentally; the "never varied"
+> claim qualified to "along the full demand-to-capacity chain". BibTeX key
+> added: Huang2023AdapPFSelfAdaptiveScrapeInterval.
 
 ## Reference key → paper → location
 
@@ -207,28 +220,35 @@ Scale-out alone does not solve this: the orchestration system must detect
 when data must be brought closer, deliver that information to the decision
 point, provision the right kind of capacity, and redirect traffic to it —
 and each of these steps introduces delay that directly degrades service
-quality under the time pressure of an ongoing demand shift. This thesis
-uses a Multi-Region Content Discovery Platform — a geo-distributed edge
-deployment — as its experimental workload: content items are ingested
+quality under the time pressure of an ongoing demand shift. In practice,
+these steps are not executed by a single control entity: a monitoring
+component detects demand, an auto-scaler provisions capacity, and a load
+balancer redirects traffic, each running under its own control loop. This
+thesis uses a Multi-Region Content Discovery Platform — a geo-distributed
+edge deployment — as its experimental workload: content items are ingested
 regionally and discovered globally through tag-based personalized feeds,
 with heterogeneous document types and two stress regimes — one driven by
 data locality, the other by compute-analytics throughput.
 
 ¶8 — The Orchestration Problem: The Coordination Gap
 
-In the major cloud and edge orchestration platforms considered here —
-Kubernetes, NFV MANO frameworks such as OSM and ONAP, and MEC platforms —
-the functions that would need to coordinate during a demand shift are
-implemented as separate components with independent control loops. A monitoring system such as Prometheus or
-InfluxDB scrapes metrics on a fixed interval. An auto-scaler such as the
-Kubernetes HPA or the OSM Policy Manager evaluates thresholds and
-provisions new instances. A load balancer — kube-proxy, HAProxy, or SDN
-flow tables — eventually discovers the new backends and steers traffic to
-them. Each handoff between these components adds latency: the monitoring
-scrape interval, the alarm evaluation window, the provisioning time, and
-the health-check discovery gap accumulate before newly provisioned
-capacity can serve traffic
-\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}. The coordination gap
+In the reviewed orchestration platforms, monitoring, scaling, and routing
+are separate components: in OSM-based NFV, the Policy Manager,
+Monitoring, and Lifecycle Management modules operate alongside an
+SDN-based VNF Redirector whose monitoring polls the VIM into a Prometheus
+time-series database and whose load balancing steers traffic through
+OpenFlow flow tables
+\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}. Surveys
+of auto-scaling likewise treat the monitoring interval and the
+load-balancing tier as separate design dimensions
+\parencite{Qu2018AutoScalingWebApplicationsClouds}. The handoff between
+these components is consequential rather than merely architectural:
+AdapPF shows that a coarse monitoring scrape interval degrades the
+accuracy of application scheduling in geo-distributed cluster
+federations, and that adaptive scraping restores it
+\parencite{Huang2023AdapPFSelfAdaptiveScrapeInterval}, yet stops at
+scheduling accuracy without tracing the effect through a stateful
+service's scaling and admission path. The coordination gap
 is not unique to edge deployments — reactive scaling is the default
 across cloud and edge platforms
 \parencite{Qu2018AutoScalingWebApplicationsClouds} — but its consequences are
@@ -242,7 +262,8 @@ reflected in the component split of a real containerized edge stack
 has been called for at the survey level by Yaseen
 \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork} — but
 never isolated, measured, or varied as an independent experimental
-variable. Within the reviewed corpus, no paper argues for this separation
+variable along the full demand-to-capacity chain. Within the reviewed
+corpus, no paper argues for this separation
 or against co-location: the separation appears as the unexamined default.
 The direction of remedy, however, is well established: a survey of edge
 resource scheduling calls for the joint treatment of communication,
