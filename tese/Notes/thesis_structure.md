@@ -1,13 +1,10 @@
 # Thesis Structure — Restructure Blueprint for `tese/main.tex`
 
-> **Status:** 2026-07-31 (blueprint) · **2026-08-01:** comment-level alignment of
-> `main.tex` done. **2026-08-02:** the four stale section headings renamed (Results
-> chapter now RQ1→RQ2→RQ3 + "Discussion: Synthesis Across Interfaces"); the in-file
-> `% NOTE` flags removed. **2026-08-13:** the final RQ campaigns are **complete**
-> (RQ1 telemetry delivery semantics, RQ2 bottleneck-aware action, RQ3 readiness
-> propagation) — Ch.6 is written from completed evidence, not from a pending
-> design. The **content rewrite** of each chapter is still pending and happens only
-> after explicit approval, chapter by chapter.
+> **Status (2026-08-13):** blueprint for the `main.tex` content rewrite. Comment
+> alignment (2026-08-01) and section-heading renames (2026-08-02) are done. The
+> final RQ campaigns are **complete** (RQ1 delivery semantics, RQ2 bottleneck-aware
+> action, RQ3 readiness propagation), so Ch.6 is written from completed evidence.
+> Chapter rewrites are pending and proceed only after explicit approval.
 > **Why:** `main.tex` carried the **pre-reframe** structure: old RQ set
 > (RQ1 telemetry freshness, RQ2 backend selection, RQ3 trigger composition), the
 > "detection→delivery→action" narrative, and the unmeasured ~74 s coordination tax.
@@ -93,8 +90,8 @@ Notes:
 | Section | Action |
 |---|---|
 | §1.1 Context, Motivation, Problem (`sec:context_motivation`) | **Rewrite tail.** Keep: traffic-growth figure/ITU, edge positioning (Cao, Satyanarayanan), "coordination delays ... handoff delays" opening. **Fix**: finish the incomplete sentence "Despite the advantages edge computing also faces, some difficulties regarding resource scarcity, reliability and " (complete or delete); remove the stale commented-out paragraph block above it. Add: demand variability as the *driver* (latency = outcome metric, **no SLA claims**), and the demand→usable-capacity chain as the problem (see purpose map P1–P2). ¶6 expands "costs of dispersal" beyond per-site scarcity to the full complexity taxonomy: management complexity + weaker security (Satyanarayanan), heterogeneity + demand volatility (Luo 2021), production over-provisioning/imbalance + placement-scheduling decoupling (Xu NEP 2021, newly added), multi-owner/multidomain resources (Liu 2019). ¶8 gains a SOTA-positioning sentence: the thesis follows the integration direction surveys call for (Luo joint CCS; Yaseen integrated monitoring) with standard mechanisms, contributing co-location + measurement, not a new algorithm. Ismail 2015 (Docker eval) intentionally not cited. |
-| §1.2 Objectives (`sec:objectives`) | **Draft.** Derive the 6 objectives from the new RQs + apparatus: (1) co-located controller apparatus with independently configurable interfaces; (2) characterise telemetry delivery semantics; (3) characterise bottleneck-aware action selection; (4) characterise readiness propagation → traffic admission; (5) reconstruct the demand→usable-capacity timeline; (6) methodology/validation. |
-| §1.3 Research Questions (`sec:research_questions`) | **Rewrite** with the three new RQs (verbatim from `thesis_overview.md` §6). Optionally keep old ones in a footnote as superseded/calibration. |
+| §1.2 Objectives (`sec:objectives`) | **Draft** (house standard 2026-08-14 — see `miscelineous/objectives_recommendation.md`). **One primary objective** — single aim sentence: investigate & characterise the three interfaces (telemetry delivery → scaling action → traffic admission) in a stateful edge service under demand shifts, via a co-located apparatus that suppresses the coordination gap (handoff delays) and in which each interface is deliberately engineered as an independently variable dimension — + **secondary objectives**: (1) co-located apparatus with independently configurable interfaces; (2) characterise telemetry delivery semantics; (3) characterise bottleneck-aware action selection; (4) characterise readiness propagation → traffic admission; (5) reconstruct the demand→usable-capacity timeline. ~~(6) methodology/validation~~ → **not an objective; moved to §1.4 (DSRM).** |
+| §1.3 Research Questions (`sec:research_questions`) | **Rewrite** with the three new RQs (verbatim from `thesis_overview.md` §6). House standard: RQs live in their own section, separate from objectives (Polónio §1.3, Cuco §1.6). Optionally keep old ones in a footnote as superseded/calibration. |
 | §1.4 Research Methodology (`sec:research_methodology`) | Keep (DSRM — Peffers et al.; Hevner et al.). Unchanged. |
 | §1.5 Contributions (`sec:contributions`) | **Re-derive the 5 contributions** around interface characterization (see purpose map P7). |
 | §1.6 Dissertation Structure (`sec:document_structure`) | **Update** chapter list + note results chapter now ordered RQ1→RQ2→RQ3. |
@@ -114,19 +111,13 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | §2.5 Load Balancing on SDN (`sec:lit_sdn_lb`) → **RQ3** | **Re-cast.** Evidence: Wang et al. (synchronisation-before-inclusion), Pierro & Ullah (service-discovery-latency symptom), Pourghebleh/Achir (SD freshness), the **"same gap, three names"** table (monitoring/SD/LB). End with the RQ3 gap statement. |
 | §2.6 Resource Orchestration on SDN (`sec:lit_sdn_orchestration`) | Keep; frame as the *platform rationale*: co-location as the answer to "structurally unaskable" (purpose map P6; §6.2 closest-attempts table). |
 | §2.7 Summary & Research Gaps (`sec:lit_synthesis`) | **Rewrite.** Replace the old ~74 s synthesis with: (a) **updated gap matrix** — columns must change to the NEW interface dimensions: *telemetry delivery semantics varied? / scaling-action type varied? / readiness→admission varied? / co-located & independently tunable?* (re-derive from `global_literature_review.md` §7, which still uses old columns); (b) the interface-gap statement (purpose map P4/P5); (c) explicitly *not* a summed penalty. |
-| §2.8 Edge Storage related work (2026-08-01, corpus trimmed) | **New related-work block.** Full verdicts in `global_literature_review.md` §10. The edge-storage papers now live in `02_action_selection_rq2/` (Ferreira et al. 2024 — edge-DB survey, the RQ2 DB-side citation; SEND 2021 — co-location adjacency, must be delimited; Malazi et al. 2022 — nearest RQ2 neighbour, "dynamic" = re-placement, not tier selection) and `99_reference/` (Wei & Wang 2023 — old-idea ancestor, self-declared static; Lujic et al. 2017 — forecasting boundary). No paper in the corpus threatens RQ1/RQ3; RQ2 requires the 3-claim rewording in purpose map I2. |
-
-> **Relocated from `context_motivation.md` ¶8 (2026-08-14):** the compressed
-> motivation no longer deep-dives. Use in Ch.2: Llorens/Qu component facts +
-> AdapPF evidence → §2.3 Monitoring (RQ1) / §2.5 SDN-LB (RQ3); Okwuibe
-> component split → §2.2; the "never isolated along the full chain" synthesis
-> and the Luo/Yaseen remedy direction → §2.7 gap statement.
+| §2.8 Edge Storage related work (2026-08-01, corpus trimmed) | **New related-work block.** Verdicts + locations in `global_literature_review.md` §10. Key roles: Ferreira = RQ2 DB-side citation; SEND = co-location adjacency (delimit); Malazi = nearest RQ2 neighbour (re-placement, not tier selection); Wei & Wang / Lujic = static ancestor / forecasting boundary (background). No paper threatens RQ1/RQ3; RQ2 needs the I2 rewording in `purpose_evidence_map.md`. |
 
 ### Chapter 3 — Architecture and Design (`ch:system_architecture`)
 
 | Section | Action |
 |---|---|
-| Chapter intro | **Add framing:** the architecture is the *experimental apparatus* making each interface independently configurable while the rest of the service stays controlled (`thesis_overview.md` §5). |
+| Chapter intro | **Add framing:** the architecture is the *experimental apparatus* that suppresses the coordination gap (the handoff delays between separate control loops), so each interface's own delay can be measured without cross-component handoffs as a confound. Each interface is then deliberately engineered as an independently configurable dimension; because co-location couples the components, this orthogonality is a design achievement, not a free consequence of co-location, and the rest of the service stays controlled (`thesis_overview.md` §5). |
 | §3.1 Design Requirements (`sec:design_requirements`) | Keep; add "each control-loop interface independently tunable". |
 | §3.2 Architecture (`sec:architecture_overview`) | Keep (two geo-distributed networks + WAN, OVS, double-VIP, 3-thread controller, telemetry pipeline). |
 | §3.3 Elastic Allocation (`sec:elastic_allocation`) | Compute: **replace** the three backend-selection policy modes with the RQ3 readiness-propagation model (direct lifecycle notification vs periodic discovery; warm-lease/slow-start held constant). Data: keep Tier 0→2, Tier 1 Selective Sync described **as capability, out of scope** for evaluation. |
@@ -150,7 +141,7 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | §5.1 Experimental Objectives (`sec:experimental_objectives`) | **Rewrite** around the three new RQs (vary each interface independently; DSRM framing unchanged). |
 | §5.2 Evaluation Scenarios (`sec:evaluation_scenarios`) | **Rewrite.** Add the **demand model** (purpose map §Demand model): the quantified imposed profile (50× surge, mix shift, duty cycle, recovery), temporal+compositional variability (spatial disabled), step transitions stated. Add the recommended **static/no-adaptation control arm**. Comparison strategy: baselines encode architectural properties, not competing products. |
 | §5.3 Performance Metrics (`sec:performance_metrics`) | **Rewrite** to the new RQ metrics (`thesis_overview.md` §6 per-RQ primary measurements): RQ1 (completed/missed overload windows, information age, decision timing), RQ2 (bottleneck-specific recovery, node-minutes, relief in targeted tier), RQ3 (ready→admitted→first-flow→first-success delays, useful initial request share, **gap-window pool `timeout_rate`/`failure_rate` over `[spawn_started, admitted]`**), plus latency/failure/timeout and control overhead, and — for RQ2 — the **cost of the scaling action itself** (replica-sync bandwidth and transient overload during `rs.add()`). Independent breach detector; per-RQ locks updated to the new controls. |
-| §5.4 Procedure & Statistical Analysis (`sec:experiment_procedure`) | Keep (per-run unit, Mann-Whitney U, Cliff's delta, per-phase aggregation, validity). Open-loop driver requirement + calibration-only status of the sync curl driver: **implemented and the caveat lifted — all three final campaigns completed**: RQ1 (telemetry delivery semantics, 4 arms × n=7 = 28 runs, seeds 3001–3007); RQ2 (bottleneck-aware action selection, 6 cells × 6 = 36 runs, 34 valid — 2 documented MEMCG OOM incidents); RQ3 (readiness propagation, n=6/arm = 12 runs, plus a 15 s sensitivity cell and a boundary probe). Stats: pre-registered Mann–Whitney U + Cliff's delta on pre-registered edges; CIs reported in full. |
+| §5.4 Procedure & Statistical Analysis (`sec:experiment_procedure`) | Keep (per-run unit, Mann-Whitney U, Cliff's delta, per-phase aggregation, validity). Open-loop driver: **implemented — the §0.3 caveat is lifted; all three final campaigns completed**: RQ1 (telemetry delivery semantics, 4 arms × n=7 = 28 runs, seeds 3001–3007); RQ2 (bottleneck-aware action selection, 6 cells × 6 = 36 runs, 34 valid — 2 documented MEMCG OOM incidents); RQ3 (readiness propagation, n=6/arm = 12 runs, plus a 15 s sensitivity cell and a boundary probe). Stats: pre-registered Mann–Whitney U + Cliff's delta on pre-registered edges; CIs reported in full. |
 
 ### Chapter 6 — Experimental Results (`ch:results`)
 
@@ -164,7 +155,7 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | §6.3 RQ3 — Readiness Propagation & Traffic Admission | **New results section** (replaces old "Trigger Quality"). |
 | §6.4 Network Performance (`sec:results_network`) | Keep. |
 | §6.5 Scalability Analysis (`sec:results_scalability`) | Keep; reframe around efficiency (node-minutes) and action timing. |
-| §6.6 Discussion (`sec:discussion`) | **Rewrite — drop the old ~74 s table.** Reconstruct the demand→usable-capacity timeline **from measured segments under a common workload/config only** (`thesis_overview.md` §7). Report per-interface effect sizes and uncertainty; identify which interface dominates; implications for designers. No summed penalty across unmatched experiments. |
+| §6.6 Discussion (`sec:discussion`) | **Rewrite** (per §0.2). Reconstruct the demand→usable-capacity timeline **from measured segments under a common workload/config only** (`thesis_overview.md` §7). Report per-interface effect sizes and uncertainty; identify which interface dominates; implications for designers. |
 
 > **Honesty guard:** old RQ2's ~31 s discovery-time slowstart penalty was
 > empirically confirmed (n=9) *under the old framing*. Under the new framing it
@@ -175,9 +166,9 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 
 | Section | Action |
 |---|---|
-| §7.1 Conclusions (`sec:conclusions`) | **Rewrite** around the three new RQ findings. |
+| §7.1 Conclusions (`sec:conclusions`) | **Rewrite** around the three new RQ findings, structured as an explicit **RQ → finding** mapping (house pattern: Polónio Ch.6 answer table; Cuco §6.1 numbered answers). |
 | §7.2 Research Contributions (`sec:contributions_revisited`) | Restate the re-derived 5 contributions with results evidence. |
-| §7.3 Limitations (`sec:limitations`) | **Update to the completed evidence**: pre-reframe campaigns calibration-only; all three RQ campaigns complete. **RQ2**: storage user-visible p95 benefit **not statistically demonstrated** (pre-registered gate not met; CI includes 1.0; causes: PRE/POST window asymmetry + bottleneck-aware second-tier churn); 2 MEMCG OOM incidents as a platform limitation (256 MB / 512 MB caps); replica-sync **bandwidth not metered** (join time + node-minutes + transient CPU/latency measured instead). **RQ3**: gap-window **user-harm consequence null** at every load (pre-registered-acceptable; "why timing matters" argued by mechanism); container-bind stall (~10 s, both arms, measured covariate, controlled by stratification); storage-replica extension closed as null. **RQ1**: delay arm seed-dependent/bimodal (delay−latest-state n.s.); single regime, single platform; per-run mean-of-LANs unit. Common: synthetic workload + imposed profile (not production); no SLA claims; single testbed; MongoDB-specific mechanisms; n=6–7 per cell/arm (sufficient for observed effect sizes; modest stratum-level precision). |
+| §7.3 Limitations (`sec:limitations`) | **Update to the completed evidence** (evidence status per §0.1). **RQ2**: storage user-visible p95 benefit **not statistically demonstrated** (pre-registered gate not met; CI includes 1.0; causes: PRE/POST window asymmetry + bottleneck-aware second-tier churn); 2 MEMCG OOM incidents as a platform limitation (256 MB / 512 MB caps); replica-sync **bandwidth not metered** (join time + node-minutes + transient CPU/latency measured instead). **RQ3**: gap-window **user-harm consequence null** at every load (pre-registered-acceptable; "why timing matters" argued by mechanism); container-bind stall (~10 s, both arms, measured covariate, controlled by stratification); storage-replica extension closed as null. **RQ1**: delay arm seed-dependent/bimodal (delay−latest-state n.s.); single regime, single platform; per-run mean-of-LANs unit. Common: synthetic workload + imposed profile (not production); no SLA claims; single testbed; MongoDB-specific mechanisms; n=6–7 per cell/arm (sufficient for observed effect sizes; modest stratum-level precision). |
 | §7.4 Future Work (`sec:future_work`) | Keep + update: end-to-end coordination experiment (now the explicit synthesis target); window-size freshness/noise trade-off; Tier 1 full implementation; data-locality characterization (Tier 0/1/2); larger scale; real traces; ML thresholds; **static-capacity control arm** as a follow-up magnitude study. |
 
 ---
@@ -222,7 +213,8 @@ Status: **comments DONE (2026-08-01)**; prose/heading items still open.
 
 1. **Approve this blueprint** (or adjust chapter ordering, title, section names).
 2. **Draft abstract + keywords + §1.2 objectives + §1.5 contributions** (present
-   text before editing — human-in-the-loop).
+   text before editing — human-in-the-loop). Objectives draft:
+   `miscelineous/objectives_recommendation.md`.
 3. Rewrite **Ch.2** using `purpose_evidence_map.md` quotes; update the gap matrix
    columns (needs a small edit to `global_literature_review.md` §7 matrix too —
    separate approval).
@@ -230,9 +222,8 @@ Status: **comments DONE (2026-08-01)**; prose/heading items still open.
    extensions.
 5. Results **Ch.6** written from the **completed RQ campaigns** — evidence
    sources: `tese/research_questions/{rq1/rq1_conclusions.md,
-   rq2/rq2_conclusions.md, rq3/rq3_evaluation_conclusions.md}`. The
-   **pre-reframe** campaigns remain calibration-only; the completed campaigns
-   are the final evidence.
+   rq2/rq2_conclusions.md, rq3/rq3_evaluation_conclusions.md}` (evidence
+   status per §0.1).
 6. Update dependent docs that still reference old RQs/framing (e.g. the
    `tese/literature_review/` folder READMEs — already reorganised 2026-08-01 into
    RQ folders — plus `docs/research_questions/*`, `.github/skills/rq*-cross-mode-comparison`)

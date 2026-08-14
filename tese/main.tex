@@ -96,16 +96,7 @@
 % =====================================================================
 \begin{document}
 
-
-% =====================================================================
-% If you get told that the Introduction and/or Conclusion should be un-numbered chapters, use \chapter* instead of \chapter (add an asterisk). The same can be done for sections with \section*, \subsection*, and \subsubsection*.
-% =====================================================================
 \chapter{Introduction}\label{ch:introduction}
-% Superseded framing note (2026-08-01): the thesis is no longer framed around a generic
-% "coordination delay between independent control loops". Current framing (thesis_overview.md):
-% controlled characterization of three control-loop interfaces in a stateful edge service —
-% telemetry delivery semantics (RQ1), bottleneck-aware compute/storage action selection (RQ2),
-% and readiness propagation to traffic admission (RQ3). Intro plan: tese/miscelineous/context_motivation.md.
 Studies have shown that edge web services encompassing routing, monitoring and auto-scaling
 can suffer from coordination delays that arrise from the independent control loops through
 which each module operates. This accumulation of handoff delays
@@ -118,10 +109,6 @@ the main contributions in \ref{sec:contributions} and finally the outlining of t
 chapters of the thesis are presented in \ref{sec:document_structure}.
 
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
-% TODO: Geo-distributed deployment + stateful web services. Multi-Region Content Discovery
-% Platform as experimental workload. Motivation = three control-loop interfaces (telemetry
-% delivery / action selection / readiness propagation). Full 9-paragraph plan in
-% tese/miscelineous/context_motivation.md.
 In the year 2025 global internet traffic surprassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
 corresponds to a more than double increase in the amount of internet traffic
 generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
@@ -235,7 +222,21 @@ varying each independently reveals which dimensions matter and under
 what conditions.
 
 \section{Objectives}\label{sec:objectives}
-% TODO: The 6 objectives from the thesis proposal.
+The core objective of this thesis is to investigate and characterise the
+interfaces between telemetry delivery, capacity to action selection, and traffic
+admission in a stateful edge service operating under varying demand shifts.
+The investigation rests on the idea that co-locating these functions
+in a single control process suppresses the coordination gap, that is,
+the handoff delays that accumulate when monitoring, scaling, and routing
+run under separate control loops, and thereby exposes each interface to direct measurement.
+
+    With no cross-component handoffs, the delay contributed by an interface can be
+attributed to that interface alone. This is the basis of the experimental design,
+not a claim that co-location is superior. Because the co-located components are coupled,
+making each interface independently variable is itself a deliberate design of the
+apparatus, which lets each interface be varied in isolation while the others are held
+constant, and its impact on the time from demand to usable capacity measured across
+different demand scenarios.
 
 \section{Research Questions}\label{sec:research_questions}
 % TODO (current framing, thesis_overview.md §6): RQ1 — telemetry delivery semantics
@@ -253,7 +254,6 @@ what conditions.
 
 \section{Dissertation Structure}\label{sec:document_structure}
 % TODO: Brief paragraph outlining the 7 chapters.
-
 
 
 \chapter{Background and Related Work}\label{ch:literature_review}
