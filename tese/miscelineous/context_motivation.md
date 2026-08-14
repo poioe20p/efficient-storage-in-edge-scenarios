@@ -100,6 +100,10 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > ¶7 synced with main.tex (scoped replication framing, hedged closing
 > "worsens resource orchestration") and the bridge sentence removed
 > (now duplicated by ¶8's opening).
+> (2026-08-14e) ¶9 honest-scope wording fixed: SDN is not an orchestration
+> platform, so the claim now reads "this SDN-based apparatus is superior
+> to existing orchestration platforms such as Kubernetes or NFV MANO".
+> Same fix applied to main.tex.
 
 ## Reference key → paper → location
 
@@ -270,9 +274,9 @@ SDN controller serves as the experimental apparatus, co-locating
 monitoring, routing, and scaling in a single process so that each of the
 three interfaces can be varied independently while the others are held
 constant, in a stateful service deployed across two geo-distributed
-sites. The thesis does not claim that SDN is superior to other
-orchestration platforms, nor that the platform mechanisms generalise
-beyond the tested infrastructure; it claims only that these three
-interfaces are measurable and previously uncharacterised, and that
-varying each independently reveals which dimensions matter and under
-what conditions.
+sites. The thesis does not claim that this SDN-based apparatus is
+superior to existing orchestration platforms such as Kubernetes or NFV
+MANO, nor that the platform mechanisms generalise beyond the tested
+infrastructure; it claims only that these three interfaces are
+measurable and previously uncharacterised, and that varying each
+independently reveals which dimensions matter and under what conditions.
