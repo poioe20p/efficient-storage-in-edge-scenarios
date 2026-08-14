@@ -116,6 +116,12 @@ Each section is re-cast around the interface it informs (see purpose map P5).
 | §2.7 Summary & Research Gaps (`sec:lit_synthesis`) | **Rewrite.** Replace the old ~74 s synthesis with: (a) **updated gap matrix** — columns must change to the NEW interface dimensions: *telemetry delivery semantics varied? / scaling-action type varied? / readiness→admission varied? / co-located & independently tunable?* (re-derive from `global_literature_review.md` §7, which still uses old columns); (b) the interface-gap statement (purpose map P4/P5); (c) explicitly *not* a summed penalty. |
 | §2.8 Edge Storage related work (2026-08-01, corpus trimmed) | **New related-work block.** Full verdicts in `global_literature_review.md` §10. The edge-storage papers now live in `02_action_selection_rq2/` (Ferreira et al. 2024 — edge-DB survey, the RQ2 DB-side citation; SEND 2021 — co-location adjacency, must be delimited; Malazi et al. 2022 — nearest RQ2 neighbour, "dynamic" = re-placement, not tier selection) and `99_reference/` (Wei & Wang 2023 — old-idea ancestor, self-declared static; Lujic et al. 2017 — forecasting boundary). No paper in the corpus threatens RQ1/RQ3; RQ2 requires the 3-claim rewording in purpose map I2. |
 
+> **Relocated from `context_motivation.md` ¶8 (2026-08-14):** the compressed
+> motivation no longer deep-dives. Use in Ch.2: Llorens/Qu component facts +
+> AdapPF evidence → §2.3 Monitoring (RQ1) / §2.5 SDN-LB (RQ3); Okwuibe
+> component split → §2.2; the "never isolated along the full chain" synthesis
+> and the Luo/Yaseen remedy direction → §2.7 gap statement.
+
 ### Chapter 3 — Architecture and Design (`ch:system_architecture`)
 
 | Section | Action |

@@ -73,6 +73,33 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > that varies a monitoring interval experimentally; the "never varied"
 > claim qualified to "along the full demand-to-capacity chain". BibTeX key
 > added: Huang2023AdapPFSelfAdaptiveScrapeInterval.
+> (2026-08-14) ¶8 and ¶9 compressed to a short "highlight the issue +
+> announce the investigation" form, per the reference-thesis pattern
+> (master_joao_rosa_polonio_Sdn.pdf: context/motivation ~2 pages, no deep
+> dive). The deep-dive removed from ¶8 (Llorens/Qu component facts,
+> AdapPF evidence, Okwuibe/Yaseen gap synthesis, Luo/Yaseen remedy
+> direction) is relocated to the Ch.2 blueprints in thesis_structure.md.
+> (2026-08-14b) ¶8 gains the explicit "separation is the norm within the
+> reviewed corpus" sentence with two citations after verification: Okwuibe
+> (SDN/OpenDaylight + Kubernetes orchestration as separate systems; its
+> "monitoring" is power measurement, so the monitoring clause was dropped)
+> and Qu (monitoring interval + LB tier as taxonomy dimensions). Llorens
+> is NOT used for the separation claim (it co-locates decision logic on
+> the controller) — it remains cited later in ¶8 for "handoffs
+> acknowledged in passing". Okwuibe2020 and Qu2018 keys added to
+> tese/references.bib.
+> (2026-08-14c) ¶8 finalized: the "separation is the norm within the
+> reviewed corpus" evidence sentence (Okwuibe + Qu) removed from the
+> motivation, following the reference-thesis sparse-citation pattern.
+> Okwuibe/Qu (plus Llorens/AdapPF) remain allocated to Ch.2 in
+> thesis_structure.md; ¶8 keeps a single citation cluster only at the gap
+> claim ("acknowledged in passing but never isolated").
+> (2026-08-14d) ¶6 and ¶7 trimmed to keep the motivation ~2 pages:
+> ¶6 drops the multi-owner sentence (moved to Ch.2) and compresses the
+> NEP production evidence (specific 14x/731x/6x multiples moved to Ch.2);
+> ¶7 synced with main.tex (scoped replication framing, hedged closing
+> "worsens resource orchestration") and the bridge sentence removed
+> (now duplicated by ¶8's opening).
 
 ## Reference key → paper → location
 
@@ -174,35 +201,23 @@ edge computing's constraints, and those constraints are intrinsic to
 the paradigm rather than incidental properties of particular
 deployments. The first is per-site scarcity: an edge site operates
 under finite per-site capacity, with limited compute, storage, and
-bandwidth, and — unlike a cloud data center — cannot mask a demand
-surge through over-provisioning
+bandwidth, and, unlike a cloud data center, cannot mask a demand surge
+through over-provisioning
 \parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized,Breitbach2019ContextAwareDataTaskPlacement}.
 The second is the operational cost of the dispersal itself:
 Satyanarayanan notes that “the dispersion inherent in edge computing
 raises the complexity of management considerably,” and that edge sites
 have weaker perimeter security than cloud data centers
-\parencite{Satyanarayanan2017EmergenceEdgeComputing}. Surveying the
-resource-scheduling literature, Luo et al. add two further sources of
-complexity: edge resources are heterogeneous — nodes of widely
-different capacity that must be scheduled jointly — and the demand
-they serve is volatile, so coarse or static scheduling degrades
-precisely when it matters most
-\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}. The
-consequences of that volatility are visible in production: a
-measurement of a major public edge platform found resource usage
-unbalanced by up to 14$\times$ across servers and 731$\times$ across
-sites in the same province, with utilization about six times lower
-than a comparable cloud — evidence that edge customers over-provision
-because demand is hard to forecast, and that the resulting imbalance
-traces to a decoupling between where capacity is placed and where
-requests are scheduled
-\parencite{Xu2021FirstLookPublicEdgePlatforms}. A further, often
-overlooked, source of complexity is that edge resources belong to
-different owners — a site's servers, the network it attaches to, and
-the gateways in its users' homes are administered by different
-parties — so orchestrating a service across them requires reconciling
-multiple administrative domains
-\parencite{Liu2019SurveyEdgeComputingSystemsTools}.
+\parencite{Satyanarayanan2017EmergenceEdgeComputing}. This complexity is
+compounded by the properties of the edge itself: resources are
+heterogeneous and demand is volatile, so coarse or static scheduling
+degrades precisely when it matters most
+\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}, and production
+measurements confirm the consequences, with resource usage highly
+unbalanced across the servers and sites of a major public edge platform
+and utilization well below cloud levels, which the authors interpret as
+over-provisioning driven by demand that is hard to forecast
+\parencite{Xu2021FirstLookPublicEdgePlatforms}.
 
 ¶7 — Stateful Services in Geo-Distributed Edge Deployments
 
@@ -211,98 +226,53 @@ themselves are stateful. Unlike stateless microservices, which can be
 replicated freely and absorb traffic immediately, stateful services in a
 geo-distributed edge deployment depend on data co-located with compute:
 a content item ingested at one site is served from the database of that
-site, so a request reaching a server elsewhere must either be served
-remotely, paying WAN latency on every access; or wait for the hot data to
-be replicated locally, paying synchronisation overhead; or require a full
-replica, paying storage and replication cost
+site. In distributed deployments, such data is routinely replicated
+across sites for locality and robustness, but replication is neither
+instantaneous nor free: a request reaching a server whose local copy is
+still synchronising must wait for it to catch up, and maintaining copies
+consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement,Nicolaescu2021StoreEdgeNetworkedDataSEND,Pelle2022CostLatencyEdgePlatform}.
-Scale-out alone does not solve this: the orchestration system must detect
-when data must be brought closer, deliver that information to the decision
-point, provision the right kind of capacity, and redirect traffic to it —
-and each of these steps introduces delay that directly degrades service
-quality under the time pressure of an ongoing demand shift. In practice,
-these steps are not executed by a single control entity: a monitoring
-component detects demand, an auto-scaler provisions capacity, and a load
-balancer redirects traffic, each running under its own control loop. This
-thesis uses a Multi-Region Content Discovery Platform — a geo-distributed
-edge deployment — as its experimental workload: content items are ingested
-regionally and discovered globally through tag-based personalized feeds,
-with heterogeneous document types and two stress regimes — one driven by
-data locality, the other by compute-analytics throughput.
+Scale-out alone does not guarantee usable capacity: the orchestration
+system must detect when data must be brought closer, deliver that
+information to the decision point, provision the right kind of capacity,
+and redirect traffic to it, and each of these steps introduces delay that
+worsens resource orchestration. This thesis uses a Multi-Region Content
+Discovery Platform, a geo-distributed edge deployment, as its
+experimental workload: content items are ingested regionally and
+discovered globally through tag-based personalized feeds, with
+heterogeneous document types and two stress regimes, one driven by data
+locality, the other by compute-analytics throughput.
 
 ¶8 — The Orchestration Problem: The Coordination Gap
 
-In the reviewed orchestration platforms, monitoring, scaling, and routing
-are separate components: in OSM-based NFV, the Policy Manager,
-Monitoring, and Lifecycle Management modules operate alongside an
-SDN-based VNF Redirector whose monitoring polls the VIM into a Prometheus
-time-series database and whose load balancing steers traffic through
-OpenFlow flow tables
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}. Surveys
-of auto-scaling likewise treat the monitoring interval and the
-load-balancing tier as separate design dimensions
-\parencite{Qu2018AutoScalingWebApplicationsClouds}. The handoff between
-these components is consequential rather than merely architectural:
-AdapPF shows that a coarse monitoring scrape interval degrades the
-accuracy of application scheduling in geo-distributed cluster
-federations, and that adaptive scraping restores it
-\parencite{Huang2023AdapPFSelfAdaptiveScrapeInterval}, yet stops at
-scheduling accuracy without tracing the effect through a stateful
-service's scaling and admission path. The coordination gap
-is not unique to edge deployments — reactive scaling is the default
-across cloud and edge platforms
-\parencite{Qu2018AutoScalingWebApplicationsClouds} — but its consequences are
-amplified where resources are finite: cloud data centers mask the gap with
-over-provisioning; edge sites cannot. This coordination gap
-— the accumulated delay between overload onset and traffic reaching newly
-provisioned capacity — has been documented in passing in the OSM MANO architecture
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}, is
-reflected in the component split of a real containerized edge stack
-\parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized}, and
-has been called for at the survey level by Yaseen
-\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork} — but
-never isolated, measured, or varied as an independent experimental
-variable along the full demand-to-capacity chain. Within the reviewed
-corpus, no paper argues for this separation
-or against co-location: the separation appears as the unexamined default.
-The direction of remedy, however, is well established: a survey of edge
-resource scheduling calls for the joint treatment of communication,
-computation, and storage resources
-\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}, and a survey of
-programmable network-wide monitoring calls for monitoring to be tightly
-integrated with network control and automation
-\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}. This
-thesis follows that direction with standard mechanisms — an SDN
-controller, threshold-based scaling, and push/poll telemetry — and makes
-its contribution not in any single mechanism but in co-locating them so
-that the three interfaces can be varied independently and their effects
-measured, extending the tradition of experimental studies that vary a
-telemetry parameter and observe the consequence. Within this gap, this
-thesis isolates three specific links in the demand-to-capacity chain — how
-demand evidence is delivered to the controller, which capacity action is
-chosen in response, and when ready capacity is admitted to traffic.
+The steps described above must be coordinated under the time pressure of
+an ongoing demand shift. In practice, however, they are performed by
+separate components: a monitoring system collects metrics, an
+auto-scaler provisions capacity, and a load balancer redirects traffic,
+each running under its own control loop. The information needed to
+respond to demand must therefore cross from one component to the next,
+and the delays accumulated at these handoffs determine how quickly newly
+provisioned capacity can actually serve traffic. Within the reviewed
+corpus, these handoffs are acknowledged in passing but never isolated or
+varied as an independent variable
+\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+This thesis investigates them directly.
 
-¶9 — Central Claim and Honest Scope
+¶9 — Central Claim
 
-This thesis experimentally examines three links in the demand-to-capacity
-chain — telemetry delivery semantics (how demand evidence reaches the
-controller, and whether intermediate evidence is preserved), capacity-action
-selection (whether the controller scales compute or storage in response to
-the observed bottleneck), and readiness propagation (how quickly a ready
-backend is admitted to traffic and becomes usable capacity) —
-characterising how each independently affects service quality during demand
-shifts in a stateful service deployed across two geo-distributed sites. An
-SDN controller serves as the experimental apparatus: by co-locating
-monitoring, routing, and scaling in a single process with shared data
-structures, it makes each of the three interfaces independently controllable,
-so each link can be varied while the others are held constant. The thesis
-does not claim that SDN is superior to Kubernetes or any specific
-orchestration platform; does not claim that these interfaces matter equally
-for all workloads or at all deployment scales; and does not claim that the
-platform mechanisms — the Double-VIP traffic model, tiered data placement
-and Tier 1 selective synchronisation — generalise beyond the tested
-infrastructure (they are held constant as platform capabilities, not part of
-the claimed contribution). It claims only that the three interfaces are
-measurable, previously uncharacterised links in the demand-to-capacity path,
-and that varying each independently within a unified control point reveals
-which dimensions matter and under what conditions.
+This thesis investigates the orchestration of stateful edge services
+during demand shifts by studying three links in the demand-to-capacity
+chain: how demand evidence is delivered to the controller (telemetry
+delivery semantics), which capacity action the controller selects in
+response to the observed bottleneck (compute or storage scale-out), and
+when ready capacity is admitted to traffic (readiness propagation). An
+SDN controller serves as the experimental apparatus, co-locating
+monitoring, routing, and scaling in a single process so that each of the
+three interfaces can be varied independently while the others are held
+constant, in a stateful service deployed across two geo-distributed
+sites. The thesis does not claim that SDN is superior to other
+orchestration platforms, nor that the platform mechanisms generalise
+beyond the tested infrastructure; it claims only that these three
+interfaces are measurable and previously uncharacterised, and that
+varying each independently reveals which dimensions matter and under
+what conditions.

@@ -123,8 +123,9 @@ chapters of the thesis are presented in \ref{sec:document_structure}.
 % delivery / action selection / readiness propagation). Full 9-paragraph plan in
 % tese/miscelineous/context_motivation.md.
 In the year 2025 global internet traffic surprassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
-corresponds to a more than double increase in the amount of internet traffic generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
- \parencite{ITU2025InternetTraffic}.
+corresponds to a more than double increase in the amount of internet traffic
+generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
+\parencite{ITU2025InternetTraffic}.
 
 \begin{figure}[htbp]
     \centering
@@ -133,17 +134,19 @@ corresponds to a more than double increase in the amount of internet traffic gen
     \label{fig:internet_traffic}
 \end{figure}
 
-This growth has been driven by many technological advancements some of which, have in turn galvanized the
-emergence of real-time interactive and data-intensive applications among others.
-Examples include web streaming and cloud gaming, which are both services where users expect
-sub-second latency and high resolution multimedia, highliting the need for fast and capable
-data processing. These are just a few examples that demonstrate the demand of infrastructure
-that is able to deliver performance with high availability and reliability at global scale, in other words
+This growth has been driven by many technological advancements some of which, 
+have in turn galvanized the emergence of real-time interactive and data-intensive
+applications among others. Examples include web streaming and cloud gaming, 
+which are both services where users expect sub-second latency and high resolution
+multimedia, highliting the need for fast and capable data processing. These are just
+a few examples that demonstrate the demand of infrastructure that is able to deliver
+performance with high availability and reliability at global scale, in other words
 regardless of where the end users are located.
 
 Cloud computing is and has been the \parencite{Gurung2026CloudRevolutionTracingOriginsRise}
-backbone that enables these applications to operate at a global scale. It offers automatic scaling,
-both horizontally and vertically, a pay-per-use model and among other aspects,
+backbone that enables these applications to operate at a global scale. 
+It offers automatic scaling, both horizontally and vertically,
+a pay-per-use model and among other aspects, 
 \parencite{Gurung2026CloudRevolutionTracingOriginsRise} a globally distributed offering
 and availability that has established it as
 the foundational layer that supports modern applications and services. 
@@ -152,15 +155,12 @@ Yet, in parallel, a growing share of internet traffic now originates from
 mobile devices, which have become the main gateway to internet access
 \parencite{Gaudiaut2026MobileTrafficShare}. Much of this access is
 therefore generated and consumed at the network edge, far from
-centralised cloud data centres. These users can be served with lower latency
-when applications and services are deployed in a geo-distributed manner,
-in other words placed closer to them, which is precisely what edge computing enables,
-as an extension of the cloud rather than a replacement for it.
-As presented in \parencite{Cao2020OverviewEdgeComputingResearch},
+centralised cloud data centres. As presented in \parencite{Cao2020OverviewEdgeComputingResearch},
 \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings
 the computational resources to the network edge which and therefore closer to the
 end-users and end-products allowing for much lower latency in provisioning services
-and applications to users. Beyond lower latency, edge computing's inherent
+and applications to users by leveraging it's geo-distributed nature for deployment. 
+Beyond lower latency, edge computing's inherent
 geo-distributed servers dispersed geographically and close to users relieves bandwidth
 pressure on the core networ, since data can be processed and stored locally,
  at the edge, for quicker responses, only a subset of it is sent to the cloud
@@ -182,62 +182,56 @@ provisioning therefore becomes increasingly important, since the limited
 capacity of each location must be adjusted over time to suit the constant
 fluctuation of user demand.
 
-The resource management problem is compounded when the services
+    The resource management problem is compounded when the services
 themselves are stateful. Unlike stateless microservices, which can be
 replicated freely and absorb traffic immediately, stateful services in a
 geo-distributed edge deployment depend on data co-located with compute:
 a content item ingested at one site is served from the database of that
 site. In distributed deployments, such data is routinely replicated
-across sites, both to keep it close to where it is requested and to make
-the service more robust to failure.
-
-    Replication is therefore the norm rather than an exception,
-but it is neither instantaneous nor free: a
-request that reaches a server whose local copy is still synchronising
-must wait for that copy to catch up, and maintaining additional copies
+across sites for locality and robustness, but replication is neither
+instantaneous nor free: a request reaching a server whose local copy is
+still synchronising must wait for it to catch up, and maintaining copies
 consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement},
 \parencite{Nicolaescu2021StoreEdgeNetworkedDataSEND},
 \parencite{Pelle2022CostLatencyEdgePlatform}.
-The orchestration problem is therefore not whether to just replicate, but
-also, whether the data a newly provisioned server needs is already available
-to it in time. Scale-out alone does not guarantee usable capacity: the
-orchestration system must detect when data must be brought closer,
-deliver that information to the decision point, provision the right kind
-of capacity, and redirect traffic to it. Each of these steps introduces
-delay, which worsens the resource orchestration efficiency and, in
-turn, can lead to user service quality degradation, particularly under
-the time pressure of an ongoing demand shift. 
-In practice, these steps are not executed by a single control entity: a
-monitoring component detects demand, an auto-scaler provisions capacity,
-and a load balancer redirects traffic, each running under its own control
-loop.
 
-    This separation is the norm in the major cloud and edge orchestration
-platforms considered here, Kubernetes, NFV MANO frameworks such as OSM
-and ONAP, and MEC platforms: the functions that would need to coordinate
-during a demand shift are implemented as separate components with
-independent control loops.
+    Scale-out alone does not guarantee usable capacity: the orchestration
+system must detect when data must be brought closer, deliver that
+information to the decision point, provision the right kind of capacity,
+and redirect traffic to it, and each of these steps introduces delay that
+worsens resource orchestration and can, in turn, lead to user service
+quality degradation.
 
-In the reviewed orchestration platforms, monitoring, scaling, and routing
-are separate components: in OSM-based NFV, the Policy Manager,
-Monitoring, and Lifecycle Management modules operate alongside an
-SDN-based VNF Redirector whose monitoring polls the VIM into a Prometheus
-time-series database and whose load balancing steers traffic through
-OpenFlow flow tables
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+    The steps described above must be coordinated under the time pressure of
+an ongoing demand shift. In practice, however, they are performed by
+separate components: a monitoring system collects metrics, an
+auto-scaler provisions capacity, and a load balancer redirects traffic,
+each running under its own control loop. The information needed to
+respond to demand must therefore cross from one component to the next,
+and the delays accumulated at these handoffs determine how quickly newly
+provisioned capacity can actually serve traffic. Within the reviewed
+corpus, these handoffs are acknowledged in passing but never isolated or
+varied as an independent variable
+\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+This thesis investigates them directly.
 
-%     This thesis uses a
-% Multi-Region Content Discovery Platform, a geo-distributed edge
-% deployment, as its experimental workload: content items are ingested
-% regionally and discovered globally through tag-based personalized feeds,
-% with heterogeneous document types and two stress regimes, one driven by
-% data locality, the other by compute-analytics throughput.
-
-
-
-
-
+    This thesis investigates the orchestration of stateful edge services
+during demand shifts by studying three links in the demand-to-capacity
+chain: how demand evidence is delivered to the controller (telemetry
+delivery semantics), which capacity action the controller selects in
+response to the observed bottleneck (compute or storage scale-out), and
+when ready capacity is admitted to traffic (readiness propagation). An
+SDN controller serves as the experimental apparatus, co-locating
+monitoring, routing, and scaling in a single process so that each of the
+three interfaces can be varied independently while the others are held
+constant, in a stateful service deployed across two geo-distributed
+sites. The thesis does not claim that SDN is superior to other
+orchestration platforms, nor that the platform mechanisms generalise
+beyond the tested infrastructure; it claims only that these three
+interfaces are measurable and previously uncharacterised, and that
+varying each independently reveals which dimensions matter and under
+what conditions.
 
 \section{Objectives}\label{sec:objectives}
 % TODO: The 6 objectives from the thesis proposal.
