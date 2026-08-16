@@ -102,10 +102,10 @@ can suffer from coordination delays that arrise from the independent control loo
 which each module operates. This accumulation of handoff delays
 between components degrades orchestration efficiency and reliability which potentially reduce service quality.
  In this chapter the context, motivation and problem statement are explained in 
- \ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
- The research questions that emerged are available in \ref{sec:research_questions}. 
+\ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
+The research questions that emerged are available in \ref{sec:research_questions}. 
 The methodology used to develop the thesis is detailed in \ref{sec:research_methodology},
-the main contributions in \ref{sec:contributions} and finally the outlining of the rest of the 7 
+the main contributions in \ref{sec:contributions} and finally the outlining of the rest of the 6 
 chapters of the thesis are presented in \ref{sec:document_structure}.
 
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
@@ -213,7 +213,9 @@ SDN controller serves as the experimental apparatus, co-locating
 monitoring, routing, and scaling in a single process so that each of the
 three interfaces can be varied independently while the others are held
 constant, in a stateful service deployed across two geo-distributed
-sites. The thesis does not claim that this SDN-based apparatus is
+sites.
+
+    The thesis does not claim that this SDN-based apparatus is
 superior to existing orchestration platforms such as Kubernetes or NFV
 MANO, nor that the platform mechanisms generalise
 beyond the tested infrastructure; it claims only that these three
@@ -247,13 +249,17 @@ different demand scenarios.
 
 \section{Research Methodology}\label{sec:research_methodology}
 % TODO: Design Science Research Methodology (DSRM) — Peffers et al. (2007-8),
-% DSR paradigm — Hevner et al. (2004). Reference to Chapter~5 for full detail.
+% DSR paradigm — Hevner et al. (2004). Evaluation procedure (absorbed from the
+% removed Evaluation Methodology chapter): per-run experimental unit; scheduled
+% open-loop driver preserving a pre-specified offered-load process; pre-registered
+% Mann-Whitney U + Cliff's delta on pre-registered edges, CIs reported in full;
+% per-phase aggregation; validity (internal/external/repeatability).
 
 \section{Main Contributions of this Dissertation}\label{sec:contributions}
 % TODO: 5 contributions.
 
 \section{Dissertation Structure}\label{sec:document_structure}
-% TODO: Brief paragraph outlining the 7 chapters.
+% TODO: Brief paragraph outlining the 6 chapters.
 
 
 \chapter{Background and Related Work}\label{ch:literature_review}
@@ -397,38 +403,22 @@ component to be independently managed and tested.
 
 
 
-\chapter{Evaluation Methodology}\label{ch:methodology}
-
-\section{Experimental Objectives}\label{sec:experimental_objectives}
-% TODO: Overall aim — characterize how the three control-loop interfaces affect the
-% demand→usable-capacity chain independently: telemetry delivery semantics (RQ1),
-% bottleneck-aware action selection (RQ2), and readiness propagation to traffic (RQ3) —
-% measuring how each affects service quality during demand shifts. DSRM framing (Peffers et al.,
-% 2007-8; Hevner et al., 2004).
-
-\section{Evaluation Scenarios}\label{sec:evaluation_scenarios}
-% TODO: Within-system, single-variable manipulation. Comparison strategy:
-% baselines encode architectural properties, not competing products.
-% Each RQ holds the other pillars constant. 10-phase workload.
-
-\section{Performance Metrics}\label{sec:performance_metrics}
-% TODO: Reaction latency (time from demand shift → usable capacity, segmented per RQ); service
-% quality (p50/p95/p99 latency, failure rate, offered vs completed requests); control overhead
-% (CPU%, RSS). Per-RQ outcomes: RQ1 — completed/missed windows, info age, delivery delay; RQ2 —
-% time to recover bottleneck-specific pressure, node-minutes, action relief; RQ3 — ready→admitted,
-% admitted→first-flow, first-flow→first-success, useful initial request share. Independent
-% breach detector. Per-RQ locks: RQ1 holds scaling+routing policy fixed; RQ2 holds telemetry
-% delivery+routing fixed; RQ3 holds telemetry delivery+selection fixed (thesis_overview.md §6).
-
-\section{Experimental Procedure with Results Statistical Analysis}\label{sec:experiment_procedure}
-% TODO: Pre-run → setup → run → post-run → copy-back → cross-run comparison.
-% Runs per condition. Mann-Whitney U; Cliff's delta. Per-phase aggregation.
-% Validity and reliability (internal, external, repeatability).
-
-
-
 \chapter{Experimental Results}\label{ch:results}
 % Section order follows the demand→usable-capacity chain: RQ1 → RQ2 → RQ3 → Synthesis.
+
+\section{Experimental Setup}\label{sec:experimental_setup}
+% TODO (absorbed from the removed Evaluation Methodology chapter §5.2–§5.3):
+% within-system, single-variable manipulation; baselines encode architectural
+% properties, not competing products; each RQ holds the other two interfaces
+% constant; demand model / 10-phase workload (thesis_overview.md §2). Metrics:
+% reaction latency (time from demand shift → usable capacity, segmented per RQ);
+% service quality (p50/p95/p99 latency, failure rate, offered vs completed requests);
+% control overhead (CPU%, RSS). Per-RQ outcomes: RQ1 — completed/missed windows,
+% info age, delivery delay; RQ2 — time to recover bottleneck-specific pressure,
+% node-minutes, action relief; RQ3 — ready→admitted, admitted→first-flow,
+% first-flow→first-success, useful initial request share. Per-RQ locks: RQ1 holds
+% scaling+routing policy fixed; RQ2 holds telemetry delivery+routing fixed; RQ3
+% holds telemetry delivery+selection fixed (thesis_overview.md §6).
 
 \section{Telemetry Delivery Semantics (RQ1)}\label{sec:results_rq1_delivery}
 % TODO (RQ1): completed/missed overload windows; information age and delivery delay; time from
