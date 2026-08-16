@@ -43,6 +43,19 @@ Tier 1 selective synchronization and other data-locality mechanisms are platform
 
 Unless an approved RQ protocol explicitly states otherwise, thesis evaluation runs disable Tier 1 selective synchronization, prepared persistent storage reserves, and cross-region storage placement. RQ2 may still use cold, same-LAN storage scale-out as an action under test.
 
+The demand model varies two axes — request intensity over time and request
+mix — while the spatial axis (which region owns the requested content) is
+held constant at local. Evaluation workloads therefore reference only
+locally-owned content, so the evaluated data path never traverses the
+emulated WAN; cross-region reads are a platform capability exercised only in
+pre-reframe calibration campaigns, not in the final evidence. The control
+plane is likewise WAN-free by construction: aggregator→controller telemetry
+and controller↔controller topology sync are host-local, so the emulated
+185 ms WAN sits exclusively on the inter-LAN data link, which the evaluated
+demand does not use. The platform is thus cross-site-aware in its control
+plane — each controller observes the peer site's topology and health — while
+the evaluated data path remains single-site.
+
 ---
 
 ## 3. State of the Art

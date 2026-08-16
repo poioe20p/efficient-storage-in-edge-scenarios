@@ -100,7 +100,8 @@
 Studies have shown that edge web services encompassing routing, monitoring and auto-scaling
 can suffer from coordination delays that arrise from the independent control loops through
 which each module operates. This accumulation of handoff delays
-between components degrades orchestration efficiency and reliability which potentially reduce service quality.
+between components degrades orchestration efficiency and reliability which can
+potentially reduce service quality.
  In this chapter the context, motivation and problem statement are explained in 
 \ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
 The research questions that emerged are available in \ref{sec:research_questions}. 
@@ -114,9 +115,9 @@ corresponds to a more than double increase in the amount of internet traffic
 generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
 \parencite{ITU2025InternetTraffic}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{images/global-internet-traffic-over-the-years.pdf}
+    \includegraphics[width=0.5\textwidth]{images/global-internet-traffic-over-the-years.pdf}
     \caption{Global internet traffic between 2020 and 2025. Source: Statista, based on ITU data~\parencite{ITU2025InternetTraffic}.}
     \label{fig:internet_traffic}
 \end{figure}
@@ -144,13 +145,13 @@ mobile devices, which have become the main gateway to internet access
 therefore generated and consumed at the network edge, far from
 centralised cloud data centres. As presented in \parencite{Cao2020OverviewEdgeComputingResearch},
 \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings
-the computational resources to the network edge which and therefore closer to the
-end-users and end-products allowing for much lower latency in provisioning services
-and applications to users by leveraging it's geo-distributed nature for deployment. 
+the computational resources to the network edge therefore closer to the
+end-users, allowing for much lower latency in delivering services
+and applications to users by leveraging its geo-distributed nature. 
 Beyond lower latency, edge computing's inherent
 geo-distributed servers dispersed geographically and close to users relieves bandwidth
 pressure on the core networ, since data can be processed and stored locally,
- at the edge, for quicker responses, only a subset of it is sent to the cloud
+at the edge, for quicker responses, only a subset of it is sent to the cloud
 \parencite{Cao2020OverviewEdgeComputingResearch},
 freeing up backbone available bandwidth. 
 
@@ -158,10 +159,10 @@ Despite these advantages, this geographical distribution also translates into
 less capacity per location and greater complexity in managing the distributed
 edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
 edge computing raises the complexity of management considerably}
-\parencite{Satyanarayanan2017EmergenceEdgeComputing}. This complexity stems
-from the properties that define the edge itself: its resources are dispersed
-across many sites, user demand varies considerably over time, and the requests
-served are heterogeneous in their resource requirements. Luo et al. further
+\parencite{Satyanarayanan2017EmergenceEdgeComputing}. This management complexity stems
+from the dispersion of the edge servers across many sites,
+aggravated by considerable variation in user demand over time and by the
+heterogeneous resource requirements of the requests served. Luo et al. further
 highlight that, without efficient resource scheduling, this distributed nature
 leads to resource waste
 \parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}. Resource
@@ -209,13 +210,13 @@ chain: how demand evidence is delivered to the controller (telemetry
 delivery semantics), which capacity action the controller selects in
 response to the observed bottleneck (compute or storage scale-out), and
 when ready capacity is admitted to traffic (readiness propagation). An
-SDN controller serves as the experimental apparatus, co-locating
+SDN controller serves as the experimental platform, co-locating
 monitoring, routing, and scaling in a single process so that each of the
 three interfaces can be varied independently while the others are held
 constant, in a stateful service deployed across two geo-distributed
 sites.
 
-    The thesis does not claim that this SDN-based apparatus is
+    The thesis does not claim that this SDN-based architecture is
 superior to existing orchestration platforms such as Kubernetes or NFV
 MANO, nor that the platform mechanisms generalise
 beyond the tested infrastructure; it claims only that these three
@@ -236,16 +237,29 @@ run under separate control loops, and thereby exposes each interface to direct m
 attributed to that interface alone. This is the basis of the experimental design,
 not a claim that co-location is superior. Because the co-located components are coupled,
 making each interface independently variable is itself a deliberate design of the
-apparatus, which lets each interface be varied in isolation while the others are held
-constant, and its impact on the time from demand to usable capacity measured across
-different demand scenarios.
+platform, which lets each interface be varied in isolation while the others are held
+constant, so that its impact can be measured not only on the time from demand to usable
+capacity but also on service quality, on how load is distributed across resources, and
+on how flexibly the service responds to demand variation.
 
 \section{Research Questions}\label{sec:research_questions}
-% TODO (current framing, thesis_overview.md §6): RQ1 — telemetry delivery semantics
-% (event-preserving vs delayed event-preserving vs latest-state); RQ2 — bottleneck-aware action
-% selection (compute vs storage scale-out from the observed bottleneck); RQ3 — readiness
-% propagation (direct lifecycle notification vs periodic discovery). Demand → usable-capacity
-% chain. Each RQ holds the other two interfaces constant.
+This thesis seeks to answer the following three research questions:
+
+\begin{itemize}
+    \item \textbf{RQ1} -- How do verified event-preserving, delayed event-preserving,
+    and latest-state telemetry delivery semantics affect overload observability,
+    scaling response, and transient service quality in a stateful edge service?
+
+    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand, does
+    bottleneck-aware selection of compute or storage scale-out improve service
+    recovery and resource management efficiency relative to workload-agnostic fixed-priority
+    policies when both actions are available?
+
+    \item \textbf{RQ3} -- For newly created compute backends that satisfy the same
+    application-readiness criterion, how does direct lifecycle notification versus
+    periodic discovery affect the time until a ready backend contributes usable
+    capacity?
+\end{itemize}
 
 \section{Research Methodology}\label{sec:research_methodology}
 % TODO: Design Science Research Methodology (DSRM) — Peffers et al. (2007-8),
@@ -254,6 +268,15 @@ different demand scenarios.
 % open-loop driver preserving a pre-specified offered-load process; pre-registered
 % Mann-Whitney U + Cliff's delta on pre-registered edges, CIs reported in full;
 % per-phase aggregation; validity (internal/external/repeatability).
+The methodology used for the research in the thesis was the Design Science Research
+Methodology presented in \parencite{Peffers2007DesignScienceResearchMethodologyInformation}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/Design Science Research process model.png}
+    \caption{Design Science Research Methodology}
+    \label{fig:design_science_research_methodology}    
+\end{figure}
+
 
 \section{Main Contributions of this Dissertation}\label{sec:contributions}
 % TODO: 5 contributions.
@@ -337,7 +360,7 @@ component to be independently managed and tested.
 
 \subsection{Services}\label{sec:elastic_compute}
 % TODO: Compute scaling — T_proc threshold; edge server containers;
-% VIP_SERVER pool registration. Backend-selection policy modes are the RQ3 apparatus:
+% VIP_SERVER pool registration. Backend-selection policy modes are the RQ3 mechanism:
 % topology_host (no ramp-up, cold-start WSM), topology_slowstart ≈ periodic discovery
 % (invisible until discovery, graduated ramp), topology_lifecycle ≈ direct registration
 % (spawn-time warm lease). RQ3 compares the readiness-propagation mechanism, not the
@@ -351,7 +374,7 @@ component to be independently managed and tested.
 
 \section{Monitoring and Decision Engine}\label{sec:monitoring_decision}
 % TODO: Telemetry pipeline (ZMQ PUSH → Aggregator → summaries → Controller);
-% push (ZMQ) and poll (HTTP) delivery = RQ1 delivery-semantics apparatus (event-preserving vs
+% push (ZMQ) and poll (HTTP) delivery = RQ1 delivery-semantics mechanism (event-preserving vs
 % latest-state; requires durable sequence-numbered window log per thesis_overview.md §6-RQ1).
 % Degradation score: weighted combination of CPU saturation (40\%) and processing latency (60\%);
 % latency dominates for stateful services (I/O drives T_proc before CPU saturates). CPU-only
