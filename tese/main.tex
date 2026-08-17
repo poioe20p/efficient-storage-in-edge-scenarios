@@ -67,6 +67,7 @@
     \acro{ZMQ}{ZeroMQ}
     \acro{RTT}{Round-Trip Time}
     \acro{RSS}{Resident Set Size}
+    \acro{DSRM}{Design Science Research Methodology}
 }
 % =====================================================================
 
@@ -262,14 +263,12 @@ This thesis seeks to answer the following three research questions:
 \end{itemize}
 
 \section{Research Methodology}\label{sec:research_methodology}
-% TODO: Design Science Research Methodology (DSRM) — Peffers et al. (2007-8),
-% DSR paradigm — Hevner et al. (2004). Evaluation procedure (absorbed from the
-% removed Evaluation Methodology chapter): per-run experimental unit; scheduled
-% open-loop driver preserving a pre-specified offered-load process; pre-registered
-% Mann-Whitney U + Cliff's delta on pre-registered edges, CIs reported in full;
-% per-phase aggregation; validity (internal/external/repeatability).
-The methodology used for the research in the thesis was the Design Science Research
-Methodology presented in \parencite{Peffers2007DesignScienceResearchMethodologyInformation}
+The work presented in this dissertation follows the Design Science Research
+(DSR) methodology \parencite{Hevner2004DesignScienceInformationSystemsResearch1},
+\parencite{vomBrocke2020IntroductionDesignScienceResearch}
+proposed in \parencite{Peffers2007DesignScienceResearchMethodologyInformation},
+and demonstrated in Figure~\ref{fig:design_science_research_methodology}.
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{images/Design Science Research process model.png}
@@ -277,12 +276,140 @@ Methodology presented in \parencite{Peffers2007DesignScienceResearchMethodologyI
     \label{fig:design_science_research_methodology}    
 \end{figure}
 
+    Design science produces and evaluates purposeful artefacts that address a class
+of real-world problems, the research contribution lies in the knowledge generated
+by designing the artefact and evaluating it against defined objectives. The \ac{DSRM} 
+organises the research effort into six activities: problem
+identification and motivation, definition of the objectives of a solution,
+design and development, demonstration, evaluation, and communication.
+
+    This dissertation follows a problem-centred approach where the problem motivates
+the research and is defined as the coordination delays that accumulate between independently
+operating control loops in edge orchestration which is justified by the state of the art reviewed
+in \ref{ch:literature_review}. The six activities unfolded as follows.
+
+\begin{enumerate}
+\item \textbf{Problem identification and motivation.} Edge services whose
+monitoring, routing and scaling modules operate as independent components
+accumulate handoff delays between control loops, degrading orchestration
+efficiency. The problem is introduced in
+\ref{sec:context_motivation}, and the review of the state of the art in
+\ref{ch:literature_review} establishes both that the layers are typically
+studied in isolation and that co-located architectures with independently
+configurable interfaces are less commonly present in the reviewed corpus, which
+motivates and delimits the problem.
+
+\item \textbf{Objectives of a solution.} The objectives that a solution should
+accomplish are defined in \ref{sec:objectives}: to investigate and characterise
+the specific orchestration aspects among the control-loop interfaces, more specfically 
+telemetry delivery, scaling action and selection, and readiness propagation to traffic 
+admission, through a co-located basis that suppresses the coordination gap and in which each
+interface is deliberately engineered as an independently variable dimension.
+
+\item \textbf{Design and development.} The artefact is the co-located platform
+described in \ref{ch:system_architecture} and \ref{ch:implementation}: a single
+SDN controller (OS-Ken/OpenFlow) hosting the telemetry fabric, the elasticity
+decision and the double-VIP routing model, with Docker containerised service
+backends and a MongoDB replica set serving as the storage tier, scaled in and
+out through mongodb native replication. The technology choices are justified by
+their usefulleness for the platform: SDN provides a single programmable control
+plane through which routing behaviour can be re-programmed directly in a central manner, 
+Docker enables fast provisioning and teardown of service backends, and MongoDB for native
+replica-set replication and concurrent access. The platform was engineered so
+that each of the three interfaces can be varied independently while everything
+else is held constant.
+
+\item \textbf{Demonstration.} The artefact was deployed and executed as 
+an emulated edge environment with two simulated sites with
+scheduled workload phases reproducing demand shifts in order to
+demonstrate that the platform operates end-to-end from demand
+observation through scaling action to traffic admission, with the tested
+interface varied across runs of each experimental campaign for evaluation.
+
+\item \textbf{Evaluation.} Each research question was evaluated in a dedicated
+experimental campaign reported in \ref{ch:results}, with controlled reference
+conditions holding the other two interfaces constant. The evaluation follows a
+pre-measurement and statistical procedure where each experimental is composed of
+multiple independent runs each developed as an experimental unit, a scheduled open-loop
+driver preserving the offered load, and primary comparisons which is detailed in
+\ref{sec:experimental_setup}. Internal, external and repeatability validity threats
+are discussed alongside the results. The campaign gate rules and the statistical
+formulas are presented in the appendix.
+
+\item \textbf{Communication.} The communication of the problem, the artefact
+and the findings is accomplished through this dissertation itself and its
+public defence, as well as through any resulting publications.
+\end{enumerate}
 
 \section{Main Contributions of this Dissertation}\label{sec:contributions}
-% TODO: 5 contributions.
+The main contribution of this dissertation is the experimental characterisation
+of the three interfaces of the demand-to-usable-capacity chain in a stateful
+edge service, made measurable by a co-located platform that suppresses the
+coordination gap and varies each interface independently. This contribution
+rests on the following five elements:
+
+\begin{enumerate}
+\item A co-located SDN-based experimental architecture, in which monitoring,
+scaling and routing run in a single controller and each of the three
+interfaces is a deliberately configurable, independently variable dimension,
+turning previously uncharacterised interface questions into measurable ones.
+
+\item The characterisation of telemetry delivery semantics (RQ1): how verified
+event-preserving, delayed event-preserving and latest-state delivery affect
+overload observability, scaling response and transient service quality.
+
+\item The characterisation of bottleneck-aware scaling action selection (RQ2):
+whether selecting compute or storage scale-out from a live observed bottleneck
+improves service recovery and resource efficiency relative to fixed-priority
+policies, under compute-bound and data-access-bound episodes.
+
+\item The characterisation of readiness propagation (RQ3): how direct lifecycle
+notification versus periodic discovery affects the time until a ready backend
+contributes usable capacity.
+
+\item The synthesis of the three interfaces under a common workload and event
+schema, reconstructing the demand-to-usable-capacity timeline and identifying
+which interface dominates under which conditions.
+\end{enumerate}
+
+These contributions are claimed within the evaluated two-domain testbed and
+workload families; they do not assert superiority of the platform over
+existing orchestration platforms.
 
 \section{Dissertation Structure}\label{sec:document_structure}
-% TODO: Brief paragraph outlining the 6 chapters.
+This dissertation is organised into six chapters:
+
+\begin{itemize}
+\item \textbf{Chapter 1} introduces the research, presenting its context, motivation and
+problem statement, the objectives, the research questions that emerged, the methodology that
+guided the work, and the main contributions.
+
+\item \textbf{Chapter 2} reviews the background and related work. After presenting the
+methodology used to conduct the review, it examines the separation of monitoring, routing and
+scaling into independent components, and surveys auto-scaling, load balancing on SDN,
+monitoring and telemetry, and resource orchestration on SDN, concluding with the research gaps
+that motivate this dissertation.
+
+\item \textbf{Chapter 3} presents the architecture and design of the proposed solution for
+edge services: the design requirements, the SDN-based architecture, the distributed elastic
+allocation of compute and data resources, the monitoring and decision engine, and the control
+workflow.
+
+\item \textbf{Chapter 4} describes the implementation of the proposed solution: the
+experimental infrastructure, the implementation of the elastic allocation of compute and data
+resources, the monitoring and decision engine, the control workflow, and the validation of the
+implementation.
+
+\item \textbf{Chapter 5} presents the experimental results. Following the
+demand-to-usable-capacity chain, the experimental campaigns address telemetry delivery
+semantics (RQ1), bottleneck-aware scaling action selection (RQ2), and readiness propagation
+and traffic admission (RQ3), followed by resource orchestration and scalability analysis, and a
+synthesis across the three interfaces.
+
+\item \textbf{Chapter 6} concludes the dissertation, restating the findings and the
+contributions, discussing the limitations of the work, and outlining directions for future
+research.
+\end{itemize}
 
 
 \chapter{Background and Related Work}\label{ch:literature_review}
