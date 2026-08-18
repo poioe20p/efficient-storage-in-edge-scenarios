@@ -110,6 +110,17 @@ The methodology used to develop the thesis is detailed in \ref{sec:research_meth
 the main contributions in \ref{sec:contributions} and finally the outlining of the rest of the 6 
 chapters of the thesis are presented in \ref{sec:document_structure}.
 
+% The problem narrows the broader goal stated in the dissertation proposal,
+% more efficient resource management at the network edge, into a specific
+% and previously unexamined slice: the coordination gap between
+% independently operating control loops.
+
+%   This thesis investigates them directly. The work originates in the
+% broader goal, set out in the dissertation proposal, of more efficient
+% resource management at the network edge; the review that follows narrows
+% that goal to the coordination gap as the specific, previously unexamined
+% slice through which orchestration efficiency is eroded.
+
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
 In the year 2025 global internet traffic surprassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
 corresponds to a more than double increase in the amount of internet traffic
@@ -295,7 +306,7 @@ monitoring, routing and scaling modules operate as independent components
 accumulate handoff delays between control loops, degrading orchestration
 efficiency. The problem is introduced in
 \ref{sec:context_motivation}, and the review of the state of the art in
-\ref{ch:literature_review} establishes both that the layers are typically
+\ref{ch:literature_review} establishes both that these functions are typically
 studied in isolation and that co-located architectures with independently
 configurable interfaces are less commonly present in the reviewed corpus, which
 motivates and delimits the problem.
@@ -408,14 +419,27 @@ research.
 
 
 \chapter{Background and Related Work}\label{ch:literature_review}
-This chapter presents the relevant background and related work that motivated
-the research with a dedicated section for the most important topics.
+This chapter presents the background and related work that motivated the research,
+contextualised for resource orchestration in edge platforms.
+It is organised around the three interfaces of the
+demand-to-capacity chain studied in this thesis: monitoring and telemetry,
+which feed the scaling decision; auto-scaling, which selects the capacity
+action; and load balancing on SDN, which distributes traffic across the
+available backends and determines when newly provisioned capacity joins
+that distribution.
+A fourth section covers resource orchestration on SDN, the platform context
+in which these functions operate. Because these functions typically run as
+independent modules with their own control loops, each section closes by
+examining what the reviewed corpus says about the handoff delays between
+them. The review methodology is described in \ref{sec:review_method}, and
+the chapter concludes with the research gaps derived from the corpus in
+\ref{sec:lit_synthesis}.
 
 \section{Review Methodology}\label{sec:review_method}
 % TODO: Databases, search terms, time range, inclusion/exclusion criteria.
 % Corpus: 42 unique papers, RQ-mapped under tese/literature_review/ (index README).
 
-\section{The Unexamined Default: Three-Layer Separation}\label{sec:lit_three_layer_separation}
+\section{The Unexamined Default: Independent Control Loops}\label{sec:lit_three_layer_separation}
 % TODO (background motivation only — superseded-framing caution, 2026-08-01): K8s / NFV MANO /
 % MEC separate monitoring, routing, and scaling into independent components (table: K8s
 % Prometheus→AlertManager / kube-proxy / HPA; OSM MON / SDN+HAProxy / OSM POL→LCM; MEC InfluxDB /
