@@ -226,22 +226,23 @@ varying each independently reveals which dimensions matter and under
 what conditions.
 
 \section{Objectives}\label{sec:objectives}
-The core objective of this thesis is to investigate and characterise the
-interfaces between telemetry delivery, capacity to action selection, and traffic
-admission in a stateful edge service operating under varying demand shifts.
-The investigation rests on the idea that co-locating these functions
-in a single control process suppresses the coordination gap, that is,
-the handoff delays that accumulate when monitoring, scaling, and routing
-run under separate control loops, and thereby exposes each interface to direct measurement.
-
-    With no cross-component handoffs, the delay contributed by an interface can be
-attributed to that interface alone. This is the basis of the experimental design,
-not a claim that co-location is superior. Because the co-located components are coupled,
-making each interface independently variable is itself a deliberate design of the
-platform, which lets each interface be varied in isolation while the others are held
-constant, so that its impact can be measured not only on the time from demand to usable
-capacity but also on service quality, on how load is distributed across resources, and
-on how flexibly the service responds to demand variation.
+The main objective of this thesis is to study the coordination gaps that
+arise between independent modules with their own control loops and to
+contribute to more efficient resource orchestration for stateful edge
+services, by characterising a specific and less examined part of this
+problem: the handoff delays that accumulate at the interfaces between
+telemetry delivery, capacity action selection, and traffic admission
+under varying demand shifts. The investigation rests on the idea that
+co-locating these functions in a single control process suppresses these
+handoffs and thereby exposes each interface to direct measurement. With
+no cross-component handoffs, the delay contributed by an interface can
+be attributed to that interface alone, forming the basis of the
+experimental design. Because the co-located components are coupled,
+making each interface independently variable is itself a deliberate
+design of the platform, and that allows its impact to be measured not
+only on the time from demand to usable capacity but also on service
+quality, on how load is distributed across resources, and on how
+flexibly the service responds to demand variation.
 
 \section{Research Questions}\label{sec:research_questions}
 This thesis seeks to answer the following three research questions:
@@ -276,8 +277,8 @@ and demonstrated in Figure~\ref{fig:design_science_research_methodology}.
     \label{fig:design_science_research_methodology}    
 \end{figure}
 
-    Design science produces and evaluates purposeful artefacts that address a class
-of real-world problems, the research contribution lies in the knowledge generated
+    Design science produces and evaluates purposeful artefacts that address certain
+real-world problems, the research contribution lies on the knowledge generated
 by designing the artefact and evaluating it against defined objectives. The \ac{DSRM} 
 organises the research effort into six activities: problem
 identification and motivation, definition of the objectives of a solution,
@@ -285,7 +286,7 @@ design and development, demonstration, evaluation, and communication.
 
     This dissertation follows a problem-centred approach where the problem motivates
 the research and is defined as the coordination delays that accumulate between independently
-operating control loops in edge orchestration which is justified by the state of the art reviewed
+operating control loops in edge orchestration of services, which is justified by the state of the art reviewed
 in \ref{ch:literature_review}. The six activities unfolded as follows.
 
 \begin{enumerate}
@@ -303,8 +304,7 @@ motivates and delimits the problem.
 accomplish are defined in \ref{sec:objectives}: to investigate and characterise
 the specific orchestration aspects among the control-loop interfaces, more specfically 
 telemetry delivery, scaling action and selection, and readiness propagation to traffic 
-admission, through a co-located basis that suppresses the coordination gap and in which each
-interface is deliberately engineered as an independently variable dimension.
+admission.
 
 \item \textbf{Design and development.} The artefact is the co-located platform
 described in \ref{ch:system_architecture} and \ref{ch:implementation}: a single
@@ -312,7 +312,7 @@ SDN controller (OS-Ken/OpenFlow) hosting the telemetry fabric, the elasticity
 decision and the double-VIP routing model, with Docker containerised service
 backends and a MongoDB replica set serving as the storage tier, scaled in and
 out through mongodb native replication. The technology choices are justified by
-their usefulleness for the platform: SDN provides a single programmable control
+their utility for the platform: SDN provides a single programmable control
 plane through which routing behaviour can be re-programmed directly in a central manner, 
 Docker enables fast provisioning and teardown of service backends, and MongoDB for native
 replica-set replication and concurrent access. The platform was engineered so
@@ -342,40 +342,35 @@ public defence, as well as through any resulting publications.
 \end{enumerate}
 
 \section{Main Contributions of this Dissertation}\label{sec:contributions}
-The main contribution of this dissertation is the experimental characterisation
-of the three interfaces of the demand-to-usable-capacity chain in a stateful
-edge service, made measurable by a co-located platform that suppresses the
-coordination gap and varies each interface independently. This contribution
-rests on the following five elements:
+This dissertation makes the following contributions:
 
 \begin{enumerate}
-\item A co-located SDN-based experimental architecture, in which monitoring,
-scaling and routing run in a single controller and each of the three
-interfaces is a deliberately configurable, independently variable dimension,
-turning previously uncharacterised interface questions into measurable ones.
-
-\item The characterisation of telemetry delivery semantics (RQ1): how verified
-event-preserving, delayed event-preserving and latest-state delivery affect
-overload observability, scaling response and transient service quality.
-
-\item The characterisation of bottleneck-aware scaling action selection (RQ2):
-whether selecting compute or storage scale-out from a live observed bottleneck
-improves service recovery and resource efficiency relative to fixed-priority
-policies, under compute-bound and data-access-bound episodes.
-
-\item The characterisation of readiness propagation (RQ3): how direct lifecycle
-notification versus periodic discovery affects the time until a ready backend
-contributes usable capacity.
-
-\item The synthesis of the three interfaces under a common workload and event
-schema, reconstructing the demand-to-usable-capacity timeline and identifying
-which interface dominates under which conditions.
+    \item A co-located SDN-based orchestration platform in which monitoring,
+    scaling, and routing operate within a single control process and in which
+    each of the three interfaces is engineered as an independently
+    configurable dimension, enabling single-variable experiments of the kind
+    absent from the reviewed corpus.
+    \item An experimental characterisation of telemetry delivery semantics
+    (event-preserving, delayed event-preserving, and latest-state) and of
+    their effects on overload observability, scaling response, and transient
+    service quality (RQ1).
+    \item An experimental characterisation of bottleneck-aware capacity
+    action selection (compute versus storage scale-out) relative to
+    workload-agnostic fixed-priority policies under compute-bound and
+    data-access-bound demand (RQ2).
+    \item An experimental characterisation of readiness propagation (direct
+    lifecycle notification versus periodic discovery) and of its effect on
+    the time until newly provisioned capacity serves traffic (RQ3).
+    \item A reconstruction of the demand-detection-to-usable-capacity timeline that
+    synthesises the three interfaces measured under a common workload and
+    event schema, identifying and highliting each interface's impact across
+    diferent scenarios under various conditions.
 \end{enumerate}
 
-These contributions are claimed within the evaluated two-domain testbed and
-workload families; they do not assert superiority of the platform over
-existing orchestration platforms.
-
+    These contributions are claimed within the evaluated two-domain testbed
+and workload families. The evaluation does not allow us to claim that
+co-location is superior to other orchestration platforms, nor was it
+conducted with such intent.
 \section{Dissertation Structure}\label{sec:document_structure}
 This dissertation is organised into six chapters:
 
@@ -413,6 +408,8 @@ research.
 
 
 \chapter{Background and Related Work}\label{ch:literature_review}
+This chapter presents the relevant background and related work that motivated
+the research with a dedicated section for the most important topics.
 
 \section{Review Methodology}\label{sec:review_method}
 % TODO: Databases, search terms, time range, inclusion/exclusion criteria.
