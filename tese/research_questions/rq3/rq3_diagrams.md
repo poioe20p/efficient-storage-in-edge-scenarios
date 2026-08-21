@@ -1,6 +1,6 @@
-# RQ3 — Readiness Propagation: How It Works, in Simple Terms
+# RQ3 — readiness admission: How It Works, in Simple Terms
 
-> Companion diagrams for `rq3.md` (Readiness Propagation and Traffic Admission).
+> Companion diagrams for `rq3.md` (readiness admission to traffic).
 > One question, two modes: when a new compute backend is spawned, how does the
 > controller learn that it is ready to serve traffic?
 
@@ -120,5 +120,5 @@ is never left dark forever.
 ## Where this lives in the system
 
 - Implementation: `source/sdn_controller/readiness_gate.py` (`ReadinessGate`, `PendingBackend`).
-- Plan: `docs/research_questions/v2/rq3/rq3_preparation.md`.
+- Plan: `docs/operation/testing/experiment/v2/rq3/` (RQ3 v2 records).
 - Results: `tese/research_questions/rq3/rq3_evaluation_conclusions.md`, `docs/operation/testing/experiment/v2/rq3/results.md`.

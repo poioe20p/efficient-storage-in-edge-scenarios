@@ -6,13 +6,13 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > follows the current three-interface thesis framing
 > (`tese/Notes/thesis_overview.md`): **telemetry delivery semantics** (RQ1),
 > **bottleneck-aware capacity-action selection** (RQ2), and **readiness
-> propagation / traffic admission** (RQ3). The earlier "trigger quality /
-> telemetry freshness / backend selection" labels are superseded. ¶8
-> (coordination gap) is retained **as background motivation only**: the
-> evidence ledger `tese/literature_review/global_literature_review.md` now
-> carries a banner flagging its own coordination-gap framing as superseded —
-> keep any such claim corpus-bounded ("within the reviewed corpus") and do not
-> let it become the thesis's central claim. Tiered data placement is a
+> admission** (RQ3). The earlier "trigger quality /
+> telemetry freshness / backend selection" labels are superseded. ¶8's
+> coordination gap IS now the central (corpus-bounded) claim of the filled
+> §1.1: the work 'narrows that goal to the coordination gap between
+> independently operating control loops, a specific and previously
+> unexamined slice'. Keep any such claim corpus-bounded ('within the
+> reviewed corpus'). Tiered data placement is a
 > held-constant platform capability, not a claimed contribution.
 >
 > **Citation status (2026-08-01):** `tese/references.bib` is populated *as
@@ -73,6 +73,13 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > that varies a monitoring interval experimentally; the "never varied"
 > claim qualified to "along the full demand-to-capacity chain". BibTeX key
 > added: Huang2023AdapPFSelfAdaptiveScrapeInterval.
+> (2026-08-21) This guide has been applied to the filled §1.1 in main.tex,
+> with deviations: ¶6 anchors to Breitbach/Nicolaescu/Pelle (Okwuibe not
+> cited in ¶6); Xu2021 (NEP) and Liu2019 are in references.bib but not cited
+> in the filled §1.1; the 'Multi-Region Content Discovery Platform' workload
+> description below is stale — the filled §1.1 describes a stateful edge
+> service across two geo-distributed sites with a MongoDB replica-set
+> storage tier.
 
 ## Reference key → paper → location
 
@@ -104,12 +111,9 @@ Understood. You want a properly developed introduction, not a compressed one. He
 | `Armbrust2010ViewCloudComputing`                         | `Gurung2026CloudRevolutionTracingOriginsRise` (¶3)              |
 | `Shi2016EdgeComputingVisionChallenges`                   | `Cao2020OverviewEdgeComputingResearch` (¶4)                     |
 | `Tao2019` (unverifiable)                                 | `Cao2020OverviewEdgeComputingResearch`, `Okwuibe2020...` (¶6) |
-| `Hong2019`                                               | `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` (¶6) |
 | `Qadir2020` (unverifiable)                               | `Breitbach2019ContextAwareDataTaskPlacement` (¶6)               |
 | `Sonkoly2021`                                            | `Nicolaescu2021StoreEdgeNetworkedDataSEND` (¶6)                 |
 | `PodolskiyIaaS`                                          | `Qu2018AutoScalingWebApplicationsClouds` (¶8)                   |
-| `Wang2026AutoScalingLoadAwareSDNFV`                      | `Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing` (¶8)    |
-| `Pierro2026EvaluatingKubernetesAutoscalingStrategiesIoT` | `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` (¶8) |
 
 ---
 
@@ -223,12 +227,11 @@ and each of these steps introduces delay that directly degrades service
 quality under the time pressure of an ongoing demand shift. In practice,
 these steps are not executed by a single control entity: a monitoring
 component detects demand, an auto-scaler provisions capacity, and a load
-balancer redirects traffic, each running under its own control loop. This
-thesis uses a Multi-Region Content Discovery Platform — a geo-distributed
-edge deployment — as its experimental workload: content items are ingested
-regionally and discovered globally through tag-based personalized feeds,
-with heterogeneous document types and two stress regimes — one driven by
-data locality, the other by compute-analytics throughput.
+balancer redirects traffic, each running under its own control loop. The
+filled §1.1 describes a stateful edge service deployed across two
+geo-distributed sites, whose compute backends are Docker containers and
+whose data tier is a MongoDB replica set, studied through three interfaces:
+telemetry delivery, capacity action selection, and readiness admission.
 
 ¶8 — The Orchestration Problem: The Coordination Gap
 
@@ -288,7 +291,7 @@ This thesis experimentally examines three links in the demand-to-capacity
 chain — telemetry delivery semantics (how demand evidence reaches the
 controller, and whether intermediate evidence is preserved), capacity-action
 selection (whether the controller scales compute or storage in response to
-the observed bottleneck), and readiness propagation (how quickly a ready
+the observed bottleneck), and readiness admission (how quickly a ready
 backend is admitted to traffic and becomes usable capacity) —
 characterising how each independently affects service quality during demand
 shifts in a stateful service deployed across two geo-distributed sites. An

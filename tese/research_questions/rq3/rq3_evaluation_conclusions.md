@@ -1,6 +1,6 @@
 # RQ3 — Evaluation Conclusions & Critical Review
 
-> **Status:** 2026-08-06 · conclusions from the completed RQ3 evaluation.
+> **Status:** 2026-08-21 · conclusions from the completed RQ3 evaluation (v3 compute-saturation evidence folded in, §3.2).
 > **Companion to:** `rq3.md` (research-question framing / provenance).
 > **Evidence:** `docs/operation/testing/experiment/v2/rq3/` — `results.md` (§2–8),
 > `post_run_analysis.md` (§3–6), `run_matrix.md` (§3–6),
@@ -235,7 +235,7 @@ platform's resilience) precludes observing that conversion here.
 
 **Strong enough for a Master's thesis — yes, with the disciplines in §2.3
 enforced.** The RQ3 contribution is a clean, controlled, statistically
-decisive mechanism result (event-driven readiness propagation removes up to a
+decisive mechanism result (event-driven readiness admission removes up to a
 poll period of admission quantization, ~7 s median), a now-significant
 end-to-end differential, and honest limitation handling. It is **not a
 dramatic result**; the two things most likely to draw examiner challenge are
@@ -252,16 +252,20 @@ the null, it is not.
 RQ3 studies the **interface between the autoscaler and the load balancer** —
 how a newly ready backend becomes *known to the routing plane*. The
 load-balancing *policy* (backend-selection, weights, pool state) is held
-fixed; only the propagation mechanism varies. The benefit claim is about this
+fixed; only the readiness admission mechanism varies. The benefit claim is about this
 integration, not about "better load balancing" in the selection sense.
 
 ### 3.2 The benefits, made explicit
 
 | Axis | Evidence | What it buys | Who benefits |
 |---|---|---|---|
-| Mechanism responsiveness | ready→admitted ~7 s faster (v2, d=−1.000); per-position separation ~6 s (v3) | removes the poll-period quantization — a tunable design cost | the control loop (converges one poll period sooner) |
-| End-to-end timing | spawn→first success ~6 s sooner (v2, p=0.0005); T2 p=0.004 (v3) | the user's first request after a scale-up arrives sooner | the user during the transition |
-| Resource efficiency (v3 headline) | old-backend CPU relief ≥10 pp on majority of admissions, per arm; T_proc −60/−74 % | less time running hot → energy, cost, thermal/battery headroom at the edge | the operator (cost) and the system (margin) |
+| Mechanism responsiveness | ready→admitted ~7 s faster (v2, d=−1.000); per-position separation ~6 s (v3 compute-saturation campaign) | removes the poll-period quantization — a tunable design cost | the control loop (converges one poll period sooner) |
+| End-to-end timing | spawn→first success ~6 s sooner (v2, p=0.0005); T2 p=0.004 (v3 compute-saturation campaign) | the user's first request after a scale-up arrives sooner | the user during the transition |
+| Resource efficiency (v3 headline) | old-backend CPU relief ≥10 pp on majority of admissions, per arm; T_proc −60/−74 % (v3 compute-saturation campaign, 14 runs, n=7/arm) | less time running hot → energy, cost, thermal/battery headroom at the edge | the operator (cost) and the system (margin) |
+
+> **Note (2026-08-21):** the "(v3)" evidence rows above come from the completed
+> **v3 compute-saturation campaign** (`docs/operation/testing/experiment/v3/rq3/`,
+> 14 runs, n=7/arm, seeds 3001–3007, config P4) — the primary RQ3 evidence.
 
 The one-sentence explanation: **time-to-useful-capacity is a first-order
 auto-scaling metric** — every second a newly scaled backend is *dark* is a

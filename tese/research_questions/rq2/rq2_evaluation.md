@@ -28,10 +28,16 @@
 
 ## 1. The question and what the evidence must show
 
-**RQ2** (`rq2.md` §1): *under compute-bound and data-access-bound demand, does a
-bottleneck-aware controller — choosing the scale-out action (compute or storage)
-from tier telemetry — recover service quality and use resources more efficiently
-than the single-tier fixed policies an operator would otherwise configure?*
+**RQ2** (canonical wording, `tese/main.tex` §1.3): *under compute-bound and
+data-access-bound demand, does bottleneck-aware selection of compute or storage
+scale-out improve service recovery and resource management efficiency relative to
+workload-agnostic fixed-priority policies when both actions are available?*
+
+**Superseded paraphrase** (retained for provenance only): *under compute-bound
+and data-access-bound demand, does a bottleneck-aware controller — choosing the
+scale-out action (compute or storage) from tier telemetry — recover service
+quality and use resources more efficiently than the single-tier fixed policies an
+operator would otherwise configure?*
 
 The evidence must support three claims:
 

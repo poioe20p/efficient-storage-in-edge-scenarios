@@ -22,10 +22,10 @@ The four arms — A `ep` (event-preserving, fresh + complete), B `delayed` (+30 
 | # | Finding | Evidence |
 |---|---|---|
 | F1 | **Usable-capacity ordering reproduces (H1)** | Medians A 28.5 < B 59.6 < C 79.6 ≈ D 83.2 s; A<B in 7/7, B<C in 7/7 blocks; C vs D 5/7 (D marginally later, not cleanly separated) |
-| F2 | **Loss arms severely degrade per-episode p95 (H2, core claim)** | C/D 22.2–40.0 s vs A 2.4–5.6 s → ~9×; A−D δ = −1.000, p = 0.0006, perfect separation 7/7 on both LANs |
+| F2 | **Latest-state (lossy) arms — both realizations — severely degrade per-episode p95 (H2, core claim)** | C/D 22.2–40.0 s vs A 2.4–5.6 s → ~9×; A−D δ = −1.000, p = 0.0006, perfect separation 7/7 on both LANs |
 | F3 | **Delay arm degrades p95 in aggregate** | A−B medians 3.73 vs 10.77 s; p = 0.0012, δ = −0.959 [−1.000, −0.755], direction 7/7 |
 | F4 | **Delay arm is bimodal — B does not reliably sit between A and C** | B episode p95 65.3/64.7 s at seeds 3001/3007, 5.0–12.6 s elsewhere; B−C n.s. (p = 0.209, δ CI crosses 0) |
-| F5 | **C ≈ D; "D strictly worst" not supported** | D−C p = 0.456; point estimate C marginally worse (δ = −0.265; C > D in 5/7 blocks) |
+| F5 | **C ≈ D (the two latest-state realizations); "D strictly worst" not supported** | D−C p = 0.456; point estimate C marginally worse (δ = −0.265; C > D in 5/7 blocks) |
 | F6 | **Non-surge phases clean in all arms (H3)** | baseline/recovery/demand_drop p95 ~1.05–1.08 s; only 300 s-cap tail timeouts in demand_drop (0.07–0.12 %) and two single-window recovery blips (C 4.2 s, D 5.8 s) |
 | F7 | **No differential-cancellation artifact** | Episode timeouts = 0 in all 28 runs → offered-basis ≡ served-basis; canceled shares flat ~5–7 % across arms (single `sp_6` outlier at 21.2 %) |
 | F8 | **Delivery per design** | delivered fraction ep/delayed 1.0; ls 0.325–0.336; sp 0.328–0.336 (0.333 ± 0.1) — verified per run |
@@ -87,4 +87,4 @@ The headline is that **loss and delay are not interchangeable, and loss is the r
 
 ## 10. Thesis-ready statement (v3)
 
-> On the fixed co-loaded platform, the observation interface has a measured, replicated user cost. Lossy telemetry delivery (latest-state or sampled, ~1/3 completeness) degrades per-episode p95 by ~9× with perfect separation across all seven replicates (Cliff's δ = −1.000, exact p = 0.0006); a +30 s delivery delay is significant in aggregate (p = 0.0012, 7/7 direction) but seed-dependent (bimodal); non-surge quality and data-path integrity remain clean in every arm. The completeness axis, not the delay axis, is the robust driver of user-visible degradation — the two failure modes of the observation interface are distinguishable, and the observation interface itself is a first-order determinant of transient service quality under overload.
+> On the fixed co-loaded platform, the observation interface has a measured, replicated user cost. Latest-state (lossy) telemetry delivery — ~1/3 completeness, robust across its two realizations (polling and sampled push) — degrades per-episode p95 by ~9× with perfect separation across all seven replicates (Cliff's δ = −1.000, exact p = 0.0006); a +30 s delivery delay is significant in aggregate (p = 0.0012, 7/7 direction) but seed-dependent (bimodal); non-surge quality and data-path integrity remain clean in every arm. The completeness axis, not the delay axis, is the robust driver of user-visible degradation — the two failure modes of the observation interface are distinguishable, and the observation interface itself is a first-order determinant of transient service quality under overload.

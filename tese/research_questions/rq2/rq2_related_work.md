@@ -2,7 +2,7 @@
 
 > **Status:** 2026-08-13 · literature positioning for RQ2's contribution.
 > **Updated:** 2026-08-13 · extracted from `tese/literature_review/02_action_selection_rq2/README.md`
-> (the RQ2 state-of-the-art ledger) and `tese/literature_review/global_literature_review.md` (§2.5, §4.4, §10).
+> (the RQ2 state-of-the-art ledger) and `tese/literature_review/global_literature_review.md` (§4.3, §10).
 > **Related:** [`rq2.md`](rq2.md) §3 (the basis table, seed ideas);
 > [`rq2_conclusions.md`](rq2_conclusions.md) (evidence and claim framing);
 > `tese/literature_review/02_action_selection_rq2/README.md` (per-paper ledger, includes "What NOT to claim").
@@ -24,12 +24,10 @@ The per-paper evidence, with what each explicitly does **not** do (the delimiter
 | **Ferreira, Coelho & Pereira 2024** — edge/fog DB survey (ACM CSUR) | Authoritative DB-side survey; DB scalability treated largely as replication/sharding/placement **design** | Discusses replication and FaaS scaling, but does not study bottleneck-selected tier action |
 | **Malazi et al. 2022** — MEC dynamic service placement SLR (IEEE Access) | "Dynamic" placement = re-placement/relocation from prediction, lifecycle, forwarding | Not runtime compute-vs-storage tier choice |
 | **Toka et al. 2021** — ML-based scaling for K8s edge clusters (IEEE TNSM) | ML-based edge scaling, formal HPA model; treats metrics→HPA pipeline as fixed infrastructure | **Compute-only**; no storage action or bottleneck classification |
-| **Tong et al. 2026 (SynScale)** — IEEE TSC | Spatiotemporal collaborative autoscaling (multi-agent RL); instance counts ±2, fixed 30 s interval | Compute-only; "storage" = per-server container disk, not a DB tier; simulated |
 | **Breitbach et al. 2019** — context-aware data/task placement (IEEE PerCom) | Runtime MAPE loop creates data replicas when queuing time crosses a threshold (real testbed, n-replication spectrum) | Adapts only **data** replicas at runtime; does not choose compute-vs-storage from a bottleneck; no SDN/routing |
 
 > **Cross-check with `rq2.md` §3.** The basis table there adds the seed-side citations
-> (Pelle et al. 2022 — "functions and data must be orchestrated in sync"; Ghorab et al. 2020 —
-> LB/scaling interaction, "adding another instance … may not improve the poor QoS"; Wei & Wang 2023;
+> (Pelle et al. 2022 — "functions and data must be orchestrated in sync"; Wei & Wang 2023;
 > Jin et al. 2023; Taleb/Sonkoly/Torabi/Bahrami/Kaur placement reviews). Those reinforce the same
 > two premises: (i) the DB tier is a blind spot in auto-scaling, and (ii) the corpus models placement
 > and scaling costs statically. The ledger above is the RQ2-specific SOTA slice; §3 of `rq2.md` is
@@ -48,13 +46,13 @@ The honest reading: RQ2's slice is **narrow but specific**, and the closest neig
    between the two tiers** from the observed bottleneck — Breitbach never chooses *which* tier.
 3. **vs SEND:** co-location of monitoring+placement+routing over data/functions is **not** new. What SEND
    lacks is the **resource-tier scaling action** — RQ2 adds the scaling-decision layer over the shared state.
-4. **vs compute-only (Toka, SynScale):** they scale only compute; RQ2 is the *measured* case of leaving the DB
+4. **vs compute-only (Toka):** it scales only compute; RQ2 is the *measured* case of leaving the DB
    tier out vs including it — the DB blind spot made concrete.
 
 ## 3. The gap statement (thesis-ready)
 
 > Auto-scaling research optimises *when* and *how many* instances to create, leaving the capacity-action type
-> (compute vs storage) as an architectural given (Qu et al.; Toka et al.; SynScale). Edge-storage research treats
+> (compute vs storage) as an architectural given (Qu et al.; Toka et al.). Edge-storage research treats
 > database elasticity as design-time replication/sharding/placement (Ferreira et al.) or as forecast-driven
 > provisioning (Li et al.), and the closest co-location precedent (SEND) omits resource-tier scaling and routing
 > admission. **Within the reviewed corpus, no system selects the capacity action — compute or storage scale-out —

@@ -5,16 +5,16 @@
 > aligned to the completed v3 storage-bind campaign (36 runs, 34 valid);
 > evidence and claim framing in [`rq2_conclusions.md`](rq2_conclusions.md).
 > **Framing source:** `tese/Notes/thesis_overview.md` §6-RQ2.
-> **Related:** `tese/Notes/purpose_evidence_map.md` (I2, P4, P5, P6); `tese/literature_review/global_literature_review.md` (§2.5, §4.4, §10).
+> **Related:** `tese/Notes/purpose_evidence_map.md` (I2, P4, P5, P6); `tese/literature_review/global_literature_review.md` (§4.3, §10).
 > **Legacy:** the older "backend-selection policy modes (host/slowstart/lifecycle)" framing and `Notas.txt` are superseded by `thesis_overview.md` §5.
 
 ---
 
 ## 1. Research question
 
-> **Under compute-bound and data-access-bound demand, does a bottleneck-aware controller — choosing the scale-out action (compute or storage) from tier telemetry — recover service quality and use resources more efficiently than the single-tier fixed policies an operator would otherwise configure (compute-only or storage-only)?**
->
-> Working restatement of `thesis_overview.md` §6-RQ2 (which uses the original "workload-agnostic fixed-priority policies when both actions are available" wording). The comparison is a **value-of-information** study: the fixed policies are the status quo an operator would configure, not a strawman.
+> **Under compute-bound and data-access-bound demand, does bottleneck-aware selection of compute or storage scale-out improve service recovery and resource management efficiency relative to workload-agnostic fixed-priority policies when both actions are available?**
+
+*Paraphrase (working note, kept from the previous display):* under compute-bound and data-access-bound demand, does a bottleneck-aware controller — choosing the scale-out action (compute or storage) from tier telemetry — recover service quality and use resources more efficiently than the single-tier fixed policies an operator would otherwise configure (compute-only or storage-only)? The comparison is a **value-of-information** study: the fixed policies are the status quo an operator would configure, not a strawman.
 
 ## 2. Position in the chain
 
@@ -46,7 +46,6 @@ The papers that ground this RQ:
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | **Qu et al. (2018)** — auto-scaling taxonomy                                                                                                           | *"the database tier is often considered dynamically unscalable and ignored by auto-scalers."*                                                                                                          | `TAXONOMY-GAP`                       | The data tier is a blind spot in auto-scaling — the core premise.                                                               |
 | **Pelle et al. (2022)**                                                                                                                                 | *"Functions and data must be orchestrated in sync."*                                                                                                                                                   | `CALLED-FOR`                         | The compute+data coupling is recognised — but only at deployment time, not runtime action selection.                            |
-| **Ghorab et al. (2020)**                                                                                                                                | LB and scaling interact (weighted CPU/memory signals);*"adding another instance, due to inappropriate load balancing, may not improve the poor QoS."*                                                  | `DOCUMENTED` + `CALLED-FOR`        | Scaling the*wrong thing* is a real, described failure; called for joint co-variation, never tuned.                             |
 | **Ferreira et al. (2024)** — ACM CSUR, edge/fog databases                                                                                              | The authoritative edge-DB survey has**no elasticity/runtime-scaling axis**; DB scalability treated as static replication/sharding/placement; "increasing the number of replicas" is future work.   | `TAXONOMY-GAP` (citable)             | **The DB-side citation for the gap:** DB literature treats DB scaling statically, so runtime DB scaling is genuinely open. |
 | **Wei & Wang (2023)** — popularity-based placement + LB                                                                                                | The thesis's*former* idea: popularity drives placement; explicitly *"the placement decision is static."*                                                                                             | `DOCUMENTED` (self-declared static)- | d.                                                                                                                               |
 | **Jin et al. (2023)** — erasure-code cost-optimal placement                                                                                            | Static placement minimising storage*cost* (ILP, simulation).                                                                                                                                           | `DOCUMENTED`                         | Shows the corpus models placement*cost* statically — not the runtime cost of *performing* a scale action.                   |
@@ -109,7 +108,7 @@ Policy gate that selects one scaling action from a declared bottleneck classific
 
 ## 5. Honesty / scope notes
 
-- Does **not** claim multi-metric triggers are new (Ghorab, Zhou & Yong already use weighted/custom metrics). The novel axis is **which capacity action** is taken, not which metric triggers.
+- Does **not** claim multi-metric triggers are new (Zhou & Yong already use weighted/custom metrics). The novel axis is **which capacity action** is taken, not which metric triggers.
 - The comparison is a *decision-quality* characterisation (does telemetry-driven selection actually pick the right action, and what does a wrong action cost?), not a "smart vs strawman" comparison.
 - The storage action is deliberately the simplest possible data action (v3: same-LAN persistent-reserve activation, with `rs.add/remove` at standby pre-creation and scale-down) to keep it a single variable; the action's own cost is measured (join time + node-minutes; sync bandwidth not metered), not assumed free.
 - Any *between-arm difference* is evidence that the decision interface is consequential.
@@ -179,12 +178,12 @@ The claim must carry three evidence-backed caveats (detailed in
 
 ## 6. Papers to cite in related work (Ch.2)
 
-Qu et al. (2018) · Pelle et al. (2022) · Ghorab et al. (2020) · **Ferreira et al. (2024)** · **Wei & Wang (2023)** · Jin et al. (2023) · Malazi et al. (2022) · Taleb et al. (2025) · Sonkoly et al. (2021) · Torabi et al. (2022) · Bahrami et al. (2023) · Kaur et al. (2022) · plus the Auto-Scaling and Edge Storage README SOTA.
+Qu et al. (2018) · Pelle et al. (2022) · **Ferreira et al. (2024)** · **Wei & Wang (2023)** · Jin et al. (2023) · Malazi et al. (2022) · Taleb et al. (2025) · Sonkoly et al. (2021) · Torabi et al. (2022) · Bahrami et al. (2023) · Kaur et al. (2022) · plus the Auto-Scaling and Edge Storage README SOTA.
 
 ## 7. Cross-references
 
 - Purpose map: `tese/Notes/purpose_evidence_map.md` → I2 (interface evidence + 3-claim gap + action-cost), P6 (SEND delimitation).
-- Global review: `tese/literature_review/global_literature_review.md` → §2.5 (LB/scaling interaction), §4.4 (joint compute+data), **§10 (Edge Storage threat assessment)**.
+- Global review: `tese/literature_review/global_literature_review.md` → §4.3 (joint compute+data), **§10 (Edge Storage threat assessment)**.
 - Thesis structure: `tese/Notes/thesis_structure.md` → §0.3 (action-cost guard), §2.8 (Edge Storage corpus), §5.3 (metrics).
 - Completed-campaign evidence: [`rq2_conclusions.md`](rq2_conclusions.md) (v3, 36 runs) and the v3 experiment record in `docs/operation/testing/experiment/v3/rq2/` (`experiment_plan.md`, `results.md`, `post_run_analysis.md`, `analysis/`, `graphs/`).
-- Implementation plan (docs): `docs/research_questions/v2/rq2/rq2_preparation.md` (v2-era; v3 storage reserve lives in `source/sdn_controller/`).
+- Implementation plan (docs): `docs/operation/testing/experiment/` (RQ2 campaign records) (v2-era; v3 storage reserve lives in `source/sdn_controller/`).

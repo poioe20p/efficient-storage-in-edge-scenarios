@@ -1,4 +1,4 @@
-# RQ3 — Readiness Propagation and Traffic Admission
+# RQ3 — readiness admission to traffic
 
 > **Status:** 2026-07-31 · idea-provenance document (current framing).
 > **Updated 2026-08-08:** RQ3 is evaluated on **compute backends only** (the
@@ -7,8 +7,12 @@
 > **no measurable benefit** at the locked read-write-mix config → storage
 > should not scale up (pre-registered RQ3-storage-3 rule). The extension is
 > **not carried forward**; it does not change the compute RQ3 verdict.
+> **Updated 2026-08-21:** the completed **v3 compute-saturation campaign** in
+> `docs/operation/testing/experiment/v3/rq3/` (14 runs, n=7/arm, direct vs
+> discovery, seeds 3001–3007, config P4) is the **primary RQ3 evidence**; the
+> storage preflight above remains closed and is not carried forward.
 > **Framing source:** `tese/Notes/thesis_overview.md` §6-RQ3.
-> **Related:** `tese/Notes/purpose_evidence_map.md` (I3, P4, P5, P6); `tese/literature_review/global_literature_review.md` (§2.1, §2.6, §3.1, §5.6).
+> **Related:** `tese/Notes/purpose_evidence_map.md` (I3, P4, P5, P6); `tese/literature_review/global_literature_review.md` (§2.4, §5.5).
 > **Conclusions:** `rq3_evaluation_conclusions.md` — evaluation results + critical review (2026-08-06).
 > **Legacy:** the older "trigger composition / backend-selection modes" framing and `Notas.txt` are superseded by `thesis_overview.md` §5.
 
@@ -32,7 +36,7 @@ Demand shift
   -> successful user request
 ```
 
-Held fixed: readiness probe, routing cost function, load-balancing weights, pool state, workload, resource limits. Warm-lease priority and slow-start ramps are **disabled in both conditions**. Only the *propagation mechanism* varies.
+Held fixed: readiness probe, routing cost function, load-balancing weights, pool state, workload, resource limits. Warm-lease priority and slow-start ramps are **disabled in both conditions**. Only the *readiness admission mechanism* varies.
 
 ---
 
@@ -46,28 +50,25 @@ The papers that ground this RQ:
 
 | Paper                                                     | What it establishes                                                                                                                                                              | Strength                 | Role in the basis                                                                                              |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| **Wang et al. (SDNFV)**                             | *"After synchronization completes, the proxy notifies LB-C to include the instance in session allocation."*                                                                    | `DOCUMENTED`           | **The core seed.** The spawn→state-sync→LB-inclusion delay is documented but never varied or measured. |
-| **Pierro & Ullah** — K8s HPA for IoT               | Throughput**decreases** as pods are added; names *"service discovery latency"* and *"load balancing distribution inefficiencies"* among orchestration-overhead causes. | `SYMPTOM`              | Observed symptom of the spawn→discovery gap, misattributed as "K8s overhead".                                 |
 | **Pourghebleh et al. (2020)** — SD SLR             | *"the freshness of the data still remains a problem"* — registry staleness acknowledged, never studied as a latency dimension.                                                | `DOCUMENTED`           | Service-discovery version of the same gap.                                                                     |
 | **Achir et al. (2022)** — SD taxonomy (87 approaches) | **No category** for discovery timing, registration latency, or registry freshness.                                                                                         | `TAXONOMY-GAP`         | Even a broad SD taxonomy lacks the dimension.                                                   |
-| **Yaseen (2025)**                                   | Pull-based monitoring → "visibility gaps".                                                                                                                                      | `DOCUMENTED`           | The "same gap, three names" cross-domain thread (see below).                                                   |
+| **Yaseen (2025)**                                   | Pull-based monitoring → "visibility gaps".                                                                                                                                      | `DOCUMENTED`           | The "same gap, two names" cross-domain thread (see below).                                                   |
 | **Podolskiy et al. (IaaS)**                         | Reactive autoscaling*"jeopardizes"* QoS under dynamic load across all three clouds.                                                                                            | `DOCUMENTED` (context) | The LB-discovery lag is one segment of the reactive-scaling lag.                                               |
 
-### The "same gap, three names" (strongest cross-domain evidence)
+### The "same gap, two names" (strongest cross-domain evidence)
 
-Three fields independently describe the same blind spot without citing each other:
+Two fields independently describe the same blind spot without citing each other:
 
 | Domain                   | Name for it                                                                            | Paper                                          |
 | ------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | Monitoring               | "Visibility gaps" — no knowledge of backend**load**                             | Yaseen (2025)                                  |
 | Service Discovery        | "Freshness still a problem" — no knowledge of backend**existence**              | Pourghebleh et al. (2020); Achir et al. (2022) |
-| Load Balancing / Scaling | "Synchronization-before-inclusion delay" — no knowledge of backend**readiness** | Wang et al. (SDNFV); Pierro & Ullah            |
 
-RQ3 isolates the **readiness** member of this trio: the path from a backend becoming application-ready to it being eligible for traffic, holding the backend-selection function fixed.
+RQ3 isolates the **readiness** member of this blind spot: the path from a backend becoming application-ready to it being eligible for traffic, holding the backend-selection function fixed. (An earlier draft listed a third, load-balancing/scaling name — "synchronization-before-inclusion delay" — with no supporting paper; the global review §5.5 keeps two names, and this document follows.)
 
 ### The gap statement
 
-SDN load-balancing literature asks *"given available backend state, which backend?"* and treats backend availability/health as established fact. **No study isolates the path from a backend becoming application-ready to it becoming eligible to receive traffic, holding the backend-selection function fixed** — Wang et al. documents the delay but never varies it; Pierro & Ullah observe its symptom; the SD field names it "freshness" but never measures it as a latency dimension.
+SDN load-balancing literature asks *"given available backend state, which backend?"* and treats backend availability/health as established fact. **No study isolates the path from a backend becoming application-ready to it becoming eligible to receive traffic, holding the backend-selection function fixed** — the SD field names it "freshness" but never measures it as a latency dimension.
 
 ---
 
@@ -99,8 +100,8 @@ The two arms are the two mechanisms the corpus describes but never isolates — 
 
 | Arm                                     | Mechanism                                                                                                                                                                      | Foundation                                                                                                                                                                                                                                                                                                              |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direct lifecycle notification** | Event-driven inclusion: the component that owns the lifecycle (the controller that spawned the backend and verified readiness) immediately registers it into the routing pool. | **Wang et al. (SDNFV)** — *"After synchronization completes, the proxy notifies LB-C to include the instance in session allocation"* — notify-on-complete, i.e. event-driven inclusion. Only possible when the lifecycle owner and the routing plane share an event path (the thesis's co-located apparatus). |
-| **Periodic discovery**            | Pull/registry-based: the routing plane learns backend state by polling on a fixed period; admission is quantized to discovery cycles (up to one period of added delay).        | Service-discovery field — Pourghebleh et al. ("freshness of the data still remains a problem"), Achir et al. (no discovery-timing category); the K8s-style endpoints/health-check status quo; the "same gap, three names" blind spot.                                                                                  |
+| **Direct lifecycle notification** | Event-driven inclusion: the component that owns the lifecycle (the controller that spawned the backend and verified readiness) immediately registers it into the routing pool. | Notify-on-complete, i.e. event-driven inclusion. Only possible when the lifecycle owner and the routing plane share an event path (the thesis's co-located apparatus). |
+| **Periodic discovery**            | Pull/registry-based: the routing plane learns backend state by polling on a fixed period; admission is quantized to discovery cycles (up to one period of added delay).        | Service-discovery field — Pourghebleh et al. ("freshness of the data still remains a problem"), Achir et al. (no discovery-timing category); the K8s-style endpoints/health-check status quo; the "same gap, two names" blind spot.                                                                                  |
 
 Reasons these two, specifically:
 
@@ -117,7 +118,7 @@ Reasons these two, specifically:
    periodic discovery adds**, and whether the direct path is worth its
    integration and robustness trade-offs.
 
-Both use the same readiness probe, routing cost function, LB weights, pool state, workload, and resource limits. The experiment uses a **flow-isolation mode** (each measurement request gets a unique connection tuple; the controller removes the corresponding VIP flow after the response) so every measured request is a fresh backend-selection event — preventing flow affinity from masquerading as a propagation effect.
+Both use the same readiness probe, routing cost function, LB weights, pool state, workload, and resource limits. The experiment uses a **flow-isolation mode** (each measurement request gets a unique connection tuple; the controller removes the corresponding VIP flow after the response) so every measured request is a fresh backend-selection event — preventing flow affinity from masquerading as a readiness admission effect.
 
 ### Primary measurements
 
@@ -129,7 +130,7 @@ The mechanism this RQ studies did not exist in the pre-RQ3 controller: after a
 spawn, Thread 3 registered the backend into the `VIP_SERVER` pool immediately —
 readiness was *assumed*, not verified. The RQ's premise is that this
 immediate, unverified admission is exactly what the event-driven path changes,
-so testing direct vs periodic propagation required making admission conditional
+so testing direct versus periodic readiness admission required making admission conditional
 on verified readiness and selectable per run. Implemented (2026-08-04, per
 `rq3_preparation.md`):
 
@@ -142,24 +143,24 @@ on verified readiness and selectable per run. Implemented (2026-08-04, per
 - **direct admission suppressed in the discovery condition** — the discovery
   poll cadence is the treatment, so no event or early registration can admit
   a backend ahead of the scan;
-- **propagation decoupled from backend-selection policy, warm-lease priority,
-  and ramp behavior** — held constant (disabled) in both arms, so only the
-  propagation mechanism varies.
+- **readiness admission decoupled from backend-selection policy, warm-lease
+  priority, and ramp behavior** — held constant (disabled) in both arms, so
+  only the readiness admission mechanism varies.
 
 ---
 
 ## 5. Honesty / scope notes
 
-- Does **not** compare the controller with Kubernetes, HAProxy, or another external LB. It isolates only the propagation of readiness information.
+- Does **not** compare the controller with Kubernetes, HAProxy, or another external LB. It isolates only the readiness admission mechanism.
 - Limited to **compute** backends (storage readiness is a distinct MongoDB SECONDARY event, out of scope for this RQ).
-- Warm-lease priority and slow-start ramps are **held constant** (disabled in both arms) — only the propagation mechanism varies.
+- Warm-lease priority and slow-start ramps are **held constant** (disabled in both arms) — only the readiness admission mechanism varies.
 - Any *between-arm difference* is direct evidence that the admission interface is consequential.
 
 ---
 
 ## 6. Papers to cite in related work (Ch.2)
 
-Wang et al. (SDNFV) · Pierro & Ullah · Pourghebleh et al. (2020) · Achir et al. (2022) · Yaseen (2025) · Podolskiy et al. (IaaS) · plus the Load Balancing on SDN and Service Discovery README SOTA.
+Pourghebleh et al. (2020) · Achir et al. (2022) · Yaseen (2025) · Podolskiy et al. (IaaS) · plus the Load Balancing on SDN and Service Discovery README SOTA.
 
 ## 7. Cross-references
 
@@ -167,5 +168,5 @@ Wang et al. (SDNFV) · Pierro & Ullah · Pourghebleh et al. (2020) · Achir et a
   (evidence chain: `docs/operation/testing/experiment/v2/rq3/` — `results.md`,
   `post_run_analysis.md`, `run_matrix.md`, `graphs/campaign_fixed/`).
 - Purpose map: `tese/Notes/purpose_evidence_map.md` → I3 (interface evidence), P6 (SEND delimitation).
-- Global review: `tese/literature_review/global_literature_review.md` → §2.1 (spawn-to-LB-inclusion), §2.6 (SD blind spot), §3.1 (Pierro & Ullah symptom), §5.6 (same gap, three names).
-- Implementation plan (docs): `docs/research_questions/v2/rq3/rq3_preparation.md`.
+- Global review: `tese/literature_review/global_literature_review.md` → §2.4 (SD blind spot), §5.5 (same gap, two names).
+- Implementation plan (docs): `docs/operation/testing/experiment/v2/rq3/` (RQ3 v2 records).

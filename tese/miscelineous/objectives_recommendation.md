@@ -3,7 +3,14 @@
 # Objectives Section — Recommendation
 
 > **Purpose:** draft recommendation for `tese/main.tex` §1.2 (`sec:objectives`),
-> produced 2026-08-14. **Not yet applied** — for review and approval.
+> produced 2026-08-14. **Applied (with deviations)** — the filled §1.2 keeps
+> the single primary objective ('to study the coordination gaps ... and to
+> contribute to more efficient resource orchestration for stateful edge
+> services, by characterising ... the handoff delays that accumulate at the
+> interfaces between telemetry delivery, capacity action selection, and
+> traffic admission under varying demand shifts') and drops the five-bullet
+> 'specific goals' list. Terminology note: 'readiness admission' replaced
+> 'readiness propagation' in the final text.
 > Companion blueprint: `tese/Notes/thesis_structure.md` (§1.2 row).
 > Rationale grounded in three MSc theses from the same program and advisor
 > lineage (José Moura / Rui Marinheiro).
@@ -89,7 +96,7 @@ To pursue this objective, the thesis addresses the following specific goals:
     and traffic-admission behaviour of the service;
     \item to characterise how the capacity action selected in response to the
     observed bottleneck (compute or storage scale-out) shapes service behaviour;
-    \item to characterise how readiness propagation affects the time until
+    \item to characterise how readiness admission affects the time until
     newly provisioned capacity begins to serve traffic; and
     \item to reconstruct the demand-to-usable-capacity timeline and relate
     which interface matters under which scenario.

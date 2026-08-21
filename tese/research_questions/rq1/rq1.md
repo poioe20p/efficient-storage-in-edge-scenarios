@@ -2,17 +2,16 @@
 
 > **Status:** 2026-07-31 · idea-provenance document (current framing). **CAMPAIGN COMPLETE (2026-08-09)** — the v3 28-run verdict is in [`rq1_conclusions.md`](rq1_conclusions.md); the framing below is provenance, and the campaign results supersede it.
 > **Framing source:** `tese/Notes/thesis_overview.md` §6-RQ1.
-> **Related:** `tese/Notes/purpose_evidence_map.md` (I1, P4, P5); `tese/literature_review/global_literature_review.md` (§2.3, §5.1, §5.2).
+> **Related:** `tese/Notes/purpose_evidence_map.md` (I1, P4, P5); `tese/literature_review/global_literature_review.md` (§2.2, §5.1, §5.2).
 > **Legacy:** the older "telemetry freshness / push-vs-poll cadence" framing and `Notas.txt` are superseded by `thesis_overview.md` §5.
 
 ---
 
 ## 1. Research question
 
-> **How do verified telemetry delivery semantics affect overload observability,
-> scaling response, and transient service quality in a stateful edge service —
-> where the semantics differ along two orthogonal axes, information age
-> (delay) and completeness (loss of intermediate demand evidence)?**
+> **How do verified event-preserving, delayed event-preserving, and latest-state telemetry delivery semantics affect overload observability, scaling response, and transient service quality in a stateful edge service?**
+
+*Commentary (working note — two-axes explanation, kept from the previous display):* the semantics differ along two orthogonal axes, information age (delay) and completeness (loss of intermediate demand evidence).
 
 ## 2. Position in the chain
 
@@ -44,10 +43,9 @@ The papers that ground this RQ:
 | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **AdapPF — Huang & Pierre (2023)**                                 | Varies Prometheus scrape interval; 60 s vs 5 s measurably degrades scheduling accuracy; adaptive cadence ≈ 36% traffic saving.                                                                                             | `MEASURED`                  | **The strongest seed.** Proves freshness affects decision quality — for one consumer (a scheduler). The thesis extends: does it matter for a *stateful service's* scaling + admission chain? |
 | **Yaseen (2025)** — survey of programmable network-wide monitoring | Pull-based polling → "visibility gaps":*"SNMP polling operates on a pull-based model with periodic queries, introducing latency and potential data loss especially under congestion. This can lead to visibility gaps."* | `DOCUMENTED`                | Names the failure mode the RQ isolates (pull = lost/absent intermediate state).                                                                                                                       |
-| **Caiza & Campoverde (2024)** — WSM multi-resource LB policy       | Closest algorithmic cousin (WSM cost function, like this thesis); collection happens*"periodically"* — the period is an implementation detail, never a variable.                                                         | `TAXONOMY-GAP`              | Shows even a latency-aware selector treats freshness as a given.                                                                                                                                      |
-| **Zhang & Guo (2014)**                                              | Same*"periodically"* assumption, a decade earlier, unchanged.                                                                                                                                                             | `TAXONOMY-GAP`              | Shows the assumption is persistent, not a one-off.                                                                                                                                                    |
+| **Zhang & Guo (2014)** (pre-2017; reached by citation chaining) | Same*"periodically"* assumption, a decade earlier, unchanged. **Dropped from the manuscript (2026-08-22): no verifiable PDF/DOI; flagged "verify before quoting" in the purpose map.** | `TAXONOMY-GAP` (dropped) | Was: the assumption is persistent, not a one-off. |
 | **Belgaum et al. (2020)** — 76-paper SDN-LB review                 | Open issues: security, controller placement, AI. Nothing about freshness.                                                                                                                                                   | `SILENCE`                   | **Use only as inattention, never as importance** (see purpose map rule). Scope boundary: "even a 76-paper review has no dimension for this."                                                    |
-| **Usman et al. (2022)** — constrained-edge resource management     | "Appropriate measurement intervals" on constrained edge are explicitly unresolved.                                                                                                                                          | `DOCUMENTED` (open problem) | Motivates the cadence/delivery dimension as a*live* open problem. *(Verify exact wording/DOI before quoting in the manuscript.)*                                                                  |
+| **Usman et al. (2022)** — observability survey of distributed edge & container-based microservices (IEEE Access 2022)     | "Appropriate measurement intervals" on constrained edge are explicitly unresolved.                                                                                                                                          | `DOCUMENTED` (open problem) | Motivates the cadence/delivery dimension as a*live* open problem. *(Verify exact wording/DOI before quoting in the manuscript.)*                                                                  |
 
 ### The distinguishing claim
 
@@ -62,7 +60,7 @@ Four arms in the final (v3) campaign, everything else fixed:
 1. **Event-preserving reference (A `ep`)** — every completed telemetry window delivered exactly once, in source order (fresh + complete).
 2. **Delayed event-preserving (B `delayed`)** — same ordered windows, fixed pre-registered delay (+30 s), no burst replay (stale + complete).
 3. **Latest-state polling (C `ls`, poll-30)** — consumer gets only the most recent completed window; intermediate windows are not delivered (fresh + lossy, ~1/3).
-4. **Sampled-push (D `sp`, /3)** — periodic sampling of the window stream (fresh + lossy, ~1/3).
+4. **Latest-state, sampled-push realization (D `sp`, /3)** — a second lossy realization of the latest-state class: periodic sampling of the window stream (fresh + lossy, ~1/3); not a fourth named delivery semantics.
 
 The v3 campaign (4 arms × n=7 = 28 runs) ran the co-loaded 180 s overload episode on the fixed platform; verdict and design details in [`rq1_conclusions.md`](rq1_conclusions.md).
 
@@ -109,11 +107,11 @@ overview `docs/operation/telemetry/telemetry_overview.md`.
 
 ## 6. Papers to cite in related work (Ch.2)
 
-AdapPF (Huang & Pierre, 2023) · Yaseen (2025) · Caiza & Campoverde (2024) · Zhang & Guo (2014) · Belgaum et al. (2020) · Usman et al. (2022, verify) · plus the telemetry SOTA README (`tese/literature_review/01_telemetry_rq1/README.md`).
+AdapPF (Huang & Pierre, 2023) · Yaseen (2025) · Zhang & Guo (2014) · Belgaum et al. (2020) · Usman et al. (2022, verify) · plus the telemetry SOTA README (`tese/literature_review/01_telemetry_rq1/README.md`).
 
 ## 7. Cross-references
 
 - Purpose map: `tese/Notes/purpose_evidence_map.md` → I1 (interface evidence), P4 (documented/symptomatic/called-for), P5 (freshness hierarchy).
-- Global review: `tese/literature_review/global_literature_review.md` → §2.3 (visibility gaps), §5.1 (monitoring→LB disconnect), §5.2 (monitoring→scaling disconnect).
-- Experiment plan (docs): `docs/research_questions/v2/rq1/rq1_prepation.md`; `docs/operation/testing/experiment/v2/rq1/experiment_plan.md`.
+- Global review: `tese/literature_review/global_literature_review.md` → §2.2 (visibility gaps), §5.1 (monitoring→LB disconnect), §5.2 (monitoring→scaling disconnect).
+- Experiment plan (docs): `docs/operation/testing/experiment/` (RQ1 campaign records); `docs/operation/testing/experiment/v2/rq1/experiment_plan.md`.
 - **v3 campaign (final)**: plan `docs/operation/testing/experiment/v3/rq1/experiment_plan.md` · run matrix `docs/operation/testing/experiment/v3/rq1/run_matrix.md` · summary + dataset + stats (kept on `cloud-vm`): `docs/operation/testing/experiment/v3/rq1/analysis/rq1_campaign_summary.md` (+ `rq1_v3_campaign_dataset.csv`, `rq1_v3_campaign_stats.csv`) · capstone `docs/operation/testing/experiment/v3/rq1/post_run_analysis.md` · graphs `docs/operation/testing/experiment/v3/rq1/graphs/comparison/` · conclusions `rq1_conclusions.md`.

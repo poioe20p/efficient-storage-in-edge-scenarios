@@ -18,10 +18,13 @@
 
 ## 1. What the campaign settled
 
-RQ2 asks whether a **bottleneck-aware controller** (choosing *which* tier to
-scale from tier telemetry) recovers service quality and uses resources more
-efficiently than the single-tier fixed policies an operator would otherwise
-configure. The v3 campaign is the evidence that answers it, at the storage-bind
+RQ2 asks whether **bottleneck-aware selection of compute or storage scale-out**
+improves service recovery and resource management efficiency relative to
+workload-agnostic fixed-priority policies when both actions are available
+(canonical wording, `tese/main.tex` §1.3) — a bottleneck-aware controller
+choosing *which* tier to scale from tier telemetry, versus the single-tier
+fixed policies an operator would otherwise configure. The v3 campaign is the
+evidence that answers it, at the storage-bind
 config where the data tier actually binds (the v2 campaign could not show a
 storage benefit and was aborted at run 13; v3 rebased on a locked config with a
 persistent storage reserve).

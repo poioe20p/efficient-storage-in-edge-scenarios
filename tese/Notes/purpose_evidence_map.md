@@ -10,9 +10,8 @@
 >
 > **Corpus note (2026-08-01):** `tese/literature_review/` was reorganised into
 > RQ/context folders (see its `README.md`), and the ledger carries a banner flagging
-> its own “coordination gap” framing as superseded. Sources marked **(no PDF)**
-> below — Wang (SDNFV), Podolskiy, Ghorab, Pierro & Ullah, Sofia, Caiza &
-> Campoverde, Zhang & Guo, Usman — are cited in the ledger but not stored in the
+> its own “coordination gap” framing as superseded (the narrowed, corpus-bounded coordination gap is the filled thesis claim; only the universal framing is superseded). Sources marked **(no PDF)**
+> below — Podolskiy, Sofia, Zhang & Guo, Usman — are cited in the ledger but not stored in the
 > corpus: verify the primary source before quoting.
 >
 > **Purpose:** map every step of the thesis's argument — *why it matters* →
@@ -55,7 +54,7 @@ papers, verbatim quotes, where each quote lives, and its **evidence strength**.
 > **Given varying demand, the quality of an elastic stateful edge service's
 > recovery — from observed demand to usable capacity — is governed by three
 > control-loop interfaces: telemetry delivery semantics (RQ1), bottleneck-aware
-> scaling-action selection (RQ2), and backend readiness propagation (RQ3).**
+> scaling-action selection (RQ2), and backend readiness admission (RQ3).**
 
 ---
 
@@ -127,26 +126,24 @@ quality are lost").
 
 ## P4 — The interfaces are documented, symptomatic, and called for — never isolated
 
-**Claim:** the literature describes the coordination gap, observes its symptoms,
-and calls for its study — in five distinct forms — but never isolates any
-interface as an independent experimental variable.
+**Claim:** within the reviewed corpus, the coordination gap is acknowledged in
+passing, its symptoms are observed, and its study is called for — in five
+distinct forms — but never isolates any interface as an independent
+experimental variable.
 
 ### Form 1 — Documented but not measured (`DOCUMENTED`)
 
 | Paper | Quote |
 |---|---|
-| Wang et al. (SDNFV) | "After synchronization completes, the proxy notifies LB-C to include the instance in session allocation." (spawn→synchronisation→LB inclusion; never varied) |
 | Xu et al. (2021, NEP) | "VM placement and end-user request scheduling strategies" decoupled ⇒ "Resource usage is highly unbalanced across servers… across sites." |
 | Yaseen (2025) | "SNMP polling operates on a pull-based model with periodic queries, introducing latency and potential data loss especially under congestion. This can lead to visibility gaps." |
 | Podolskiy et al. (IaaS) | "The reactive nature of autoscaling solutions jeopardizes the ability of cloud applications to meet the QoS requirements under the dynamically changing load." |
-| Ghorab et al. (2020) | "We believe that the load balancing algorithm affects the number of VNF instances. It is also possible that adding another instance, due to inappropriate load balancing, may not improve the poor QoS." |
 | Pourghebleh et al. (2020, SD) | "the freshness of the data still remains a problem" (passing remark, not a research dimension) |
 
 ### Form 2 — Symptoms observed, cause misattributed (`SYMPTOM`)
 
 | Paper | Symptom | Their explanation |
 |---|---|---|
-| Pierro & Ullah (K8s HPA) | Throughput **decreases** as pods are added | "orchestration overhead introduced by container coordination mechanisms, including increased scheduling complexity, **service discovery latency**, and load balancing distribution inefficiencies." |
 | Xu et al. (NEP) | Resource imbalance across servers/sites | Workload pattern variability (not the decoupling itself) |
 | Podolskiy et al. | QoS violation under load spikes | Reactive scaling is inherently slow |
 | AdapPF (Huang & Pierre, 2023) | **Far more pending pods** with 60 s scraping than 5 s under high load | Contribution framed as bandwidth-saving adaptive interval, not decision-quality characterisation |
@@ -157,7 +154,6 @@ interface as an independent experimental variable.
 |---|---|
 | Sofia et al. (2023, Movek8s) | Lists "data freshness" as an orchestration parameter ("Avoid processing/forwarding stale data"); "one of the key challenges in container orchestrators such as Kubernetes is to be able to provide a cross-layer orchestration, thus allowing placement decisions to occur based on real-time resource demands that relate with the application and computational nodes; with the network; and also with the data." |
 | Yaseen (2025) | "Modern networks demand monitoring frameworks that are not only scalable and real-time but also tightly integrated with network control and automation." |
-| Ghorab et al. (2020) | "The only work that has investigated VNF load balancing and auto-scaling in a unified manner may be [19]… and does not tune any of them to find out the effects on the whole functionality." |
 | Pelle et al. (2022) | "Functions and data must be orchestrated in sync." (deployment-time only) |
 | Nain et al. (2024) | "we observed that there is still room in the literature to focus on these crucial aspects of EC and the behavior of SDN while integrating with EC." |
 | Qu et al. (2018) | "the database tier is often considered dynamically unscalable and ignored by auto-scalers." |
@@ -175,8 +171,8 @@ called-for), each ending with "never isolated or measured."
 |---|---|---|
 | **AdapPF** (Huang & Pierre, 2023) | Varies scrape interval; 60 s vs 5 s changes scheduling accuracy under high load; adaptive cadence ≈ 36% traffic saving. **The only paper that varies freshness with a measured downstream effect — for ONE consumer (a scheduler).** | `MEASURED` |
 | **Yaseen** (2025) | Pull-based polling → "visibility gaps" (see P4/F1). | `DOCUMENTED` |
-| **Caiza & Campoverde** (2024) | WSM multi-resource policy — closest algorithmic cousin to the thesis — describes collection only as occurring "periodically"; the period is an implementation detail, not a variable. | `TAXONOMY-GAP` |
-| **Zhang & Guo** (2014) | Same "periodically" pattern, a decade earlier, unchanged. | `TAXONOMY-GAP` |
+| **Llorens-Carrodeguas et al.** (2021) | OSM-based NFV: the monitoring module polls the infrastructure into a Prometheus database — §2.2 SOTA-pipeline anchor for periodic scraping. | `DOCUMENTED` (architecture) |
+| **Okwuibe et al.** (2020) | Containerised edge stack combining SDN controller, Kubernetes cluster, and time-series database — §2.2 SOTA-pipeline anchor for the edge stack. | `DOCUMENTED` (architecture) |
 | **Belgaum et al.** (2020) | 76-paper SDN-LB review; open issues = security, controller placement, AI; **nothing about freshness**. | `SILENCE` — *inattention only, do not cite as importance* |
 
 **The RQ1 gap statement:** AdapPF proves freshness matters for a scheduler; this
@@ -192,7 +188,6 @@ and admission.
 |---|---|---|
 | **Qu et al.** (2018) | "the database tier is often considered dynamically unscalable and ignored by auto-scalers" — the data tier is a blind spot in auto-scaling. | `TAXONOMY-GAP` |
 | **Pelle et al.** (2022) | "Functions and data must be orchestrated in sync" — but at deployment time, not runtime action selection. | `CALLED-FOR` |
-| **Ghorab et al.** (2020) | LB and scaling interact (weighted resource signals); called for joint co-variation. | `DOCUMENTED` + `CALLED-FOR` |
 | Auto-scaling literature in general | Studies *when* and *how many* to scale; monitoring is an input, not a variable; the action type (compute vs storage) is fixed by the operator. | `TAXONOMY-GAP` |
 | **Ferreira et al.** (2024) — ACM CSUR, edge/fog databases | Authoritative edge-DB survey has **no elasticity/runtime-scaling axis**; DB scalability treated as static replication/sharding/placement design; "increasing the number of replicas" listed as future work. | `TAXONOMY-GAP` (citable) |
 | **Wei & Wang** (2023) — popularity-based placement + LB | The *old-thesis* idea: popularity drives placement; explicitly "the placement decision is static". | `DOCUMENTED` (self-declared static) |
@@ -214,20 +209,18 @@ episode. The thesis therefore measures not only relief but the **cost of the
 action itself** (sync bandwidth/overload), and scopes honestly: cold, same-LAN
 `rs.add/remove` only — full placement/consistency semantics are out of scope.
 
-### I3 — Ready backend → traffic admission (RQ3, readiness propagation)
+### I3 — Ready backend → traffic admission (RQ3, readiness admission)
 
 | Evidence | Detail | Strength |
 |---|---|---|
-| **Wang et al.** (SDNFV) | "After synchronization completes, the proxy notifies LB-C to include the instance in session allocation." — the spawn→inclusion delay is documented, never varied. | `DOCUMENTED` |
-| **Pierro & Ullah** | "service discovery latency" named among orchestration-overhead symptoms. | `SYMPTOM` |
 | **Pourghebleh et al.** (2020) / **Achir et al.** (2022) | SD field: “the freshness of the data still remains a problem” (one CoAP mechanism in Pourghebleh); Achir's taxonomy of 87 approaches has **no category for discovery timing or registry freshness**. | `DOCUMENTED` / `TAXONOMY-GAP` |
-| **The same gap, three names** (strongest cross-domain evidence) | Monitoring calls it "visibility gaps" (knowledge of *load*); SD calls it "freshness still a problem" (knowledge of *existence*); LB calls it "synchronisation-before-inclusion" (knowledge of *readiness*) — three fields, one phenomenon, no cross-citation. | `DOCUMENTED` (synthesis) |
+| **The same gap, two names** (strongest cross-domain evidence) | Monitoring calls it "visibility gaps" (knowledge of *load*); SD calls it "freshness still a problem" (knowledge of *existence*) — two fields, one phenomenon, no cross-citation. | `DOCUMENTED` (synthesis) |
 | SDN-LB literature in general | Asks "given available backend state, which backend?" — treats pool availability/readiness as established fact. | `TAXONOMY-GAP` |
 
 **The RQ3 gap statement:** no study isolates the path from a backend becoming
 application-ready to it becoming *eligible to receive traffic*, holding the
 backend-selection function fixed. (Warm-lease priority and slow-start ramps are
-held constant; only the **propagation mechanism** — direct lifecycle notification
+held constant; only the **readiness admission mechanism** — direct lifecycle notification
 vs periodic discovery — varies.)
 
 **Use in thesis:** Ch.2 — one subsection per interface (I1/I2/I3), each ending
@@ -235,16 +228,16 @@ with its RQ and gap statement above.
 
 ---
 
-## P6 — The question was structurally unaskable in any existing platform
+## P6 — The question was structurally unaskable within the reviewed corpus
 
-**Claim:** no platform has ever co-located monitoring, routing, and scaling as
-explicit, independently tunable functions, so the interface questions could not
-be asked.
+**Claim:** within the reviewed corpus, no platform has co-located monitoring,
+routing, and scaling as explicit, independently tunable functions, so the
+interface questions could not be asked.
 
 | Evidence | Detail | Strength |
 |---|---|---|
 | Paradigm mapping (Serverless / Offloading / Data-Sync / IoT / Container) | Serverless has all three but "bundled opaquely inside the platform — none exposed as tunable dimensions"; every other paradigm omits at least one function. | global_review §6.1 | `DOCUMENTED` |
-| Closest attempts table | Hung et al. (monitoring+routing only); Carella CLO (App↔Network, no scaling); Sofia Movek8s (extends K8s, cannot co-locate); Ghorab (joint LB+scaling, separate components). | global_review §6.2 | `DOCUMENTED` |
+| Closest attempts table | Hung et al. (monitoring+routing only); Sofia Movek8s (extends K8s, cannot co-locate). | global_review §6.2 | `DOCUMENTED` |
 | **SEND** (Nicolaescu et al. 2021) — closest co-location precedent | Logically centralized control point (e.g., an SDN controller) ingests periodic stats and makes runtime data-placement **and** function-instantiation decisions — monitoring + placement co-located. **Lacks:** resource-tier scaling and routing/LB admission. Cite and delimit: 2 of the 3 functions, never the full triple. | `DOCUMENTED` (adjacency) |
 | Three structural reasons | (1) independent toolchain evolution; (2) each field's abstraction served its question (LB: "given accurate state, which backend?"; scaling: "when/how many?"; monitoring: "how to collect efficiently?"); (3) no single configuration interface exposes cadence + routing + trigger as co-variable dimensions. | global_review §6.3 | `FRAMING` (synthesis) |
 
@@ -266,7 +259,7 @@ interface is a configurable variable).
   production-readiness or fault tolerance; Tier 0/1/2 placement as the main
   contribution. (`thesis_overview.md` §9)
 
-**Use in thesis:** Ch.1 contributions + Ch.7 conclusions/limitations. Keeps
+**Use in thesis:** Ch.1 contributions + Ch.6 conclusions/limitations. Keeps
 reviewers from reading a superiority claim the thesis never makes.
 
 ---
@@ -298,7 +291,7 @@ answer (details in conversation notes; the thesis must contain this reasoning).*
    premised on variability — Lorido-Botrán et al. 2014). The thesis *adopts* the
    premise; it does not re-establish it.
 2. **Existence in the apparatus** → the imposed phases profile, quantified
-   (from `source/scripts/testing/phases_override/phases_stress_plateau.json` —
+   (from `source/scripts/testing/phases.json` —
    the control group's workload, 2026-08-01 rebase):
 
    | Phase | dur (s) | rate/client | client frac | **aggregate** | mix note |
@@ -330,15 +323,15 @@ workload-level, validity.
 
 | Purpose step | Manuscript location |
 |---|---|
-| P1 (edge, latency-sensitive, varying demand) | Ch.1 §Context-Motivation; Ch.5 §Demand model |
+| P1 (edge, latency-sensitive, varying demand) | Ch.1 §Context-Motivation; Ch.5 §5.1 Experimental Setup |
 | P2 (demand → usable capacity) | Ch.1 (object of study); Ch.5 §Event trace |
 | P3 (three-layer separation) | Ch.2 §The-Unexamined-Default |
 | P4 (documented/symptomatic/called-for) | Ch.2 §Per-Form subsections |
 | P5-I1 / I2 / I3 (interface evidence) | Ch.2 §Monitoring, §Auto-Scaling, §SDN-LB → RQ1/RQ2/RQ3 |
 | P6 (structurally unaskable) | Ch.2 §Synthesis; Ch.3 (architecture as answer) |
-| P7 (characterization, not superiority) | Ch.1 §Contributions; Ch.7 §Limitations |
+| P7 (characterization, not superiority) | Ch.1 §Contributions; Ch.6 §Limitations |
 | Freshness hierarchy | Ch.2 §Monitoring (footnote-level honesty) |
-| Demand model | Ch.5 §Evaluation scenarios; Ch.1 motivation |
+| Demand model | Ch.5 §5.1 Experimental Setup; Ch.1 motivation |
 
 ---
 
@@ -347,9 +340,9 @@ workload-level, validity.
 - Framing: `tese/Notes/thesis_overview.md` (§1–§10).
 - Evidence corpus with forms/gap matrix: `tese/literature_review/global_literature_review.md`
   (§1 three-layer default; §2 Form 1; §3 Form 2; §4 Form 3; §5 Form 4 incl. the
-  "same gap, three names" table; §6 Form 5; §7 summary + gap matrix).
+  "same gap, two names" table; §6 Form 5; §7 summary + gap matrix).
 - Per-folder State of the Art and paper analysis: the RQ/context folder READMEs
   under `tese/literature_review/` (index: `tese/literature_review/README.md`).
 - BibTeX: `tese/references.bib` (populated as citations are used — add entries at
   first citation).
-- Imposed demand profile: `source/scripts/testing/phases_override/phases_stress_plateau.json` (control group, 2026-08-01).
+- Imposed demand profile: `source/scripts/testing/phases.json` (control group, 2026-08-01).
