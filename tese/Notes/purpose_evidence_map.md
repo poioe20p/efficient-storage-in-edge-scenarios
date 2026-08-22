@@ -11,8 +11,9 @@
 > **Corpus note (2026-08-01):** `tese/literature_review/` was reorganised into
 > RQ/context folders (see its `README.md`), and the ledger carries a banner flagging
 > its own “coordination gap” framing as superseded (the narrowed, corpus-bounded coordination gap is the filled thesis claim; only the universal framing is superseded). Sources marked **(no PDF)**
-> below — Podolskiy, Sofia, Zhang & Guo, Usman — are cited in the ledger but not stored in the
-> corpus: verify the primary source before quoting.
+> below — Zhang & Guo — are cited in the ledger but not stored in the
+> corpus: verify the primary source before quoting. (Podolskiy, Sofia, and Usman PDFs were added under
+> `literature_review/99_reference/` subfolders on 2026-08-22.)
 >
 > **Purpose:** map every step of the thesis's argument — *why it matters* →
 > *what the gap is* → *what the thesis does* — to concrete, quotable evidence,
