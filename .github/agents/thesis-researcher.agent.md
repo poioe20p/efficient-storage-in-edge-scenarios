@@ -58,6 +58,7 @@ When the user asks about citations, papers, or references:
 - Use the DOI tool (`tools/add_bib_from_doi.py`) via terminal to add new references
 - When suggesting papers, provide DOIs when possible so they can be added immediately
 - Cross-reference with `docs/` documentation to ensure cited work is relevant to the actual system
+- **Cite only papers whose PDFs are already in `tese/literature_review/`; never add out-of-corpus papers or BibTeX entries on your own — propose candidates (title, DOI, relevance) and wait for the user to download and approve. See `.github/instructions/thesis-citations.instructions.md`.**
 
 ## Constraints
 
