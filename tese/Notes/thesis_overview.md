@@ -100,9 +100,9 @@ Resource-orchestration literature recognizes the need for cross-layer context. S
 
 These works motivate integrated orchestration, but they do not provide a controlled causal characterization of the three interfaces examined here: telemetry observation, scaling-action selection, and traffic admission after backend readiness.
 
-### 3.6 Edge Storage Related Work
+### 3.6 Edge Storage Related Work (folded into §2.2.4, 2026-08-25)
 
-A short related-work block covers edge data placement and retention. Wei & Wang place data by popularity but call their placement static; Lujic et al. retain data by forecast; Ferreira et al.'s survey frames edge and fog databases broadly; and Mealha et al.'s cloud/edge replication on the MongoDB model leaves "a dynamic placement strategy of either full or partial databases" to future work. None of these selects storage scale-out from a live observed bottleneck, which is the capacity action RQ2 implements.
+The storage-side related-work block now lives inside the §2.2.4 "NoSQL and MongoDB: The Storage Tier" subsection (technology background + storage strand in one place), since the thesis's only storage touchpoint in the RQs is the replica scale-out decision (RQ2). Wei & Wang place data by popularity but call their placement static; Lujic et al. retain data by forecast; Malazi et al.'s placement SLR re-optimises which node serves data. None of these selects storage scale-out from a live observed bottleneck, which is the capacity action RQ2 implements. Ferreira and Mealha stay in §2.2.4 as the database-side citations.
 
 ---
 

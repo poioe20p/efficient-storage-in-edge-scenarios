@@ -641,7 +641,7 @@ environments \parencite{Cilic2023PerformanceEvaluationContainerOrchestrationTool
 provisioning unit well suited to constrained edge nodes, with start-up
 cost as the quantity that matters when capacity must be added quickly.
 
-\subsection{NoSQL and MongoDB}
+\subsection{NoSQL and MongoDB: The Storage Tier}\label{sec:platform_storage}
 Document-oriented NoSQL stores organise data as schema-flexible
 documents rather than as rows of relational tables. Because related
 data is embedded in a single document and the model avoids joins and
@@ -681,6 +681,27 @@ MongoDB data model leaves a \enquote{dynamic placement strategy of
 either full or partial databases} to future work
 \parencite{Mealha2019DataReplicationCloudEdge}.
 
+    Related work on the data side of the scaling loop, however, treats
+placement and retention rather than a live scale-out decision.
+Popularity-based placement distributes content according to access
+frequency, but Wei and Wang describe their placement decision as static
+and list online placement as future work
+\parencite{Wei2023PopularityDataPlacementLoadBalancing}.
+
+    Forecast-driven retention by Lujic et al. discards data predicted to be
+unnecessary, the inverse of capacity scale-out
+\parencite{Lujic2017EfficientEdgeStorageManagementNear}. 
+
+    Malazi et al. survey dynamic service placement in 
+multi-access edge computing and record fragmented evaluation
+practice across the field 
+\parencite{TabatabaeeMalazi2022DynamicServicePlacementMultiAccess},
+while placement re-optimises which node serves data rather than
+selecting a capacity action. None of these works selects storage
+scale-out from a live observed bottleneck, adding or removing
+replica-set members while the deployment keeps serving, which is the
+capacity action that RQ2 implements and evaluates.
+
 \section{Monitoring \& Telemetry}\label{sec:lit_monitoring}
 Monitoring and telemetry observe the state of a running service and
 deliver that evidence to whoever acts on it. Monitoring is the
@@ -701,10 +722,10 @@ the consumers that make decisions. In orchestrators this pipeline is
 standardised around periodic scraping into a time-series store, as in
 OSM-based NFV for transparent VNF clusters, where the monitoring module
 polls the infrastructure into a Prometheus database
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}, and in
-containerised edge stacks deployed for industrial IoT monitoring, which
-combine the SDN controller, a Kubernetes cluster, and a time-series
-database in a single orchestration stack
+\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+Containerised edge stacks assemble the same building blocks in one place:
+an SDN controller, a Kubernetes cluster, and a time-series database share
+a single orchestration stack for industrial IoT
 \parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized}.
 
     Delivery is conventionally pull-based, the consumer requesting the latest
@@ -714,7 +735,7 @@ choice alone determines much of what the consumer can know: between two
 collection instants the monitored state is unobserved, and what the
 pipeline forwards between instants determines whether the consumer
 receives the complete history, a complete but delayed history, or only
-the latest state. How the different forms such as eventr-preserving delivery,
+the latest state. How the different forms such as event-preserving delivery,
 delayed event-preserving delivery, and latest-state delivery affect
 resource orchestration is part of the subject of study in this thesis.
 
@@ -768,10 +789,9 @@ omits scaling altogether.
 work echoes the same open dimension: Usman et al., surveying
 observability of distributed edge and container-based microservices,
 leave the definition of appropriate measurement intervals as an
-unresolved open problem
+open research topic
 \parencite{Usman2022SurveyObservabilityDistributedEdgeAmp}.
-These works sit at the network level rather
-than at the application level of a stateful service, so they are read
+None of these works runs over a stateful service, so they are read
 here for the delivery mechanisms they expose, not as direct precedents
 for the platform under study.
 
@@ -814,29 +834,179 @@ Auto-scaling adjusts the amount of allocated resources to the load that
 a service receives: when demand grows, additional capacity is
 provisioned, and when demand recedes, surplus capacity is released, so
 that the service keeps serving requests without holding resources it
-does not use. In edge deployments the question is acute because each
-site holds limited capacity and receives demand that fluctuates over
-time, so when and how many resources to add or remove determines both
-the quality of service during a demand shift and the efficiency with
-which scarce resources are spent.
+does not use. In edge deployments the question gains more relevance 
+because each site holds limited capacity and receives demand that
+fluctuates over time, so when and how many resources
+to add or remove determines both the quality of service during
+a demand shift and the efficiency with
+which scarce resources are managed.
 
-\begin{figure}[H]
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.55\textwidth]{images/autoscaling_loop.png}
+%     \caption{Closed loop of an autoscaler: monitoring, analysis, planning,
+%     and execution repeated over the managed service.}
+%     \label{fig:autoscaling_loop}
+% \end{figure}
+
+    The field is organised around two questions: when to scale and how
+many resources to add. The classification scheme of Qu et al. separates
+the surveyed auto-scalers along dimensions such as the scaling
+indicator, the resource estimation method, and the timing of the
+scaling action \parencite{Qu2018AutoScalingWebApplicationsClouds}. The
+edge-specific categorisation of Taherizadeh and Stankovski organises
+the same questions across edge application types and operational
+challenges, and likewise surveys the scaling of application instances,
+whether virtual machines or containers
+\parencite{Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
+
+    When SDN enters the loop, the traffic side is added but the action
+type remains fixed. Llorens-Carrodeguas et al. couple SDN-based traffic
+steering with horizontal scaling of virtualised network functions, so
+that a single controller re-programs the forwarding paths while new
+instances are brought up; the monitoring and lifecycle components that
+feed and execute the scaling decision remain external, and every action
+provisions the same kind of resource, a new function instance
+\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+
+    At the edge, the same compute-only default persists. Toka et al.
+manage the scaling of Kubernetes edge clusters with machine-learning
+models that anticipate demand and adjust the replica count, formalising
+the control model of the Kubernetes horizontal autoscaler in the
+process \parencite{Toka2021MachineLearningScalingManagementKubernetes}. The
+work improves the decisions taken inside the pipeline, but it
+provisions only compute replicas, with no storage action and no
+classification of which tier is the bottleneck.
+
+     Ju et al. scale edge applications on Kubernetes with a proactive pod
+autoscaler that forecasts workload ahead of demand and adjusts
+CPU-intensive application replicas accordingly
+\parencite{Ju2021ProactiveAutoscalingEdgeComputingSystems}. Cheng et
+al. go one step further in ProScale, a prediction-driven framework
+that jointly determines the instance count and the placement of each
+microservice at the edge
+\parencite{Cheng2023ProScaleProactiveAutoscalingMicroserviceTime}.
+Li et al. couple auto-scaling with adaptive service placement in a
+single optimisation, from workload prediction, so that newly scaled
+replicas land on edge nodes with available resources
+\parencite{Li2021JointOptimizationAutoScalingAdaptive}. In all three,
+the provisioned unit remains a compute replica, and none considers a
+storage action.
+
+    Scaling one resource does not always make the service better,
+because the pressure may sit elsewhere. Nikravesh et al. quantify what
+that default costs in a three-tier web service: the scaling decisions
+taken for the business tier turn out to be insensitive to database
+capacity, yet reducing database capacity raises the rate of SLA
+violations, so the tier that determines service quality is exactly the
+one the scaling loop does not manage
+\parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}. Dogani et
+al. record the same boundary across their surveyed corpus: adding
+resources does not necessarily raise throughput when the bottleneck
+lies elsewhere
+\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Within that
+corpus, the only awareness of the effect is the Waterfall auto-scaler,
+a machine-learning system that accounts for how scaling one
+microservice can shift the bottleneck towards downstream services; the
+awareness is cross-service and compute-only, and no surveyed system
+selects a storage action.
+
+    The most recent systems sharpen the same boundary from the
+systems side. PBScaler identifies the microservice whose degradation
+propagates through the call graph, ranks candidate bottlenecks with a
+topology-aware random walk, and then optimises replica management
+around the identified bottleneck to avoid unnecessary scaling
+\parencite{Xie2024PBScalerBottleneckAwareAutoscalingFramework}.
+Bottleneck awareness therefore exists in the current state of the art,
+but the bottleneck it locates is always a microservice and the action
+it takes is always a compute-replica count, so the selection between
+compute and storage capacity remains outside the action space.
+
+    The closest reviewed precedent to selecting between resource tiers
+is the provisioning model of Li et al., which adds both cloud compute
+instances and data replicas in cloud-assisted edge systems, from a
+forecast of future workload built over historical access patterns
+\parencite{Li2020HeterogeneityAwareElasticProvisioningCloud}. Both
+actions are available, but the trigger is a forecast rather than a live
+observed bottleneck, and the outcome is measured in tenancy cost and
+utilisation rather than in user service quality and resource
+management efficiency. 
+
+    Pelle et al. keep function and state placement in sync within
+a single optimisation loop over an integrated edge platform
+\parencite{Pelle2022CostLatencyEdgePlatform}, yet again the mechanism
+is placement, not a runtime capacity action chosen between compute and
+storage.
+
+    The most recent survey converges on the same boundary: El Mrabet et
+al. extend the classification across cloud, fog, and edge, categorising
+the surveyed methods by their decision mechanism, scaling strategy, and
+deployment layer, and the provisioned tier is not among the
+classification dimensions
+\parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
+The field's own framing carries the default: Qu et al. describe the web
+application as split into application logic and a database tier, and
+record that \enquote{the database tier is often considered dynamically
+unscalable and ignored by auto-scalers}
+\parencite{Qu2018AutoScalingWebApplicationsClouds}.
+
+\begin{table}[htbp]
     \centering
-    \includegraphics[width=0.55\textwidth]{images/autoscaling_loop.png}
-    \caption{Closed loop of an autoscaler: monitoring, analysis, planning,
-    and execution repeated over the managed service.}
-    \label{fig:autoscaling_loop}
-\end{figure}
+    \caption{Evidence on capacity-action selection in the reviewed corpus.}
+    \label{tab:autoscaling_evidence}
+    \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
+        \toprule
+        Work & Strength & What it shows \\
+        \midrule
+        Qu et al. (2018) & Surveyed & Canonical taxonomy of when and how many
+        to scale; database tier ignored by the surveyed auto-scalers \\
+        Taherizadeh \& Stankovski (2017) & Surveyed & Edge-specific
+        taxonomy; scaling surveyed over service instances \\
+        Llorens-Carrodeguas et al. (2021) & Measured & SDN steering coupled to
+        horizontal VNF scaling; capacity-action type fixed \\
+        Toka et al. (2021) & Measured & Learning improves Kubernetes edge
+        scaling; compute-only with the metrics pipeline taken as given \\
+        Cheng et al. (2023) & Measured & Instance counts and placement
+        jointly optimised; provisioned unit remains compute \\
+        Nikravesh et al. (2017) & Measured & Database capacity ignored by
+        the business-tier autoscaler, yet it drives the SLA violations \\
+        Dogani et al. (2023) & Surveyed & Bottleneck-shift awareness exists,
+        compute-only and cross-service; no storage action \\
+        PBScaler (2024) & Measured & Bottleneck-aware replica
+        management; the bottleneck is a microservice, the action remains
+        compute \\
+        Li et al. (2020) & Measured & Compute instances and data replicas
+        provisioned together, but from a forecast, not a live bottleneck \\
+        El Mrabet et al. (2025) & Surveyed & Recent taxonomy; the
+        provisioned tier is not among the classification dimensions \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
-% TODO (RQ2 — bottleneck-aware action selection; folder 02): what it studies (when/how many to
-% scale: Qu et al. 2018 taxonomy; Toka 2021), what it leaves as a given (the
-% capacity-action type — compute vs storage — and the telemetry feeding the decision). Closest
-% RQ2 precedent: Li et al. 2020 (compute + data provisioning, forecast-driven). Finding
-% (corpus-bounded): no reviewed auto-scaling paper selects compute vs storage scale-out from a
-% live observed bottleneck.
-% Add (approved 2026-08-22): Dogani et al. 2023 taxonomy (99_reference/autoscaling_background)
-% with the Waterfall delimiter: bottleneck-shift awareness exists but is compute-only and
-% cross-service; tier-action selection remains the thesis's novelty.
+    Within the reviewed corpus, therefore, auto-scaling studies when to
+scale and how many resources to add, while the kind of capacity the
+action provisions remains an architectural given: the taxonomies
+classify how the decision is made, not what it provisions, and the
+systems provision compute replicas alone, even when they are
+bottleneck-aware and scaling and placement are jointly optimised.
+
+    Where several resource types enter the scaling problem at all, the
+reviewed corpus treats them as a joint optimisation of the mix rather
+than as a selection between actions, so the selection step itself
+remains uncharacterised. Equally unexamined is the boundary at which
+the decision is fed: where the reviewed works describe the monitoring
+and lifecycle components that supply the scaling decision at all, they
+leave those components outside the decision loop, a default examined
+across all three interfaces in \ref{sec:lit_three_layer_separation}. 
+    
+    Works that do couple compute with data do so at design time
+or from forecasts, in the strand reviewed in
+\ref{sec:platform_storage}. RQ2 isolates exactly that choice: under
+fixed telemetry delivery and readiness admission, the thesis compares
+fixed-priority and bottleneck-aware selection of the capacity action
+under compute-bound and data-access-bound demand, and measures
+service recovery and resource management efficiency when both
+actions are available.
 
 \section{Load Balancing on SDN}\label{sec:lit_sdn_lb}
 Load balancing distributes incoming traffic among a set of available
@@ -921,31 +1091,6 @@ does not say about it.
 % (global_literature_review.md carries a superseded-framing banner; see thesis_overview.md).
 % Evidence here is background: Yaseen calls for monitoring integrated with control — none
 % isolated or varied these as independent variables.
-
-\section{Edge Storage Related Work}\label{sec:lit_edge_storage}
-A final strand of related work concerns the data itself: where it
-resides, how it is replicated, and when it is retained, the decisions
-on which a stateful service depends. Popularity-based
-placement distributes content according to access frequency, but Wei and
-Wang describe their placement decision as static and list online
-placement as future work
-\parencite{Wei2023PopularityDataPlacementLoadBalancing}.
-Forecast-driven retention by Lujic et al. instead discards data predicted
-to be unnecessary, the inverse of capacity scale-out
-\parencite{Lujic2017EfficientEdgeStorageManagementNear}. Malazi et al.
-survey dynamic service placement in multi-access edge computing and
-record fragmented evaluation practice across the field
-\parencite{TabatabaeeMalazi2022DynamicServicePlacementMultiAccess},
-while placement re-optimises which node serves data rather than
-selecting a capacity action. The survey by Ferreira et al. frames the
-design space of edge and fog databases
-\parencite{MerujeFerreira2024DatabasesEdgeFogEnvironmentsSurvey}, and
-the cloud/edge replication of Mealha et al. over the MongoDB data model
-leaves \enquote{a dynamic placement strategy of either full or partial
-databases} to future work \parencite{Mealha2019DataReplicationCloudEdge}.
-None of these works selects storage scale-out from a live observed
-bottleneck, which is the capacity action that RQ2 implements and
-evaluates.
 
 \section{Summary and Research Gaps}\label{sec:lit_synthesis}
 % TODO (summary + gap, current framing): present the three-interface gap table from
