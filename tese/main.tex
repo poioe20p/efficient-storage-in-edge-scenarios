@@ -117,7 +117,8 @@ the main contributions in \ref{sec:contributions} and finally the outlining of t
 chapters of the thesis are presented in \ref{sec:document_structure}.
 
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
-In the year 2025 global internet traffic surpassed 7 exabytes (1 exabyte = 1 000 000 000 gigabytes), this 
+In the year 2025 global internet traffic surpassed 7 exabytes 
+(1 exabyte = 1 000 000 000 gigabytes), this 
 corresponds to a more than double increase in the amount of internet traffic
 generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
 \parencite{ITU2025InternetTraffic}.
@@ -129,7 +130,7 @@ generated since 2020 across fixed and mobile networks, this is represented in Fi
     \label{fig:internet_traffic}
 \end{figure}
 
-This growth has been driven by many technological advancements some of which, 
+    This growth has been driven by many technological advancements some of which, 
 have in turn galvanized the emergence of real-time interactive and data-intensive
 applications among others. Examples include web streaming and cloud gaming, 
 which are both services where users expect sub-second latency and high resolution
@@ -146,11 +147,12 @@ a pay-per-use model and among other aspects,
 and availability that has established it as
 the foundational layer that supports modern applications and services. 
 
-Yet, in parallel, a growing share of internet traffic now originates from
+    Yet, in parallel, a growing share of internet traffic now originates from
 mobile devices, which have become the main gateway to internet access
 \parencite{Gaudiaut2026MobileTrafficShare}. Much of this access is
 therefore generated and consumed at the network edge, far from
-centralised cloud data centres. As presented in \parencite{Cao2020OverviewEdgeComputingResearch},
+centralised cloud data centres. As presented in 
+\parencite{Cao2020OverviewEdgeComputingResearch},
 \parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings
 the computational resources to the network edge therefore closer to the
 end-users, allowing for much lower latency in delivering services
@@ -162,7 +164,7 @@ at the edge, for quicker responses, only a subset of it is sent to the cloud
 \parencite{Cao2020OverviewEdgeComputingResearch},
 freeing up backbone available bandwidth. 
 
-Despite these advantages, this geographical distribution also translates into
+    Despite these advantages, this geographical distribution also translates into
 less capacity per location and greater complexity in managing the distributed
 edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
 edge computing raises the complexity of management considerably}
@@ -198,6 +200,38 @@ and redirect traffic to it, and each of these steps introduces delay that
 worsens resource orchestration and can, in turn, lead to user service
 quality degradation.
 
+    This sequence forms what this dissertation calls the demand-to-capacity
+chain: the causal path that an orchestration system must traverse to convert
+a change in user demand into capacity that serves that demand. A demand
+shift is first observed by monitoring and telemetry, which deliver the
+evidence to a decision point; the decision point selects a capacity action,
+such as scaling compute or scaling storage; the action provisions the new
+capacity; the new capacity attains a readiness state and is admitted
+; and only when that backend serves a successful
+request does the new capacity become usable. The chain is therefore a
+timeline through the orchestration system,
+and certain steps are separated from the next by an interface at which delay or
+loss of evidence can accumulate.\footnote{Throughout this dissertation, the
+\emph{demand-to-capacity chain} denotes the full timeline from a demand
+shift to usable capacity; an \emph{interface} is a boundary between two
+steps of the chain at which two functions meet; a \emph{handoff delay} is
+the latency added at an interface when the functions on either side run
+under independent control loops; and the \emph{coordination gap} is the
+accumulated effect of these handoff delays along the chain.} Three of these
+interfaces, more specifically how demand evidence reaches the decision, which capacity
+action the decision selects, and when a ready backend is admitted to
+traffic are the subject of this thesis. Figure~\ref{fig:demand_capacity_chain}
+illustrates the chain.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/demand_to_capacity_chain.png}
+    \caption{The demand-to-capacity chain: from a demand shift to usable
+    capacity, with the three interfaces studied in this dissertation
+    highlighted.}
+    \label{fig:demand_capacity_chain}
+\end{figure}
+
     The steps described above must be coordinated under the time pressure of
 an ongoing demand shift. In practice, however, they are performed by
 separate components: a monitoring system collects metrics, an
@@ -209,19 +243,18 @@ provisioned capacity can actually serve traffic. Within the reviewed
 corpus, these handoffs are acknowledged in passing but never isolated or
 varied as an independent variable
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
-This thesis investigates them directly.
+This thesis investigates them directly: a single SDN controller serves
+as the experimental platform, co-locating monitoring, scaling, and
+routing in one control process, so that no handoff occurs unless an
+experiment introduces one, and the delay contributed by each interface
+can be measured in isolation.
 
-    This thesis investigates the orchestration of stateful edge services
-during demand shifts by studying three links in the demand-to-capacity
-chain: how demand evidence is delivered to the controller (telemetry
-delivery semantics), which capacity action the controller selects in
-response to the observed bottleneck (compute or storage scale-out), and
-when ready capacity is admitted to traffic (readiness admission). An
-SDN controller serves as the experimental platform, co-locating
-monitoring, routing, and scaling in a single process so that each of the
-three interfaces can be varied independently while the others are held
-constant, in a stateful service deployed across two geo-distributed
-sites.
+    Along this chain, three interfaces are studied in a stateful service
+deployed across two geo-distributed sites: how demand evidence is
+delivered to the controller (telemetry delivery semantics), which
+capacity action the controller selects in response to the observed
+bottleneck (compute or storage scale-out), and when ready capacity is
+admitted to traffic (readiness admission).
 
     The thesis does not claim that this SDN-based architecture is
 superior to existing orchestration platforms such as Kubernetes or NFV
@@ -243,7 +276,9 @@ co-locating these functions in a single control process suppresses these
 handoffs and thereby exposes each interface to direct measurement. With
 no cross-component handoffs, the delay contributed by an interface can
 be attributed to that interface alone, forming the basis of the
-experimental design. Because the co-located components are coupled,
+experimental design. 
+
+    Because the co-located components are coupled,
 making each interface independently variable is itself a deliberate
 design of the platform, and that allows its impact to be measured not
 only on the time from demand to usable capacity but also on service
@@ -410,7 +445,7 @@ resources, the monitoring and decision engine, the control workflow, and the val
 implementation.
 
 \item \textbf{Chapter 5} presents the experimental results. Following the
-demand-to-usable-capacity chain, the experimental campaigns address telemetry delivery
+demand-to-capacity chain, the experimental campaigns address telemetry delivery
 semantics (RQ1), bottleneck-aware scaling action selection (RQ2), and readiness admission
 to traffic (RQ3), followed by resource orchestration and scalability analysis, and a
 synthesis across the three interfaces.
@@ -424,8 +459,8 @@ research.
 \raggedbottom
 \chapter{Background and Related Work}\label{ch:literature_review}
 This chapter presents the background and related work that motivated the
-research, contextualised for resource orchestration in edge platforms. The
-review is organised around the field areas of
+research, contextualised for resource orchestration in edge platforms. 
+The review is organised around the field areas of
 the demand-to-capacity chain in the stateful edge services studied in this
 thesis, under varying demand shifts: monitoring and telemetry, which
 observe demand; auto-scaling,
@@ -433,29 +468,27 @@ which selects the capacity action; and load balancing on SDN, which
 distributes traffic across the available backends, with resource
 orchestration on SDN as the platform context in which these functions
 operate.
-    
+
     Across these areas, the review follows the three interfaces of
 the chain: how demand evidence reaches the decision, which capacity action
 the decision selects, and how a newly provisioned backend enters the
 traffic path, where readiness admission governs when the load balancer
 becomes aware that a backend is ready to serve traffic. The chain captures
-the demand-driven slice of orchestration, and the review grounds its
-evaluation not only of how quickly capacity meets demand but also of how
-load is distributed among existing backends and how efficiently resources
-are used.
-
-Within each area, the review examines whether and how the interfaces
+the demand-driven slice of orchestration.
+    Within each area, the review examines whether and how the interfaces
 between these functions are considered, studied, evaluated, or mentioned,
 and what ideas each field offers about them, with the aim of establishing a
 solid ground for the evaluation of the three interfaces of the
-demand-to-capacity chain. This examination grounds the claim, introduced
-in \ref{sec:context_motivation}, that these interfaces are acknowledged in
-the literature but not generally claimed nor systematically studied.
+demand-to-capacity chain. 
+
+    This examination grounds the claim, introduced in \ref{sec:context_motivation},
+that these interfaces are acknowledged in the literature
+but not generally claimed nor systematically studied.
 Before the field areas, \ref{sec:platform_background} surveys the platform
 technologies on which the testbed rests: edge platforms, SDN and OpenFlow,
-containerisation, and NoSQL document stores, each introduced for what it
-is and why it suits the edge scenario. The review methodology is described
-in \ref{sec:review_method},
+containerisation, and NoSQL and MongoDB as the chosen storage tier,
+each introduced for what it is and why it suits the edge scenario.
+The review methodology is described in \ref{sec:review_method},
 and the chapter concludes with the
 research gaps derived from the corpus in \ref{sec:lit_synthesis}.
 
@@ -544,11 +577,15 @@ How the technologies are applied is the subject of Chapters
 \ref{ch:system_architecture} and \ref{ch:implementation}.
 
 \subsection{Edge Computing and Edge Platforms}
-Edge computing brings computational resources closer to end users, by
-trading per-site capacity for lower latency and for relief of the
-backbone, as previously presented in \ref{sec:context_motivation}.
+% Edge computing brings computational resources closer to end users, by
+% trading per-site capacity for lower latency and for relief of the
+% backbone, as previously presented in \ref{sec:context_motivation}.
 
-    The platforms that materialise this paradigm have been taxonomised by
+Edge computing is the placement of computational and storage resources
+between end devices and centralised cloud data centres, close to where
+data is produced and consumed which brings benefits but also challenges with management relevance being one of them, as presented in \ref{sec:context_motivation}.
+
+    The platforms that materialise this paradigm have been characterized by
 Liu et al., who observe that the different forms of edge computing
 emerge from different design demands: cloud providers push services and
 computation to the edge to exploit locality and improve user
@@ -748,6 +785,12 @@ resource orchestration is part of the subject of study in this thesis.
     \label{fig:monitoring_pipeline}
 \end{figure}
 
+    The reviewed evidence spans three contexts in which this link has
+been studied: cluster-federation monitoring, network telemetry, and
+edge-platform observability. In each, the review asks whether the
+delivery mechanism itself is varied, what downstream consequence the
+variation is shown to produce, and what the work leaves as a given.
+
     Within cluster-federation monitoring, the collection interval has
 been shown to be a genuine variable rather than a fixed parameter. AdapPF
 \parencite{Huang2023AdapPFSelfAdaptiveScrapeInterval} varies the
@@ -806,10 +849,22 @@ evidence each of these works provides for the link under study.
         \toprule
         Work & Strength & What it shows \\
         \midrule
+        Llorens-Carrodeguas et al. (2021) & Measured & Orchestration
+        monitoring polls into Prometheus; delivery semantics not varied \\
+        Okwuibe et al. (2020) & Measured & SDN controller, Kubernetes,
+        and a time-series store share one stack; no delivery dimension \\
         AdapPF (Huang \& Pierre, 2023) & Measured & Freshness changes a
         scheduler's accuracy; no stateful-service or admission trace \\
+        Huang \& Pierre (2024) & Measured & Aggregation contains
+        monitoring overhead but discards intermediate observations \\
+        Zhou \& Yong (2024) & Measured & Metric choice changes scaling
+        quality; the delivery mechanism stays fixed \\
         Yaseen (2025) & Documented & Pull-based polling leaves visibility
         gaps; calls for monitoring integrated with control \\
+        Hung et al. (2022) & Measured & Production controller co-locates
+        telemetry and routing; scaling omitted \\
+        Usman et al. (2022) & Surveyed & Appropriate measurement
+        intervals remain an open research topic \\
         Belgaum et al. (2020) & Silence & A seventy-six-paper review of the
         adjacent load-balancing field lists no freshness issue among its
         open problems \\
@@ -817,7 +872,7 @@ evidence each of these works provides for the link under study.
     \end{tabular}
 \end{table}
 
-    Within the reviewed corpus, therefore, the two building blocks of the
+    Within the reviewed corpus, therefore, the building blocks of the
 delivery question appear separately: AdapPF varies the interval that
 produces delay, Yaseen documents the gaps that polling leaves, and
 aggregation summarises away intermediate observations, yet no reviewed
@@ -886,7 +941,8 @@ al. go one step further in ProScale, a prediction-driven framework
 that jointly determines the instance count and the placement of each
 microservice at the edge
 \parencite{Cheng2023ProScaleProactiveAutoscalingMicroserviceTime}.
-Li et al. couple auto-scaling with adaptive service placement in a
+
+    Li et al. couple auto-scaling with adaptive service placement in a
 single optimisation, from workload prediction, so that newly scaled
 replicas land on edge nodes with available resources
 \parencite{Li2021JointOptimizationAutoScalingAdaptive}. In all three,
@@ -1019,14 +1075,14 @@ newly provisioned backend only becomes usable capacity once traffic
 actually reaches it, so how backends enter and leave the pool of
 candidates is part of the problem itself.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.7\textwidth]{images/sdn_load_balancing.png}
-    \caption{Load balancing in an SDN network: the controller installs
-    forwarding rules that distribute client traffic among the available
-    backends.}
-    \label{fig:sdn_load_balancing}
-\end{figure}
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.7\textwidth]{images/sdn_load_balancing.png}
+%     \caption{Load balancing in an SDN network: the controller installs
+%     forwarding rules that distribute client traffic among the available
+%     backends.}
+%     \label{fig:sdn_load_balancing}
+% \end{figure}
 
 % TODO (RQ3 — readiness admission; folder 03): what it studies (backend-selection algorithms
 % given available server state: Neghabi 2018; Belgaum 2020), what it treats as a given (pool
@@ -1048,13 +1104,13 @@ and the challenge is to keep these layers working together as demand
 moves across sites. This section reviews the orchestration context and
 the boundaries of the surveyed work.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.7\textwidth]{images/orchestration_layers.png}
-    \caption{Layered orchestration of containerised services over an
-    SDN-programmed edge infrastructure.}
-    \label{fig:orchestration_layers}
-\end{figure}
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.7\textwidth]{images/orchestration_layers.png}
+%     \caption{Layered orchestration of containerised services over an
+%     SDN-programmed edge infrastructure.}
+%     \label{fig:orchestration_layers}
+% \end{figure}
 
 % TODO (context + boundaries; folders 04/05): orchestration context (Okwuibe 2020 — closest
 % Docker+SDN+edge+MongoDB stack, split across SDN/K8s/InfluxDB; Peng 2019; Wang 2019
@@ -1073,14 +1129,14 @@ information that ties them together must cross component boundaries.
 This section examines that default and what the reviewed work does and
 does not say about it.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{images/independent_control_loops.png}
-    \caption{Independent control loops for monitoring, scaling, and routing:
-    the information that links them must cross component boundaries at each
-    handoff.}
-    \label{fig:independent_control_loops}
-\end{figure}
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.9\textwidth]{images/independent_control_loops.png}
+%     \caption{Independent control loops for monitoring, scaling, and routing:
+%     the information that links them must cross component boundaries at each
+%     handoff.}
+%     \label{fig:independent_control_loops}
+% \end{figure}
 
 % TODO (moved here 2026-08-21; now the cross-area observation that bridges the four domain
 % surveys to the gaps, so the chapter follows the reference-thesis arc of generic domains →
@@ -1186,7 +1242,7 @@ component to be independently managed and tested.
 
 
 \chapter{Experimental Results}\label{ch:results}
-% Section order follows the demand→usable-capacity chain: RQ1 → RQ2 → RQ3 → Synthesis.
+% Section order follows the demand-to-capacity chain: RQ1 → RQ2 → RQ3 → Synthesis.
 
 \section{Experimental Setup}\label{sec:experimental_setup}
 % TODO (absorbed from the removed Evaluation Methodology chapter §5.2–§5.3):
