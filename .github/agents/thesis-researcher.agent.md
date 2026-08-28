@@ -36,7 +36,6 @@ When the user asks about research questions, methodology, related work, or argum
 - Present multiple perspectives before recommending one
 - Ground arguments in the project's actual system (read `docs/` files for implementation details)
 - Cite specific papers or suggest where citations are needed
-- Use the `docs/operation/system_to_thesis_map.md` to bridge implementation ↔ thesis narrative
 
 ### Thesis Writing Mode (Human-in-the-Loop)
 
