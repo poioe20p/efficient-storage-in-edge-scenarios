@@ -239,8 +239,8 @@ auto-scaler provisions capacity, and a load balancer redirects traffic,
 each running under its own control loop. The information needed to
 respond to demand must therefore cross from one component to the next,
 and the delays accumulated at these handoffs determine how quickly newly
-provisioned capacity can actually serve traffic. Within the reviewed
-corpus, these handoffs are acknowledged in passing but never isolated or
+provisioned capacity can actually serve traffic. In the reviewed literature,
+these handoffs are acknowledged in passing but never isolated or
 varied as an independent variable
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 This thesis investigates them directly: a single SDN controller serves
@@ -338,7 +338,7 @@ efficiency. The problem is introduced in
 \ref{sec:context_motivation}, and the review of the state of the art in
 \ref{ch:literature_review} establishes both that these functions are typically
 studied in isolation and that co-located architectures with independently
-configurable interfaces are less commonly present in the reviewed corpus, which
+configurable interfaces are less commonly present in the reviewed literature, which
 motivates and delimits the problem.
 
 \item \textbf{Objectives of a solution.} The objectives of the solution are
@@ -395,7 +395,7 @@ This dissertation makes the following contributions:
     scaling, and routing operate within a single control process and in which
     each of the three interfaces is engineered as an independently
     configurable dimension, enabling single-variable experiments of the kind
-    absent from the reviewed corpus.
+    absent from the reviewed literature.
     \item An experimental characterisation of telemetry delivery semantics
     (event-preserving, delayed event-preserving, and latest-state) and of
     their effects on overload observability, scaling response, and transient
@@ -491,7 +491,7 @@ but not generally claimed nor systematically studied. The orchestration
 platforms that provide the context for these functions are reviewed in
 \ref{sec:lit_sdn_orchestration}, the shared default that emerges across
 all areas is examined in \ref{sec:lit_three_layer_separation}, and the
-research gaps derived from the corpus are stated in
+research gaps derived from this review are stated in
 \ref{sec:lit_synthesis}.
 
 \section{Review Methodology}\label{sec:review_method}
@@ -904,7 +904,7 @@ evidence each of these works provides for the link under study.
 
 \begin{table}[htbp]
     \centering
-    \caption{Evidence for the link between monitoring and decision in the reviewed corpus.}
+    \caption{Evidence for the link between monitoring and decision in the reviewed literature.}
     \label{tab:monitoring_evidence}
     \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
         \toprule
@@ -933,7 +933,7 @@ evidence each of these works provides for the link under study.
     \end{tabular}
 \end{table}
 
-    Within the reviewed corpus, therefore, the building blocks of the
+    Across the reviewed literature, therefore, the building blocks of the
 delivery question appear separately: AdapPF varies the interval that
 produces delay, Yaseen documents the gaps that polling leaves, and
 aggregation summarises away intermediate observations, yet no reviewed
@@ -980,24 +980,26 @@ whether virtual machines or containers
     When SDN enters the loop, the traffic side is added but the action
 type remains fixed. Llorens-Carrodeguas et al. couple SDN-based traffic
 steering with horizontal scaling of virtualised network functions, so
-that a single controller re-programs the forwarding paths while new
-instances are brought up; the monitoring and lifecycle components that
-feed and execute the scaling decision remain external, and every action
-provisions the same kind of resource, a new function instance
+that a single controller re-programs the forwarding paths while
+instances of the same pre-dimensioned function pool are activated or
+deactivated; metric collection and the lifecycle operations that feed
+and execute the scaling decision remain external, and every action
+concerns instances of the one managed function, never a second
+resource tier
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 
     At the edge, the same compute-only default persists. Toka et al.
 manage the scaling of Kubernetes edge clusters with machine-learning
 models that anticipate demand and adjust the replica count, formalising
 the control model of the Kubernetes horizontal autoscaler in the
-process \parencite{Toka2021MachineLearningScalingManagementKubernetes}. The
-work improves the decisions taken inside the pipeline, but it
+process \parencite{Toka2021MachineLearningScalingManagementKubernetes}.
+The work improves the decisions taken inside the pipeline, but it
 provisions only compute replicas, with no storage action and no
 classification of which tier is the bottleneck.
 
-     Ju et al. scale edge applications on Kubernetes with a proactive pod
-autoscaler that forecasts workload ahead of demand and adjusts
-CPU-intensive application replicas accordingly
+     Ju et al. scale edge applications on Kubernetes with a
+proactive pod autoscaler that forecasts workload ahead of
+demand and adjusts CPU-intensive application replicas accordingly 
 \parencite{Ju2021ProactiveAutoscalingEdgeComputingSystems}. Cheng et
 al. go one step further in ProScale, a prediction-driven framework
 that jointly determines the instance count and the placement of each
@@ -1008,22 +1010,23 @@ microservice at the edge
 single optimisation, from workload prediction, so that newly scaled
 replicas land on edge nodes with available resources
 \parencite{Li2021JointOptimizationAutoScalingAdaptive}. In all three,
-the provisioned unit remains a compute replica, and none considers a
-storage action.
+the scaled unit remains a compute replica; where storage appears at
+all, as in ProScale, it is a placement constraint rather than a
+scaling target.
 
     Scaling one resource does not always make the service better,
 because the pressure may sit elsewhere. Nikravesh et al. quantify what
 that default costs in a three-tier web service: the scaling decisions
 taken for the business tier turn out to be insensitive to database
 capacity, yet reducing database capacity raises the rate of SLA
-violations, so service quality is governed by the tier that the
+violations, so service quality can be governed by the tier that the
 scaling decisions ignore
 \parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}. Dogani et
-al. record the same boundary across their surveyed corpus: adding
+al. record the same boundary across the systems they survey: adding
 resources does not necessarily raise throughput when the bottleneck
 lies elsewhere
-\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Within that
-corpus, awareness of the effect is scarce and cross-service only:
+\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among those
+systems, awareness of the effect is scarce and cross-service only:
 Waterfall, a machine-learning auto-scaler, accounts for how scaling
 one microservice can shift the bottleneck towards downstream
 services, and ATOM uses layered queuing networks to reduce bottleneck
@@ -1037,9 +1040,10 @@ topology-aware random walk, and then optimises replica management
 around the identified bottleneck to avoid unnecessary scaling
 \parencite{Xie2024PBScalerBottleneckAwareAutoscalingFramework}.
 
-    Bottleneck awareness therefore exists in the current state of the art,
-but the bottleneck it locates is always a microservice and the action
-it takes is always a compute-replica count, so the selection between
+    Bottleneck awareness therefore exists in the current
+state of the art, but the bottleneck it locates is always
+a microservice and the action it takes is always a
+compute-replica count, so the selection between
 compute and storage capacity remains outside the action space.
 
     The closest reviewed precedent to selecting between resource tiers
@@ -1064,15 +1068,16 @@ the surveyed methods by their decision mechanism, scaling strategy, and
 deployment layer, and the provisioned tier is not among the
 classification dimensions
 \parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
-The field's own framing carries the default: Qu et al. describe the web
-application as split into application logic and a database tier, and
+The field's own framing expresses the same default:
+Qu et al. describe the web application as split into
+application logic and a database tier, and
 record that \enquote{the database tier is often considered dynamically
 unscalable and ignored by auto-scalers}
 \parencite{Qu2018AutoScalingWebApplicationsClouds}.
 
 \begin{table}[htbp]
     \centering
-    \caption{Evidence on capacity-action selection in the reviewed corpus.}
+    \caption{Evidence on capacity-action selection in the reviewed literature.}
     \label{tab:autoscaling_evidence}
     \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
         \toprule
@@ -1103,7 +1108,7 @@ unscalable and ignored by auto-scalers}
     \end{tabular}
 \end{table}
 
-    Within the reviewed corpus, therefore, auto-scaling studies when to
+    Across this literature, therefore, auto-scaling studies when to
 scale and how many resources to add, while the kind of capacity the
 action provisions remains an architectural given: the taxonomies
 classify how the decision is made, not what it provisions, and the
@@ -1111,14 +1116,14 @@ systems provision compute replicas alone, even when they are
 bottleneck-aware and scaling and placement are jointly optimised.
 
     Where several resource types enter the scaling problem at all, the
-reviewed corpus treats them as a joint optimisation of the mix rather
+reviewed studies treat them as a joint optimisation of the mix rather
 than as a selection between actions, so the selection step itself
 remains uncharacterised. Equally unexamined is the boundary at which
 the decision is fed: where the reviewed works describe the monitoring
 and lifecycle components that supply the scaling decision at all, they
 leave those components outside the decision loop, a default examined
 across all three interfaces in \ref{sec:lit_three_layer_separation}. 
-    
+
     Works that do couple compute with data do so at design time
 or from forecasts, in the strand reviewed in
 \ref{sec:platform_storage}. RQ2 isolates exactly that choice: under
