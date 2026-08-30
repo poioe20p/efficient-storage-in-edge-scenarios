@@ -293,10 +293,12 @@ This thesis seeks to answer the following three research questions:
     and latest-state telemetry delivery semantics affect overload observability,
     scaling response, and transient service quality in a stateful edge service?
 
-    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand, does
-    bottleneck-aware selection of compute or storage scale-out improve service
-    recovery and resource management efficiency relative to workload-agnostic fixed-priority
-    policies when both actions are available?
+    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand with
+    both capacity actions available, what does the selection of the capacity
+    action determine: how do service recovery and resource management
+    efficiency depend on matched versus mismatched selection, and how does the
+    reliability of the bottleneck evidence bound what bottleneck-aware
+    selection can achieve?
 
     \item \textbf{RQ3} -- For newly created compute backends that satisfy the same
     application-readiness criterion, how does direct lifecycle notification versus
@@ -400,9 +402,11 @@ This dissertation makes the following contributions:
     (event-preserving, delayed event-preserving, and latest-state) and of
     their effects on overload observability, scaling response, and transient
     service quality (RQ1).
-    \item An experimental characterisation of bottleneck-aware capacity
-    action selection (compute versus storage scale-out) relative to
-    workload-agnostic fixed-priority policies under compute-bound and
+    \item An experimental characterisation of capacity action selection
+    (compute versus storage scale-out): how service recovery and resource
+    management efficiency depend on matched versus mismatched selection,
+    and how the reliability of the bottleneck evidence bounds what
+    bottleneck-aware selection can achieve under compute-bound and
     data-access-bound demand (RQ2).
     \item An experimental characterisation of readiness admission (direct
     lifecycle notification versus periodic discovery) and of its effect on
@@ -558,8 +562,8 @@ the retrieved hits.
 \end{table}
 
     Screening produced a corpus of 39 unique papers, organised by the
-interface they inform: telemetry delivery (RQ1), capacity action selection
-(RQ2), readiness admission (RQ3), and platform context. The synthesis is
+interface they inform: telemetry delivery, capacity action selection,
+readiness admission, and platform context. The synthesis is
 recorded in \ref{sec:lit_synthesis}; papers referenced in the synthesis but
 not fully archived are re-verified against their primary sources before
 quotation.
@@ -939,11 +943,12 @@ produces delay, Yaseen documents the gaps that polling leaves, and
 aggregation summarises away intermediate observations, yet no reviewed
 work distinguishes delayed event-preserving delivery from latest-state
 delivery, and none traces either regime through a stateful service's
-scaling and traffic-admission path. RQ1 isolates exactly that
-distinction: under a fixed workload, topology, and policy, the thesis
-compares event-preserving, delayed event-preserving, and latest-state
-delivery and measures how each affects overload observability, scaling
-response, and transient service quality within these mentioned constraints.
+scaling and traffic-admission path. The first research question of
+this dissertation isolates exactly that distinction: under a fixed
+workload, topology, and policy, it compares event-preserving, delayed
+event-preserving, and latest-state delivery and measures how each
+affects overload observability, scaling response, and transient
+service quality within these constraints.
 
 % TOU AQUI
 \section{Auto Scaling}\label{sec:lit_auto_scaling}
@@ -1126,12 +1131,14 @@ across all three interfaces in \ref{sec:lit_three_layer_separation}.
 
     Works that do couple compute with data do so at design time
 or from forecasts, in the strand reviewed in
-\ref{sec:platform_storage}. RQ2 isolates exactly that choice: under
-fixed telemetry delivery and readiness admission, the thesis compares
-fixed-priority and bottleneck-aware selection of the capacity action
-under compute-bound and data-access-bound demand, and measures
-service recovery and resource management efficiency when both
-actions are available.
+\ref{sec:platform_storage}. The second research question of this
+dissertation isolates exactly that choice: under fixed telemetry
+delivery and readiness admission, it characterises what the selection
+of the capacity action determines, how service recovery and resource
+management efficiency depend on matched versus mismatched selection,
+and how the reliability of the bottleneck evidence bounds what
+bottleneck-aware selection can achieve when both actions are
+available.
 
 \section{Load Balancing on SDN}\label{sec:lit_sdn_lb}
 Load balancing distributes incoming traffic among a set of available
@@ -1153,16 +1160,126 @@ candidates is part of the problem itself.
 %     \label{fig:sdn_load_balancing}
 % \end{figure}
 
-% TODO (RQ3 — readiness admission; folder 03): what it studies (backend-selection algorithms
-% given available server state: Neghabi 2018; Belgaum 2020), what it treats as a given (pool
-% availability/readiness and the readiness→admission pipeline). Evidence: Shard Manager
-% mechanises readiness but never compares direct notification vs periodic discovery. Finding (corpus-bounded): no reviewed
-% SDN-LB study isolates ready-backend → routing-admission propagation with selection held fixed.
-% Framing (2026-08-21): readiness is a node state; delivering it to the traffic path is telemetry.
-% RQ3 isolates not a new propagation class but the monitoring→load-balancing boundary where that
-% state gates traffic admission.
-% Add (approved 2026-08-22): delimit Nguyen et al. 2021 5G UPF (co-located AS+LB, nothing
-% tunable) and Baktir (periodic discovery + registration described, never timed or varied).
+    The field asks one question in many forms: given the state of
+the available backends, which backend should receive the next
+flow. The survey of Neghabi et al. classifies the proposed
+mechanisms into deterministic and non-deterministic
+load-balancing approaches
+\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined},
+and the systematic review of Belgaum et al. organises
+seventy-six SDN load-balancing papers into conventional and
+intelligence-based techniques, both methods built around the
+selection policy itself
+\parencite{Belgaum2020SystematicReviewLoadBalancingTechniques}.
+This is an understandable and methodologically sound focus:
+isolating the selection policy requires holding the pool
+constant, and the survey's own inventory confirms how
+thoroughly the simplification is built in, since none of the
+twenty-one performance metrics it collects account for how
+fluctuations in the composition of the serving set, the units
+that join and leave it, affect load-balancing performance or
+efficiency, and none of the open issues it considers for future
+research concerns that effect. The surveyed techniques
+themselves distribute load over an existing server cluster,
+whose membership none of them modifies; where membership does
+change in the reviewed work, it is the controllers and the
+switches that move, never the servers. The state the policy
+consumes is therefore treated as established: pool membership,
+backend health, and readiness are inputs to the selection, not
+part of the problem studied.
+
+    In a running edge service, however, no such fixed pool
+exists: because user demand varies over time, backends are
+added and removed as capacity scales, and each membership
+change must reach the forwarding plane before the new unit
+can serve. The pool the selection policy operates over is
+therefore itself an outcome of scaling and admission, and its
+composition conditions what load balancing can achieve. The
+reviewed works show the effects of this coupling from several
+sides, without studying the entrance itself. 
+Neghabi et al. come closest from
+the network side when they record that periodic
+synchronisation among multiple controllers can leave their
+state desynchronised between two consecutive synchronisations,
+producing black holes and forwarding loops, yet the
+desynchronisation they describe concerns the controllers' view
+of the network, not backend readiness
+\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}.
+
+    The closest in-scope work already maintains the pool by the
+health of its members. Llorens-Carrodeguas et al. run the
+monitoring, scaling, and load-balancing logic of their VNF
+redirector on the SDN controllers, over a cluster whose
+members are activated and deactivated to follow demand, and
+they report activating new instances in less than a minute.
+When the monitoring module detects an unhealthy instance, the
+load balancer deletes the flow rules associated with it, so
+that only healthy instances keep receiving traffic. The health
+state on which this admission rests, however, reaches the
+redirector through a chain of periodic polling: the VNFM
+collector polls the infrastructure into a Prometheus
+time-series database, and the monitoring module reads that
+store. How long a newly activated instance waits between
+becoming able to serve and entering the forwarding rules is
+not among the tested dimensions, and no event-driven
+alternative to this polled delivery is compared
+\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+
+    Elsewhere in the same scope, membership is simply taken as
+fixed. Abdelltif et al. build their load-balancing service
+over server pools whose members hold static IP addresses
+connected to the OpenFlow switches, while the controller
+maintains the load of each host in real time, so the question
+of admitting a new member never arises; co-locating the
+service classification, dynamic balancing, and monitoring
+logic in one controller application does not open that
+boundary either, since the application performs no
+auto-scaling and none of its timing dimensions is exposed as
+tunable
+\parencite{Abdelltif2018SDNLoadBalancingServiceCloud}. Surveyed
+SDN-based edge architectures that do register services keep
+that knowledge in a table that each edge server updates
+periodically, accepting the currency of the table as a given
+\parencite{Baktir2017HowCanEdgeComputingBenefit}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Evidence on readiness admission in the reviewed literature.}
+    \label{tab:lb_evidence}
+    \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
+        \toprule
+        Work & Strength & What it shows \\
+        \midrule
+        Neghabi et al. (2018) & Surveyed & Deterministic and
+        non-deterministic load-balancing taxonomy; controller-state
+        desynchronisation, not backend readiness \\
+        Belgaum et al. (2020) & Surveyed & Seventy-six-paper review
+        over an existing server cluster; no technique modifies
+        membership, and no metric or open issue covers admission \\
+        Llorens-Carrodeguas et al. (2021) & Measured & Pool maintained
+        by polled health status; unhealthy instances dropped from the
+        flow rules; delivery not timed or compared \\
+        Baktir et al. (2017) & Surveyed & Edge servers registered in a
+        periodically updated table; timing never measured or varied \\
+        Abdelltif et al. (2018) & Measured & Static server pools with
+        real-time host load; membership fixed, admission never arises \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+    Across this literature, therefore, load balancing on SDN is
+studied against a pool whose construction is taken as given:
+the surveys classify selection policies over pools they treat
+as fixed, and the in-scope systems either hold membership
+static or maintain it through polled health status, without
+timing how a backend's readiness state reaches the forwarding
+rules or comparing a periodic delivery with a direct one. The
+third research question of this dissertation isolates exactly
+that propagation, at the service level: under a fixed
+selection policy and the same application-readiness
+criterion, it compares direct lifecycle notification with
+periodic discovery of readiness, and measures the time until
+a newly created compute backend contributes usable capacity.
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration}
 In SDN-based edge platforms, the coordination defined in
@@ -1347,9 +1464,11 @@ trigger an election.
 \section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
 % TODO (RQ2): time to recover bottleneck-specific pressure; time to usable capacity; p50/p95/p99
 % latency; failures and completed offered demand; compute and storage node-minutes; number of
-% scale actions; relief in the targeted tier. Compare compute-first/storage-first fixed-priority
-% vs bottleneck-aware selection under validated compute-bound and data-access-bound episodes
-% (thesis_overview.md §6-RQ2).
+% scale actions; relief in the targeted tier. Structure follows matched vs mismatched selection:
+% aligned cells (cf_cb/ba_cb, sf_db) validate the mechanism; mismatched cells (sf_cb, cf_db)
+% quantify the wrong-action cost; the ba cells report the classifier's decision trace as a
+% covariate, not an assumption (thesis_overview.md §6-RQ2; v3 results: wrong-action service cost
+% small at the tested intensity, resource waste and tail-latency noise carry the signal).
 
 \section{Readiness Admission to Traffic (RQ3)}\label{sec:results_rq3_readiness}
 % TODO (RQ3): backend-ready → routing-admitted delay; admitted → first-flow delay; first-flow →
