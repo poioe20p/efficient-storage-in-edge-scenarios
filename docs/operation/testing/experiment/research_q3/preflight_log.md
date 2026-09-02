@@ -43,3 +43,33 @@ continues.
 - **Fix**: launcher now merges canonical + arm into one temp override (arm wins per key, provenance header) — commit `bc34580`, tag `rq3-rel-preflight-20260902` (v2). Verified on VM: merged env contains MAX_DYNAMIC_COMPUTE=3 / SS_ENABLED=1 / RELEASE_MECHANISM=stabilized.
 - **Tooling fix**: `tools/watch_run.py` same-label rerun guard now treats run_status.json completed/failed as idle (previously current_phase.txt held the last phase name after completion → false "completed" on rerun).
 - **Rerun launched**: `research_q3_cal_s1` (seed 42, stabilized) with merged env; sampler + watchdog active. New run folder, verdicts to be recorded on completion.
+
+---
+
+**Stage 2 rerun results (`20260902_171159_research_q3_cal_s1`, completed 17:52:18Z, exit 0)**
+
+- **2.1 GO** — storm spawns: dynamic compute (`edge_server_lan{1,2}_dyn2..6`) + storage + sel_sync spawned; 3 `scale_up` decision rows.
+- **2.5 GO** — both controllers alive all run, 0 tracebacks.
+- **2.2 STOP** — no `quarantine_begin`: housekeeping churn guard (`LAN overloaded (recent)`) suppressed absent-cleanup + scale-down evaluation during hold; no compute scale-down eval lines at all in hold.
+- **2.3 STOP** — 0 recall rows (no quarantine).
+- **2.4 STOP** — compute `armed=True` repeatedly in demand_drop (17:33:35, 17:35:05, 17:36:35…) but `main_n1` logs `no graceful candidate is eligible — clearing current window`: the dynamic compute nodes had already been removed at 17:31:35 via the **absent-cleanup path** (`ScaleDownComputeAlert reason='absent'` for dyn3/dyn5/dyn6) — which calls `release_gate.clear()` and bypasses the release mechanism entirely (no release-log rows).
+- **2.6 GO** — artifacts present (release logs, rs_evict_logs, rs_status, snapshots).
+- **2.7/2.9** — n/a: mechanism absent.
+
+**Diagnosed root cause (rerun)**:
+1. `return_storm` uses `cross_region_ratio=0.9` → ~90% of requests cross to the other LAN, so local dynamic compute servers receive almost no traffic → their telemetry goes stale beyond `_TELEMETRY_TIMEOUT_S` (≈180 s).
+2. When the churn guard lifts at demand_drop+32 s, `detect_absent` flags dyn3/dyn5/dyn6 and the absent-cleanup path removes them **without going through the release gate** (no quarantine/recall/finalization).
+3. The release path's candidate picker then finds an empty dynamic-compute list → `no graceful candidate is eligible` — the stabilized chain never fires.
+
+Candidate fixes (awaiting user decision): route absent-cleanup for compute through `release_gate` (mechanism change); or tune `TELEMETRY_TIMEOUT`/`HOUSEKEEPING_OVERLOAD_LOOKBACK`; or change `return_storm.cross_region_ratio` in phases.json so local dynamics keep serving; or a combination.
+
+---
+
+**Fix v3 (approved: options 1+2, commit `a6db7e7`, tag `rq3-rel-preflight-20260902` v3)**
+
+- `main_n1.py`/`main_n2.py`: absent COMPUTE nodes now follow the arm's release semantics — stabilized quarantines them (`quarantine_begin`, trigger=absent, finalize on expiry); drained/immediate submit with reason=scale_down so elasticity logs begin/end rows; mode=off keeps the incumbent path.
+- `scaling_config.py`: `TELEMETRY_TIMEOUT_S` env hook (default = prior computed value).
+- `current_state_integrated.env`: `TELEMETRY_TIMEOUT_S=600`, `HOUSEKEEPING_OVERLOAD_LOOKBACK=2`.
+- `phases.json`: `return_storm.cross_region_ratio` 0.9 → 0.0 (local dynamics keep serving through the storm return).
+- Validated: compileall, release-gate selftest, phases parse; 5 files MD5 byte-identical on VM; merged run env verified (TELEMETRY_TIMEOUT_S=600, HOUSEKEEPING_OVERLOAD_LOOKBACK=2, RELEASE_MECHANISM=stabilized, MAX_DYNAMIC_COMPUTE=3).
+- **v3 calibration rerun launched** (`research_q3_cal_s1`, seed 42) with sampler + watchdog; verdicts on completion.
