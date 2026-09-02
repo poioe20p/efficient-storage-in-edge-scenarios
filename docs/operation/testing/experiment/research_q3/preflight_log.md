@@ -73,3 +73,19 @@ Candidate fixes (awaiting user decision): route absent-cleanup for compute throu
 - `phases.json`: `return_storm.cross_region_ratio` 0.9 → 0.0 (local dynamics keep serving through the storm return).
 - Validated: compileall, release-gate selftest, phases parse; 5 files MD5 byte-identical on VM; merged run env verified (TELEMETRY_TIMEOUT_S=600, HOUSEKEEPING_OVERLOAD_LOOKBACK=2, RELEASE_MECHANISM=stabilized, MAX_DYNAMIC_COMPUTE=3).
 - **v3 calibration rerun launched** (`research_q3_cal_s1`, seed 42) with sampler + watchdog; verdicts on completion.
+
+---
+
+**Stage 2 v3 results (`20260902_205202_research_q3_cal_s1`, completed 21:33:00Z, exit 0) — MECHANISM EXERCISED**
+
+- **2.1 GO** — compute dyn2–6 + storage dyn1–5 spawned; 3 `scale_up` rows.
+- **2.5 GO** — controllers alive all run, 0 tracebacks.
+- **2.2 (quarantine) — exercised, but in `demand_drop`, not `hold`**: `quarantine_begin` rows on both LANs (trigger=`absent`, via the new release-gate routing); the `hold` window is unreachable because the churn guard suppresses every tick (D3 overload label stays true — see below).
+- **2.3 (recall) — GO**: `overload,recall,1,recalled` rows ~10 s after each quarantine on both LANs.
+- **2.4 (cycle-2 finalization) — NOT exercised**: every quarantine is recalled within ~10 s; no compute `begin`/`end` finalization rows (C1_stabilized_qf_p50 = n/a).
+- **2.6 GO** — all artifacts present (release/decision/container/resource stats, snapshots, rs_evict_logs 3+5, rs_status).
+- **2.7 GO** — CLI parses: `C4_recall_missed=0`, `C1_stabilized_recall_p50=10.0s`, `C1_storage_p50=12.17s`, no unexpected n/a (qf_p50 n/a expected — no finalization).
+- **2.8 GO** — 8/8 evictions `ok` (`C2_evict_nonok=0`, `C2_evict_overlap=0`), `C2_ghosts=0`, `C2_attributed_errors=3` inside windows, `C2_notprimary=0` → D1 clean.
+- **2.9** — quarantine at `demand_drop+182s` (lan1) / `demand_drop+90s` (lan2); recall +10 s — pre-registered windows (hold-based) need updating.
+
+**Root cause of the label sticking true (lead for analyzer)**: the D3 overload label is computed in `source/docker/local_state_server/aggregator.py` as `avg_cpu ≥ OVERLOAD_CPU_PCT OR peak_latency ≥ … OR error_rate ≥ …`. Under the `EDGE_CPUS=0.08` capped regime, capped-CPU% stays high even at rate 0.5 → label true through `hold`/`demand_drop` → churn guard suppresses scale-down all `hold`, and every quarantine is recalled within ~10 s in `demand_drop`. Open decision: retune `OVERLOAD_CPU_PCT`/label inputs (needs analyzer investigation + user approval) vs. accept recall-dominated stabilized behavior and update the pre-registered windows accordingly.
