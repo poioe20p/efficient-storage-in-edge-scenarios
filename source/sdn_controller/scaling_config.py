@@ -130,9 +130,16 @@ _CONTROL_TICK_S = float(os.environ.get("CONTROL_TICK_S", "10"))
 # Time-based absence timeout — comfortably above the longest heartbeat so
 # idle-but-alive nodes are not falsely flagged absent. Scales with the
 # housekeeping clock (semantic change from per-window counts).
-_TELEMETRY_TIMEOUT_S = max(
-    _TELEMETRY_TIMEOUT_WINDOWS * _CONTROL_TICK_S,
-    3.0 * float(os.environ.get("HEARTBEAT_INTERVAL_S", "60")),
+# research_q3: TELEMETRY_TIMEOUT_S lets a campaign raise the timeout when a
+# low-rate phase starves local dynamic nodes of traffic (cross-region burst)
+# so their telemetry goes stale and absent-cleanup eats them before the
+# release mechanism acts.
+_TELEMETRY_TIMEOUT_S = float(
+    os.environ.get("TELEMETRY_TIMEOUT_S")
+    or max(
+        _TELEMETRY_TIMEOUT_WINDOWS * _CONTROL_TICK_S,
+        3.0 * float(os.environ.get("HEARTBEAT_INTERVAL_S", "60")),
+    )
 )
 
 # ── Churn guard (G2 calib4/calib6 finding) ─────────────────────────────

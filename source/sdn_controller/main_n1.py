@@ -892,6 +892,36 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                         self._log_decision("scale_down", "reserve_loss", s.window_id)
                         logger.info("[reserve] cleanup_submitted lan=%d mac=%s", info.lan, info.mac)
                         continue
+                    # research_q3: an ABSENT compute node is still a release
+                    # event — route it through the arm's release semantics
+                    # instead of the un-instrumented absent-cleanup path.
+                    if (info is not None and info.node_type == "compute"
+                            and self._release_gate.active):
+                        if self._release_gate.mode == "stabilized":
+                            if (self._release_gate.quarantine_active()
+                                    or self._release_gate.dormant()):
+                                # a quarantine is already held/finalized —
+                                # leave the frozen evaluation alone
+                                continue
+                            if self._release_gate.quarantine_begin(info.mac, info.name, time.monotonic()):
+                                logger.info("[release] absent compute quarantined (stabilized) mac=%s container=%s",
+                                            info.mac, info.name)
+                                self._log_decision("release", "quarantine", s.window_id)
+                                append_row(network_id=self._lan_id, mechanism="stabilized", tier="compute",
+                                           container=info.name, mac=info.mac,
+                                           trigger="absent", event="quarantine_begin", success="", reason="")
+                                continue
+                            # gate refused (state) — fall through to ordinary path
+                        else:
+                            # drained/immediate: reason="scale_down" so the
+                            # elasticity release handlers log begin/end rows
+                            alert = self._node_registry.build_scale_down_alert(mac, reason="scale_down")
+                            if alert is not None:
+                                self._release_gate.clear(mac)
+                                logger.info("[scale-down] absent compute routed through release mechanism: %s", alert)
+                                self._elasticity.submit(alert)
+                                self._log_decision("scale_down", "absent", s.window_id)
+                                continue
                     alert = self._node_registry.build_scale_down_alert(mac, reason="absent")
                     if alert:
                         self._release_gate.clear(mac)

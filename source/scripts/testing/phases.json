@@ -43,7 +43,7 @@
       "name": "return_storm",
       "duration_s": 180,
       "rate_per_client": 4.0,
-      "cross_region_ratio": 0.9,
+      "cross_region_ratio": 0.0,
       "hotspot_direction": "",
       "client_fraction": 1.0,
       "mix": {
