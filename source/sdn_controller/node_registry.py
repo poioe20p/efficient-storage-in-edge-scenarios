@@ -474,6 +474,7 @@ class DynamicNodeRegistry:
                 rs_name=info.rs_name,
                 primary_container=info.primary_container,
                 port=info.port,
+                reason=reason,
             )
 
     # ── Cross-region storage reserve helpers ────────────────────────────

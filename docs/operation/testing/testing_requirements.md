@@ -42,6 +42,9 @@ Applies to **every** requirement below; no single-run claim is evidence:
   plan claims recovery (elasticity is bidirectional).
 - **M2. New capacity becomes usable** — each added node reaches
   app-ready → admitted → serves ≥1 successful request. Spawned ≠ usable.
+  Nodes added as standby reserves or Tier-1 selective anchors are excluded
+  (they are not added to serve traffic); activated reserves must serve
+  ≥1 request.
 
 ### V — Workload validity (the treatment actually happened)
 
@@ -61,11 +64,30 @@ Applies to **every** requirement below; no single-run claim is evidence:
 ### D — Data-path & process integrity
 
 - **D1. Data-path clean** — 0× `NotPrimary`/`NotPrimaryOrSecondary`
-  (read_preference lesson).
+  (read_preference lesson), except rows attributed under the pre-registered
+  mechanism exception below.
 - **D2. No mid-run restart/crash** — no controller restart, no edge/storage
   container crash.
 - **D3. Provenance snapshots present** — `phases_snapshot.json` +
   `controller_env_snapshot.env` in the run folder (reproducibility contract).
+
+### Mechanism-induced exceptions (pre-registered)
+
+A plan may pre-register that data-path errors attributable to the release
+mechanism under test are recorded as outcome measures rather than gate
+failures, provided:
+
+- (i) the plan names the exception and the attribution window;
+- (ii) attribution is temporal, anchored on release events from
+  `release_log_lan*.csv`: a `client_requests.csv` error row (completion
+  timestamp) is attributed iff it falls within `[release_begin.ts − 30 s,
+  release_end.ts + 90 s]` of any release event for that tier; orphaned begin
+  rows open a `[begin − 30 s, begin + 180 s]` window (Phase-B fallback bound);
+- (iii) every error row outside attribution windows remains a gate failure (0×).
+
+An attributed-row run remains evidence; attributed rows feed the plan's
+release-safety criterion and are exported by the analyzer as
+`release_safety_report.csv`. Example user: research_q3 immediate teardown.
 
 ## Flags (report; do not invalidate without justification)
 

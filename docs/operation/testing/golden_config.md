@@ -116,28 +116,48 @@ Run artifacts are stored on the cloud VM under
 | --- | --- | --- |
 | `STORAGE_PERSISTENT_RESERVE_ENABLED` | `1` | Tier 2 storage reserve enabled |
 | `SS_ENABLED` | `1` | Tier 1 selective sync enabled |
-| `MAX_DYNAMIC_STORAGE` | `5` | Up to 5 dynamic storage nodes per LAN |
-| `MAX_DYNAMIC_COMPUTE` | `6` | Up to 6 dynamic compute nodes across LANs |
+| `MAX_DYNAMIC_STORAGE` | `3` | Up to 3 dynamic storage nodes per LAN |
+| `MAX_DYNAMIC_COMPUTE` | `3` | Up to 3 dynamic compute nodes across LANs |
+
+---
+
+## Release Mechanism Knob (research_q3)
+
+The `RELEASE_MECHANISM` knob selects how surplus dynamic capacity is released
+once scale-down decides (see `source/sdn_controller/release_gate.py`). The
+canonical value is `off`.
+
+| Parameter | Value | Purpose |
+| --- | --- | --- |
+| `RELEASE_MECHANISM` | `off` (default) / `drained` / `immediate` / `stabilized` | Surplus-capacity release path; `off` = incumbent behavior, no release log |
+| `RELEASE_STABILIZE_S` | `480` | Stabilized-arm quarantine window (compute release held ≥ this many seconds) |
+| `RELEASE_RECALL_K` | `2` | Stabilized-arm recall hysteresis: ≥K of the last 5 overload samples recall the quarantine |
+| `RELEASE_LOG_PATH` | `/tmp/release_log.csv` | Per-controller release-event CSV path (written for every mechanism except `off`) |
+
+Per-arm env files (research_q3 pins only; the canonical
+`current_state_integrated.env` supplies everything else) live under
+`docs/operation/testing/experiment/research_q3/env/`: `arm_off.env`,
+`arm_immediate.env`, `arm_drained.env`, `arm_stabilized.env`.
 
 ---
 
 ## Storage Trigger Bundle
 
-The current storage activation boundary is `0.12 < tau <= 0.15`.
+The current storage activation boundary is `0.35 < tau <= 0.45`.
 
-`0.12` is the highest threshold that still activates the reserve under the
+`0.35` is the highest threshold that still activates the reserve under the
 calibration probe workload. It avoids over-sensitivity while still letting the
 mechanism fire in the intended storage-heavy windows.
 
 | Parameter | Value | Notes |
 | --- | --- | --- |
-| `SCALEUP_STORAGE_BASE_THRESHOLD` | `0.12` | Highest threshold that still activates |
+| `SCALEUP_STORAGE_BASE_THRESHOLD` | `0.35` | Highest threshold that still activates |
 | `SCALEUP_W_STORAGE_CPU` | `0.60` | Default weight |
 | `SCALEUP_W_T_DB` | `0.40` | Default weight |
-| `SCALEUP_STORAGE_CPU_FLOOR` | `1.5` | Default floor |
-| `SCALEUP_STORAGE_CPU_SPAN` | `5` | Default span |
-| `SCALEUP_T_DB_FLOOR` | `60` | Default floor |
-| `SCALEUP_T_DB_SPAN` | `250` | Default span |
+| `SCALEUP_STORAGE_CPU_FLOOR` | `10` | Default floor |
+| `SCALEUP_STORAGE_CPU_SPAN` | `30` | Default span |
+| `SCALEUP_T_DB_FLOOR` | `10` | Default floor |
+| `SCALEUP_T_DB_SPAN` | `50` | Default span |
 | `SCALEUP_STORAGE_REQUIRED` | `2` | Consecutive windows required |
 | `SCALEUP_STORAGE_WINDOW_SIZE` | `5` | Sliding window |
 | `SCALEUP_STORAGE_COOLDOWN_S` | `120` | Default cooldown |
@@ -150,9 +170,9 @@ The cooldown value remains the load-bearing parameter for compute scale-down.
 
 | Parameter | Value | Why it matters |
 | --- | --- | --- |
-| `SCALEUP_COMPUTE_BASE_THRESHOLD` | `0.20` | Lowered from `0.45` so feed-ranking-heavy but distributed load still triggers scale-out |
-| `SCALEUP_CPU_FLOOR` | `3` | Lowered from `5` |
-| `SCALEUP_T_PROC_FLOOR` | `15` | Lowered from `20` |
+| `SCALEUP_COMPUTE_BASE_THRESHOLD` | `0.18` | Recalibrated for the mean-only signal + tighter CPUs |
+| `SCALEUP_CPU_FLOOR` | `10` | Raised from `5` |
+| `SCALEUP_T_PROC_FLOOR` | `25` | Raised from `20` |
 | `SCALEDOWN_COMPUTE_COOLDOWN_S` | `180` | Prevents premature removal during the storage-to-compute transition |
 | `SCALE_DOWN_COMPUTE_REQUIRED` | `9` | Consecutive below-threshold windows |
 

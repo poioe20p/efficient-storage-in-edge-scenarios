@@ -30,6 +30,8 @@ from .topology.topology import TopologyMixin
 from .vip_routing import VipRoutingMixin
 from .scaling_policy import ScalingPolicy
 from .policy_gate import PolicyGate
+from .release_gate import ReleaseGate
+from .release_log import append_row
 from .scaling_config import (
     _ACTION_BUDGET_PER_TIER,
     _CONTROL_TICK_S,
@@ -50,6 +52,7 @@ from .scaling_config import (
     _READINESS_PROBE_MAX_S,
     _READINESS_PROBE_RETRY_S,
     _READINESS_EVENT_FALLBACK_S,
+    _RELEASE_MECHANISM,
     _DISCOVERY_POLL_INTERVAL_S,
     _EDGE_READY_PORT,
     _ADMISSION_LOG_PATH,
@@ -153,6 +156,9 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # ── Composed components (Thread 2 only) ──
         self._scaling_policy = ScalingPolicy()
         self._policy_gate = PolicyGate()
+
+        # ── research_q3 release gate ───────────────────────────────────────
+        self._release_gate = ReleaseGate(_RELEASE_MECHANISM)
         self._node_registry = DynamicNodeRegistry()
         self._control_events = ControlEventDispatcher()
 
@@ -253,6 +259,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
 
         # ── Design B housekeeping ticker (time-based, fixed clock) ──
         self._last_scale_eval_seq: int | None = None
+        self._last_recall_feed_seq: int | None = None
         self._recent_overload: deque[bool] = deque(maxlen=_HOUSEKEEPING_OVERLOAD_LOOKBACK)
         hub.spawn(self._housekeeping_loop)
 
@@ -652,6 +659,18 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                             alert.owner_lan, reason="tier2_supersedes")
                     self._elasticity.submit(alert)
                     self._log_decision("scale_up", type(alert).__name__, summary.window_id)
+                    if isinstance(alert, ComputeAlert) and self._release_gate.mode == "stabilized":
+                        self._release_gate.notify_compute_scale_up()
+                        if self._release_gate.quarantine_active():
+                            recalled = self._release_gate.recall()
+                            if recalled:
+                                r_mac, r_container = recalled
+                                logger.info("[release] stabilized quarantine recalled (scale_up) mac=%s", r_mac)
+                                self._log_decision("release", "recall", summary.window_id)
+                                append_row(network_id=self._lan_id, mechanism="stabilized", tier="compute",
+                                           container=r_container, mac=r_mac, trigger="scale_up",
+                                           event="recall", success="1", reason="recalled")
+                                self._scaling_policy.clear_scale_down_compute_window()
                     if (isinstance(alert, ComputeAlert)
                             and self._elasticity.has_pending_compute_drain()):
                         logger.info(
@@ -686,6 +705,18 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                             self._policy_gate.consume_budget("compute")
                             self._elasticity.submit(ComputeAlert(
                                 lan=lan, network_id=summary.network_id))
+                            if self._release_gate.mode == "stabilized":
+                                self._release_gate.notify_compute_scale_up()
+                                if self._release_gate.quarantine_active():
+                                    recalled = self._release_gate.recall()
+                                    if recalled:
+                                        r_mac, r_container = recalled
+                                        logger.info("[release] stabilized quarantine recalled (scale_up) mac=%s", r_mac)
+                                        self._log_decision("release", "recall", summary.window_id)
+                                        append_row(network_id=self._lan_id, mechanism="stabilized", tier="compute",
+                                                   container=r_container, mac=r_mac, trigger="scale_up",
+                                                   event="recall", success="1", reason="recalled")
+                                        self._scaling_policy.clear_scale_down_compute_window()
                             if self._elasticity.has_pending_compute_drain():
                                 # cancel-compute-drain — keep RQ1's exact row so
                                 # the RQ2 decision log is a superset of RQ1 rows.
@@ -790,6 +821,22 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             if s is None or s.window_seq is None:
                 return
 
+            # ── research_q3 recall pass (pre-churn-guard; pure gate state) ─────
+            if (self._release_gate.active
+                    and s.window_seq != self._last_recall_feed_seq
+                    and self._release_gate.mode == "stabilized"):
+                self._last_recall_feed_seq = s.window_seq
+                if self._release_gate.feed_window(bool(s.overload)) and self._release_gate.quarantine_active():
+                    recalled = self._release_gate.recall()
+                    if recalled:
+                        r_mac, r_container = recalled
+                        logger.info("[release] stabilized quarantine recalled (overload) mac=%s", r_mac)
+                        self._log_decision("release", "recall", s.window_id)
+                        append_row(network_id=self._lan_id, mechanism="stabilized", tier="compute",
+                                   container=r_container, mac=r_mac,
+                                   trigger="overload", event="recall", success="1", reason="recalled")
+                        self._scaling_policy.clear_scale_down_compute_window()
+
             # Churn guard (hysteresis): while the LAN is overloaded (current OR
             # any of the last _HOUSEKEEPING_OVERLOAD_LOOKBACK windows), do NOT
             # shed capacity. The producer overload label flickers on lull
@@ -829,6 +876,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                         continue
                     alert = self._node_registry.build_scale_down_alert(mac, reason="absent")
                     if alert:
+                        self._release_gate.clear(mac)
                         logger.info("[scale-down] submitting alert: %s", alert)
                         self._elasticity.submit(alert)
                         self._log_decision("scale_down", "absent", s.window_id)
@@ -849,19 +897,55 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             if remaining > 0:
                 logger.debug("[scale-down] compute within %.0fs cooldown — skipping", remaining)
             else:
-                if self._scaling_policy.evaluate_scale_down_compute(ds):
-                    node = self._pick_compute_scale_down_candidate()
-                    if node:
-                        logger.info(
-                            "[scale-down] compute underutilisation — removing %s", node.name)
-                        alert = self._node_registry.build_scale_down_alert(node.mac)
-                        if alert:
-                            self._elasticity.submit(alert)
-                            self._log_decision("scale_down", "compute", s.window_id)
-                    else:
-                        logger.info(
-                            "[scale-down] compute underutilisation but no graceful candidate is eligible — clearing current window"
-                        )
+                if self._release_gate.mode == "stabilized":
+                    if self._release_gate.quarantine_active() or self._release_gate.dormant():
+                        logger.debug("[release] stabilized: compute scale-down eval frozen (quarantine active=%s dormant=%s)",
+                                     self._release_gate.quarantine_active(), self._release_gate.dormant())
+                        # do NOT evaluate, do NOT clear — window stays armed
+                    elif self._scaling_policy.evaluate_scale_down_compute(ds):
+                        node = self._pick_compute_scale_down_candidate()
+                        if node and self._release_gate.quarantine_begin(node.mac, node.name, time.monotonic()):
+                            logger.info("[release] stabilized quarantine began mac=%s container=%s", node.mac, node.name)
+                            self._log_decision("release", "quarantine", s.window_id)
+                            append_row(network_id=self._lan_id, mechanism="stabilized", tier="compute",
+                                       container=node.name, mac=node.mac, trigger="scale_down",
+                                       event="quarantine_begin", success="", reason="")
+                            # window NOT cleared — frozen during quarantine
+                        else:
+                            if node is None:
+                                logger.info("[scale-down] compute underutilisation but no graceful candidate is eligible — clearing current window")
+                            self._scaling_policy.clear_scale_down_compute_window()
+                else:
+                    if self._scaling_policy.evaluate_scale_down_compute(ds):
+                        node = self._pick_compute_scale_down_candidate()
+                        if node:
+                            logger.info(
+                                "[scale-down] compute underutilisation — removing %s", node.name)
+                            alert = self._node_registry.build_scale_down_alert(node.mac)
+                            if alert:
+                                self._elasticity.submit(alert)
+                                self._log_decision("scale_down", "compute", s.window_id)
+                        else:
+                            logger.info(
+                                "[scale-down] compute underutilisation but no graceful candidate is eligible — clearing current window"
+                            )
+                        self._scaling_policy.clear_scale_down_compute_window()
+
+            if (self._release_gate.mode == "stabilized"
+                    and self._release_gate.quarantine_active()
+                    and self._release_gate.quarantine_expired(time.monotonic())):
+                q_mac = self._release_gate.quarantine_mac()
+                q_name = self._release_gate.quarantine_container() or ""
+                alert = self._node_registry.build_scale_down_alert(q_mac, reason="scale_down") if q_mac else None
+                if alert:
+                    logger.info("[release] stabilized quarantine expired — finalizing mac=%s", q_mac)
+                    self._elasticity.submit(alert)
+                    self._release_gate.mark_finalized()
+                    self._log_decision("release", "finalize", s.window_id)
+                    self._scaling_policy.clear_scale_down_compute_window()
+                else:
+                    logger.warning("[release] stabilized quarantine expired but no alert buildable for mac=%s — clearing", q_mac)
+                    self._release_gate.mark_finalized()
                     self._scaling_policy.clear_scale_down_compute_window()
 
             remaining = self._scaling_policy.storage_cooldown_remaining()

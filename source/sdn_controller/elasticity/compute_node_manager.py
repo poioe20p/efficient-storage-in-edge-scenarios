@@ -155,6 +155,29 @@ class ComputeNodeAdder(_BaseNodeAdder):
             drain_signaled=drain_ok,
         )
 
+    def prepare_immediate(self, lan: int, name: str, mac: str) -> PendingDrain | None:
+        """research_q3 immediate arm — veth discovery without the /drain POST.
+
+        Mirrors :meth:`initiate_drain` Phase A discovery but skips the drain
+        HTTP call entirely (the immediate mechanism tears the container down
+        right away).  Returns ``PendingDrain`` with ``drain_signaled=False``
+        when the veth was found; ``None`` when veth discovery itself fails
+        (the container's netns is already gone).
+        """
+        veth = self._discover_veth(name)
+        if veth is None:
+            logger.warning("[node_remove] cannot discover veth for %s — container netns is gone", name)
+            return None
+
+        return PendingDrain(
+            mac=mac,
+            veth=veth,
+            container_name=name,
+            lan=lan,
+            initiated_ts=time.time(),
+            drain_signaled=False,
+        )
+
     def cleanup_compute_node(self, pending: PendingDrain) -> RemovalResult:
         """Phase B: stop container, flush flows, remove OVS port/veth, docker rm.
 

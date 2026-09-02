@@ -54,6 +54,22 @@ The experiment-runner agent substitutes the campaign's host for `ssh cloud-vm`.
 
 ---
 
+## Active Experiment Campaigns
+
+### research_q3 — surplus-capacity release mechanisms (2026-09-02)
+
+| Item | Value |
+| --- | --- |
+| Folder | `docs/operation/testing/experiment/research_q3/` |
+| Arms | `off` / `immediate` / `drained` / `stabilized` (o/i/d/s) |
+| Runs | 12 (4 arms × n=3), `RANDOM_SEED=42`, labels `rq3rel_{o,i,d,s}1..3` |
+| Launch | `research_q3_launch_run.sh` (per run) |
+| Preflight | `rq3rel_p0_preflight.sh` |
+| Analysis | `cli_release_compare.py` |
+| Plan | `docs/operation/testing/experiment/research_q3/experiment_plan.md` |
+
+---
+
 ## Architecture: Experiment Data Flow
 
 ```text
@@ -68,11 +84,11 @@ The experiment-runner agent substitutes the campaign's host for `ssh cloud-vm`.
                                               |
            .----------------------------------'
            v
-  traffic_generator.py             phases.json (canonical 6-phase profile)
+  traffic_generator.py             phases.json (canonical 5-phase profile)
     |- reads snapshot + phases     ----------------------------------------
-    |- spawns async tasks              baseline -> storage_storm
-    |  per client namespace            -> tier1_hotspot -> inter_hotspot_cooldown
-    |  (ip netns exec curl)            -> compute_spike -> cooldown
+    |- spawns async tasks              baseline -> storm_mixed -> hold
+    |  per client namespace            -> return_storm -> demand_drop
+    |  (ip netns exec curl)
     `- writes CSV metrics
            |
            v
@@ -111,6 +127,10 @@ artifacts:
 | 12 | `service_logs/` | `capture_service_logs.py` | Edge and storage container logs during the run |
 | 13 | `admission_log_lan1.csv` | controller `ADMISSION_LOG_PATH` (via `collect_rq3_artifacts`) | RQ3 per-node spawn/app-ready/admitted timing for LAN 1 |
 | 14 | `admission_log_lan2.csv` | controller `ADMISSION_LOG_PATH` (via `collect_rq3_artifacts`) | RQ3 per-node spawn/app-ready/admitted timing for LAN 2 |
+| 15 | `release_log_lan1.csv`, `release_log_lan2.csv` | controller `RELEASE_LOG_PATH` per LAN (research_q3 collector) | research_q3 release events (begin/quarantine/recall/end) per tier |
+| 16 | `rs_evict_logs_lan{1,2}/` | storage eviction-outcome logs (research_q3 collector) | Per-container storage eviction outcomes around releases |
+| 17 | `rs_status_*.json` | `rq3rel_p4_rs_probe.py` post-run probe | Replica-set membership status snapshots around releases |
+| 18 | `release_safety_report.csv` | analyzer (`cli_release_compare.py`) | Attributed vs outside-window data-path error rows (release-safety criterion) |
 
 The single aggregate `client_requests.csv` remains the default contract; the
 `phase` column is the source of phase-scoped request analysis.
@@ -235,7 +255,7 @@ request types, and canonical/override phase profiles.
 ### 2. Traffic Generator - [`traffic_generator.md`](traffic_generator.md)
 
 Documents `export_workload_snapshot.py`, `traffic_generator.py`, the canonical
-6-phase profile in `phases.json`, and the validation/diagnostic overrides in
+5-phase profile in `phases.json`, and the validation/diagnostic overrides in
 `phases_override/`.
 
 ### 3. Edge Server Compute Load - [`edge_server_compute_load.md`](edge_server_compute_load.md)

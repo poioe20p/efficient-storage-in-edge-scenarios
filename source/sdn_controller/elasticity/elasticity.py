@@ -18,7 +18,8 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional, Protocol
 
 from ..readiness_gate import PendingBackend
-from ..scaling_config import _EDGE_READY_PORT
+from ..release_log import append_row
+from ..scaling_config import _EDGE_READY_PORT, _RELEASE_MECHANISM
 
 from .node_common import IpAllocator, NodeInfo, RemovalResult, log_ready_timing
 from .compute_node_manager import ComputeNodeAdder, PendingDrain
@@ -107,7 +108,11 @@ class ScaleDownComputeAlert:
 
 @dataclass(frozen=True)
 class ScaleDownDataAlert:
-    """Scale-down: remove the most recently added dynamic storage node."""
+    """Scale-down: remove the most recently added dynamic storage node.
+
+    ``reason`` is "scale_down" (ordinary) or "absent" (absent-cleanup holds
+    its slot), mirroring :class:`ScaleDownComputeAlert`.
+    """
     lan:               int
     network_id:        str
     container_name:    str
@@ -116,6 +121,7 @@ class ScaleDownDataAlert:
     rs_name:           str
     primary_container: str
     port:              int = 27018
+    reason:            str = "scale_down"   # "scale_down" | "absent" (absent-cleanup holds its slot)
 
 
 @dataclass(frozen=True)
@@ -535,9 +541,17 @@ class ElasticityManager:
                     elif isinstance(alert, CleanupReserveAlert):
                         self._handle_cleanup_reserve(alert)
                     elif isinstance(alert, ScaleDownComputeAlert):
-                        self._handle_scale_down_compute(alert)
+                        if (_RELEASE_MECHANISM == "immediate"
+                                and getattr(alert, "reason", "scale_down") == "scale_down"):
+                            self._handle_scale_down_compute_immediate(alert)
+                        else:
+                            self._handle_scale_down_compute(alert)
                     elif isinstance(alert, ScaleDownDataAlert):
-                        self._handle_scale_down_data(alert)
+                        if (_RELEASE_MECHANISM == "immediate"
+                                and getattr(alert, "reason", "scale_down") == "scale_down"):
+                            self._handle_scale_down_data_immediate(alert)
+                        else:
+                            self._handle_scale_down_data(alert)
                     elif isinstance(alert, CleanupComputeAlert):
                         self._handle_cleanup_compute(alert)
                     elif isinstance(alert, AbandonComputeBackendAlert):
@@ -978,7 +992,35 @@ class ElasticityManager:
                 self._get_allocator(alert.lan).release(alert.ip)
             with self._removal_complete_lock:
                 self._removal_complete_entries.append((alert.mac, alert.container_name))
+            if _RELEASE_MECHANISM != "off" and alert.reason != "absent":
+                append_row(
+                    network_id=alert.network_id,
+                    mechanism=_RELEASE_MECHANISM,
+                    tier="compute",
+                    container=alert.container_name,
+                    mac=alert.mac,
+                    trigger="scale_down",
+                    event="end",
+                    success="1",
+                    reason="veth_discovery_failed",
+                )
             return
+
+        # Absent-cleanup is never logged; a real scale-down gets its begin row
+        # only now that the drain is pending (veth-discovery failure above
+        # produces no orphan begin).
+        if alert.reason != "absent" and _RELEASE_MECHANISM in ("drained", "stabilized"):
+            append_row(
+                network_id=alert.network_id,
+                mechanism=_RELEASE_MECHANISM,
+                tier="compute",
+                container=alert.container_name,
+                mac=alert.mac,
+                trigger=alert.reason,
+                event="begin",
+                success="",
+                reason="",
+            )
 
         pending.ip = alert.ip
         pending.reason = alert.reason
@@ -992,6 +1034,74 @@ class ElasticityManager:
         else:
             logger.info("[elasticity] drain initiated for %s — waiting for drain_complete event", alert.container_name)
         # Thread 3 returns here; _busy is reset in _loop's finally block.
+
+    def _handle_scale_down_compute_immediate(self, alert: ScaleDownComputeAlert) -> None:
+        """research_q3 immediate arm — compute teardown without the drain phase.
+
+        VIP isolation + veth discovery, then straight to script teardown
+        (no /drain POST, no Phase B).  Veth discovery failure is treated as
+        immediate cleanup with best-effort teardown, mirroring the drained
+        handler.
+        """
+        logger.info("[elasticity] scale_down_compute_immediate: removing %s (mac=%s)", alert.container_name, alert.mac)
+
+        # Immediately remove the backend from the compute VIP surface so Thread 1
+        # stops creating new DNAT/SNAT flows toward it before teardown begins.
+        self._topo.unregister_server_backend(alert.mac)
+
+        pending = self._compute_adder.prepare_immediate(alert.lan, alert.container_name, alert.mac)
+        if pending is None:
+            # Veth discovery failed — container netns already gone.
+            # Treat as immediate cleanup with best-effort teardown.
+            logger.warning("[elasticity] veth discovery failed for %s — attempting cleanup without veth", alert.container_name)
+            if alert.ip:
+                self._get_allocator(alert.lan).release(alert.ip)
+            with self._removal_complete_lock:
+                self._removal_complete_entries.append((alert.mac, alert.container_name))
+            self._record({"type": "scale_down_compute_immediate_veth_fail", "alert": alert})
+            append_row(
+                network_id=alert.network_id,
+                mechanism=_RELEASE_MECHANISM,
+                tier="compute",
+                container=alert.container_name,
+                mac=alert.mac,
+                trigger="scale_down",
+                event="end",
+                success="1",
+                reason="veth_discovery_failed",
+            )
+            return
+
+        pending.ip = alert.ip
+        pending.reason = alert.reason
+        result = self._compute_adder.cleanup_compute_node(pending)
+        self._compute_adder.log_removal_timings(result)
+        self._record({"type": "scale_down_compute_immediate", "alert": alert, "result": result})
+
+        # Release IP only after the container is fully torn down
+        if pending.ip:
+            self._get_allocator(pending.lan).release(pending.ip)
+
+        # Notify Thread 2 that this MAC has been fully cleaned up.
+        with self._removal_complete_lock:
+            self._removal_complete_entries.append((alert.mac, alert.container_name))
+
+        append_row(
+            network_id=alert.network_id,
+            mechanism=_RELEASE_MECHANISM,
+            tier="compute",
+            container=alert.container_name,
+            mac=alert.mac,
+            trigger="scale_down",
+            event="end",
+            success="1" if result.success else "0",
+            reason="ok" if result.success else "teardown_failed",
+        )
+
+        if result.success:
+            logger.info("[elasticity] scale_down_compute_immediate done: container=%s", alert.container_name)
+        else:
+            logger.error("[elasticity] scale_down_compute_immediate FAILED: container=%s", alert.container_name)
 
     def _handle_cleanup_compute(self, alert: CleanupComputeAlert) -> None:
         """Phase B: stop container, flush flows, remove OVS port/veth, docker rm.
@@ -1018,6 +1128,19 @@ class ElasticityManager:
         with self._removal_complete_lock:
             self._removal_complete_entries.append((alert.mac, pending.container_name))
 
+        if pending.reason != "absent" and _RELEASE_MECHANISM in ("drained", "stabilized"):
+            append_row(
+                network_id=f"lan{pending.lan}",
+                mechanism=_RELEASE_MECHANISM,
+                tier="compute",
+                container=pending.container_name,
+                mac=alert.mac,
+                trigger=pending.reason or "scale_down",
+                event="end",
+                success="1" if result.success else "0",
+                reason="ok" if result.success else "teardown_failed",
+            )
+
         if result.success:
             logger.info("[elasticity] cleanup_compute done: container=%s", pending.container_name)
         else:
@@ -1043,6 +1166,18 @@ class ElasticityManager:
             self._topo.add_server_mac(pending.mac)
             self._pop_pending_drain(pending.mac)
             self._record({"type": "cancel_compute_drain", "alert": alert, "pending": pending})
+            if _RELEASE_MECHANISM != "off" and pending.reason == "scale_down":
+                append_row(
+                    network_id=f"lan{pending.lan}",
+                    mechanism=_RELEASE_MECHANISM,
+                    tier="compute",
+                    container=pending.container_name,
+                    mac=pending.mac,
+                    trigger="cancel_drain",
+                    event="end",
+                    success="1",
+                    reason="canceled",
+                )
             logger.info(
                 "[elasticity] canceled compute drain mac=%s container=%s",
                 pending.mac, pending.container_name,
@@ -1058,6 +1193,20 @@ class ElasticityManager:
     def _handle_scale_down_data(self, alert: ScaleDownDataAlert) -> None:
         """Storage removal: VIP isolation → rs.remove() → script teardown."""
         logger.info("[elasticity] scale_down_data: removing %s (mac=%s)", alert.container_name, alert.mac)
+
+        # Absent-cleanup is never logged; real scale-downs get a begin row.
+        if alert.reason != "absent" and _RELEASE_MECHANISM in ("drained", "stabilized"):
+            append_row(
+                network_id=alert.network_id,
+                mechanism=_RELEASE_MECHANISM,
+                tier="storage",
+                container=alert.container_name,
+                mac=alert.mac,
+                trigger=alert.reason,
+                event="begin",
+                success="",
+                reason="",
+            )
 
         # Immediately remove the backend from the storage VIP surface so Thread 1
         # stops installing new VIP_DATA flows before the replica-set removal runs.
@@ -1084,10 +1233,74 @@ class ElasticityManager:
         with self._removal_complete_lock:
             self._removal_complete_entries.append((alert.mac, alert.container_name))
 
+        if alert.reason != "absent" and _RELEASE_MECHANISM in ("drained", "stabilized"):
+            append_row(
+                network_id=alert.network_id,
+                mechanism=_RELEASE_MECHANISM,
+                tier="storage",
+                container=alert.container_name,
+                mac=alert.mac,
+                trigger=alert.reason,
+                event="end",
+                success="1" if result.success else "0",
+                reason="ok" if result.success else "teardown_failed",
+            )
+
         if result.success:
             logger.info("[elasticity] scale_down_data done: container=%s", alert.container_name)
         else:
             logger.error("[elasticity] scale_down_data FAILED: container=%s", alert.container_name)
+
+    def _handle_scale_down_data_immediate(self, alert: ScaleDownDataAlert) -> None:
+        """research_q3 immediate arm — storage teardown with fire-and-forget eviction.
+
+        VIP isolation, then :meth:`remove_storage_node_immediate`: the
+        rs.remove eviction is launched fire-and-forget against the primary
+        while the script teardown runs.  The eviction outcome is carried in
+        the eviction log file (joined by container name in analysis); the
+        release-log end row carries only the teardown outcome.
+        """
+        logger.info("[elasticity] scale_down_data_immediate: removing %s (mac=%s)", alert.container_name, alert.mac)
+
+        # Immediately remove the backend from the storage VIP surface so Thread 1
+        # stops installing new VIP_DATA flows before teardown begins.
+        self._topo.unregister_storage_backend(alert.mac, domain=f"n{alert.lan}")
+
+        result = self._storage_adder.remove_storage_node_immediate(
+            lan=alert.lan,
+            name=alert.container_name,
+            mac=alert.mac,
+            ip=alert.ip,
+            rs_name=alert.rs_name,
+            primary_container=alert.primary_container,
+            port=alert.port,
+        )
+        self._storage_adder.log_removal_timings(result)
+        self._record({"type": "scale_down_data_immediate", "alert": alert, "result": result})
+
+        if result.success:
+            self._get_allocator(alert.lan).release(alert.ip)
+
+        # Notify Thread 2 regardless of success so stale tracking is cleared.
+        with self._removal_complete_lock:
+            self._removal_complete_entries.append((alert.mac, alert.container_name))
+
+        append_row(
+            network_id=alert.network_id,
+            mechanism=_RELEASE_MECHANISM,
+            tier="storage",
+            container=alert.container_name,
+            mac=alert.mac,
+            trigger="scale_down",
+            event="end",
+            success="1" if result.success else "0",
+            reason="ok" if result.success else "teardown_failed",
+        )
+
+        if result.success:
+            logger.info("[elasticity] scale_down_data_immediate done: container=%s", alert.container_name)
+        else:
+            logger.error("[elasticity] scale_down_data_immediate FAILED: container=%s", alert.container_name)
 
     # ------------------------------------------------------------------
     # Tier 1 selective-sync handlers

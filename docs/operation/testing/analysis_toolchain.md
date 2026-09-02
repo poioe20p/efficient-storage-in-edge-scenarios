@@ -452,6 +452,25 @@ Unlike the single-run CLIs, this command writes to a caller-provided output
 directory or a default comparison directory because it spans multiple run
 folders.
 
+### 4d. `cli_release_compare`
+
+research_q3 release-mechanism comparison across the 12 campaign run dirs.
+Purpose: contrast the four arms (`off`/`immediate`/`drained`/`stabilized`) on
+release speed, release safety, hold/drop container-seconds, `return_storm`
+re-entry, and churn (plan criteria C1–C5).
+
+Usage: `python -m source.scripts.testing.analysis.cli_release_compare
+--run-dir <dir> (repeatable)`
+
+Inputs (per run dir): `release_log_lan1.csv`, `release_log_lan2.csv`,
+`rs_evict_logs_lan{1,2}/`, `rs_status_*.json`, plus `client_requests.csv`,
+`container_events.csv`, and `phases_snapshot.json`.
+
+Outputs (per run): `release_safety_report.csv` — attributed vs
+outside-window data-path error rows per the pre-registered mechanism
+exception in `testing_requirements.md` — and cross-run comparison CSV/plots
+for C1–C5.
+
 ### 5. `cli_cpu_drivers`
 
 Load-balance diagnostic: median CPU of the *oldest* node versus *newer* nodes

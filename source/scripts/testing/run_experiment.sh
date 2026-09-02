@@ -734,6 +734,28 @@ collect_rq3_artifacts() {
 }
 
 # ---------------------------------------------------------------------------
+# research_q3 release-mechanism artifacts (release logs, per controller)
+# ---------------------------------------------------------------------------
+# Copies the release-event log out of each controller BEFORE any external
+# cleanup runs, plus the rs-eviction logs. Non-research_q3 runs produce no
+# release log → warning only.
+collect_research_q3_artifacts() {
+    step "Collecting research_q3 release artifacts"
+    local _rl1 _rl2
+    _rl1="$(docker exec osken printenv RELEASE_LOG_PATH 2>/dev/null || echo /tmp/release_log.csv)"
+    _rl2="$(docker exec osken_2 printenv RELEASE_LOG_PATH 2>/dev/null || echo /tmp/release_log.csv)"
+    docker cp "osken:${_rl1}"   "${RUN_DIR}/release_log_lan1.csv" 2>/dev/null \
+        || echo "  WARNING: release_log_lan1 unavailable (non-research_q3 run?)" >&2
+    docker cp "osken_2:${_rl2}" "${RUN_DIR}/release_log_lan2.csv" 2>/dev/null \
+        || echo "  WARNING: release_log_lan2 unavailable (non-research_q3 run?)" >&2
+    docker cp "osken:/tmp/rs_evict" "${RUN_DIR}/rs_evict_logs_lan1" 2>/dev/null \
+        || echo "  WARNING: rs_evict_logs_lan1 unavailable" >&2
+    docker cp "osken_2:/tmp/rs_evict" "${RUN_DIR}/rs_evict_logs_lan2" 2>/dev/null \
+        || echo "  WARNING: rs_evict_logs_lan2 unavailable" >&2
+    echo "  Release logs  : ${RUN_DIR}/release_log_lan1.csv, ${RUN_DIR}/release_log_lan2.csv"
+}
+
+# ---------------------------------------------------------------------------
 # RQ3 v2 per-run validity gates (plan §4.3): min-admissions per LAN,
 # flow-validation (A/B hard -> fail, C < 0.9 -> degraded, D > 1% -> fail),
 # and edge-container env verification. Runs AFTER collect_rq3_artifacts and
@@ -883,6 +905,9 @@ generate_elasticity_events
 generate_policy_state
 collect_rq1_artifacts
 collect_rq3_artifacts
+collect_research_q3_artifacts
+python3 "${SCRIPT_DIR}/rq3rel_p4_rs_probe.py" --run-dir "${RUN_DIR}" --label "${RUN_LABEL:-post}" \
+    || echo "  WARNING: rs probe failed" >&2
 verify_rq3_run
 
 step "Experiment complete"
@@ -904,5 +929,6 @@ echo "RQ1 window log : ${RUN_DIR}/window_log_lan1.jsonl, ${RUN_DIR}/window_log_l
 echo "RQ1 delivery   : ${RUN_DIR}/telemetry_delivery_log_lan1.csv, ${RUN_DIR}/telemetry_delivery_log_lan2.csv"
 echo "RQ1 decisions  : ${RUN_DIR}/decision_log_lan1.csv, ${RUN_DIR}/decision_log_lan2.csv"
 echo "RQ3 admission  : ${RUN_DIR}/admission_log_lan1.csv, ${RUN_DIR}/admission_log_lan2.csv"
+echo "research_q3 rel: ${RUN_DIR}/release_log_lan1.csv, ${RUN_DIR}/release_log_lan2.csv"
 
 _write_run_status "completed" 0 "idle"

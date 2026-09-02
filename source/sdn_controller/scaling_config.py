@@ -3,7 +3,10 @@
 Shared by ScalingPolicy, DynamicNodeRegistry, and the mediator.
 """
 
+import logging
 import os
+
+logger = logging.getLogger("os_ken.scaling_config")
 
 # ── Scale-up: weighted degradation score ────────────────────────────────
 #
@@ -385,3 +388,38 @@ _CROSS_REGION_SUSTAIN_WINDOWS_N = int(os.environ.get(
 # pressure windows produce 100–300+ per collection.
 _CROSS_REGION_MIN_READS_TO_ACTIVATE = int(os.environ.get(
     "CROSS_REGION_MIN_READS_TO_ACTIVATE", "50"))
+
+# ── RQ3 release-mechanism comparison (surplus-capacity release) ────────
+# RELEASE_MECHANISM selects how surplus dynamic capacity is released:
+#   "off"         → current behavior (incumbent release path unchanged) —
+#                   DEFAULT. Canonical / RQ1 / RQ2 runs byte-identical; no
+#                   release log written.
+#   "drained"     → incumbent graceful release: drain the container, await
+#                   rs.remove confirmation, then teardown.
+#   "immediate"   → teardown without drain / rs.remove confirmation.
+#   "stabilized"  → compute-side quarantine with recall: the compute release
+#                   is held for the stabilization window and can be recalled
+#                   by an overload-recall signal; storage follows "drained".
+# Unknown value → log warning + fall back to "off" here at import time so
+# every consumer agrees (release_gate keeps its own defensive fallback).
+_RELEASE_MECHANISM_RAW = os.environ.get("RELEASE_MECHANISM", "off").strip().lower()
+if _RELEASE_MECHANISM_RAW not in ("off", "drained", "immediate", "stabilized"):
+    logger.warning("unknown RELEASE_MECHANISM=%r — falling back to 'off'", _RELEASE_MECHANISM_RAW)
+    _RELEASE_MECHANISM = "off"
+else:
+    _RELEASE_MECHANISM = _RELEASE_MECHANISM_RAW
+
+# Stabilization window (seconds) for the "stabilized" mechanism: a
+# quarantined compute container is released only after it has been
+# quarantined for at least this long. Clocked with time.monotonic()
+# (monotonic, immune to wall-clock jumps); callers pass the timestamp in.
+_RELEASE_STABILIZE_S = float(os.environ.get("RELEASE_STABILIZE_S", "480"))
+
+# Recall hysteresis (K) for the "stabilized" mechanism: at least K of the
+# most recent 5 overload-window samples flagged overloaded recall the
+# quarantine (container kept).
+_RELEASE_RECALL_K = int(os.environ.get("RELEASE_RECALL_K", "2"))
+
+# Release log path (per controller / per LAN). Written for every mechanism
+# except "off" — see release_log.py.
+_RELEASE_LOG_PATH = os.environ.get("RELEASE_LOG_PATH", "/tmp/release_log.csv")

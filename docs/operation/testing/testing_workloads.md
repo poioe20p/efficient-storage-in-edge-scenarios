@@ -339,3 +339,43 @@ Use the workload families like this:
 For thesis and RQ analysis, compare runs by holding the application family
 constant and varying only the mechanism set, WAN profile, or workload profile
 within these defined phase files.
+
+---
+
+## research_q3 canonical workload (2026-09-02)
+
+The research_q3 release-mechanism campaign (plan:
+`docs/operation/testing/experiment/research_q3/experiment_plan.md`) replaces
+canonical `source/scripts/testing/phases.json` with a 5-phase
+recede-hold-return profile that runs the surplus-release cycle twice. This
+section supersedes the 6-phase description above for canonical runs.
+
+| Phase | Duration | Rate/client | `client_fraction` | `cross_region_ratio` | Purpose |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `baseline` | 60 s | 1.0 | 0.10 | 0.00 | Tier-0 control before the first storm |
+| `storm_mixed` | 180 s | 4.0 | 1.00 | 0.90 | Mixed compute+storage pressure build-up |
+| `hold` | 600 s | 0.5 | 0.05 | 0.00 | Low-demand hold — recall-cycle release observation |
+| `return_storm` | 180 s | 4.0 | 1.00 | 0.90 | Demand return — quarantine-recall window |
+| `demand_drop` | 900 s | 0.5 | 0.05 | 0.00 | Final drop — finalization-cycle release observation |
+
+Mix per phase:
+
+- `storm_mixed` / `return_storm`: `content_lookup=0.35`, `feed_ranking=0.10`,
+  `service_pressure=0.05`, `content_update=0.30`, `content_aggregate=0.20`
+- `baseline` / `hold` / `demand_drop`: `content_lookup=0.60`,
+  `feed_ranking=0.25`, `service_pressure=0.15`
+
+**Rationale**: recede-hold-return × 2 — `hold` (600 s) is the recall cycle
+and `demand_drop` (900 s) is the finalization cycle, so every release
+mechanism is observed under both a short and a long low-demand window.
+
+**Rules**:
+
+- research_q3 runs use canonical `source/scripts/testing/phases.json` with
+  **no** `PHASES_CONFIG` override.
+- Archived RQ1/RQ2 control reruns must pass their archived phase files via
+  `PHASES_CONFIG`. Candidates to verify (not asserted byte-equal to anything
+  current):
+  - `phases_override/phases_rq1_7phase.json`
+  - `phases_override/phases_rq2_compute_bound.json`
+  - `phases_override/phases_rq2_data_bound.json`
