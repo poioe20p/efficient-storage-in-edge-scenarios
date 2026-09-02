@@ -79,6 +79,13 @@ ACK_LOG_PATH = os.environ.get("ACK_LOG_PATH", "/tmp/ack_log.jsonl")
 OVERLOAD_CPU_PCT = float(os.environ.get("OVERLOAD_CPU_PCT", "5.0"))
 OVERLOAD_PEAK_LATENCY_MS = float(os.environ.get("OVERLOAD_PEAK_LATENCY_MS", "1000"))
 OVERLOAD_ERROR_RATE = float(os.environ.get("OVERLOAD_ERROR_RATE", "0.05"))
+# research_q3: under capped-CPU regimes a nearly-idle fleet still crosses the
+# CPU/latency clauses (tiny quota saturates; storm backlog inflates
+# peak_time_total_ms for many windows). When OVERLOAD_MIN_REQUESTS > 0 the
+# window must ALSO carry at least that many requests to be labeled overloaded
+# — separating genuine demand (storm ~220 req/win) from lull phases
+# (hold ~38, demand_drop ~5). Default 0 = prior behavior for all other RQs.
+OVERLOAD_MIN_REQUESTS = float(os.environ.get("OVERLOAD_MIN_REQUESTS", "0"))
 
 _window_seq: int = 0
 _window_log: deque = deque(maxlen=WINDOW_LOG_RETENTION)
@@ -136,6 +143,8 @@ def _append_ack_record(rec: dict) -> None:
 def _compute_overload(summary: dict) -> bool:
     ds = summary.get("domain_summary")
     if ds is None:
+        return False
+    if ds.get("total_requests", 0) < OVERLOAD_MIN_REQUESTS:
         return False
     error_rates = [s.get("error_rate", 0.0) for s in summary.get("servers", {}).values()]
     error_rate = statistics.mean(error_rates) if error_rates else 0.0

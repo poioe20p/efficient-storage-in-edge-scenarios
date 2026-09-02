@@ -140,6 +140,7 @@ docker run -dit --name aggregator_n2 --network none --restart=on-failure \
   -e OVERLOAD_CPU_PCT="${OVERLOAD_CPU_PCT:-5.0}" \
   -e OVERLOAD_PEAK_LATENCY_MS="${OVERLOAD_PEAK_LATENCY_MS:-1000}" \
   -e OVERLOAD_ERROR_RATE="${OVERLOAD_ERROR_RATE:-0.05}" \
+  -e OVERLOAD_MIN_REQUESTS="${OVERLOAD_MIN_REQUESTS:-0}" \
   -e WINDOW_LOG_RETENTION="${WINDOW_LOG_RETENTION:-10000}" \
   -e WINDOW_LOG_PATH="${WINDOW_LOG_PATH:-/tmp/window_log.jsonl}" \
   -e ACK_LOG_PATH="${ACK_LOG_PATH:-/tmp/ack_log.jsonl}" \
