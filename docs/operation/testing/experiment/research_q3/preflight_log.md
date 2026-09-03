@@ -73,6 +73,7 @@ changed by the campaign n escalation.
 | Date | Stage | Checkpoint | Run/Label | Result | Verdict | Resolution note |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-09-03 | B1-launch | pre-launch gate (phases hold=480 · env merge · sync verified · sudo -n) | research_q3_oe1 | hold=480 on VM; 9 critical files MD5 byte-identical local==VM (main_n1/main_n2/node_registry/release_gate/cli_release_compare/launcher/canonical env/arm_off.env/phases); sudo -n OK; no active run; run started 18:57:54Z | GO | — |
+| 2026-09-03 | B1·run1 | per-run gate (off early) | research_q3_oe1 | completed exit 0 (18:57:54→19:35:11Z); D3 phases_snapshot hold=480 + env snapshot + rs_status present; M1 off = no release rows / no rs_evict dirs (pre-registered); CLI arm=off, release-derived metrics n/a (expected), C3 4441/6660, C4_ttsu 57.8 s, spawns 4; D1 NotPrimary raw=0; D2 0 tracebacks / 0 restarts; M2 12 scale_up rows, dyn nodes serving 200s | GO | — |
 
 > ⚠ **Numbering**: the table above uses the v2 stage numbering (2.2 = storage
 > retention, 2.7 = controllers alive, etc.). The historical sections below
