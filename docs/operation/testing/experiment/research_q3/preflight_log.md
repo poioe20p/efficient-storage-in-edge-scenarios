@@ -39,8 +39,9 @@ continues.
 |  | 5.1–5.7 | P5 mid-run | research_q3_s_pre_l1 |  |  |  |
 |  | 5.8–5.11 | P5 post-run | research_q3_s_pre_l1 |  |  |  |
 |  | 6.1 | cross-run CLI | — |  |  |  |
-|  | 6.2 | verdict recap | — |  |  |  |
-|  | 6.3 | phases restore 900→480 | — |  |  |  |
+|  | 6.2 | stabilized repeatability (P1 early vs P5 late, mechanism timing) | — |  |  |  |
+|  | 6.3 | verdict recap | — |  |  |  |
+|  | 6.4 | phases restore 900→480 | — |  |  |  |
 
 > ⚠ **Numbering**: the table above uses the v2 stage numbering (2.2 = storage
 > retention, 2.7 = controllers alive, etc.). The historical sections below
@@ -140,8 +141,8 @@ Candidate fixes (awaiting user decision): route absent-cleanup for compute throu
 
 ---
 
-**Stage 0-2 results � P1 stabilized early (20260903_083426_research_q3_s_pre_e1, completed exit 0)**
+**Stage 0-2 results � P1 stabilized early (20260903_083426_research_q3_s_pre_e1, completed exit 0)**
 
-- **Full dual-tier chain proven end-to-end**: storage retention (reason=retained, both LANs) and compute quarantine begin in hold; dual overload recall at return (storage reason=readmitted � new re-admit path); cycle-2 retention/quarantine in demand_drop; H=480 finalize at drop+581-662 with end ok (storage) / eth_discovery_failed (compute no-op). Recall substituted adds (return adds minimal; C4_return_spawns=0; no teardown in hold).
-- **All 2.1-2.12 gates GO** (see table). Analyzer notes for campaign: (1) lan1 compute dyn5 absent-recycling (repeated absent->quarantine->recall cycles, finalized veth_discovery_failed) � churn-relevant, mechanism-correct; (2) high attributed error-window hits driven by return/drop storm timeouts (NotPrimary 0 everywhere; D1 clean; attribution overlaps inflate window counts); (3) ~48% overall error/timeout under the storage-bound storm � workload-validity context for benefit judgments.
-- **Tooling fix (between runs)**: p0 Stage-2b duplicate rs_probe hits the root-owned run folder (permission denied under testop; set -e aborts before hints). run_experiment already auto-probes (rs_status_research_q3_s_pre_e1.json present) � p0 2b will be guarded/skipped when rs_status_* exists.
+- **Full dual-tier chain proven end-to-end**: storage retention (reason=retained, both LANs) and compute quarantine begin in hold; dual overload recall at return (storage reason=readmitted � new re-admit path); cycle-2 retention/quarantine in demand_drop; H=480 finalize at drop+581-662 with end ok (storage) / eth_discovery_failed (compute no-op). Recall substituted adds (return adds minimal; C4_return_spawns=0; no teardown in hold).
+- **All 2.1-2.12 gates GO** (see table). Analyzer notes for campaign: (1) lan1 compute dyn5 absent-recycling (repeated absent->quarantine->recall cycles, finalized veth_discovery_failed) � churn-relevant, mechanism-correct; (2) high attributed error-window hits driven by return/drop storm timeouts (NotPrimary 0 everywhere; D1 clean; attribution overlaps inflate window counts); (3) ~48% overall error/timeout under the storage-bound storm � workload-validity context for benefit judgments.
+- **Tooling fix (between runs)**: p0 Stage-2b duplicate rs_probe hits the root-owned run folder (permission denied under testop; set -e aborts before hints). run_experiment already auto-probes (rs_status_research_q3_s_pre_e1.json present) � p0 2b will be guarded/skipped when rs_status_* exists.

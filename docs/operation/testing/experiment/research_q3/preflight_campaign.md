@@ -206,8 +206,39 @@ ghosts 0, D1 clean · 5.11 timing vs pre-registered · V1/I1/I2 as in 2.12.
 | # | Check | Verdict |
 | --- | --- | --- |
 | 6.1 | `cli_release_compare.py` over all 5 preflight runs: table renders; arms inferred from labels; per-tier columns populated where expected; no unexpected n/a | GO/DIAGNOSE |
-| 6.2 | Verdict recap: every stage GO → campaign go; any open DIAGNOSE → resolved + documented in `preflight_log.md` first | verdict |
-| 6.3 | Restore canonical `phases.json` `hold` 900→480 (campaign baseline for B1 early cells); re-parse OK | GO/STOP |
+| 6.2 | **Stabilized mechanism repeatability (P1 early vs P5 late)** — see below | GO/DIAGNOSE/STOP |
+| 6.3 | Verdict recap: every stage GO → campaign go; any open DIAGNOSE → resolved + documented in `preflight_log.md` first | verdict |
+| 6.4 | Restore canonical `phases.json` `hold` 900→480 (campaign baseline for B1 early cells); re-parse OK | GO/STOP |
+
+### 6.2 — Stabilized repeatability gate (pre-campaign go/no-go)
+
+P1 (stabilized, early) and P5 (stabilized, late) are two independent
+full-length runs of the same arm on opposite return-timing cells. Before
+the 32-run campaign, confirm the mechanism re-fires at the **same
+pre-registered windows and shapes** on both — n=2 mechanism-timing
+repeatability. (Benefit magnitudes still require the n=4 campaign; this
+gate is about mechanism determinism.) Compare, per tier, P1 vs P5:
+
+- **a. storage retention onset** (relative to `hold` start): P1 measured
+  ≈ `hold`+10–60 s (actual, earlier than the original projected window,
+  now recorded as measured). P5 must fire within ±60 s of P1's onset, both
+  with `quarantine_begin, reason=retained`.
+- **b. compute quarantine onset**: P5 within ±60 s of P1's (scale_down or
+  absent trigger accepted — note the trigger in the verdict).
+- **c. horizon finalization latency ≈ H (480 s)** on both runs
+  (finalize_ts − quarantine_ts ∈ [470, 510] s): P1 finalize was qbegin+480;
+  P5 must clock the same H.
+- **d. timing flip reproduced**: P1 recalls at return (early cell); P5
+  finalizes **before** return (late cell) — the hold 480/900 axis must
+  visibly flip behavior.
+- **e. chain-shape consistency**: storage re-admit rows `reason=readmitted`
+  (success=1); no retention-abort audit rows (success=0) beyond documented
+  analyzer notes; `C2_evict_nonok=0`; `C2_ghosts=0` on both runs.
+
+Verdict: **GO** if a–e hold (P5 within tolerance of P1) · **DIAGNOSE** if
+P5 fires but diverges beyond tolerance, or a documented P1 note (e.g.
+absent-recycling churn) fails to reproduce or worsens · **STOP** if P5
+misses a hard gate or a tier never fires.
 
 ## Stop/go rules
 
