@@ -72,7 +72,7 @@ changed by the campaign n escalation.
 
 | Date | Stage | Checkpoint | Run/Label | Result | Verdict | Resolution note |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-09-03 | B1-launch | pre-launch gate (phases hold=480 · env merge · sync verified · sudo -n) | research_q3_oe1 | pending | — | — |
+| 2026-09-03 | B1-launch | pre-launch gate (phases hold=480 · env merge · sync verified · sudo -n) | research_q3_oe1 | hold=480 on VM; 9 critical files MD5 byte-identical local==VM (main_n1/main_n2/node_registry/release_gate/cli_release_compare/launcher/canonical env/arm_off.env/phases); sudo -n OK; no active run; run started 18:57:54Z | GO | — |
 
 > ⚠ **Numbering**: the table above uses the v2 stage numbering (2.2 = storage
 > retention, 2.7 = controllers alive, etc.). The historical sections below
