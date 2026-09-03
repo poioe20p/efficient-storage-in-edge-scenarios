@@ -60,17 +60,19 @@ and pre-registered as a future campaign (see Appendix A).
 
 ## 3. Run Matrix
 
-**Cells**: 4 arms × 2 return timings = 8 cells × n=4 = **32 runs + 1
-calibration** (33 launches, ≈ 22 h at ~40 min/run).
+**Cells**: 4 arms × 2 return timings = 8 cells × n=4 = **32 campaign runs**
+plus the **5 preflight runs** (excluded from analysis; ≈ 22 h of campaign
+VM time at ~40 min/run).
 
 - **early** return: `hold = 480 s` (return_storm unchanged).
 - **late** return: `hold = 900 s` (return_storm unchanged).
 
 The `hold` duration is edited **in-place** in the canonical
-`source/scripts/testing/phases.json` between blocks: the canonical file
-currently pins `hold = 600 s`; before B1 edit it to **480 s** (early cells)
-and after B4 to **900 s** (late cells). Each run folder captures
-`phases_snapshot.json` as provenance. No duplicate phase files are created.
+`source/scripts/testing/phases.json` between blocks: the preflight performs
+the 600→480 (early) and 480→900 (late) edits and restores 480 at its
+Stage 6, so the campaign starts at **480** and edits to **900 s** after B4.
+Each run folder captures `phases_snapshot.json` as provenance. No
+duplicate phase files are created.
 
 Timing math (H = 480 s; compute onsets from calibration v4, storage
 retention onsets projected — validated in the new preflight):
@@ -80,8 +82,9 @@ retention onsets projected — validated in the new preflight):
 | early (hold=480) | quarantine ≈ hold+221 s; expiry hold+701 s > return → **recall fires** | retention ≈ hold+121 s; expiry hold+601 s > return → **recall fires** |
 | late (hold=900) | quarantine ≈ hold+221 s; expiry hold+701 s < return → **finalizes; re-spawn measured** | retention ≈ hold+121 s; expiry hold+601 s < return → **finalizes; re-spawn measured** |
 
-Labels: `research_q3_{o,d,s,i}{e,l}1..4` (arm × timing × replicate) plus
-calibration `research_q3_cal_s1` (stabilized, early). Counterbalanced
+Labels: `research_q3_{o,d,s,i}{e,l}1..4` (arm × timing × replicate). The
+five preflight runs (labels in [`preflight_campaign.md`](preflight_campaign.md))
+are excluded from campaign analysis. Counterbalanced
 blocks of 4, arm order rotated per block:
 
 | Block | Runs | Timing |
@@ -117,23 +120,22 @@ research_q3-relevant knobs; the base override
 `source/scripts/testing/controller_env_overrides/current_state_integrated.env`
 supplies everything else.
 
-Between-block delta (approved edit scope): edit the `hold` duration of the
-**canonical** `source/scripts/testing/phases.json` — **600 → 480 s before
-B1** (early cells) and **480 → 900 s after B4** (late cells). Every run
-folder captures `phases_snapshot.json` as provenance; no variant phase
-files are created. After the campaign the canonical file stays at the last
-used value (late); the plan documents the edits.
+Between-block delta (approved edit scope): the campaign starts with the
+canonical `source/scripts/testing/phases.json` at `hold = 480` (the
+preflight restores 480 after its late-cell run — see
+[`preflight_campaign.md`](preflight_campaign.md) Stage 6). Edit **480 →
+900 s after B4** for the late cells. Every run folder captures
+`phases_snapshot.json` as provenance; no variant phase files are created.
+After the campaign the canonical file stays at the last used value (late);
+the plan documents the edits.
 
-Preflight before the campaign (staged gates + checkpoints —
-[`preflight_campaign.md`](preflight_campaign.md)):
-
-```bash
-bash source/scripts/testing/rq3rel_p0_preflight.sh
-```
-
-The preflight includes one full-length stabilized calibration run
-(`research_q3_cal_s1`, seed 42, early timing), excluded from campaign
-analysis.
+Preflight before the campaign (staged gates + checkpoints, 5 runs ≈ 4.5 h
+— [`preflight_campaign.md`](preflight_campaign.md)). Stages 0–1 are
+operator-driven per that doc; `source/scripts/testing/rq3rel_p0_preflight.sh`
+is the Stage-2.0 pre-launch gate (canonical phases `hold=480`, canonical
+env pins off) and P1 launch wrapper; the five preflight runs P1–P5 are
+runner-driven with mid-run and between-run checkpoints, and are excluded
+from campaign analysis.
 
 ## 5. Measurements & Success Criteria
 
@@ -184,8 +186,9 @@ is a documented contingency of the mechanism, not a run failure.
 
 ## 6. Analysis Approach
 
-- `cli_release_compare.py` across the 32 campaign run dirs (+1
-  calibration) — per-arm × per-tier release speed, safety, hold cost,
+- `cli_release_compare.py` across the 32 campaign run dirs (the 5
+  preflight runs are analyzed separately for the preflight gates) —
+  per-arm × per-tier release speed, safety, hold cost,
   re-entry, churn → `release_compare_table.csv`,
   `release_safety_report.csv`, comparison PNG.
 - Per-run artifacts consumed: `release_log_lan{1,2}.csv` (release events,
@@ -231,8 +234,8 @@ bound cells of this campaign.
 - Single two-cycle recede-hold-return workload per cell (`hold` 480 s =
   recall cell, `hold` 900 s = finalization cell; `demand_drop` 900 s =
   cycle-2 finalization).
-- The preflight cannot exercise the full timeline; the full-length
-  stabilized calibration run (`research_q3_cal_s1`, early) covers it.
+- The preflight cannot exercise the full timeline; the five preflight
+  runs (P1–P5, early + late cells) cover it.
 
 ## Changelog
 

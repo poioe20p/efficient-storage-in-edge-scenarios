@@ -6,34 +6,46 @@ continues.
 
 | Date | Stage | Checkpoint | Run/Label | Result | Verdict | Resolution note |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-09-02 | 0.1 | release-gate selftest | — | SELFTEST PASS (26 ok) | GO | — |
-| 2026-09-02 | 0.2 | compile + shell syntax | — | compileall + py_compile + bash -n all clean | GO | — |
-| 2026-09-02 | 0.3 | config integrity | — | phases.json 5 phases; canonical env pins off; 4 arm envs with mechanism + 9 knobs | GO | arm_*.env normalized CRLF→LF |
-| 2026-09-02 | 0.4 | CLI synthetic smoke | temp synthetic | table+safety CSVs render; expected n/a present; exit 0 | GO | fixed `end_reason` UnboundLocalError in cli_release_compare.py (_release_events); re-ran clean |
-| 2026-09-02 | 1.1 | VM repo synced + new files | — | release_gate.py/release_log.py + arm envs present on VM | GO | scp/tar sync; 64/64 files MD5 byte-identical |
-| 2026-09-02 | 1.2 | code current on VM | — | scaling_config RELEASE_MECHANISM ×6; phases.json 5 phases; arm_stabilized.env present | GO | — |
-| 2026-09-02 | 1.3 | importability in container | osken/osken_2 | `osken import ok`, `osken_2 import ok` | GO | bind-mounted workspace live without rebuild |
-| 2026-09-02 | 1.4 | sudo + docker | — | sudo -n ok; docker 29.1.3 | GO | — |
-| 2026-09-02 | 1.5 | controller starts clean | — | 0 ImportError/Traceback in both controllers; `release_gate: mode=off` at DEBUG (canonical env) | GO | Stage-1 script's SSH session was reset mid-setup; 1.3/1.5 re-verified with fresh checks |
-| 2026-09-02 | 2.1 | both tiers spawn in storm | research_q3_cal_s1 | storage spawns only (reserve standby dyn1-7); compute never spawned — policy `compute cap reached (0/0)` every window | STOP | launcher passed only arm env; canonical override (MAX_DYNAMIC_COMPUTE=3) never applied — base env pins 0 |
-| 2026-09-02 | 2.2 | quarantine_begin in hold | research_q3_cal_s1 | none — release_log has no compute rows (mechanism never armed) | STOP | same root cause (compute scale-down never became eligible) |
-| 2026-09-02 | 2.3 | recall at return onset | research_q3_cal_s1 | 0 recall rows | STOP | no quarantine → no recall |
-| 2026-09-02 | 2.4 | cycle-2 finalization | research_q3_cal_s1 | none | STOP | mechanism never exercised |
-| 2026-09-02 | 2.5 | controllers alive throughout | research_q3_cal_s1 | osken + osken_2 up entire run; 0 tracebacks (sampler, every ~2 min) | GO | — |
-| 2026-09-02 | 2.6 | artifacts present | research_q3_cal_s1 | release logs, rs_evict_logs_lan1/2 (5 files each), rs_status_research_q3_cal_s1.json, phases_snapshot, controller_env_snapshot all present | GO | — |
-| 2026-09-02 | 2.7 | CLI parse + recall_missed=0 | research_q3_cal_s1 |  |  | deferred to rerun (mechanism absent) |
-| 2026-09-02 | 2.8 | eviction non-ok=0, ghosts=0, D1 | research_q3_cal_s1 | storage releases only pre/post-run, all `ok` | GO | — |
-| 2026-09-02 | 2.9 | timing vs pre-registered | research_q3_cal_s1 |  |  | deferred to rerun |
-|  | 3.1 | off: no release log/evict files | research_q3_o1 |  |  |  |
-|  | 3.2 | immediate: end-only + eviction logs | research_q3_i1 |  |  |  |
-|  | 3.3 | drained: begin/end pairs | research_q3_d1 |  |  |  |
-|  | 3.4 | per-run gates (3 runs) | o1/i1/d1 |  |  |  |
-|  | 3.5 | cross-run CLI sanity | cal+o1+i1+d1 |  |  |  |
-|  | 4 | per-run gate after each of 28 | research_q3_* |  |  |  |
-|  | 4 | early direction (run 3/arm) | research_q3_* |  |  |  |
-|  | 4 | arm consistency (run 6/arm) | research_q3_* |  |  |  |
-|  | 4 | cross-seed sensitivity | x1 runs |  |  |  |
-|  | 4 | final campaign verdict | all |  |  |  |
+|  | 0.1 | release-gate selftest | — |  |  |  |
+|  | 0.2 | compile + bash -n | — |  |  |  |
+|  | 0.3 | config integrity (hold=600 baseline; arm envs) | — |  |  |  |
+|  | 0.4 | CLI synthetic smoke (tools selftests) | — |  |  |  |
+|  | 1.1 | repo sync + 5-file MD5 | — |  |  |  |
+|  | 1.2 | code current (storage gate present) | — |  |  |  |
+|  | 1.3 | importability | osken/osken_2 |  |  |  |
+|  | 1.4 | sudo+docker | — |  |  |  |
+|  | 1.5 | controller clean start | — |  |  |  |
+|  | 1.6 | phase-edit dry run | — |  |  |  |
+|  | 2.0 | phases edit 600→480 (P1 pre-launch) | — |  |  |  |
+|  | 2.1 | storm spawns | research_q3_s_pre_e1 |  |  |  |
+|  | 2.2 | storage retention begin hold+90–200 (projected) | research_q3_s_pre_e1 |  |  |  |
+|  | 2.3 | compute quarantine hold+210–270 | research_q3_s_pre_e1 |  |  |  |
+|  | 2.4 | dual-tier recall + substitution | research_q3_s_pre_e1 |  |  |  |
+|  | 2.5 | cycle-2 quarantine | research_q3_s_pre_e1 |  |  |  |
+|  | 2.6 | finalization drop+600–820 | research_q3_s_pre_e1 |  |  |  |
+|  | 2.7 | controllers alive | research_q3_s_pre_e1 |  |  |  |
+|  | 2.8 | artifacts D3 | research_q3_s_pre_e1 |  |  |  |
+|  | 2.9 | CLI per-tier | research_q3_s_pre_e1 |  |  |  |
+|  | 2.10 | evictions/ghosts/D1 | research_q3_s_pre_e1 |  |  |  |
+|  | 2.11 | timing | research_q3_s_pre_e1 |  |  |  |
+|  | 2.12 | V1/I1/I2 | research_q3_s_pre_e1 |  |  |  |
+|  | 3.1–3.4 | P2 mid-run | research_q3_d_pre_e1 |  |  |  |
+|  | 3.5–3.7 | P2 post-run | research_q3_d_pre_e1 |  |  |  |
+|  | 3.8–3.10 | P3 mid-run | research_q3_i_pre_e1 |  |  |  |
+|  | 3.11–3.12 | P3 post-run | research_q3_i_pre_e1 |  |  |  |
+|  | 4.1–4.3 | P4 mid-run | research_q3_o_pre_e1 |  |  |  |
+|  | 4.4–4.5 | P4 post-run | research_q3_o_pre_e1 |  |  |  |
+|  | 5.0 | phases edit 480→900 (P5 pre-launch) | — |  |  |  |
+|  | 5.1–5.7 | P5 mid-run | research_q3_s_pre_l1 |  |  |  |
+|  | 5.8–5.11 | P5 post-run | research_q3_s_pre_l1 |  |  |  |
+|  | 6.1 | cross-run CLI | — |  |  |  |
+|  | 6.2 | verdict recap | — |  |  |  |
+|  | 6.3 | phases restore 900→480 | — |  |  |  |
+
+> ⚠ **Numbering**: the table above uses the v2 stage numbering (2.2 = storage
+> retention, 2.7 = controllers alive, etc.). The historical sections below
+> predate design v2 and use the OLD numbering — read them as historical
+> records only.
 
 ---
 
