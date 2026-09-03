@@ -29,8 +29,8 @@ continues.
 | 2026-09-03 | 2.10 | evictions/ghosts/D1 | research_q3_s_pre_e1 | evict_ok=2 nonok=0 overlap=0 ghosts=0; NotPrimary 0 everywhere | GO | — |
 | 2026-09-03 | 2.11 | timing | research_q3_s_pre_e1 | finalize drop+581–662 (nominal 600–820 ok); recalls ≈ return | GO | dyn5 absent-churn note |
 | 2026-09-03 | 2.12 | V1/I1/I2 | research_q3_s_pre_e1 | storm storage CPU 0.8→78%; storm ok req lan1 5524 / lan2 5044 ≫ 500; timeout distinct | GO | overall ~48% error/timeout under storage-bound storm — workload-validity note for analyzer |
-|  | 3.1–3.4 | P2 mid-run | research_q3_d_pre_e1 |  |  |  |
-|  | 3.5–3.7 | P2 post-run | research_q3_d_pre_e1 |  |  |  |
+| 2026-09-03 | 3.1–3.4 | P2 mid-run | research_q3_d_pre_e1 | storm spawns (compute 6 + storage 3); drained begin/end pairs both tiers (lan2 storage dyn2 hold+~165s; compute dyn6 hold+~256s); 0 quarantine rows; demand_drop cycle-2 releases | GO | — |
+| 2026-09-03 | 3.5–3.7 | P2 post-run | research_q3_d_pre_e1 | CLI: C1c=1.65s C1s=11.25s; recall/qf n/a; orphan_begin=0; evict_ok=14 nonok=0; ghosts=0; NotPrimary=0; D3 hold=480; C4_ttsu=54.7s; return_spawns=4 | GO | one end-only row (lan1 dyn11 veth no-op) — orphan_begin=0, benign |
 |  | 3.8–3.10 | P3 mid-run | research_q3_i_pre_e1 |  |  |  |
 |  | 3.11–3.12 | P3 post-run | research_q3_i_pre_e1 |  |  |  |
 |  | 4.1–4.3 | P4 mid-run | research_q3_o_pre_e1 |  |  |  |
