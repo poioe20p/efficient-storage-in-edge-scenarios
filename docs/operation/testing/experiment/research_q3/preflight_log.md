@@ -35,13 +35,13 @@ continues.
 | 2026-09-03 | 3.11–3.12 | P3 post-run | research_q3_i_pre_e1 | CLI: arm=immediate; C1 n/a (end-only arm, expected); orphan_begin=0; evict_ok=12 nonok=0 overlap=0; ghosts=0; C4_ttsu=57.8s; return_spawns=2; churn=7 | GO | immediate re-entry churn (7) > drained (4) > stabilized (0) — expected ordering |
 | 2026-09-03 | 4.1–4.3 | P4 mid-run | research_q3_o_pre_e1 | storm spawns incumbent (compute 5 + storage 3); no release rows; no rs_evict dirs | GO | — |
 | 2026-09-03 | 4.4–4.5 | P4 post-run | research_q3_o_pre_e1 | CLI: arm=off, all release-derived metrics n/a (not 0); C3 4101/6615; C4_ttsu=56.0s; decision log incumbent rows only; raw NotPrimary=0; I1 storm ok 5195/5191 | GO | — |
-|  | 5.0 | phases edit 480→900 (P5 pre-launch) | — |  |  |  |
-|  | 5.1–5.7 | P5 mid-run | research_q3_s_pre_l1 |  |  |  |
-|  | 5.8–5.11 | P5 post-run | research_q3_s_pre_l1 |  |  |  |
-|  | 6.1 | cross-run CLI | — |  |  |  |
-|  | 6.2 | stabilized repeatability (P1 early vs P5 late, mechanism timing) | — |  |  |  |
-|  | 6.3 | verdict recap | — |  |  |  |
-|  | 6.4 | phases restore 900→480 | — |  |  |  |
+| 2026-09-03 | 5.0 | phases edit 480→900 (P5 pre-launch) | — | hold 480→900 verified on VM | GO | — |
+| 2026-09-03 | 5.1–5.7 | P5 mid-run | research_q3_s_pre_l1 | storm spawns; storage retention both LANs (hold+81–101); compute quarantine (hold+191–201); **cycle-1 finalize BEFORE return** (storage 11:50:42/11:51:02, compute 11:52:13/23 vs return 11:56:04) at qb+480 exact; re-spawn at return (compute dyn8 + storage dyn9 adds) | GO | — |
+| 2026-09-03 | 5.8–5.11 | P5 post-run | research_q3_s_pre_l1 | D3 (phases_snapshot hold=900); CLI: qf=482.5/491.9 (H=480); recall cols populated (late-hold/drop retentions crossing return) — cell-aware recall_missed correctly n/a; evict_ok=4 nonok=0; ghosts=0; NotPrimary=0; C4_ttsu=48.2s return_spawns=2 | GO | recall columns populated in late cell (some retentions cross return) — expected; plan wording corrected |
+| 2026-09-03 | 6.1 | cross-run CLI | all 5 | table renders; arms inferred; per-tier columns populated where expected; no unexpected n/a; orphan=0; evict_nonok=0; ghosts=0; NotPrimary=0 | GO | — |
+| 2026-09-03 | 6.2 | stabilized repeatability (P1 early vs P5 late, mechanism timing) | P1+P5 | a) storage retention onset hold+78–88 vs +81–101 (Δ+3–23s); b) compute qb hold+188 vs +191–201; c) finalize latency qb+480±12 both; d) timing flip reproduced (P1 recall at return+18–28 vs P5 finalize 4–5 min before return); e) readmitted/evict/ghost shape identical, no abort rows | GO | mechanism determinism confirmed before campaign |
+| 2026-09-03 | 6.3 | verdict recap | all | Stages 0–6.2 all GO; no open DIAGNOSE blockers (analyzer workload notes only) | GO | campaign go |
+| 2026-09-03 | 6.4 | phases restore 900→480 | — | hold 900→480 verified on VM | GO | campaign B1 baseline 480 |
 
 > ⚠ **Numbering**: the table above uses the v2 stage numbering (2.2 = storage
 > retention, 2.7 = controllers alive, etc.). The historical sections below
