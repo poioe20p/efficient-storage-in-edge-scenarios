@@ -33,8 +33,8 @@ continues.
 | 2026-09-03 | 3.5–3.7 | P2 post-run | research_q3_d_pre_e1 | CLI: C1c=1.65s C1s=11.25s; recall/qf n/a; orphan_begin=0; evict_ok=14 nonok=0; ghosts=0; NotPrimary=0; D3 hold=480; C4_ttsu=54.7s; return_spawns=4 | GO | one end-only row (lan1 dyn11 veth no-op) — orphan_begin=0, benign |
 | 2026-09-03 | 3.8–3.10 | P3 mid-run | research_q3_i_pre_e1 | storm spawns (compute 5+); end-only rows both tiers (begin=0 qb=0 recall=0; lan1 10 / lan2 14); fire_and_forget evictions 12/12; nonok=0; NotPrimary=0 | GO | — |
 | 2026-09-03 | 3.11–3.12 | P3 post-run | research_q3_i_pre_e1 | CLI: arm=immediate; C1 n/a (end-only arm, expected); orphan_begin=0; evict_ok=12 nonok=0 overlap=0; ghosts=0; C4_ttsu=57.8s; return_spawns=2; churn=7 | GO | immediate re-entry churn (7) > drained (4) > stabilized (0) — expected ordering |
-|  | 4.1–4.3 | P4 mid-run | research_q3_o_pre_e1 |  |  |  |
-|  | 4.4–4.5 | P4 post-run | research_q3_o_pre_e1 |  |  |  |
+| 2026-09-03 | 4.1–4.3 | P4 mid-run | research_q3_o_pre_e1 | storm spawns incumbent (compute 5 + storage 3); no release rows; no rs_evict dirs | GO | — |
+| 2026-09-03 | 4.4–4.5 | P4 post-run | research_q3_o_pre_e1 | CLI: arm=off, all release-derived metrics n/a (not 0); C3 4101/6615; C4_ttsu=56.0s; decision log incumbent rows only; raw NotPrimary=0; I1 storm ok 5195/5191 | GO | — |
 |  | 5.0 | phases edit 480→900 (P5 pre-launch) | — |  |  |  |
 |  | 5.1–5.7 | P5 mid-run | research_q3_s_pre_l1 |  |  |  |
 |  | 5.8–5.11 | P5 post-run | research_q3_s_pre_l1 |  |  |  |
