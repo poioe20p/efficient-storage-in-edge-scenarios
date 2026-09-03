@@ -6,29 +6,29 @@ continues.
 
 | Date | Stage | Checkpoint | Run/Label | Result | Verdict | Resolution note |
 | --- | --- | --- | --- | --- | --- | --- |
-|  | 0.1 | release-gate selftest | — |  |  |  |
-|  | 0.2 | compile + bash -n | — |  |  |  |
-|  | 0.3 | config integrity (hold=600 baseline; arm envs) | — |  |  |  |
-|  | 0.4 | CLI synthetic smoke (tools selftests) | — |  |  |  |
-|  | 1.1 | repo sync + 5-file MD5 | — |  |  |  |
-|  | 1.2 | code current (storage gate present) | — |  |  |  |
-|  | 1.3 | importability | osken/osken_2 |  |  |  |
-|  | 1.4 | sudo+docker | — |  |  |  |
-|  | 1.5 | controller clean start | — |  |  |  |
-|  | 1.6 | phase-edit dry run | — |  |  |  |
-|  | 2.0 | phases edit 600→480 (P1 pre-launch) | — |  |  |  |
-|  | 2.1 | storm spawns | research_q3_s_pre_e1 |  |  |  |
-|  | 2.2 | storage retention begin hold+90–200 (projected) | research_q3_s_pre_e1 |  |  |  |
-|  | 2.3 | compute quarantine hold+210–270 | research_q3_s_pre_e1 |  |  |  |
-|  | 2.4 | dual-tier recall + substitution | research_q3_s_pre_e1 |  |  |  |
-|  | 2.5 | cycle-2 quarantine | research_q3_s_pre_e1 |  |  |  |
-|  | 2.6 | finalization drop+600–820 | research_q3_s_pre_e1 |  |  |  |
-|  | 2.7 | controllers alive | research_q3_s_pre_e1 |  |  |  |
-|  | 2.8 | artifacts D3 | research_q3_s_pre_e1 |  |  |  |
-|  | 2.9 | CLI per-tier | research_q3_s_pre_e1 |  |  |  |
-|  | 2.10 | evictions/ghosts/D1 | research_q3_s_pre_e1 |  |  |  |
-|  | 2.11 | timing | research_q3_s_pre_e1 |  |  |  |
-|  | 2.12 | V1/I1/I2 | research_q3_s_pre_e1 |  |  |  |
+| 2026-09-03 | 0.1 | release-gate selftest | — | SELFTEST PASS | GO | — |
+| 2026-09-03 | 0.2 | compile + bash -n | — | py_compile clean; bash -n OK (compileall hit pre-existing `_v5_full_v2.py`, unrelated) | GO | — |
+| 2026-09-03 | 0.3 | config integrity (hold=600 baseline; arm envs) | — | 5 phases; hold=600; canonical off; 4 arm envs mechanism+knobs | GO | — |
+| 2026-09-03 | 0.4 | CLI synthetic smoke (tools selftests) | — | SELFTEST OK + SELFTEST2 OK | GO | — |
+| 2026-09-03 | 1.1 | repo sync + 5-file MD5 | — | tarball sync; 5-file MD5 byte-identity local==VM | GO | VM repo on divergent origin/main; RQ3 always file-synced (262-file dirty tree) — see note below |
+| 2026-09-03 | 1.2 | code current (storage gate present) | — | `_storage_release_gate`×26, `recalled_substitution` in main_n1 | GO | — |
+| 2026-09-03 | 1.3 | importability | osken/osken_2 | import ok both containers | GO | — |
+| 2026-09-03 | 1.4 | sudo+docker | — | sudo -n ok; docker 29.1.3 | GO | — |
+| 2026-09-03 | 1.5 | controller clean start | — | 0 tracebacks; mode=stabilized armed | GO | — |
+| 2026-09-03 | 1.6 | phase-edit dry run | — | in-place edit verified (became the real 2.0 edit) | GO | — |
+| 2026-09-03 | 2.0 | phases edit 600→480 (P1 pre-launch) | — | hold 600→480 verified on VM | GO | — |
+| 2026-09-03 | 2.1 | storm spawns | research_q3_s_pre_e1 | compute 6 + storage 3 adds; 3×ComputeAlert + reserve activations per LAN | GO | — |
+| 2026-09-03 | 2.2 | storage retention begin hold+90–200 (projected) | research_q3_s_pre_e1 | retention `quarantine_begin reason=retained` both LANs (lan1 dyn4 08:40:59, lan2 dyn3 08:40:49) | GO | onset earlier than projected window; freeze logs `retention active=True` confirm |
+| 2026-09-03 | 2.3 | compute quarantine hold+210–270 | research_q3_s_pre_e1 | quarantine_begin both LANs (lan2 dyn6 08:42:39 scale_down; lan1 dyn5 08:47:09 absent) | GO | — |
+| 2026-09-03 | 2.4 | dual-tier recall + substitution | research_q3_s_pre_e1 | dual recall same second both LANs (08:47:49/59); storage reason=readmitted; no teardown in hold; return adds 1 compute+1 storage only | GO | lan1 dyn5 absent-recycling: repeated absent→quarantine→recall cycles (churn note for analyzer) |
+| 2026-09-03 | 2.5 | cycle-2 quarantine | research_q3_s_pre_e1 | retention/quarantine re-armed in demand_drop both LANs | GO | — |
+| 2026-09-03 | 2.6 | finalization drop+600–820 | research_q3_s_pre_e1 | finalize ≈ drop+581–662 both tiers both LANs; H=480 (end ok / veth_discovery_failed no-op) | GO | — |
+| 2026-09-03 | 2.7 | controllers alive | research_q3_s_pre_e1 | up 44 min whole run; 0 tracebacks | GO | — |
+| 2026-09-03 | 2.8 | artifacts D3 | research_q3_s_pre_e1 | all present incl phases_snapshot (hold=480), rs_status, release logs, evict logs | GO | p0 2b duplicate probe hits root-owned run dir (cosmetic; run_experiment auto-probe present) — fix p0 between runs |
+| 2026-09-03 | 2.9 | CLI per-tier | research_q3_s_pre_e1 | C1s_recall=230.2s; qf=481.5s; qf_storage=491.9s; orphan=0; recall_missed=0 both; no unexpected n/a | GO | analyzer note: high attributed window hits (83 974 incl 47k timeout) — NotPrimary 0, attribution overlaps inflate count |
+| 2026-09-03 | 2.10 | evictions/ghosts/D1 | research_q3_s_pre_e1 | evict_ok=2 nonok=0 overlap=0 ghosts=0; NotPrimary 0 everywhere | GO | — |
+| 2026-09-03 | 2.11 | timing | research_q3_s_pre_e1 | finalize drop+581–662 (nominal 600–820 ok); recalls ≈ return | GO | dyn5 absent-churn note |
+| 2026-09-03 | 2.12 | V1/I1/I2 | research_q3_s_pre_e1 | storm storage CPU 0.8→78%; storm ok req lan1 5524 / lan2 5044 ≫ 500; timeout distinct | GO | overall ~48% error/timeout under storage-bound storm — workload-validity note for analyzer |
 |  | 3.1–3.4 | P2 mid-run | research_q3_d_pre_e1 |  |  |  |
 |  | 3.5–3.7 | P2 post-run | research_q3_d_pre_e1 |  |  |  |
 |  | 3.8–3.10 | P3 mid-run | research_q3_i_pre_e1 |  |  |  |
@@ -137,3 +137,11 @@ Candidate fixes (awaiting user decision): route absent-cleanup for compute throu
 - Reporting: tier-stratified C1–C5, n=4 per cell (32 runs + calibration, ≈ 22 h). Compute-bound regime deferred + pre-registered.
 - **Implementation**: storage retention in `main_n1.py`/`main_n2.py` (second `ReleaseGate` per tier, retention begin/recall/expiry, `VIP_DATA` unregister/re-register, release-log rows `tier=storage`), registry retained-MAC tracking, updated `scaling_config.py`/`release_gate.py` docs, `experiment_plan.md` v2. Commit + tag pending reviewer pass.
 - **Next**: preflight run matrix for the new cells (eager-safe / retention-storage / immediate ablation / early+late timing) — see `preflight_campaign.md` update after implementation sign-off.
+
+---
+
+**Stage 0-2 results � P1 stabilized early (20260903_083426_research_q3_s_pre_e1, completed exit 0)**
+
+- **Full dual-tier chain proven end-to-end**: storage retention (reason=retained, both LANs) and compute quarantine begin in hold; dual overload recall at return (storage reason=readmitted � new re-admit path); cycle-2 retention/quarantine in demand_drop; H=480 finalize at drop+581-662 with end ok (storage) / eth_discovery_failed (compute no-op). Recall substituted adds (return adds minimal; C4_return_spawns=0; no teardown in hold).
+- **All 2.1-2.12 gates GO** (see table). Analyzer notes for campaign: (1) lan1 compute dyn5 absent-recycling (repeated absent->quarantine->recall cycles, finalized veth_discovery_failed) � churn-relevant, mechanism-correct; (2) high attributed error-window hits driven by return/drop storm timeouts (NotPrimary 0 everywhere; D1 clean; attribution overlaps inflate window counts); (3) ~48% overall error/timeout under the storage-bound storm � workload-validity context for benefit judgments.
+- **Tooling fix (between runs)**: p0 Stage-2b duplicate rs_probe hits the root-owned run folder (permission denied under testop; set -e aborts before hints). run_experiment already auto-probes (rs_status_research_q3_s_pre_e1.json present) � p0 2b will be guarded/skipped when rs_status_* exists.

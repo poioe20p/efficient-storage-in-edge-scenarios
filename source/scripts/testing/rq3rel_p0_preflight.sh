@@ -75,7 +75,15 @@ if [[ -z "$RUN_DIR" ]]; then
 fi
 RUN_DIR="${RUN_DIR%/}"
 echo "  newest run dir: $RUN_DIR"
-python3 source/scripts/testing/rq3rel_p4_rs_probe.py --run-dir "$RUN_DIR" --label s_pre_e1
+# run_experiment already auto-probes the run folder (rs_status_*.json), and
+# the run folder is root-owned while this script runs as the operator user —
+# only re-probe when no rs_status file exists yet, and never abort on failure.
+if ls "$RUN_DIR"/rs_status_*.json >/dev/null 2>&1; then
+    echo "  [skip] rs_status_*.json already present (run_experiment auto-probe) — not re-probing"
+else
+    python3 source/scripts/testing/rq3rel_p4_rs_probe.py --run-dir "$RUN_DIR" --label s_pre_e1 \
+        || echo "  [warn] rs_probe failed (non-fatal) — check run folder manually"
+fi
 
 echo
 echo "== Manual verification checklist (operator verifies) =="
