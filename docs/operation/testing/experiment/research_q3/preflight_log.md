@@ -74,6 +74,7 @@ changed by the campaign n escalation.
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-09-03 | B1-launch | pre-launch gate (phases hold=480 · env merge · sync verified · sudo -n) | research_q3_oe1 | hold=480 on VM; 9 critical files MD5 byte-identical local==VM (main_n1/main_n2/node_registry/release_gate/cli_release_compare/launcher/canonical env/arm_off.env/phases); sudo -n OK; no active run; run started 18:57:54Z | GO | — |
 | 2026-09-03 | B1·run1 | per-run gate (off early) | research_q3_oe1 | completed exit 0 (18:57:54→19:35:11Z); D3 phases_snapshot hold=480 + env snapshot + rs_status present; M1 off = no release rows / no rs_evict dirs (pre-registered); CLI arm=off, release-derived metrics n/a (expected), C3 4441/6660, C4_ttsu 57.8 s, spawns 4; D1 NotPrimary raw=0; D2 0 tracebacks / 0 restarts; M2 12 scale_up rows, dyn nodes serving 200s | GO | — |
+| 2026-09-03 | B1·run2 | per-run gate (drained early) | research_q3_de1 | completed exit 0 (19:43:24→20:21:12Z); D3 snapshots hold=480 + rs_status; M1 14+15 begin/end pairs (lan1/lan2), nonok=0, orphan_begin=0; CLI arm=drained C1c 1.70 s / C1s 11.66 s, evict_ok=17 nonok=0 overlap=0 ghosts=0, C3 3866/6436, ttsu 65.5 s, spawns 4, churn 6; D1 NotPrimary raw=0; D2 0 tracebacks; note: C2_attributed_errors 10 695 (window timeouts, analyzer note — preflight pattern) | GO | — |
 
 > ⚠ **Numbering**: the table above uses the v2 stage numbering (2.2 = storage
 > retention, 2.7 = controllers alive, etc.). The historical sections below
