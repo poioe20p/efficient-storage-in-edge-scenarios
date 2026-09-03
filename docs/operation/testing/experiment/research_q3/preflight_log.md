@@ -43,6 +43,37 @@ continues.
 | 2026-09-03 | 6.3 | verdict recap | all | Stages 0–6.2 all GO; no open DIAGNOSE blockers (analyzer workload notes only) | GO | campaign go |
 | 2026-09-03 | 6.4 | phases restore 900→480 | — | hold 900→480 verified on VM | GO | campaign B1 baseline 480 |
 
+## Campaign Checkpoint Log (n=6 · 48 runs)
+
+Campaign checkpoints are recorded below as the campaign progresses (one
+row per checkpoint). The preflight rows above are historical and are not
+changed by the campaign n escalation.
+
+**Checkpoint schedule**:
+
+- Per run (before the next launch): D3 artifacts + `phases_snapshot.json`
+  with the block's hold; M1 — the arm's expected release rows present
+  (stabilized: retention/quarantine + recall-or-finalize; drained:
+  begin/end pairs; immediate: end-only; off: none); `cli_release_compare.py`
+  parses with no unexpected n/a; D1 `NotPrimary=0`, evict non-ok=0.
+  **STOP** on crash / missing provenance / mechanism-not-fired / CLI
+  crash; **DIAGNOSE** on timing / recall-missed / non-ok evictions — fix
+  root cause, never blind-rerun.
+- After the 3rd and 5th replicate of each arm: early-direction check
+  (2-of-3 / 3-of-5 consistency on C1/C2/C3 direction per tier;
+  `recall_missed` ≤ 1 so far for stabilized).
+- After each arm's 6th replicate: arm-consistency check across all 6
+  replicates.
+- At the B6/B7 boundary: phases edit 480→900 + JSON re-parse + early-cell
+  interim review (first 24 runs) before committing to the late half.
+- Campaign end: full `cli_release_compare` over all 48 runs, per-tier
+  C1–C5 by arm × timing, every base-requirement gate (M1/M2/V1/I1/D1/D2/
+  D3, F1/F2), per-cell verdicts.
+
+| Date | Stage | Checkpoint | Run/Label | Result | Verdict | Resolution note |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-03 | B1-launch | pre-launch gate (phases hold=480 · env merge · sync verified · sudo -n) | research_q3_oe1 | pending | — | — |
+
 > ⚠ **Numbering**: the table above uses the v2 stage numbering (2.2 = storage
 > retention, 2.7 = controllers alive, etc.). The historical sections below
 > predate design v2 and use the OLD numbering — read them as historical
