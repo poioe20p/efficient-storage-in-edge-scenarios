@@ -157,8 +157,9 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._scaling_policy = ScalingPolicy()
         self._policy_gate = PolicyGate()
 
-        # ── research_q3 release gate ───────────────────────────────────────
+        # ── research_q3 release gates (one per tier) ───────────────────────
         self._release_gate = ReleaseGate(_RELEASE_MECHANISM)
+        self._storage_release_gate = ReleaseGate(_RELEASE_MECHANISM)
         self._node_registry = DynamicNodeRegistry()
         self._control_events = ControlEventDispatcher()
 
@@ -316,6 +317,53 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             domain,
         )
 
+    def _recall_retained_storage(self, trigger: str, window_id: str | None) -> bool:
+        """Recall + re-admit the retained storage node (stabilized only).
+
+        Cancels the storage gate's active retention, re-registers the node
+        in the VIP_DATA pool with a warm lease (it kept running + syncing
+        while retained), clears the registry retention marker, and resets
+        the storage scale-down window so a short recall spike cannot
+        immediately re-retain the same node.
+
+        Returns True when a retention was actually recalled — callers at
+        scale-up sites use this to SUBSTITUTE the recall for the capacity
+        add (no new node, no tier budget consumed).
+        """
+        if self._storage_release_gate.mode != "stabilized":
+            return False
+        if not self._storage_release_gate.quarantine_active():
+            return False
+        recalled = self._storage_release_gate.recall()
+        if not recalled:
+            return False
+        r_mac, r_container = recalled
+        node_info = self._node_registry.get_node_info(r_mac)
+        if node_info is not None:
+            self._promote_storage_backend(r_mac, f"n{self._lan_num}")
+            self._node_registry.clear_storage_retained(r_mac)
+            logger.info("[release] stabilized storage retention recalled (%s) mac=%s container=%s",
+                        trigger, r_mac, r_container)
+            self._log_decision("release", "recall", window_id)
+            append_row(network_id=self._lan_id, mechanism="stabilized", tier="storage",
+                       container=r_container, mac=r_mac,
+                       trigger=trigger, event="recall", success="1", reason="readmitted")
+        else:
+            # Unknown node state — the node is already gone from the
+            # registry; clear the retention marker and log a degraded recall
+            # so ordinary removal paths stay consistent. Return False: no
+            # capacity was re-admitted, so scale-up callers must NOT treat
+            # this as a substitution.
+            self._node_registry.clear_storage_retained(r_mac)
+            logger.warning("[release] storage recall: no node info for mac=%s — cleared retention only", r_mac)
+            append_row(network_id=self._lan_id, mechanism="stabilized", tier="storage",
+                       container=r_container, mac=r_mac,
+                       trigger=trigger, event="recall", success="0", reason="unknown_state")
+            self._scaling_policy.clear_scale_down_storage_window()
+            return False
+        self._scaling_policy.clear_scale_down_storage_window()
+        return True
+
     # ── Storage persistent reserve helpers ──────────────────────────────
 
     def _on_reserve_ready(self, mac: str) -> None:
@@ -359,6 +407,10 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
           - "activated" — a READY reserve was consumed into active service
             (the caller MUST treat this as the storage action and not submit
             a separate DataAlert).
+          - "recalled"  — stabilized: a retained storage node was recalled
+            and re-admitted instead of activating the READY reserve (pending
+            latch cleared, reserve stays READY). The caller MUST treat this
+            as the storage action (no DataAlert, no budget).
           - "waiting"   — the reserve is PREPARING/NONE and the trigger was
             latched; the caller MUST NOT submit a DataAlert (activation will
             fire automatically once the standby is READY).
@@ -375,6 +427,18 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         slot = self._node_registry.get_storage_reserve_slot(lan)
 
         if slot.state == "READY_RESERVED":
+            # research_q3: a recall of a retained node substitutes the
+            # activation — re-admit the retained node and leave the reserve
+            # READY for a later trigger (no new node, no budget consumed).
+            if self._storage_release_gate.mode == "stabilized":
+                self._storage_release_gate.notify_compute_scale_up()
+                if self._recall_retained_storage("scale_up", summary.window_id):
+                    # Recall substitutes the activation: drop the pending
+                    # latch (so the auto-activation path does NOT consume the
+                    # READY reserve next window) and leave the reserve READY.
+                    self._node_registry.clear_storage_reserve_pending_activation(lan)
+                    logger.info("[reserve] retained storage recalled — activation not needed lan=%d", lan)
+                    return "recalled"
             info = self._node_registry.consume_ready_storage_reserve(lan)
             if info is None:
                 logger.warning("[reserve] READY_RESERVED but consume returned None for lan=%d", lan)
@@ -675,6 +739,12 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                             and getattr(alert, "owner_lan", None) is not None):
                         self._selective_sync_coordinator.drain(
                             alert.owner_lan, reason="tier2_supersedes")
+                    # research_q3: recalling a retained storage node
+                    # substitutes this capacity add — no new node submitted.
+                    if isinstance(alert, DataAlert) and self._storage_release_gate.mode == "stabilized":
+                        self._storage_release_gate.notify_compute_scale_up()
+                        if self._recall_retained_storage("scale_up", summary.window_id):
+                            continue
                     self._elasticity.submit(alert)
                     self._log_decision("scale_up", type(alert).__name__, summary.window_id)
                     if isinstance(alert, ComputeAlert) and self._release_gate.mode == "stabilized":
@@ -717,6 +787,8 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                                         if (compute_v.eligible or storage_v.eligible)
                                         else "n/a")
 
+                    storage_substituted = False
+
                     for tier in selected:
                         if tier == "compute":
                             self._scaling_policy.commit_compute_scale_up()
@@ -748,12 +820,24 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                             # the reserve is enabled. A reserve activation IS the
                             # storage action, so it consumes the tier budget
                             # (mirrors the policy gate's action accounting).
+                            # A stabilized retention recall ("recalled") is ALSO
+                            # the storage action — without budget consumption.
                             reserve_result = self._handle_storage_reserve_trigger(
                                 summary, lan, "load")
                             if reserve_result is not None:
                                 if reserve_result == "activated":
                                     self._policy_gate.consume_budget("storage")
+                                elif reserve_result == "recalled":
+                                    storage_substituted = True
                                 continue
+                            # research_q3: recalling a retained storage node
+                            # substitutes this capacity add — no new node,
+                            # no tier budget consumed.
+                            if self._storage_release_gate.mode == "stabilized":
+                                self._storage_release_gate.notify_compute_scale_up()
+                                if self._recall_retained_storage("scale_up", summary.window_id):
+                                    storage_substituted = True
+                                    continue
                             self._scaling_policy.commit_storage_scale_up()
                             self._policy_gate.consume_budget("storage")
                             self._elasticity.submit(DataAlert(
@@ -766,18 +850,25 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                                          and not selected
                                          and (compute_v.fired or storage_v.fired))
 
-                    reason = ("action" if selected
-                              else "strict_suppressed" if strict_suppressed
-                              else "budget_exhausted"
-                              if any((compute_v.fired and not self._policy_gate.budget_available("compute"),
-                                      storage_v.fired and not self._policy_gate.budget_available("storage")))
-                              else "none")
+                    if storage_substituted:
+                        action_str = "recall"
+                        selected_str = "recall_storage"
+                        reason = "recalled_substitution"
+                    else:
+                        action_str = ("ComputeAlert" if selected == ["compute"]
+                                      else "DataAlert" if selected == ["storage"]
+                                      else "none")
+                        selected_str = selected[0] if selected else "none"
+                        reason = ("action" if selected
+                                  else "strict_suppressed" if strict_suppressed
+                                  else "budget_exhausted"
+                                  if any((compute_v.fired and not self._policy_gate.budget_available("compute"),
+                                          storage_v.fired and not self._policy_gate.budget_available("storage")))
+                                  else "none")
 
                     self._log_decision(
                         "scale_up",
-                        "ComputeAlert" if selected == ["compute"]
-                        else "DataAlert" if selected == ["storage"]
-                        else "none",
+                        action_str,
                         window_id=summary.window_id,
                         compute_score_norm=compute_v.score_norm,
                         storage_score_norm=storage_v.score_norm,
@@ -788,7 +879,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                         compute_eligible=1 if compute_v.eligible else 0,
                         storage_eligible=1 if storage_v.eligible else 0,
                         bottleneck_class=bottleneck_class,
-                        selected_action=selected[0] if selected else "none",
+                        selected_action=selected_str,
                         rejected_action=("" if reason == "budget_exhausted"
                                          else "storage" if selected == ["compute"] and storage_v.fired
                                          else "compute" if selected == ["storage"] and compute_v.fired
@@ -840,11 +931,19 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 return
 
             # ── research_q3 recall pass (pre-churn-guard; pure gate state) ─────
+            # Both tiers share ONE overload feed per window: each gate keeps
+            # its own last-5 window, so feeding both avoids double-consumption
+            # and keeps recall hysteresis identical across tiers. Both gates
+            # are built from the same RELEASE_MECHANISM, so one mode/active
+            # check guards both.
             if (self._release_gate.active
                     and s.window_seq != self._last_recall_feed_seq
                     and self._release_gate.mode == "stabilized"):
                 self._last_recall_feed_seq = s.window_seq
-                if self._release_gate.feed_window(bool(s.overload)) and self._release_gate.quarantine_active():
+                overloaded = bool(s.overload)
+                compute_recall_signal = self._release_gate.feed_window(overloaded)
+                storage_recall_signal = self._storage_release_gate.feed_window(overloaded)
+                if compute_recall_signal and self._release_gate.quarantine_active():
                     recalled = self._release_gate.recall()
                     if recalled:
                         r_mac, r_container = recalled
@@ -854,6 +953,8 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                                    container=r_container, mac=r_mac,
                                    trigger="overload", event="recall", success="1", reason="recalled")
                         self._scaling_policy.clear_scale_down_compute_window()
+                if storage_recall_signal:
+                    self._recall_retained_storage("overload", s.window_id)
 
             # Churn guard (hysteresis): while the LAN is overloaded (current OR
             # any of the last _HOUSEKEEPING_OVERLOAD_LOOKBACK windows), do NOT
@@ -922,6 +1023,33 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                                 self._elasticity.submit(alert)
                                 self._log_decision("scale_down", "absent", s.window_id)
                                 continue
+                    # research_q3: an ABSENT storage node cannot be drained
+                    # (no rs.remove confirmation can ever arrive), so the
+                    # retention/incumbent path falls through to ordinary
+                    # absent-cleanup. If the absent MAC is the retained one,
+                    # abort the retention with a terminal audit row (recall
+                    # success=0) so the analyzer pairs the quarantine_begin;
+                    # clear the storage gate + retention either way.
+                    if info is not None and info.node_type == "storage":
+                        if self._node_registry.is_storage_retained(mac):
+                            # ACTIVE retention aborted by absence — cancel the
+                            # retention, reset the scale-down window (so the
+                            # next retention needs fresh low-load evidence)
+                            # and write a terminal audit row (the analyzer
+                            # ignores success=0 recall rows).
+                            self._storage_release_gate.recall()
+                            self._scaling_policy.clear_scale_down_storage_window()
+                            logger.info("[release] retained storage mac=%s absent — retention aborted", mac)
+                            append_row(network_id=self._lan_id, mechanism="stabilized", tier="storage",
+                                       container=info.name or "", mac=mac,
+                                       trigger="absent", event="recall", success="0", reason="absent_cleanup")
+                        elif self._storage_release_gate.quarantine_mac() == mac:
+                            # Gate ACTIVE for this MAC without the registry
+                            # marker (edge case) — cancel without a row.
+                            self._storage_release_gate.recall()
+                            self._scaling_policy.clear_scale_down_storage_window()
+                        self._storage_release_gate.clear(mac)
+                        self._node_registry.clear_storage_retained(mac)
                     alert = self._node_registry.build_scale_down_alert(mac, reason="absent")
                     if alert:
                         self._release_gate.clear(mac)
@@ -999,24 +1127,69 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             remaining = self._scaling_policy.storage_cooldown_remaining()
             if remaining > 0:
                 logger.debug("[scale-down] storage within %.0fs cooldown — skipping", remaining)
-            else:
-                if self._scaling_policy.evaluate_scale_down_storage(ds):
-                    node = self._node_registry.find_last_dynamic("storage")
-                    if node:
-                        # Reserve-floor guard: do not scale down below active+reserve floor.
-                        if not self._node_registry.can_scale_down_storage(node.mac, self._lan_num):
-                            logger.info(
-                                "[scale-down] storage underutilisation but reserve floor blocks removal of %s",
-                                node.name,
-                            )
-                            self._scaling_policy.clear_scale_down_storage_window()
-                        else:
-                            logger.info(
-                                "[scale-down] storage underutilisation — removing %s", node.name)
-                            alert = self._node_registry.build_scale_down_alert(node.mac)
-                            if alert:
-                                self._elasticity.submit(alert)
-                                self._log_decision("scale_down", "storage", s.window_id)
+            elif (self._storage_release_gate.quarantine_active()
+                  or self._storage_release_gate.dormant()):
+                # Stabilized storage retention is holding (awaiting overload
+                # recall or horizon expiry) or the gate is dormant after a
+                # finalize (awaiting the next storage scale-up to re-arm).
+                # Freeze further storage scale-down evaluation; the expiry
+                # branch below owns the removal decision while active.
+                if (self._storage_release_gate.quarantine_active()
+                        and self._storage_release_gate.quarantine_expired(time.monotonic())):
+                    s_mac = self._storage_release_gate.quarantine_mac()
+                    s_container = self._storage_release_gate.quarantine_container() or ""
+                    alert = (self._node_registry.build_scale_down_alert(s_mac, reason="scale_down")
+                             if s_mac else None)
+                    if alert is not None:
+                        logger.info("[release] stabilized storage retention expired — finalizing mac=%s container=%s",
+                                    s_mac, s_container)
+                        self._elasticity.submit(alert)
+                        self._log_decision("release", "finalize", s.window_id)
+                    else:
+                        logger.warning("[release] stabilized storage retention expired but no alert buildable for mac=%s",
+                                       s_mac)
+                    self._storage_release_gate.mark_finalized()
+                    self._node_registry.clear_storage_retained(s_mac)
+                    self._scaling_policy.clear_scale_down_storage_window()
+                else:
+                    logger.debug("[release] stabilized: storage scale-down eval frozen (retention active=%s dormant=%s)",
+                                 self._storage_release_gate.quarantine_active(),
+                                 self._storage_release_gate.dormant())
+            elif self._scaling_policy.evaluate_scale_down_storage(ds):
+                node = self._node_registry.find_last_dynamic("storage")
+                if node is None:
+                    logger.info("[scale-down] storage underutilisation but no graceful candidate is eligible — clearing current window")
+                    self._scaling_policy.clear_scale_down_storage_window()
+                elif not self._node_registry.can_scale_down_storage(node.mac, self._lan_num):
+                    # Reserve-floor guard: do not scale down below active+reserve floor.
+                    logger.info(
+                        "[scale-down] storage underutilisation but reserve floor blocks removal of %s",
+                        node.name,
+                    )
+                    self._scaling_policy.clear_scale_down_storage_window()
+                elif self._storage_release_gate.mode == "stabilized":
+                    if self._storage_release_gate.quarantine_begin(node.mac, node.name, time.monotonic()):
+                        # Retention begin: drop the node out of VIP_DATA (new
+                        # connections go elsewhere) but KEEP it running and
+                        # syncing for the stabilization horizon.
+                        self.unregister_storage_backend(node.mac, f"n{self._lan_num}")
+                        self._node_registry.mark_storage_retained(node.mac)
+                        logger.info("[release] stabilized storage retention began mac=%s container=%s",
+                                    node.mac, node.name)
+                        self._log_decision("release", "quarantine", s.window_id)
+                        append_row(network_id=self._lan_id, mechanism="stabilized", tier="storage",
+                                   container=node.name, mac=node.mac, trigger="scale_down",
+                                   event="quarantine_begin", success="", reason="retained")
+                        # window NOT cleared — frozen during retention
+                    else:
+                        self._scaling_policy.clear_scale_down_storage_window()
+                else:
+                    logger.info(
+                        "[scale-down] storage underutilisation — removing %s", node.name)
+                    alert = self._node_registry.build_scale_down_alert(node.mac)
+                    if alert:
+                        self._elasticity.submit(alert)
+                        self._log_decision("scale_down", "storage", s.window_id)
                     self._scaling_policy.clear_scale_down_storage_window()
         except Exception:
             logger.exception("[housekeeping] tick failed — continuing")

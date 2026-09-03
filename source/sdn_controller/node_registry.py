@@ -85,6 +85,10 @@ class DynamicNodeRegistry:
         # Cross-region reserve — one slot for the peer LAN's RS secondary
         # placed in this LAN.  None when feature is disabled.
         self._cross_region_reserve_slot: CrossRegionReserveSlot | None = None
+        # research_q3 stabilized storage retention — MACs held out of VIP_DATA
+        # but still running + syncing (awaiting overload recall or horizon
+        # expiry). Excluded from ordinary LIFO scale-down while retained.
+        self._retained_storage_macs: set[str] = set()
 
     # ── Thread 3 → Thread 2 sync ────────────────────────────────────────
 
@@ -104,6 +108,7 @@ class DynamicNodeRegistry:
             self._last_seen_mono.pop(mac, None)
             self._active.pop(mac, None)
             self._birth_ts.pop(mac, None)
+            self._retained_storage_macs.discard(mac)
             logger.info("[registry] removed MAC %s from tracking after cleanup (name=%s)", mac, name)
 
         for info in elasticity.consume_addition_completions():
@@ -149,12 +154,30 @@ class DynamicNodeRegistry:
         """LIFO lookup for most recently added dynamic node of the given type.
 
         Reserved nodes (``standby_reserved=True``) are skipped — they are
-        not eligible for ordinary LIFO scale-down.
+        not eligible for ordinary LIFO scale-down. Retained storage nodes
+        (``_retained_storage_macs``) are likewise skipped: their removal is
+        owned by the retention state machine, not ordinary scale-down.
         """
         for mac, info in reversed(list(self._active.items())):
-            if info.node_type == node_type and mac in self._dynamic_node_macs and not info.standby_reserved:
+            if (info.node_type == node_type and mac in self._dynamic_node_macs
+                    and not info.standby_reserved
+                    and mac not in self._retained_storage_macs):
                 return info
         return None
+
+    # ── research_q3 storage retention tracking ───────────────────────
+
+    def mark_storage_retained(self, mac: str) -> None:
+        """Hold a storage node out of VIP_DATA (retention horizon running)."""
+        self._retained_storage_macs.add(mac)
+
+    def is_storage_retained(self, mac: str) -> bool:
+        """True while the storage node is held in retention."""
+        return mac in self._retained_storage_macs
+
+    def clear_storage_retained(self, mac: str) -> None:
+        """End retention for a storage node (recall re-admitted it, or removed)."""
+        self._retained_storage_macs.discard(mac)
 
     def list_dynamic(self, node_type: str) -> list[NodeInfo]:
         """Return tracked dynamic nodes of the given type in insertion order."""
@@ -168,7 +191,13 @@ class DynamicNodeRegistry:
         """Count dynamic nodes of the given type.
 
         Reserved storage nodes (``standby_reserved=True``) are excluded —
-        they do not count toward active storage thresholds.
+        they do not count toward active storage thresholds. Retained storage
+        nodes (``_retained_storage_macs``) ARE counted: the node physically
+        exists, keeps syncing, and a recall re-admits it instantly, so
+        counting it keeps scale-up thresholds honest during retention and
+        prevents a premature capacity add (the recall substitutes the add).
+        ``find_last_dynamic`` still skips retained nodes — removal
+        ownership belongs to the retention state machine.
 
         When *lan* is provided, only nodes on that LAN are counted.
         """
@@ -413,7 +442,10 @@ class DynamicNodeRegistry:
         Once down to ≤2 dynamic storage nodes, the original reserve-floor
         guard is enforced to maintain resilience.
         """
-        # Count dynamic (non-reserved) storage nodes on this LAN
+        # Count dynamic (non-reserved) storage nodes on this LAN. Retained
+        # nodes are counted (they physically exist — a recall re-admits them
+        # instantly), so the reserve floor does not shed below the
+        # physically-present floor during retention.
         dyn_on_lan = sum(
             1 for info in self._active.values()
             if info.node_type == "storage"

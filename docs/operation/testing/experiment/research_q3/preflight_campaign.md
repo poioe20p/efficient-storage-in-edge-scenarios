@@ -2,6 +2,15 @@
 
 **Date**: 2026-09-02 · **Status**: 📋 Planned
 
+> ⚠ **Revision pending (merged design v2, 2026-09-03)**: the stages below
+> specify the pre-merged design (o1/i1/d1 arm smoke runs, hold=600-derived
+> windows, n=6 + x1 labels). A revision covering the merged cells
+> (eager-safe / stabilized retention per tier, immediate ablation,
+> early/late timing) is the next design step. Until then
+> `experiment_plan.md` (v2) is authoritative for arm semantics and the run
+> matrix; stage numbering and checkpoint expectations below will be revised
+> in place.
+
 The preflight is a **staged campaign**: nothing proceeds to the next stage
 until the current stage's checkpoints pass. Every checkpoint has a verdict
 (**GO** / **STOP** / **DIAGNOSE**) recorded in

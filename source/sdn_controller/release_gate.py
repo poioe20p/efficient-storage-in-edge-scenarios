@@ -8,16 +8,21 @@ in ``scaling_config.py``):
   - ``drained``:    incumbent graceful release — drain the container, await
                     rs.remove confirmation, then teardown.
   - ``immediate``:  teardown without drain / rs.remove confirmation.
-  - ``stabilized``: compute-side quarantine with recall — the release is held
-                    for ``RELEASE_STABILIZE_S`` (clocked on ``time.monotonic()``,
-                    passed in by callers) and can be recalled by an
-                    overload-recall signal; storage follows ``drained``.
+  - ``stabilized``: retention with recall — surplus capacity is held for
+                    ``RELEASE_STABILIZE_S`` (clocked on ``time.monotonic()``,
+                    passed in by callers): compute stays registered but
+                    non-serving (quarantined), storage stays syncing but out
+                    of ``VIP_DATA`` (retained), and either tier can be
+                    recalled by an overload-recall signal; on horizon expiry
+                    both tiers follow the safe termination path.
 
 The quarantine state machine (IDLE → ACTIVE → DORMANT → IDLE) is used only in
-``stabilized`` mode. All state is guarded by a ``threading.Lock``; every
-method is idempotent and never raises.
+``stabilized`` mode — one gate instance per tier (compute + storage). All
+state is guarded by a ``threading.Lock``; every method is idempotent and
+never raises.
 
-See ``docs/research_questions/v2/rq3`` for the comparison design.
+See ``docs/operation/testing/experiment/research_q3/experiment_plan.md`` for
+the comparison design.
 """
 
 from __future__ import annotations

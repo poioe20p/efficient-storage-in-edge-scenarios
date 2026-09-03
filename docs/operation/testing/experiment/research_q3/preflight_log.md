@@ -89,3 +89,39 @@ Candidate fixes (awaiting user decision): route absent-cleanup for compute throu
 - **2.9** — quarantine at `demand_drop+182s` (lan1) / `demand_drop+90s` (lan2); recall +10 s — pre-registered windows (hold-based) need updating.
 
 **Root cause of the label sticking true (lead for analyzer)**: the D3 overload label is computed in `source/docker/local_state_server/aggregator.py` as `avg_cpu ≥ OVERLOAD_CPU_PCT OR peak_latency ≥ … OR error_rate ≥ …`. Under the `EDGE_CPUS=0.08` capped regime, capped-CPU% stays high even at rate 0.5 → label true through `hold`/`demand_drop` → churn guard suppresses scale-down all `hold`, and every quarantine is recalled within ~10 s in `demand_drop`. Open decision: retune `OVERLOAD_CPU_PCT`/label inputs (needs analyzer investigation + user approval) vs. accept recall-dominated stabilized behavior and update the pre-registered windows accordingly.
+
+---
+
+**Fix v4 (approved: request-floor gate, commit `a7964a7`, tag `rq3-rel-preflight-20260902` v4)**
+
+- `source/docker/local_state_server/aggregator.py`: `OVERLOAD_MIN_REQUESTS` env hook (default 0) — `_compute_overload` returns False when `total_requests < OVERLOAD_MIN_REQUESTS`, so lull windows with capped-CPU% no longer label D3 overload.
+- `research_q3_launch_run.sh`: `OVERLOAD_MIN_REQUESTS=60` (make var).
+- Rebuilt `local_state_server` image (id `de40e99c159d`) + smoke-tested the env hook inside the image.
+- Validated: compileall, release-gate selftest, phases parse; 5-file MD5 byte-identity on VM; watchdog same-label guard hardened.
+- **v4 calibration run launched** (`research_q3_cal_s1`, seed 42) with sampler + watchdog; verdicts on completion.
+
+---
+
+**Stage 2 v4 results (`20260902_232911_research_q3_cal_s1`, watchdog exit 0) — FULL CHAIN PROVEN**
+
+- **2.1 GO** — both tiers spawn in `storm_mixed`.
+- **2.5 GO** — controllers alive all run, 0 tracebacks (live sampler).
+- **2.2 GO** — compute `scale_down,quarantine_begin` at `hold`+221 s on lan2 (pre-registered 210–270 s window ✓); storage begin/end ok pairs observed in `hold`/`demand_drop`.
+- **2.3 GO** — recall rows on BOTH LANs at `return_storm`+51–61 s.
+- **2.4 GO** — cycle-2 quarantine in `demand_drop`; finalization (`scale_down,end,1,veth_discovery_failed`) at quarantine+490 s (H=480 + one tick ✓).
+- **2.6 GO** — artifacts present (release logs, rs_evict_logs, rs_status, snapshots).
+- **2.7 / 2.8** — pending analyzer confirmation on the completed run folder.
+- **2.9 GO** — quarantine onset inside the pre-registered window; recall ≈ return+51–61 s; finalize ≈ quarantine+490 s.
+
+**Mechanism verdict**: the full stabilized chain (quarantine → recall → cycle-2 quarantine → finalize) is proven end-to-end. Stage 2 exits to design work.
+
+---
+
+**Design change (2026-09-03, user-approved) — merged RQ3 design v2**
+
+- RQ3 reworded: *"Under recurrent demand in a stateful edge service, how do eager and stabilized scale-down policies for surplus compute and storage capacity affect resource occupancy during demand valleys, avoidable lifecycle churn, and the recovery time and transient service quality observed when demand returns?"*
+- Arms: `off` control; `drained` = eager-safe (drain + confirmed rs.remove, prompt termination); `stabilized` = retention H=480 s on BOTH tiers (compute quarantine + storage retained out of VIP_DATA, overload recall, safe finalize); `immediate` = safety-boundary ablation reported separately.
+- New axis: return timing — early (`hold`=480 s) vs late (`hold`=900 s), edited in-place in canonical `phases.json` between blocks.
+- Reporting: tier-stratified C1–C5, n=4 per cell (32 runs + calibration, ≈ 22 h). Compute-bound regime deferred + pre-registered.
+- **Implementation**: storage retention in `main_n1.py`/`main_n2.py` (second `ReleaseGate` per tier, retention begin/recall/expiry, `VIP_DATA` unregister/re-register, release-log rows `tier=storage`), registry retained-MAC tracking, updated `scaling_config.py`/`release_gate.py` docs, `experiment_plan.md` v2. Commit + tag pending reviewer pass.
+- **Next**: preflight run matrix for the new cells (eager-safe / retention-storage / immediate ablation / early+late timing) — see `preflight_campaign.md` update after implementation sign-off.

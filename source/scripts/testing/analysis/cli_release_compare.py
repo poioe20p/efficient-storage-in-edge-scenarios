@@ -43,8 +43,14 @@ Metrics:
                       scale-up decision (decision_log) and compute spawns
                       during ``return_storm`` (container_events). For
                       ``stabilized``, ``recall_missed`` flags a quarantine
-                      begun during the ``hold`` phase when the run has zero
-                      recall rows (normal finalization is not a miss).
+                      begun during ``hold`` that produced no recall row and
+                      demonstrably ran to a bad end (finalized without a
+                      recall, or — compute only — a respawn with no recalled
+                      quarantine at all). Per tier (compute / storage),
+                      never pooled; success=0 audit recall rows are ignored.
+                      Only computed for early-return cells (``hold`` ≤ 600 s,
+                      recall expected at return); late-return cells
+                      pre-register finalize-before-return and report n/a.
   C5 stability      — release-end → spawn pairs within 60 s (one-to-one
                       greedy match).
 
@@ -90,12 +96,14 @@ _CHURN_WINDOW_S = 60.0
 _TABLE_FIELDS = [
     "run_label", "arm", "mechanism",
     "C1_compute_p50", "C1_storage_p50", "C1_stabilized_recall_p50",
-    "C1_stabilized_qf_p50",
+    "C1_stabilized_recall_storage_p50",
+    "C1_stabilized_qf_p50", "C1_stabilized_qf_storage_p50",
     "orphan_begin",
     "C2_attributed_errors", "C2_notprimary",
     "C2_evict_ok", "C2_evict_nonok", "C2_evict_overlap", "C2_ghosts",
     "C3_hold_cont_s", "C3_drop_cont_s",
     "C4_time_to_scaleup_s", "C4_return_spawns", "C4_recall_missed",
+    "C4_recall_missed_storage",
     "C5_churn_pairs",
 ]
 
@@ -331,6 +339,7 @@ def _release_events(release_rows: list[dict]) -> dict:
     ends: dict[tuple, list[float]] = defaultdict(list)
     qbegins: dict[tuple, list[float]] = defaultdict(list)
     recalls: dict[tuple, list[float]] = defaultdict(list)
+    audit_recalls: dict[tuple, list[float]] = defaultdict(list)
     tier_by_key: dict[tuple, str] = {}
     end_reason: dict[tuple, str] = {}
 
@@ -354,7 +363,14 @@ def _release_events(release_rows: list[dict]) -> dict:
         elif event == "quarantine_begin":
             qbegins[key].append(ts)
         elif event == "recall":
-            recalls[key].append(ts)
+            # success=0 recall rows are audit rows (aborted retention via
+            # absent-cleanup, or an unknown-state recall) — they are NOT
+            # genuine re-admissions. They never feed latency/miss metrics;
+            # they only truncate the quarantine's C2 attribution window.
+            if (row.get("success") or "").strip() == "0":
+                audit_recalls[key].append(ts)
+            else:
+                recalls[key].append(ts)
 
     pairs: list[dict] = []
     orphan_begins: list[dict] = []
@@ -389,19 +405,46 @@ def _release_events(release_rows: list[dict]) -> dict:
 
     quarantine: list[dict] = []
     for key, qlist in qbegins.items():
-        rlist = recalls.get(key, [])
+        rlist = sorted(recalls.get(key, []))
+        alist = sorted(audit_recalls.get(key, []))
         tier = tier_by_key.get(key, "")
-        used_recalls: set[int] = set()
-        for i in range(min(len(qlist), len(rlist))):
-            if rlist[i] >= qlist[i]:
-                used_recalls.add(i)
+        # Chronological greedy pairing. Producer contract (main_n1/main_n2):
+        # EVERY recall row — success 0 or 1 — is written only while a
+        # retention is ACTIVE, and each one terminates it (gate ACTIVE→IDLE).
+        # Each quarantine_begin therefore has at most one terminal event
+        # (a genuine recall or an audit abort); the next retention requires
+        # a fresh quarantine_begin. The greedy rule binds each qbegin to the
+        # earliest of {next genuine recall, next audit abort} at-or-after
+        # itself; audit aborts truncate the C2 window and keep later recalls
+        # from binding to a lifecycle an abort already terminated.
+        ri = ai = 0
+        for qb in sorted(qlist):
+            while ri < len(rlist) and rlist[ri] < qb:
+                ri += 1
+            while ai < len(alist) and alist[ai] < qb:
+                ai += 1
+            r = rlist[ri] if ri < len(rlist) else None
+            a = alist[ai] if ai < len(alist) else None
+            if r is not None and (a is None or r <= a):
                 quarantine.append({"tier": tier, "container": key[1],
                                    "network_id": key[0],
-                                   "qbegin": qlist[i], "recall": rlist[i]})
-        for qb in qlist[len(rlist):]:
-            quarantine.append({"tier": tier, "container": key[1],
-                               "network_id": key[0],
-                               "qbegin": qb, "recall": None})
+                                   "qbegin": qb, "recall": r,
+                                   "abort": None})
+                ri += 1
+            elif a is not None:
+                # Abort ends this retention — the audit row truncates the
+                # C2 attribution window and blocks any later recall from
+                # binding to this qbegin.
+                quarantine.append({"tier": tier, "container": key[1],
+                                   "network_id": key[0],
+                                   "qbegin": qb, "recall": None,
+                                   "abort": a})
+                ai += 1
+            else:
+                quarantine.append({"tier": tier, "container": key[1],
+                                   "network_id": key[0],
+                                   "qbegin": qb, "recall": None,
+                                   "abort": None})
 
     # Stabilized compute finalization: pair each end with the most recent
     # quarantine_begin that is NOT followed by a recall before that end
@@ -457,6 +500,23 @@ def _release_windows(events: dict) -> list[dict]:
                         "begin": e["end"], "end": e["end"],
                         "win_start": e["end"] - _WIN_PRE_S,
                         "win_end": e["end"] + _WIN_POST_S})
+    # Stabilized quarantine/retention windows: quarantine_begin → recall (or
+    # an audit abort, or an orphan-style post-window when never recalled).
+    # Covers storage retention→recall transitions, which produce no
+    # elasticity begin/end pair — errors during retention/recall must still
+    # be attributable, but not beyond an abort.
+    for q in events["quarantine"]:
+        if q["recall"] is not None:
+            end = q["recall"]
+        elif q.get("abort") is not None:
+            end = q["abort"]
+        else:
+            end = q["qbegin"] + _ORPHAN_POST_S
+        windows.append({"tier": q["tier"], "container": q["container"],
+                        "network_id": q["network_id"],
+                        "begin": q["qbegin"], "end": end,
+                        "win_start": q["qbegin"] - _WIN_PRE_S,
+                        "win_end": end + _WIN_POST_S})
     return windows
 
 
@@ -473,23 +533,29 @@ def _c1_release_speed(events: dict) -> dict:
         if tier in lat:
             lat[tier].append(p["end"] - p["begin"])
             pair_count[tier] += 1
-    # Stabilized compute finalizations already carry regular begin→end rows
-    # (elasticity writes them for drained/stabilized), so C1_compute is
-    # comparable across arms from ``pairs`` alone. The quarantine→finalization
-    # span is reported separately as C1_stabilized_qf_p50.
-    qf_lat: list[float] = []
+    # Stabilized finalizations already carry regular begin→end rows
+    # (elasticity writes them for drained/stabilized), so C1_compute/C1_storage
+    # are comparable across arms from ``pairs`` alone. The
+    # quarantine→finalization span is reported separately per tier
+    # (C1_stabilized_qf_p50 for compute, C1_stabilized_qf_storage_p50 for
+    # storage retention→finalize spans).
+    qf_lat: dict[str, list[float]] = {"compute": [], "storage": []}
     for p in events["qf_pairs"]:
-        if p["tier"] == "compute":
-            qf_lat.append(p["end"] - p["begin"])
-    recall_lat = [q["recall"] - q["qbegin"]
-                  for q in events["quarantine"] if q["recall"] is not None]
+        if p["tier"] in qf_lat:
+            qf_lat[p["tier"]].append(p["end"] - p["begin"])
+    recall_lat: dict[str, list[float]] = {"compute": [], "storage": []}
+    for q in events["quarantine"]:
+        if q["recall"] is not None and q["tier"] in recall_lat:
+            recall_lat[q["tier"]].append(q["recall"] - q["qbegin"])
     return {
         "compute_p50": _percentile(lat["compute"], 0.50),
         "compute_p90": _percentile(lat["compute"], 0.90),
         "storage_p50": _percentile(lat["storage"], 0.50),
         "storage_p90": _percentile(lat["storage"], 0.90),
-        "recall_p50": _percentile(recall_lat, 0.50),
-        "qf_p50": _percentile(qf_lat, 0.50),
+        "recall_p50": _percentile(recall_lat["compute"], 0.50),
+        "recall_storage_p50": _percentile(recall_lat["storage"], 0.50),
+        "qf_p50": _percentile(qf_lat["compute"], 0.50),
+        "qf_storage_p50": _percentile(qf_lat["storage"], 0.50),
         "pair_count": dict(pair_count),
         "orphan_begin": orphan_begin,
     }
@@ -804,7 +870,7 @@ def _c4_reentry(run_dir: Path, phase_windows: dict, decision_rows: list[dict],
                 container_rows: list[dict], arm: str,
                 events: dict) -> dict:
     out = {"time_to_scaleup": None, "return_spawns": None,
-           "recall_missed": None, "note": ""}
+           "recall_missed": None, "recall_missed_storage": None, "note": ""}
     storm_name = next((n for n in phase_windows if "return_storm" in n.lower()),
                       None)
     if storm_name is None:
@@ -842,25 +908,52 @@ def _c4_reentry(run_dir: Path, phase_windows: dict, decision_rows: list[dict],
     if arm.startswith("stabilized"):
         # recall_missed = 1 iff a hold-born quarantine produced NO recall row
         # AND it demonstrably ran to a bad end: either it finalized (a
-        # qf_pair anchored on a hold-phase qbegin) or the return storm forced
-        # a compute respawn. An absent-cleanup clearing the quarantine
-        # (no end row, no respawn) is NOT a miss.
+        # qf_pair anchored on the SAME hold-phase qbegin that never got a
+        # recall) or — for compute only — no hold-born compute quarantine was
+        # recalled at all and the return storm forced a compute respawn. An
+        # absent-cleanup clearing the quarantine (no end row, no respawn) is
+        # NOT a miss. Reported per tier: compute quarantines and storage
+        # retentions are never pooled; success=0 audit recall rows are
+        # ignored by the pairing.
+        #
+        # Cell-aware: a recall is expected only in early-return cells
+        # (hold ≤ 600 s — return lands before H=480s expiry at the
+        # pre-registered onsets). Late-return cells (hold=900 s)
+        # pre-register finalize-before-return, so recall_missed is n/a there.
         hold_name = next((n for n in phase_windows if "hold" in n.lower()),
                          None)
         h_start = h_end = None
         if hold_name is not None:
             h_start, h_end = phase_windows[hold_name]
-        qb_in_hold = 0
-        finalized_in_hold = 0
-        if h_start is not None and h_end is not None:
-            qb_in_hold = sum(1 for q in events["quarantine"]
-                             if h_start <= q["qbegin"] <= h_end)
-            finalized_in_hold = sum(
-                1 for p in events["qf_pairs"]
-                if p["tier"] == "compute" and h_start <= p["begin"] <= h_end)
-        has_recall = events["recall_total"] > 0
-        out["recall_missed"] = int(qb_in_hold >= 1 and not has_recall
-                                   and (finalized_in_hold >= 1 or spawns > 0))
+        if (h_start is None or h_end is None
+                or (h_end - h_start) > 600.0):
+            if h_start is not None and h_end is not None:
+                out["note"] = (
+                    f"late-return cell (hold={h_end - h_start:.0f}s): "
+                    "recall_missed n/a — finalize-before-return pre-registered")
+            return out
+        qb_hold: dict[str, list[dict]] = {"compute": [], "storage": []}
+        for q in events["quarantine"]:
+            if h_start <= q["qbegin"] <= h_end:
+                qb_hold[q["tier"] or "compute"].append(q)
+        unrecaled_finalized: dict[str, int] = {"compute": 0, "storage": 0}
+        for p in events["qf_pairs"]:
+            tier = p["tier"] or "compute"
+            if not (h_start <= p["begin"] <= h_end):
+                continue
+            # qf_pairs carry the same parsed float as the quarantine's
+            # qbegin (both come from the release-log row), so exact equality
+            # is correct; an abort-terminated entry (recall None, abort set)
+            # counts as no-recall.
+            if any(q["qbegin"] == p["begin"] and q["recall"] is None
+                   for q in qb_hold[tier]):
+                unrecaled_finalized[tier] += 1
+        compute_recalls = any(q["recall"] is not None
+                              for q in qb_hold["compute"])
+        out["recall_missed"] = int(
+            unrecaled_finalized["compute"] >= 1
+            or (spawns > 0 and bool(qb_hold["compute"]) and not compute_recalls))
+        out["recall_missed_storage"] = int(unrecaled_finalized["storage"] >= 1)
     return out
 
 
@@ -911,7 +1004,9 @@ def _empty_metrics() -> dict:
     metrics = {"C1_compute_p50": None, "C1_compute_p90": None,
                "C1_storage_p50": None, "C1_storage_p90": None,
                "C1_stabilized_recall_p50": None,
+               "C1_stabilized_recall_storage_p50": None,
                "C1_stabilized_qf_p50": None,
+               "C1_stabilized_qf_storage_p50": None,
                "C1_pair_count": {},
                "orphan_begin": None,
                "C2_attributed_errors": None, "C2_notprimary": None,
@@ -919,7 +1014,7 @@ def _empty_metrics() -> dict:
                "C2_evict_overlap": None, "C2_ghosts": None,
                "C3_hold_cont_s": None, "C3_drop_cont_s": None,
                "C4_time_to_scaleup_s": None, "C4_return_spawns": None,
-               "C4_recall_missed": None,
+               "C4_recall_missed": None, "C4_recall_missed_storage": None,
                "C5_churn_pairs": None}
     return metrics
 
@@ -985,7 +1080,9 @@ def _analyze_run(run_dir: Path, arm_override: str | None) -> dict:
     metrics["C1_storage_p50"] = c1["storage_p50"]
     metrics["C1_storage_p90"] = c1["storage_p90"]
     metrics["C1_stabilized_recall_p50"] = c1["recall_p50"]
+    metrics["C1_stabilized_recall_storage_p50"] = c1["recall_storage_p50"]
     metrics["C1_stabilized_qf_p50"] = c1["qf_p50"]
+    metrics["C1_stabilized_qf_storage_p50"] = c1["qf_storage_p50"]
     metrics["C1_pair_count"] = c1["pair_count"]
     metrics["orphan_begin"] = c1["orphan_begin"] if release_rows else None
 
@@ -1009,6 +1106,7 @@ def _analyze_run(run_dir: Path, arm_override: str | None) -> dict:
     metrics["C4_time_to_scaleup_s"] = c4["time_to_scaleup"]
     metrics["C4_return_spawns"] = c4["return_spawns"]
     metrics["C4_recall_missed"] = c4["recall_missed"]
+    metrics["C4_recall_missed_storage"] = c4["recall_missed_storage"]
     if c4["note"]:
         notes.append(f"C4: {c4['note']}")
 
@@ -1020,7 +1118,9 @@ def _analyze_run(run_dir: Path, arm_override: str | None) -> dict:
         metrics["C1_compute_p50"] = metrics["C1_compute_p90"] = None
         metrics["C1_storage_p50"] = metrics["C1_storage_p90"] = None
         metrics["C1_stabilized_recall_p50"] = None
+        metrics["C1_stabilized_recall_storage_p50"] = None
         metrics["C1_stabilized_qf_p50"] = None
+        metrics["C1_stabilized_qf_storage_p50"] = None
         metrics["orphan_begin"] = None
         metrics["C2_attributed_errors"] = metrics["C2_notprimary"] = None
         metrics["C5_churn_pairs"] = None
@@ -1051,8 +1151,12 @@ def _write_table_csv(results: list[dict], out_dir: Path) -> Path:
                    "C1_storage_p50": _fmt(m["C1_storage_p50"], 3),
                    "C1_stabilized_recall_p50": _fmt(
                        m["C1_stabilized_recall_p50"], 3),
+                   "C1_stabilized_recall_storage_p50": _fmt(
+                       m["C1_stabilized_recall_storage_p50"], 3),
                    "C1_stabilized_qf_p50": _fmt(
                        m["C1_stabilized_qf_p50"], 3),
+                   "C1_stabilized_qf_storage_p50": _fmt(
+                       m["C1_stabilized_qf_storage_p50"], 3),
                    "orphan_begin": _fmt_int(m["orphan_begin"]),
                    "C2_attributed_errors": _fmt_int(m["C2_attributed_errors"]),
                    "C2_notprimary": _fmt_int(m["C2_notprimary"]),
@@ -1065,6 +1169,8 @@ def _write_table_csv(results: list[dict], out_dir: Path) -> Path:
                    "C4_time_to_scaleup_s": _fmt(m["C4_time_to_scaleup_s"], 1),
                    "C4_return_spawns": _fmt_int(m["C4_return_spawns"]),
                    "C4_recall_missed": _fmt_int(m["C4_recall_missed"]),
+                   "C4_recall_missed_storage": _fmt_int(
+                       m["C4_recall_missed_storage"]),
                    "C5_churn_pairs": _fmt_int(m["C5_churn_pairs"])}
             writer.writerow(row)
     return path
@@ -1096,11 +1202,13 @@ def _print_summary(results: list[dict]) -> None:
         ("run", 30), ("arm", 20),
         ("C1c_p50", 8), ("C1c_p90", 8),
         ("C1s_p50", 8), ("C1s_p90", 8),
-        ("C1_rec_p50", 10), ("C1_qf_p50", 10), ("orph_beg", 8), ("pairs", 6),
+        ("C1_rec_p50", 10), ("C1s_rec", 9),
+        ("C1_qf_p50", 10), ("C1s_qf", 9),
+        ("orph_beg", 8), ("pairs", 6),
         ("C2_err", 7), ("C2_np", 6),
         ("C2_ovlp", 8),
         ("C3_hold", 11), ("C3_drop", 11),
-        ("C4_ttsu", 9), ("C4_spw", 8), ("C5_churn", 9),
+        ("C4_ttsu", 9), ("C4_spw", 8), ("C4_rm_s", 8), ("C5_churn", 9),
     ]
     header = "".join(name.ljust(width) for name, width in cols)
     print(header)
@@ -1114,12 +1222,15 @@ def _print_summary(results: list[dict]) -> None:
             _fmt(m["C1_compute_p50"]), _fmt(m["C1_compute_p90"]),
             _fmt(m["C1_storage_p50"]), _fmt(m["C1_storage_p90"]),
             _fmt(m["C1_stabilized_recall_p50"], 1),
+            _fmt(m["C1_stabilized_recall_storage_p50"], 1),
             _fmt(m["C1_stabilized_qf_p50"], 1),
+            _fmt(m["C1_stabilized_qf_storage_p50"], 1),
             _fmt_int(m["orphan_begin"]), pair_txt,
             _fmt_int(m["C2_attributed_errors"]), _fmt_int(m["C2_notprimary"]),
             _fmt_int(m["C2_evict_overlap"]),
             _fmt(m["C3_hold_cont_s"], 0), _fmt(m["C3_drop_cont_s"], 0),
             _fmt(m["C4_time_to_scaleup_s"], 1), _fmt_int(m["C4_return_spawns"]),
+            _fmt_int(m["C4_recall_missed_storage"]),
             _fmt_int(m["C5_churn_pairs"]),
         ]
         print("".join(str(c).ljust(w) for c, (_, w) in zip(cells, cols)))

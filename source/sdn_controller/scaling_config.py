@@ -401,12 +401,15 @@ _CROSS_REGION_MIN_READS_TO_ACTIVATE = int(os.environ.get(
 #   "off"         → current behavior (incumbent release path unchanged) —
 #                   DEFAULT. Canonical / RQ1 / RQ2 runs byte-identical; no
 #                   release log written.
-#   "drained"     → incumbent graceful release: drain the container, await
+#   "drained"     → eager-safe release: drain the container, await
 #                   rs.remove confirmation, then teardown.
-#   "immediate"   → teardown without drain / rs.remove confirmation.
-#   "stabilized"  → compute-side quarantine with recall: the compute release
-#                   is held for the stabilization window and can be recalled
-#                   by an overload-recall signal; storage follows "drained".
+#   "immediate"   → safety-boundary ablation: teardown without drain /
+#                   rs.remove confirmation (unsafe teardown, separate arm).
+#   "stabilized"  → retention with recall: compute is quarantined and
+#                   storage is retained out of VIP_DATA for the
+#                   stabilization window; an overload-recall signal
+#                   re-admits either tier; on horizon expiry both tiers
+#                   follow the safe (drained) termination path.
 # Unknown value → log warning + fall back to "off" here at import time so
 # every consumer agrees (release_gate keeps its own defensive fallback).
 _RELEASE_MECHANISM_RAW = os.environ.get("RELEASE_MECHANISM", "off").strip().lower()
@@ -417,14 +420,15 @@ else:
     _RELEASE_MECHANISM = _RELEASE_MECHANISM_RAW
 
 # Stabilization window (seconds) for the "stabilized" mechanism: a
-# quarantined compute container is released only after it has been
-# quarantined for at least this long. Clocked with time.monotonic()
-# (monotonic, immune to wall-clock jumps); callers pass the timestamp in.
+# quarantined compute container / retained storage node is released only
+# after it has been held for at least this long. Clocked with
+# time.monotonic() (monotonic, immune to wall-clock jumps); callers pass
+# the timestamp in.
 _RELEASE_STABILIZE_S = float(os.environ.get("RELEASE_STABILIZE_S", "480"))
 
 # Recall hysteresis (K) for the "stabilized" mechanism: at least K of the
 # most recent 5 overload-window samples flagged overloaded recall the
-# quarantine (container kept).
+# retention/quarantine (capacity kept or re-admitted).
 _RELEASE_RECALL_K = int(os.environ.get("RELEASE_RECALL_K", "2"))
 
 # Release log path (per controller / per LAN). Written for every mechanism
