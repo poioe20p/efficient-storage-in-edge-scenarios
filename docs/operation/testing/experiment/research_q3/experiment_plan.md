@@ -1,6 +1,6 @@
 # Experiment Plan — research_q3: Eager vs Stabilized Surplus-Capacity Release
 
-**Date**: 2026-09-03 · **Status**: 📋 Planned (merged design v2)
+**Date**: 2026-09-03 · **Status**: ⏹ **HALTED after 25 runs** (24 early GO + ol1 GO) — findings in [`campaign_findings.md`](campaign_findings.md)
 
 ## 1. Objective
 
@@ -276,3 +276,4 @@ bound cells of this campaign.
 | 2026-09-02 | initial plan | —         |
 | 2026-09-03 | merged design v2: RQ3 wording, eager-safe vs retention arms, immediate as ablation, return-timing axis (hold 480/900), tier-stratified C1–C5, n=4 per cell | user-approved stronger RQ3 framing |
 | 2026-09-03 | n=6 escalation: 48 runs (B1–B6 early, B7–B12 late), replicate labels 1..6, ≥2-of-6 replacement rule, early-direction checks at replicates 3 and 5, final consistency at replicate 6 | user-approved, pre-registered before campaign launch |
+| 2026-09-04 | campaign halted after 25 runs (24 early GO + ol1 GO): per-phase client-quality probe showed no arm differentiation (~50% storm failure for all arms, storage-bound); release-policy choice user-invisible; findings documented in campaign_findings.md; late half (B7–B12) abandoned; phases.json left at hold=900 (last used value) | user decision |
