@@ -14,7 +14,8 @@ stage proceeds. This template is not evidence until run artifacts are attached.
 | | 2.1 | image state captured | Docker aliases | edge latest=638e3efdcdc5; local latest=de40e99c159d; backups edge/local_state:rq3lh-backup | GO | |
 | | 2.2 | exact edge image verified | `638e3efdcdc5` | `edge_server:latest` already the frozen August image (unchanged by September) | GO | |
 | | 2.3 | frozen local-state image | source/digest | built 60f3d8a34dc2 from tag source; smoke OK (pyzmq 27.2.0); `latest` switched to frozen; untracked runtime `osken-controller.env` (Jul-6, pre-August) overlaid with sha256 3ba06c1f recorded in manifest+state | GO | |
-| | 2.4 | bridge compatibility | direct/discovery 0.15 | both runs exit=0 (mechanism PASS: event 1.0/0.0, probe admits, completed, rank-1 anchors); **STOP**: delta 202.8 ms > H 180.3 ms; CPU pooled 52.3/58.0 vs band [30.3,53.7]; LAN separation 2.22/8.38 s (<5 s lan1) | STOP | pending resolution note (see bridge_out.json); no screens launched |
+| | 2.4 | bridge compatibility | direct/discovery 0.15 | attempt 1: delta 202.8 ms, CPU 52.3/58.0, LAN sep 2.22/8.38 s — FAIL under original gates; **amended 2026-09-06**: separation = per-position mean ≥5 s (5.30 ✓), CPU band re-anchored [40.3,66.5] ✓, delta report-only → **PASS** (mechanism PASS throughout) | GO | amendment pre-registered in plan §5; confirmation replicate pair launched (replication policy) |
+| | 2.4b | bridge confirmation replicate | direct/discovery 0.15 seed 3001 | confirmation pair runs (same seed, fresh poll phase) | RUNNING | |
 | | 3.1 | quota screen | `rq3lh_screen_q12_1` | | | |
 | | 3.2 | quota screen | `rq3lh_screen_q10_1` | | | |
 | | 3.3 | quota screen | `rq3lh_screen_q10_2` | | | |

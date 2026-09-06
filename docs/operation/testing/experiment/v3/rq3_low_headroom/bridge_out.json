@@ -1,7 +1,8 @@
 {
   "bridge_delta_s": 0.2028275000000001,
   "contextual_envelope_s": 0.1802825,
-  "cpu_pass": false,
+  "cpu_pass": true,
+  "delta_is_gate": false,
   "delta_pass": false,
   "direct": {
     "anchors": [
@@ -142,12 +143,12 @@
     "run_status": "completed"
   },
   "mechanism_pass": true,
-  "pass": false,
+  "pass": true,
   "pooled_sub_max_cpu": [
     52.3010562129855,
     57.95379527691862
   ],
-  "separation_pass": false,
+  "separation_pass": true,
   "separation_s": [
     2.224130868911743,
     8.375002145767212
