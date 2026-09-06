@@ -68,6 +68,14 @@ The experiment-runner agent substitutes the campaign's host for `ssh cloud-vm`.
 | Analysis | `cli_release_compare.py` |
 | Plan | `docs/operation/testing/experiment/research_q3/experiment_plan.md` |
 
+### RQ3 low-headroom readiness follow-up (planned)
+
+The approved follow-up to the August readiness-admission campaign is documented
+in [`v3/rq3_low_headroom/experiment_plan.md`](experiment/v3/rq3_low_headroom/experiment_plan.md).
+It has preparation tooling only; no VM run has launched. The follow-up screens
+uniform `EDGE_CPUS` quotas, then conditionally compares direct versus discovery
+under low headroom and separately tests total readiness-event-source absence.
+
 ---
 
 ## Architecture: Experiment Data Flow
