@@ -11,10 +11,10 @@ stage proceeds. This template is not evidence until run artifacts are attached.
 | 2026-09-06 | 1.1 | detached worktree/tag identity | frozen tree | `~/rq3lh_frozen` detached at 55c22fbf; tag fetched to VM via bundle | GO | |
 | 2026-09-06 | 1.2 | canonical P4 phases materialized | phases snapshot source | P4 profile (service_pressure=1.0) materialized from campaign-ready source; manifest phase hash recorded | GO | |
 | 2026-09-06 | 1.3 | protected source hashes | controller/network/images | 70 protected files hashed; diff vs tag empty; static preflight checks PASS | GO | |
-| | 2.1 | image state captured | Docker aliases | | | |
-| | 2.2 | exact edge image verified | `638e3efdcdc5` | | | |
-| | 2.3 | frozen local-state image | source/digest | | | |
-| | 2.4 | bridge compatibility | direct/discovery 0.15 | | | |
+| | 2.1 | image state captured | Docker aliases | edge latest=638e3efdcdc5; local latest=de40e99c159d; backups edge/local_state:rq3lh-backup | GO | |
+| | 2.2 | exact edge image verified | `638e3efdcdc5` | `edge_server:latest` already the frozen August image (unchanged by September) | GO | |
+| | 2.3 | frozen local-state image | source/digest | built 60f3d8a34dc2 from tag source; smoke OK (pyzmq 27.2.0); `latest` switched to frozen; untracked runtime `osken-controller.env` (Jul-6, pre-August) overlaid with sha256 3ba06c1f recorded in manifest+state | GO | |
+| | 2.4 | bridge compatibility | direct/discovery 0.15 | `rq3lh_bridge_direct` launched (pid 3199785); watchdog active | RUNNING | |
 | | 3.1 | quota screen | `rq3lh_screen_q12_1` | | | |
 | | 3.2 | quota screen | `rq3lh_screen_q10_1` | | | |
 | | 3.3 | quota screen | `rq3lh_screen_q10_2` | | | |

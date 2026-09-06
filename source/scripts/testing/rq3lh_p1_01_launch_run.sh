@@ -105,7 +105,9 @@ sudo -n make -C source/scripts \
 status=$?
 set -e
 
-python3 - "$REPO_ROOT" "$LABEL" "$EDGE_CPUS" <<'PY'
+# The run folder is root-owned (created by sudo make); run the post-run
+# quota snapshot writer under sudo so it can write into it.
+sudo -n python3 - "$REPO_ROOT" "$LABEL" "$EDGE_CPUS" <<'PY'
 import json
 import re
 import subprocess
@@ -139,8 +141,12 @@ if candidates:
         "containers": inspected,
         "all_compute_containers_match": bool(inspected) and all(item["matches"] for item in inspected),
     }
-    (run_dir / "quota_snapshot.json").write_text(
-        json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    target = run_dir / "quota_snapshot.json"
+    if not target.exists():
+        # Never overwrite a mid-run snapshot: by run end dynamic nodes are
+        # torn down and only statics would be recorded.
+        target.write_text(
+            json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
 sys.exit(status)
 PY
