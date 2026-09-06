@@ -139,7 +139,10 @@ This pair is a compatibility gate, not evidence. Require the normal integrity,
 mechanism, flow, and snapshot gates; true-ready-to-admit separation >=5 s;
 pooled sub-max CPU in `[30.3,53.7]` percent; and
 `abs(D_bridge) <= max(H,P)`. The CPU range is the archived 40.3-43.7 percent
-P4 range with a fixed +/-10 percentage-point tolerance.
+P4 range with a fixed +/-10 percentage-point tolerance. Under the §3.1
+amendment, `H` is a descriptive exploratory envelope, so the
+`abs(D_bridge) <= max(H,P)` check is retained purely as a compatibility
+screen, not as a statistical noise bound.
 
 ## 6. Primary-Outcome-Blind Quota Screens
 

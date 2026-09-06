@@ -173,9 +173,9 @@ def spawned(run_dir: Path) -> list[dict[str, Any]]:
             item["_spawn"] = spawn
             item["_spawn_complete"] = timestamp(row.get("spawn_complete_ts")) or spawn
             item["_admitted"] = timestamp(row.get("admitted_ts"))
-            item["_true_ready"] = parse_ready_epoch(
-                run_dir / "service_logs" / f"{row.get('container', '')}.log"
-            )
+            log_path = run_dir / "service_logs" / f"{row.get('container', '')}.log"
+            item["_log_missing"] = not log_path.exists()
+            item["_true_ready"] = parse_ready_epoch(log_path)
             result.append(item)
     return result
 
@@ -193,9 +193,13 @@ def run_arm(run_dir: Path) -> str:
     propagation = env.get("READINESS_PROPAGATION", "")
     if propagation == DISCOVERY:
         return DISCOVERY
-    if env.get("EDGE_APP_READY_EVENT", "0") == "0":
+    if env.get("EDGE_APP_READY_EVENT") == "0":
         return EVENT_ABSENT
-    return DIRECT
+    if propagation == DIRECT or env.get("EDGE_APP_READY_EVENT") == "1":
+        return DIRECT
+    raise ValueError(
+        f"cannot classify arm from env snapshot ({propagation!r}, "
+        f"EDGE_APP_READY_EVENT={env.get('EDGE_APP_READY_EVENT')!r}): {run_dir}")
 
 
 def percentile(values: Iterable[float], fraction: float) -> float | None:
@@ -279,11 +283,20 @@ def first_anchors(run_dir: Path,
     candidate that is not admitted fails the run rather than being skipped.
     """
     bounds = labeled_plateau_bounds(rows)
+    candidates = spawned(run_dir)
     anchors: dict[int, dict[str, Any]] = {}
     for lan in (1, 2):
         start, end = bounds[lan]
+        missing = [
+            row for row in candidates
+            if row["lan"] == lan and row.get("_log_missing")
+            and start <= row["_spawn"] <= end
+        ]
+        if missing:
+            raise ValueError(
+                f"missing service log for plateau-spawned candidate, lan{lan}: {run_dir}")
         eligible = [
-            row for row in spawned(run_dir)
+            row for row in candidates
             if row["lan"] == lan and row["_true_ready"] is not None
             and start + ANCHOR_LEAD_S <= row["_true_ready"] < end - WINDOW_S
         ]
@@ -294,6 +307,9 @@ def first_anchors(run_dir: Path,
         if anchor.get("result") != "admitted" or anchor["_admitted"] is None:
             raise ValueError(
                 f"selected plateau-eligible anchor is not admitted for lan{lan}: {run_dir}")
+        anchor["_anchor_rank"] = sum(
+            1 for row in eligible if row["_true_ready"] <= anchor["_true_ready"])
+        anchor["_n_eligible"] = len(eligible)
         anchors[lan] = anchor
     return anchors
 
@@ -334,6 +350,8 @@ def analyze_run(run_dir: Path, include_qoe: bool = True) -> dict[str, Any]:
             "plateau_start_ts": phase[0],
             "plateau_end_ts": phase[1],
             "anchor_lead_s": ready - lan_start,
+            "anchor_rank": anchor.get("_anchor_rank"),
+            "n_eligible": anchor.get("_n_eligible"),
         }
         if include_qoe:
             pre = window_metric(rows, lan, ready - WINDOW_S, ready)
@@ -476,6 +494,12 @@ def capacity_summary(run_dir: Path, expected_quota: str | None = None) -> dict[s
     baseline_start, baseline_end = phase_bounds(run_dir)["baseline"]
     baseline = status_rates(rows, baseline_start, baseline_end)
     final = status_rates(rows, plateau_end - 120.0, plateau_end)
+    offered_total = len(rows)
+    canceled_total = sum(row.get("status") in {"canceled", "dropped"} for row in rows)
+    ready_to_admit = [
+        row["_admitted"] - row["_true_ready"] for row in all_admissions
+        if row["_true_ready"] is not None
+    ]
     scale_down = False
     for event in read_csv(run_dir / "elasticity_events.csv"):
         event_time = timestamp(event.get("timestamp_s") or event.get("timestamp"))
@@ -521,6 +545,8 @@ def capacity_summary(run_dir: Path, expected_quota: str | None = None) -> dict[s
         "relief_pp": reliefs,
         "baseline": baseline,
         "final": final,
+        "run_cancel_rate": canceled_total / offered_total if offered_total else None,
+        "ready_to_admit_median": statistics.median(ready_to_admit) if ready_to_admit else None,
         "scale_down_in_plateau": scale_down,
         "quota_snapshot_ok": quota_ok,
     }
@@ -572,17 +598,20 @@ def historical_lock(args: argparse.Namespace) -> int:
     records = [analyze_run(Path(path), include_qoe=True) for path in args.run_dir]
     groups: dict[str, dict[str, dict[str, Any]]] = {}
     seeds: dict[str, int] = {}
+    seeds_by_run: dict[str, int] = {}
     for path, record in zip(args.run_dir, records):
         key = label_key(record["run"])
         if key is None:
             raise ValueError(f"cannot pair historical run label: {record['run']}")
         seed = run_seed(Path(path))
-        if seed is not None:
-            seeds[key] = seed
+        if seed is None:
+            raise ValueError(f"missing base_seed provenance: {path}")
+        seeds[key] = seed
+        seeds_by_run[record["run"]] = seed
         groups.setdefault(key, {})[record["arm"]] = record
     if set(groups) != {str(number) for number in range(1, 8)}:
         raise ValueError(f"expected historical pair keys 1..7, got {sorted(groups)}")
-    if seeds and set(seeds) != {str(number) for number in range(1, 8)}:
+    if set(seeds) != {str(number) for number in range(1, 8)}:
         raise ValueError(f"missing base_seed provenance for pairs: {set(groups) - set(seeds)}")
     pairs = []
     for key in sorted(groups, key=int):
@@ -590,6 +619,8 @@ def historical_lock(args: argparse.Namespace) -> int:
         discovery = groups[key].get(DISCOVERY)
         if direct is None or discovery is None:
             raise ValueError(f"incomplete historical pair {key}")
+        if seeds_by_run[direct["run"]] != seeds_by_run[discovery["run"]]:
+            raise ValueError(f"seed mismatch within historical pair {key}")
         direct_lans = [anchor["delta_p95_s"] for anchor in direct["anchors"]]
         discovery_lans = [anchor["delta_p95_s"] for anchor in discovery["anchors"]]
         difference = discovery["run_delta_p95_s"] - direct["run_delta_p95_s"]
@@ -680,7 +711,12 @@ def capacity_screen(args: argparse.Namespace) -> int:
         baseline = result["baseline"]
         final = result["final"]
         result["gate_driver"] = (baseline["cancel_rate"] is not None
-                                  and baseline["cancel_rate"] < 0.05)
+                                  and baseline["cancel_rate"] < 0.05
+                                  and result["run_cancel_rate"] is not None
+                                  and result["run_cancel_rate"] < 0.05)
+        result["gate_manipulation"] = (result["event_fraction"] == 1.0
+                                        and result["ready_to_admit_median"] is not None
+                                        and result["ready_to_admit_median"] <= 1.0)
         result["gate_baseline"] = (baseline["http000"] == 0
                                     and (baseline["timeout_rate"] or 0) <= 0.01
                                     and (baseline["failure_rate"] or 0) <= 0.01)
@@ -703,7 +739,7 @@ def capacity_screen(args: argparse.Namespace) -> int:
         result["gate_quota"] = result["quota_snapshot_ok"] is True
         result["qualifies"] = all(result[key] for key in (
             "gate_driver", "gate_baseline", "gate_final", "gate_cpu",
-            "gate_relief", "gate_mechanism", "gate_quota"))
+            "gate_relief", "gate_mechanism", "gate_manipulation", "gate_quota"))
         results.append(result)
     write_csv(Path(args.out), results)
     print(json.dumps({"runs": len(results), "qoe_metrics_emitted": False,
@@ -793,7 +829,12 @@ def event_absence(args: argparse.Namespace) -> int:
     results = []
     for path in args.run_dir:
         run_dir = Path(path)
-        record = analyze_run(run_dir, include_qoe=True)
+        # §8 does not require the primary ±7 s window floors; tolerate their
+        # absence so a valid fallback-liveness run cannot be voided by them.
+        try:
+            record = analyze_run(run_dir, include_qoe=True)
+        except ValueError:
+            record = analyze_run(run_dir, include_qoe=False)
         env = parse_env(run_dir / "controller_env_snapshot.env")
         admitted = admissions(run_dir)
         max_probe = as_float(env.get("READINESS_PROBE_MAX_S")) or 120.0
