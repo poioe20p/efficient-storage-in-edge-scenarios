@@ -1,5 +1,12 @@
 # Campaign Findings — research_q3 (release-mechanism comparison)
 
+> 🚫 **DEPRECATED (2026-09-06)**: this experiment is superseded by the RQ3
+> reframing in
+> `tese/research_questions/rq3/rq3_reframing_recommendation.md`
+> (usable-capacity realization through readiness-admission coordination).
+> The evidence below is retained **as mechanism validation only** and no
+> longer drives the RQ3 direction.
+
 **Date**: 2026-09-04 · **Status**: ⏹ **HALTED by user decision after 25 runs**
 (24 early runs complete, 6/6 per arm; 1 late run `ol1`). The late half
 (B7–B12, hold=900) was not run — see Limitations.
