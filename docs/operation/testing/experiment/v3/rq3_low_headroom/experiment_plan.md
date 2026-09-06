@@ -1,7 +1,12 @@
 # RQ3 Low-Headroom Extension - Experiment Plan
 
-**Status:** PREPARATION IMPLEMENTED - no run launched. **Metric-contract
-amendment applied 2026-09-06 (Option 1: plateau-eligible anchor, see §3.1).**
+**Status:** SUPERSEDED (2026-09-06) - campaign stopped and cleaned up after
+stage 2 (bridge); no quota screens or preflight runs were launched. The RQ3
+premise has been reframed as readiness-admission coordination /
+usable-capacity realization (see
+`tese/research_questions/rq3/rq3_reframing_recommendation.md`). Preparatory
+artifacts (`rq3lh_metric_lock.json`, `bridge_out.json`) are retained for
+provenance.
 
 **Parent evidence:** [RQ3 v3 Compute Saturation Campaign](../rq3/experiment_plan.md)
 and [its results](../rq3/results.md). This is a new regime-specific follow-up;
@@ -51,80 +56,42 @@ True readiness is the passive timestamp in the dynamic edge service log line
 containing `app ready: MongoDB ping`. Requests are assigned by `sent_at` and
 filtered to `compute_plateau` and the request's `client_lan`.
 
-The primary anchor is the **first plateau-eligible dynamic backend per LAN**
-(see §3.1), not the globally first true-ready backend. For run `r` and LAN `l`:
+Only the first dynamic backend to become truly ready in each LAN is a primary
+anchor. For run `r` and LAN `l`:
 
 ```text
-pre  = [anchor_true_ready - 7 s, anchor_true_ready)
-post = [anchor_true_ready, anchor_true_ready + 7 s)
+pre  = [first_true_ready - 7 s, first_true_ready)
+post = [first_true_ready, first_true_ready + 7 s)
 L[r,l] = successful_p95(post) - successful_p95(pre)
 R[r] = (L[r,1] + L[r,2]) / 2
 D[seed] = R[discovery,seed] - R[direct,seed]
 ```
 
-Successful p95 uses completed HTTP 2xx requests only; each window additionally
-requires at least 100 completed 2xx observations (the 100 completed-or-timeout
-floor remains, and an all-completed p95 is reported as supporting data).
-Timeout rate is `timeout/(completed+timeout)`; failure rate is completed
-non-2xx divided by completed; canceled/dropped remain driver outcomes.
-Later admissions are supporting data, not additional primary samples.
+Successful p95 uses completed HTTP 2xx requests only. Timeout rate is
+`timeout/(completed+timeout)`; failure rate is completed non-2xx divided by
+completed; canceled/dropped remain driver outcomes. Each window requires at
+least 100 completed-or-timeout requests. Later admissions are supporting data,
+not additional primary samples.
 
 The seven-second window targets the archived 6.1-6.3 s true-ready-to-admit
 separation. It measures transient QoE during the treatment interval, not a
 settled-state endpoint.
 
-### 3.1 Metric Contract Amendment (2026-09-06, Option 1)
-
-In all 14 archived runs the globally first dynamic true-ready per LAN occurs
-10-25 s before the generator-labeled `compute_plateau` begins, so ±7 s windows
-around it contain zero labeled-plateau rows and the original contract is
-unsatisfiable. The amendment:
-
-- **Anchor eligibility**: earliest dynamic candidate per LAN whose passive
-  true-ready lies in `[plateau_lan_start + 30 s, plateau_lan_end - 7 s)`,
-  with plateau bounds taken from the generator-labeled request timeline
-  (per-LAN min/max `sent_at` of `compute_plateau` rows). `run_status`
-  `started_at` is never used for phase bounds (it precedes traffic launch).
-- **No admission conditioning**: candidates come from every admission-log row
-  with a spawn timestamp, regardless of `result`. If the selected candidate
-  is not admitted, the run fails instead of skipping.
-- **Same rule everywhere**: historical lock, bridge, screens, and preflight
-  use the identical eligibility rule; the anchor's plateau offset and rank
-  among candidates are recorded for reporting.
-- **Success floor**: each window must contain >=100 completed 2xx requests
-  for its successful p95 to be valid.
-- **Screens**: first-wave admissions and `scale_up` decisions are counted
-  per LAN inside the first 120 s of the labeled plateau; the recovery window
-  `[last first-wave admission + 60 s, +180 s)` is per LAN and must remain
-  inside that LAN's plateau.
-- **Preflight parity** (implemented, per §7): offered demand difference
-  <=2 %, old-CPU difference <=10 pp, first-decision difference <=10 s/LAN,
-  add-count difference <=1/LAN, all in the same 30 s pre-anchor LAN window.
-
-Claim boundary: the design estimates the direct-vs-discovery readiness-window
-contrast **under the locked low quota**. It does not claim that low headroom
-*amplifies* the contrast relative to the archived `EDGE_CPUS=0.15` regime; that
-claim would require concurrent 0.15 control cells in the same campaign.
-
 ## 4. Historical Reference
 
 Before runtime changes, inventory all 14 August runs and require all seven
 direct/discovery pairs to retain admission logs, request CSVs, service logs,
-snapshots, and status files. Recompute the primary metric under the §3.1
-eligibility rule and persist:
+snapshots, and status files. Recompute the primary metric and persist:
 
 ```text
 H = max(0.010 s, max(abs(D[seed]) for seed in 3001..3007))
 P = 0.010 s
 ```
 
-`H` is a **descriptive, exploratory** envelope of the archived runs under the
-amended endpoint (the archived `D` values were inspected during endpoint
-development, so this is not a pre-registered noise bound). `P` is the fixed
-10 ms preflight effect floor. The lock record is `rq3lh_metric_lock.json` and
-includes run IDs, per-pair seeds (from `open_loop_schedule.json`), all
-per-LAN values, `H`, `P`, artifact hashes (request CSV, admission logs,
-phases/env/status snapshots, service logs), and the analyzer hash.
+`H` is the original-headroom contextual envelope, not a low-headroom noise
+estimate. `P` is the fixed 10 ms preflight effect floor. The lock record is
+`rq3lh_metric_lock.json` and includes run IDs, artifact hashes, all per-LAN
+values, `H`, `P`, and the analyzer hash.
 
 ## 5. Preparation Bridge
 
@@ -136,23 +103,10 @@ Run before quota screening at the archived P4 quota:
 | 2 | `rq3lh_bridge_discovery` | discovery | 3001 | 0.15 |
 
 This pair is a compatibility gate, not evidence. Require the normal integrity,
-mechanism, flow, and snapshot gates; per-position mean ready-to-admit
-separation >=5 s across the pair's LANs with every LAN positive (the archived
-6.1-6.3 s was a per-position mean, not a per-LAN minimum); pooled sub-max
-pre-anchor CPU in `[40.3,66.5]` percent; and `abs(D_bridge) <= max(H,P)`
-reported but **not** gating. The CPU band is the archived 50.3-56.5 percent
-pre-anchor-window pooled range with a fixed +/-10 percentage-point tolerance
-(re-anchored 2026-09-06; the original band compared a plateau-wide measure
-against a pre-anchor-window quantity). Under the §3.1 amendment, `H` is a
-descriptive exploratory envelope, so `abs(D_bridge)` is reported as
-context only.
-
-**Replication policy (2026-09-06):** if a bridge gate fails on a calibration
-basis, up to two additional attempts are allowed (each gets a fresh
-readiness-poll phase); the first attempt that passes all gates wins. If the
-first pair passes all gates, run one confirmation replicate pair (same seed
-3001) before the screens; its gates are reported and a failure is recorded as
-a caveat, not a STOP.
+mechanism, flow, and snapshot gates; true-ready-to-admit separation >=5 s;
+pooled sub-max CPU in `[30.3,53.7]` percent; and
+`abs(D_bridge) <= max(H,P)`. The CPU range is the archived 40.3-43.7 percent
+P4 range with a fixed +/-10 percentage-point tolerance.
 
 ## 6. Primary-Outcome-Blind Quota Screens
 
@@ -187,12 +141,9 @@ Each run requires:
 
 The CPU band is a hard calibration gate, not a claim that the regime is already
 reachable. A quota qualifies only if both of its seed runs pass. Select 0.12 if
-both q12 runs pass; otherwise select 0.10 if both q10 runs pass. If a
-quota's two runs pass, run one confirmation screen at a fresh seed
-(`rq3lh_screen_q<q>_3`, seed 3098) that must also pass before the quota
-locks. A split or empty result is a clean STOP: do not lower the quota,
-increase load, or relax the gates. Persist `rq3lh_quota_lock.json` before
-primary analysis.
+both q12 runs pass; otherwise select 0.10 if both q10 runs pass. A split or
+empty result is a clean STOP: do not lower the quota, increase load, or relax
+the gates. Persist `rq3lh_quota_lock.json` before primary analysis.
 
 The capacity-screen command requires `--quota` and returns non-zero when any
 run fails a gate. Its quota gate verifies `quota_snapshot.json`, which the
