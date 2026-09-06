@@ -1,0 +1,155 @@
+{
+  "bridge_delta_s": 0.2028275000000001,
+  "contextual_envelope_s": 0.1802825,
+  "cpu_pass": false,
+  "delta_pass": false,
+  "direct": {
+    "anchors": [
+      {
+        "admitted_ts": 1788657415.575,
+        "anchor_lead_s": 44.05286502838135,
+        "anchor_rank": 1,
+        "container": "edge_server_lan1_dyn5",
+        "delta_p95_s": -0.19952499999999998,
+        "lan": 1,
+        "n_eligible": 1,
+        "plateau_end_ts": 1788658003.257846,
+        "plateau_start_ts": 1788657371.522493,
+        "post": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.13318,
+          "p95_s": 0.13318,
+          "requests": 252,
+          "successful": 237,
+          "timeout_rate": 0.05952380952380952
+        },
+        "pre": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.332705,
+          "p95_s": 0.332705,
+          "requests": 253,
+          "successful": 250,
+          "timeout_rate": 0.011857707509881422
+        },
+        "ready_to_admit_s": -0.0003578662872314453,
+        "true_ready_ts": 1788657415.575358
+      },
+      {
+        "admitted_ts": 1788657425.587,
+        "anchor_lead_s": 52.91773796081543,
+        "anchor_rank": 1,
+        "container": "edge_server_lan2_dyn5",
+        "delta_p95_s": -0.36463000000000007,
+        "lan": 2,
+        "n_eligible": 1,
+        "plateau_end_ts": 1788658003.257846,
+        "plateau_start_ts": 1788657371.522493,
+        "post": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.1044799999999999,
+          "p95_s": 0.1044799999999999,
+          "requests": 250,
+          "successful": 245,
+          "timeout_rate": 0.02
+        },
+        "pre": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.46910999999999997,
+          "p95_s": 0.46910999999999997,
+          "requests": 251,
+          "successful": 250,
+          "timeout_rate": 0.00398406374501992
+        },
+        "ready_to_admit_s": 0.11838984489440918,
+        "true_ready_ts": 1788657425.46861
+      }
+    ],
+    "arm": "direct",
+    "event_fraction": 1.0,
+    "phase_start_guard": true,
+    "readiness_propagation": "direct",
+    "run": "20260906_011438_rq3lh_bridge_direct",
+    "run_delta_p95_s": -0.28207750000000004,
+    "run_status": "completed"
+  },
+  "discovery": {
+    "anchors": [
+      {
+        "admitted_ts": 1788659937.758,
+        "anchor_lead_s": 42.07192778587341,
+        "anchor_rank": 1,
+        "container": "edge_server_lan1_dyn5",
+        "delta_p95_s": 0.00048499999999998544,
+        "lan": 1,
+        "n_eligible": 1,
+        "plateau_end_ts": 1788660525.237164,
+        "plateau_start_ts": 1788659893.462299,
+        "post": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.17531,
+          "p95_s": 0.17531,
+          "requests": 255,
+          "successful": 255,
+          "timeout_rate": 0.0
+        },
+        "pre": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.174825,
+          "p95_s": 0.174825,
+          "requests": 249,
+          "successful": 246,
+          "timeout_rate": 0.012048192771084338
+        },
+        "ready_to_admit_s": 2.2237730026245117,
+        "true_ready_ts": 1788659935.534227
+      },
+      {
+        "admitted_ts": 1788659947.77,
+        "anchor_lead_s": 44.522083044052124,
+        "anchor_rank": 1,
+        "container": "edge_server_lan2_dyn5",
+        "delta_p95_s": -0.15898499999999988,
+        "lan": 2,
+        "n_eligible": 1,
+        "plateau_end_ts": 1788660525.237164,
+        "plateau_start_ts": 1788659893.462299,
+        "post": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.1521,
+          "p95_s": 0.1521,
+          "requests": 251,
+          "successful": 251,
+          "timeout_rate": 0.0
+        },
+        "pre": {
+          "failure_rate": 0.0,
+          "p95_all_s": 0.3110849999999999,
+          "p95_s": 0.3110849999999999,
+          "requests": 250,
+          "successful": 250,
+          "timeout_rate": 0.0
+        },
+        "ready_to_admit_s": 8.493391990661621,
+        "true_ready_ts": 1788659939.276608
+      }
+    ],
+    "arm": "discovery",
+    "event_fraction": 0.0,
+    "phase_start_guard": true,
+    "readiness_propagation": "discovery",
+    "run": "20260906_015640_rq3lh_bridge_discovery",
+    "run_delta_p95_s": -0.07924999999999995,
+    "run_status": "completed"
+  },
+  "mechanism_pass": true,
+  "pass": false,
+  "pooled_sub_max_cpu": [
+    52.3010562129855,
+    57.95379527691862
+  ],
+  "separation_pass": false,
+  "separation_s": [
+    2.224130868911743,
+    8.375002145767212
+  ]
+}
