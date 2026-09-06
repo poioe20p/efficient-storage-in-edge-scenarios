@@ -21,7 +21,13 @@ from typing import Any, Iterable
 
 WINDOW_S = 7.0
 MIN_WINDOW_REQUESTS = 100
+MIN_SUCCESS_REQUESTS = 100
 PRACTICAL_FLOOR_S = 0.010
+ANCHOR_LEAD_S = 30.0
+FIRST_WAVE_S = 120.0
+PRE_CPU_S = 30.0
+RECOVERY_LAG_S = 60.0
+RECOVERY_SPAN_S = 180.0
 PHASE = "compute_plateau"
 DIRECT = "direct"
 DISCOVERY = "discovery"
@@ -45,6 +51,13 @@ def timestamp(value: Any) -> float | None:
     text = str(value).strip().strip('"')
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
+    # Python <=3.10 fromisoformat accepts at most 6 fractional seconds digits;
+    # container logs carry 9-digit fractions, so truncate before parsing.
+    match = re.fullmatch(
+        r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d+)(.*)", text
+    )
+    if match and len(match.group(2)) > 6:
+        text = f"{match.group(1)}.{match.group(2)[:6]}{match.group(3)}"
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
@@ -101,24 +114,21 @@ def load_phases(run_dir: Path) -> list[dict[str, Any]]:
 
 
 def phase_bounds(run_dir: Path) -> dict[str, tuple[float, float]]:
-    status_path = run_dir / "run_status.json"
-    status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
-    started = timestamp(status.get("started_at"))
-    if started is None:
-        request_rows = read_csv(run_dir / "client_requests.csv")
-        started = min((timestamp(row.get("sent_at")) for row in request_rows), default=None)
-    if started is None:
-        raise ValueError(f"cannot determine run start: {run_dir}")
-    bounds: dict[str, tuple[float, float]] = {}
-    cursor = started
-    for phase in load_phases(run_dir):
-        name = str(phase.get("name", ""))
-        duration = as_float(phase.get("duration_s"))
-        if not name or duration is None:
-            raise ValueError(f"invalid phase entry in {run_dir}")
-        bounds[name] = (cursor, cursor + duration)
-        cursor += duration
-    return bounds
+    """Phase bounds from generator-labeled request `sent_at` values.
+
+    `run_status.started_at` precedes setup and traffic launch, so it cannot
+    anchor phase windows. The driver's own phase labels are authoritative:
+    each phase's bounds are [min sent_at, max sent_at] over its rows.
+    """
+    by_phase: dict[str, list[float]] = {}
+    for row in read_csv(run_dir / "client_requests.csv"):
+        sent = timestamp(row.get("sent_at"))
+        name = row.get("phase")
+        if sent is not None and name:
+            by_phase.setdefault(name, []).append(sent)
+    if not by_phase:
+        raise ValueError(f"no labeled phase requests: {run_dir}")
+    return {name: (min(times), max(times)) for name, times in by_phase.items()}
 
 
 def parse_ready_epoch(path: Path) -> float | None:
@@ -146,26 +156,36 @@ def request_rows(run_dir: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def admissions(run_dir: Path) -> list[dict[str, Any]]:
+def spawned(run_dir: Path) -> list[dict[str, Any]]:
+    """All admission-log spawn candidates, regardless of admission result.
+
+    Anchor selection must not condition on admission (treatment-dependent),
+    so candidates come from every admission-log row with a spawn timestamp.
+    """
     result: list[dict[str, Any]] = []
     for lan in (1, 2):
         for row in read_csv(run_dir / f"admission_log_lan{lan}.csv"):
-            if row.get("result") != "admitted":
-                continue
-            admitted = timestamp(row.get("admitted_ts"))
             spawn = timestamp(row.get("spawn_started_ts"))
-            if admitted is None or spawn is None:
+            if spawn is None:
                 continue
             item = dict(row)
             item["lan"] = lan
-            item["_admitted"] = admitted
             item["_spawn"] = spawn
             item["_spawn_complete"] = timestamp(row.get("spawn_complete_ts")) or spawn
+            item["_admitted"] = timestamp(row.get("admitted_ts"))
             item["_true_ready"] = parse_ready_epoch(
                 run_dir / "service_logs" / f"{row.get('container', '')}.log"
             )
             result.append(item)
     return result
+
+
+def admissions(run_dir: Path) -> list[dict[str, Any]]:
+    """Admitted spawn candidates only."""
+    return [
+        row for row in spawned(run_dir)
+        if row.get("result") == "admitted" and row["_admitted"] is not None
+    ]
 
 
 def run_arm(run_dir: Path) -> str:
@@ -211,6 +231,7 @@ def window_metric(rows: list[dict[str, Any]], lan: int, start: float, end: float
     ]
     service_rows = [row for row in selected if row.get("status") in {"completed", "timeout"}]
     success_latencies = [row["_latency"] for row in selected if is_success(row) and row["_latency"] is not None]
+    completed_latencies = [row["_latency"] for row in selected if is_completed(row) and row["_latency"] is not None]
     completed_count = sum(1 for row in selected if is_completed(row))
     timeout_count = sum(1 for row in selected if row.get("status") == "timeout")
     failure_count = sum(1 for row in selected if is_completed(row) and not is_success(row))
@@ -218,38 +239,79 @@ def window_metric(rows: list[dict[str, Any]], lan: int, start: float, end: float
         raise ValueError(
             f"request floor failed for lan{lan}: {len(service_rows)} < {MIN_WINDOW_REQUESTS}"
         )
+    if len(success_latencies) < MIN_SUCCESS_REQUESTS:
+        raise ValueError(
+            f"success floor failed for lan{lan}: {len(success_latencies)} < {MIN_SUCCESS_REQUESTS}"
+        )
     return {
         "requests": len(service_rows),
         "successful": len(success_latencies),
         "p95_s": percentile(success_latencies, 0.95),
+        "p95_all_s": percentile(completed_latencies, 0.95),
         "timeout_rate": timeout_count / len(service_rows) if service_rows else None,
         "failure_rate": failure_count / completed_count if completed_count else None,
     }
 
 
-def first_anchors(run_dir: Path) -> dict[int, dict[str, Any]]:
-    by_lan: dict[int, list[dict[str, Any]]] = {1: [], 2: []}
-    for row in admissions(run_dir):
-        if row["_true_ready"] is not None:
-            by_lan[row["lan"]].append(row)
+def labeled_plateau_bounds(rows: list[dict[str, Any]]) -> dict[int, tuple[float, float]]:
+    """Per-LAN [start, end] of generator-labeled compute_plateau requests."""
+    bounds: dict[int, tuple[float, float]] = {}
+    for lan in (1, 2):
+        times = [
+            row["_sent"] for row in rows
+            if row.get("phase") == PHASE and row.get("client_lan") == f"lan{lan}"
+        ]
+        if not times:
+            raise ValueError(f"no labeled {PHASE} requests for lan{lan}")
+        bounds[lan] = (min(times), max(times))
+    return bounds
+
+
+def first_anchors(run_dir: Path,
+                  rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """First plateau-eligible dynamic true-ready backend per LAN.
+
+    2026-09-06 amendment: the primary anchor is the earliest candidate whose
+    passive true-ready falls in [plateau_lan_start + ANCHOR_LEAD_S,
+    plateau_lan_end - WINDOW_S), with plateau bounds from the
+    generator-labeled request timeline. Candidates come from the admission
+    log regardless of result (no admission conditioning); a selected
+    candidate that is not admitted fails the run rather than being skipped.
+    """
+    bounds = labeled_plateau_bounds(rows)
     anchors: dict[int, dict[str, Any]] = {}
-    for lan, rows in by_lan.items():
-        if not rows:
-            raise ValueError(f"no passive true-ready admission for lan{lan}: {run_dir}")
-        anchors[lan] = min(rows, key=lambda row: row["_true_ready"])
+    for lan in (1, 2):
+        start, end = bounds[lan]
+        eligible = [
+            row for row in spawned(run_dir)
+            if row["lan"] == lan and row["_true_ready"] is not None
+            and start + ANCHOR_LEAD_S <= row["_true_ready"] < end - WINDOW_S
+        ]
+        if not eligible:
+            raise ValueError(
+                f"no plateau-eligible true-ready candidate for lan{lan}: {run_dir}")
+        anchor = min(eligible, key=lambda row: row["_true_ready"])
+        if anchor.get("result") != "admitted" or anchor["_admitted"] is None:
+            raise ValueError(
+                f"selected plateau-eligible anchor is not admitted for lan{lan}: {run_dir}")
+        anchors[lan] = anchor
     return anchors
 
 
 def analyze_run(run_dir: Path, include_qoe: bool = True) -> dict[str, Any]:
     env = parse_env(run_dir / "controller_env_snapshot.env")
     rows = request_rows(run_dir)
-    anchors = first_anchors(run_dir)
+    anchors = first_anchors(run_dir, rows)
+    lan_bounds = labeled_plateau_bounds(rows)
     phase = phase_bounds(run_dir).get(PHASE)
     if phase is None:
         raise ValueError(f"missing {PHASE} phase: {run_dir}")
+    status_path = run_dir / "run_status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
     output: dict[str, Any] = {
         "run": run_dir.name,
         "arm": run_arm(run_dir),
+        "run_status": status.get("status"),
         "readiness_propagation": env.get("READINESS_PROPAGATION", ""),
         "event_fraction": None,
         "anchors": [],
@@ -262,6 +324,7 @@ def analyze_run(run_dir: Path, include_qoe: bool = True) -> dict[str, Any]:
         anchor = anchors[lan]
         ready = anchor["_true_ready"]
         admission = anchor["_admitted"]
+        lan_start, _ = lan_bounds[lan]
         item: dict[str, Any] = {
             "lan": lan,
             "container": anchor.get("container", ""),
@@ -270,6 +333,7 @@ def analyze_run(run_dir: Path, include_qoe: bool = True) -> dict[str, Any]:
             "ready_to_admit_s": admission - ready,
             "plateau_start_ts": phase[0],
             "plateau_end_ts": phase[1],
+            "anchor_lead_s": ready - lan_start,
         }
         if include_qoe:
             pre = window_metric(rows, lan, ready - WINDOW_S, ready)
@@ -285,7 +349,7 @@ def analyze_run(run_dir: Path, include_qoe: bool = True) -> dict[str, Any]:
         output["anchors"].append(item)
     output["run_delta_p95_s"] = sum(deltas) / len(deltas) if len(deltas) == 2 else None
     output["phase_start_guard"] = all(
-        item["true_ready_ts"] >= phase[0] + 30.0 for item in output["anchors"]
+        item["anchor_lead_s"] >= ANCHOR_LEAD_S for item in output["anchors"]
     )
     return output
 
@@ -342,45 +406,74 @@ def status_rates(rows: list[dict[str, Any]], start: float, end: float) -> dict[s
     }
 
 
+def decision_times(run_dir: Path, lan: int) -> list[float]:
+    """scale_up decision timestamps for a LAN from the decision log."""
+    path = run_dir / f"decision_log_lan{lan}.csv"
+    times = []
+    for row in read_csv(path):
+        if (row.get("action_type") or "").lower() != "scale_up":
+            continue
+        value = timestamp(row.get("ts"))
+        if value is not None:
+            times.append(value)
+    return times
+
+
 def capacity_summary(run_dir: Path, expected_quota: str | None = None) -> dict[str, Any]:
-    bounds = phase_bounds(run_dir)
-    plateau_start, plateau_end = bounds[PHASE]
     rows = request_rows(run_dir)
+    lan_bounds = labeled_plateau_bounds(rows)
+    phase = phase_bounds(run_dir)[PHASE]
+    plateau_start, plateau_end = phase
     all_admissions = admissions(run_dir)
-    anchors = first_anchors(run_dir)
+    anchors = first_anchors(run_dir, rows)
     window_logs = {lan: load_window_log(run_dir, lan) for lan in (1, 2)}
     pre_cpu: dict[int, dict[str, Any]] = {}
     recovery_cpu: dict[int, dict[str, Any]] = {}
-    first_wave: list[dict[str, Any]] = []
+    first_wave: dict[int, list[dict[str, Any]]] = {}
+    first_wave_decisions: dict[int, int] = {}
+    first_decision: dict[int, float | None] = {}
+    pre_offered: dict[int, int] = {}
     for lan in (1, 2):
+        lan_start, lan_end = lan_bounds[lan]
         ready = anchors[lan]["_true_ready"]
         pre_rows = [row for row in window_logs[lan]
-                    if ready - 30.0 <= row["_window_end"] < ready]
+                    if ready - PRE_CPU_S <= row["_window_end"] < ready]
         old_ids = set()
         for row in pre_rows:
             old_ids.update((row.get("servers") or {}).keys())
-        before = cpu_values(window_logs[lan], ready - 30.0, ready, old_ids)
-        pre_cpu[lan] = {"median": statistics.median(before) if before else None,
-                        "p95": percentile(before, 0.95), "n": len(before),
-                        "old_ids": sorted(old_ids)}
-        first_wave.extend(
-            row for row in all_admissions
-            if row["lan"] == lan
-            and plateau_start <= row["_true_ready"] < plateau_start + 120.0
+        before_old = cpu_values(window_logs[lan], ready - PRE_CPU_S, ready, old_ids)
+        pre_cpu[lan] = {
+            "median": statistics.median(before_old) if before_old else None,
+            "p95": percentile(before_old, 0.95), "n": len(before_old),
+            "old_ids": sorted(old_ids),
+        }
+        pre_offered[lan] = sum(
+            1 for row in rows
+            if row.get("client_lan") == f"lan{lan}"
+            and ready - PRE_CPU_S <= row["_sent"] < ready
         )
-    if not first_wave:
-        raise ValueError(f"no first-wave admissions in first 120 s: {run_dir}")
-    last_first_wave = max(row["_true_ready"] for row in first_wave)
-    recovery_end = last_first_wave + 180.0
-    if recovery_end > plateau_end:
-        raise ValueError(f"recovery window spills past plateau: {run_dir}")
-    for lan in (1, 2):
-        old_ids = set(pre_cpu[lan]["old_ids"])
-        values = cpu_values(window_logs[lan], last_first_wave + 60.0,
-                            recovery_end, old_ids)
+        fw = [
+            row for row in all_admissions
+            if row["lan"] == lan and row["_admitted"] is not None
+            and lan_start <= row["_admitted"] < lan_start + FIRST_WAVE_S
+        ]
+        if not fw:
+            raise ValueError(
+                f"no first-wave admissions for lan{lan} in first {FIRST_WAVE_S:.0f} s: {run_dir}")
+        first_wave[lan] = fw
+        decisions = decision_times(run_dir, lan)
+        first_decision[lan] = min(decisions) if decisions else None
+        first_wave_decisions[lan] = sum(
+            1 for t in decisions if lan_start <= t < lan_start + FIRST_WAVE_S)
+        last = max(row["_admitted"] for row in fw)
+        recovery_start = last + RECOVERY_LAG_S
+        recovery_end = last + RECOVERY_LAG_S + RECOVERY_SPAN_S
+        if recovery_end > lan_end:
+            raise ValueError(f"recovery window spills past lan{lan} plateau: {run_dir}")
+        values = cpu_values(window_logs[lan], recovery_start, recovery_end, old_ids)
         recovery_cpu[lan] = {"median": statistics.median(values) if values else None,
-                             "n": len(values)}
-    baseline_start, baseline_end = bounds["baseline"]
+                             "n": len(values), "window": [recovery_start, recovery_end]}
+    baseline_start, baseline_end = phase_bounds(run_dir)["baseline"]
     baseline = status_rates(rows, baseline_start, baseline_end)
     final = status_rates(rows, plateau_end - 120.0, plateau_end)
     scale_down = False
@@ -404,20 +497,31 @@ def capacity_summary(run_dir: Path, expected_quota: str | None = None) -> dict[s
         post = recovery_cpu[lan]["median"]
         if pre is not None and post is not None:
             reliefs.append(pre - post)
+    status_path = run_dir / "run_status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
     return {
         "run": run_dir.name,
         "arm": run_arm(run_dir),
+        "run_status": status.get("status"),
         "event_fraction": analyze_run(run_dir, include_qoe=False)["event_fraction"],
         "admissions_lan1": sum(row["lan"] == 1 for row in all_admissions),
         "admissions_lan2": sum(row["lan"] == 2 for row in all_admissions),
-        "phase_start_guard": all(row["_true_ready"] >= plateau_start + 30.0 for row in anchors.values()),
+        "first_wave_lan1": len(first_wave[1]),
+        "first_wave_lan2": len(first_wave[2]),
+        "first_wave_decisions_lan1": first_wave_decisions[1],
+        "first_wave_decisions_lan2": first_wave_decisions[2],
+        "first_decision": first_decision,
+        "pre_offered": pre_offered,
+        "phase_start_guard": all(
+            anchors[lan]["_true_ready"] >= lan_bounds[lan][0] + ANCHOR_LEAD_S
+            for lan in (1, 2)
+        ),
         "pre_cpu": pre_cpu,
         "recovery_cpu": recovery_cpu,
         "relief_pp": reliefs,
         "baseline": baseline,
         "final": final,
         "scale_down_in_plateau": scale_down,
-        "recovery_end": recovery_end,
         "quota_snapshot_ok": quota_ok,
     }
 
@@ -435,33 +539,87 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def run_seed(run_dir: Path) -> int | None:
+    """base_seed recorded in the run's open-loop schedule."""
+    path = run_dir / "open_loop_schedule.json"
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    value = as_float(data.get("base_seed"))
+    return int(value) if value is not None else None
+
+
+def artifact_hashes(run_dir: Path) -> dict[str, Any]:
+    """Provenance hashes for the plan's lock-record artifact contract."""
+    files = [
+        "client_requests.csv", "admission_log_lan1.csv", "admission_log_lan2.csv",
+        "phases_snapshot.json", "controller_env_snapshot.env", "run_status.json",
+        "open_loop_schedule.json",
+    ]
+    out: dict[str, Any] = {}
+    for name in files:
+        path = run_dir / name
+        out[name] = sha256(path) if path.exists() else "missing"
+    logs_dir = run_dir / "service_logs"
+    out["service_logs"] = (
+        {path.name: sha256(path) for path in sorted(logs_dir.glob("*"))}
+        if logs_dir.is_dir() else {}
+    )
+    return out
+
+
 def historical_lock(args: argparse.Namespace) -> int:
     records = [analyze_run(Path(path), include_qoe=True) for path in args.run_dir]
     groups: dict[str, dict[str, dict[str, Any]]] = {}
-    for record in records:
+    seeds: dict[str, int] = {}
+    for path, record in zip(args.run_dir, records):
         key = label_key(record["run"])
         if key is None:
             raise ValueError(f"cannot pair historical run label: {record['run']}")
+        seed = run_seed(Path(path))
+        if seed is not None:
+            seeds[key] = seed
         groups.setdefault(key, {})[record["arm"]] = record
     if set(groups) != {str(number) for number in range(1, 8)}:
         raise ValueError(f"expected historical pair keys 1..7, got {sorted(groups)}")
+    if seeds and set(seeds) != {str(number) for number in range(1, 8)}:
+        raise ValueError(f"missing base_seed provenance for pairs: {set(groups) - set(seeds)}")
     pairs = []
     for key in sorted(groups, key=int):
         direct = groups[key].get(DIRECT)
         discovery = groups[key].get(DISCOVERY)
         if direct is None or discovery is None:
             raise ValueError(f"incomplete historical pair {key}")
+        direct_lans = [anchor["delta_p95_s"] for anchor in direct["anchors"]]
+        discovery_lans = [anchor["delta_p95_s"] for anchor in discovery["anchors"]]
         difference = discovery["run_delta_p95_s"] - direct["run_delta_p95_s"]
-        pairs.append({"seed_key": key, "direct": direct["run_delta_p95_s"],
-                      "discovery": discovery["run_delta_p95_s"], "difference": difference})
+        pairs.append({
+            "seed_key": key,
+            "seed": seeds.get(key),
+            "direct": direct["run_delta_p95_s"],
+            "discovery": discovery["run_delta_p95_s"],
+            "difference": difference,
+            "direct_lan_deltas": direct_lans,
+            "discovery_lan_deltas": discovery_lans,
+        })
     envelope = max(PRACTICAL_FLOOR_S, max(abs(row["difference"]) for row in pairs))
-    output = {"window_s": WINDOW_S, "min_window_requests": MIN_WINDOW_REQUESTS,
-              "practical_floor_s": PRACTICAL_FLOOR_S, "H": envelope,
-              "P": PRACTICAL_FLOOR_S, "pairs": pairs,
-              "run_sha256": {str(path): sha256(Path(path) / "client_requests.csv")
-                             for path in args.run_dir}}
+    output = {
+        "window_s": WINDOW_S,
+        "min_window_requests": MIN_WINDOW_REQUESTS,
+        "min_window_successes": MIN_SUCCESS_REQUESTS,
+        "anchor_lead_s": ANCHOR_LEAD_S,
+        "practical_floor_s": PRACTICAL_FLOOR_S,
+        "H": envelope,
+        "P": PRACTICAL_FLOOR_S,
+        "pairs": pairs,
+        "artifact_sha256": {str(path): artifact_hashes(Path(path))
+                            for path in args.run_dir},
+        "analyzer_sha256": sha256(Path(__file__)),
+        "note": "exploratory endpoint development on archived runs; anchor eligibility amended 2026-09-06 (plateau-eligible first true-ready)",
+    }
     write_json(Path(args.out), output)
-    print(json.dumps({"H": envelope, "pairs": len(pairs)}, indent=2))
+    print(json.dumps({"H": envelope, "pairs": len(pairs),
+                      "seeds": seeds}, indent=2))
     return 0
 
 
@@ -487,6 +645,8 @@ def bridge(args: argparse.Namespace) -> int:
                       and discovery["event_fraction"] == 0.0
                       and direct["phase_start_guard"]
                       and discovery["phase_start_guard"]
+                      and direct["run_status"] == "completed"
+                      and discovery["run_status"] == "completed"
                       and all(summary["admissions_lan1"] >= 1
                               and summary["admissions_lan2"] >= 1
                               and not summary["scale_down_in_plateau"]
@@ -533,8 +693,13 @@ def capacity_screen(args: argparse.Namespace) -> int:
         result["gate_relief"] = len(relief) == 2 and all(value >= 10.0 for value in relief)
         result["gate_mechanism"] = (result["admissions_lan1"] >= 1
                                      and result["admissions_lan2"] >= 1
+                                     and result["first_wave_lan1"] >= 1
+                                     and result["first_wave_lan2"] >= 1
+                                     and result["first_wave_decisions_lan1"] >= 1
+                                     and result["first_wave_decisions_lan2"] >= 1
                                      and result["phase_start_guard"]
-                                     and not result["scale_down_in_plateau"])
+                                     and not result["scale_down_in_plateau"]
+                                     and result["run_status"] == "completed")
         result["gate_quota"] = result["quota_snapshot_ok"] is True
         result["qualifies"] = all(result[key] for key in (
             "gate_driver", "gate_baseline", "gate_final", "gate_cpu",
@@ -549,6 +714,8 @@ def capacity_screen(args: argparse.Namespace) -> int:
 def preflight(args: argparse.Namespace) -> int:
     lock = json.loads(Path(args.lock).read_text(encoding="utf-8"))
     records = [analyze_run(Path(path), include_qoe=True) for path in args.run_dir]
+    name_to_path = {Path(path).name: Path(path) for path in args.run_dir}
+    summaries = {name: capacity_summary(path) for name, path in name_to_path.items()}
     grouped: dict[str, dict[str, dict[str, Any]]] = {}
     for record in records:
         key = label_key(record["run"])
@@ -556,7 +723,9 @@ def preflight(args: argparse.Namespace) -> int:
             grouped.setdefault(key, {})[record["arm"]] = record
     pairs = []
     lan_contrasts = []
+    parity = []
     manipulation_pass = True
+    parity_pass = True
     for key in sorted(grouped):
         direct = grouped[key].get(DIRECT)
         discovery = grouped[key].get(DISCOVERY)
@@ -564,6 +733,10 @@ def preflight(args: argparse.Namespace) -> int:
             continue
         pairs.append({"seed_key": key,
                       "D": discovery["run_delta_p95_s"] - direct["run_delta_p95_s"]})
+        direct_summary = summaries[direct["run"]]
+        discovery_summary = summaries[discovery["run"]]
+        manipulation_pass &= (direct["run_status"] == "completed"
+                              and discovery["run_status"] == "completed")
         for lan in (1, 2):
             direct_anchor = direct["anchors"][lan - 1]
             discovery_anchor = discovery["anchors"][lan - 1]
@@ -575,12 +748,35 @@ def preflight(args: argparse.Namespace) -> int:
             d = direct_anchor["delta_p95_s"]
             s = discovery_anchor["delta_p95_s"]
             lan_contrasts.append(s - d)
+            offered_d = direct_summary["pre_offered"][lan]
+            offered_s = discovery_summary["pre_offered"][lan]
+            demand_ok = (offered_d > 0 and offered_s > 0
+                         and 200 * abs(offered_d - offered_s) / (offered_d + offered_s) <= 2.0)
+            cpu_d = direct_summary["pre_cpu"][lan]["median"]
+            cpu_s = discovery_summary["pre_cpu"][lan]["median"]
+            cpu_ok = cpu_d is not None and cpu_s is not None and abs(cpu_d - cpu_s) <= 10.0
+            decision_d = direct_summary["first_decision"][lan]
+            decision_s = discovery_summary["first_decision"][lan]
+            decision_ok = (decision_d is not None and decision_s is not None
+                           and abs(decision_d - decision_s) <= 10.0)
+            add_ok = abs(direct_summary[f"admissions_lan{lan}"]
+                         - discovery_summary[f"admissions_lan{lan}"]) <= 1
+            entry = {"seed_key": key, "lan": lan,
+                     "offered_direct": offered_d, "offered_discovery": offered_s,
+                     "cpu_direct": cpu_d, "cpu_discovery": cpu_s,
+                     "decision_direct": decision_d, "decision_discovery": decision_s,
+                     "demand_ok": demand_ok, "cpu_ok": cpu_ok,
+                     "decision_ok": decision_ok, "add_ok": add_ok}
+            parity.append(entry)
+            parity_pass &= demand_ok and cpu_ok and decision_ok and add_ok
     floor = float(lock.get("P", PRACTICAL_FLOOR_S))
-    go = (len(pairs) == 2 and manipulation_pass
+    go = (len(pairs) == 2 and manipulation_pass and parity_pass
           and all(pair["D"] >= floor for pair in pairs)
           and sum(value > 0 for value in lan_contrasts) >= 3)
-    output = {"P": floor, "pairs": pairs, "lan_contrasts": lan_contrasts,
+    output = {"P": floor, "H": lock.get("H"), "pairs": pairs,
+              "lan_contrasts": lan_contrasts, "parity": parity,
               "manipulation_pass": manipulation_pass,
+              "parity_pass": parity_pass,
               "go": go}
     write_json(Path(args.out), output)
     print(json.dumps(output, indent=2))

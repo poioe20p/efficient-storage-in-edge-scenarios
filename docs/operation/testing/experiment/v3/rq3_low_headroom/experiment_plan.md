@@ -1,6 +1,7 @@
 # RQ3 Low-Headroom Extension - Experiment Plan
 
-**Status:** PREPARATION IMPLEMENTED - no run launched.
+**Status:** PREPARATION IMPLEMENTED - no run launched. **Metric-contract
+amendment applied 2026-09-06 (Option 1: plateau-eligible anchor, see §3.1).**
 
 **Parent evidence:** [RQ3 v3 Compute Saturation Campaign](../rq3/experiment_plan.md)
 and [its results](../rq3/results.md). This is a new regime-specific follow-up;
@@ -50,42 +51,80 @@ True readiness is the passive timestamp in the dynamic edge service log line
 containing `app ready: MongoDB ping`. Requests are assigned by `sent_at` and
 filtered to `compute_plateau` and the request's `client_lan`.
 
-Only the first dynamic backend to become truly ready in each LAN is a primary
-anchor. For run `r` and LAN `l`:
+The primary anchor is the **first plateau-eligible dynamic backend per LAN**
+(see §3.1), not the globally first true-ready backend. For run `r` and LAN `l`:
 
 ```text
-pre  = [first_true_ready - 7 s, first_true_ready)
-post = [first_true_ready, first_true_ready + 7 s)
+pre  = [anchor_true_ready - 7 s, anchor_true_ready)
+post = [anchor_true_ready, anchor_true_ready + 7 s)
 L[r,l] = successful_p95(post) - successful_p95(pre)
 R[r] = (L[r,1] + L[r,2]) / 2
 D[seed] = R[discovery,seed] - R[direct,seed]
 ```
 
-Successful p95 uses completed HTTP 2xx requests only. Timeout rate is
-`timeout/(completed+timeout)`; failure rate is completed non-2xx divided by
-completed; canceled/dropped remain driver outcomes. Each window requires at
-least 100 completed-or-timeout requests. Later admissions are supporting data,
-not additional primary samples.
+Successful p95 uses completed HTTP 2xx requests only; each window additionally
+requires at least 100 completed 2xx observations (the 100 completed-or-timeout
+floor remains, and an all-completed p95 is reported as supporting data).
+Timeout rate is `timeout/(completed+timeout)`; failure rate is completed
+non-2xx divided by completed; canceled/dropped remain driver outcomes.
+Later admissions are supporting data, not additional primary samples.
 
 The seven-second window targets the archived 6.1-6.3 s true-ready-to-admit
 separation. It measures transient QoE during the treatment interval, not a
 settled-state endpoint.
 
+### 3.1 Metric Contract Amendment (2026-09-06, Option 1)
+
+In all 14 archived runs the globally first dynamic true-ready per LAN occurs
+10-25 s before the generator-labeled `compute_plateau` begins, so ±7 s windows
+around it contain zero labeled-plateau rows and the original contract is
+unsatisfiable. The amendment:
+
+- **Anchor eligibility**: earliest dynamic candidate per LAN whose passive
+  true-ready lies in `[plateau_lan_start + 30 s, plateau_lan_end - 7 s)`,
+  with plateau bounds taken from the generator-labeled request timeline
+  (per-LAN min/max `sent_at` of `compute_plateau` rows). `run_status`
+  `started_at` is never used for phase bounds (it precedes traffic launch).
+- **No admission conditioning**: candidates come from every admission-log row
+  with a spawn timestamp, regardless of `result`. If the selected candidate
+  is not admitted, the run fails instead of skipping.
+- **Same rule everywhere**: historical lock, bridge, screens, and preflight
+  use the identical eligibility rule; the anchor's plateau offset and rank
+  among candidates are recorded for reporting.
+- **Success floor**: each window must contain >=100 completed 2xx requests
+  for its successful p95 to be valid.
+- **Screens**: first-wave admissions and `scale_up` decisions are counted
+  per LAN inside the first 120 s of the labeled plateau; the recovery window
+  `[last first-wave admission + 60 s, +180 s)` is per LAN and must remain
+  inside that LAN's plateau.
+- **Preflight parity** (implemented, per §7): offered demand difference
+  <=2 %, old-CPU difference <=10 pp, first-decision difference <=10 s/LAN,
+  add-count difference <=1/LAN, all in the same 30 s pre-anchor LAN window.
+
+Claim boundary: the design estimates the direct-vs-discovery readiness-window
+contrast **under the locked low quota**. It does not claim that low headroom
+*amplifies* the contrast relative to the archived `EDGE_CPUS=0.15` regime; that
+claim would require concurrent 0.15 control cells in the same campaign.
+
 ## 4. Historical Reference
 
 Before runtime changes, inventory all 14 August runs and require all seven
 direct/discovery pairs to retain admission logs, request CSVs, service logs,
-snapshots, and status files. Recompute the primary metric and persist:
+snapshots, and status files. Recompute the primary metric under the §3.1
+eligibility rule and persist:
 
 ```text
 H = max(0.010 s, max(abs(D[seed]) for seed in 3001..3007))
 P = 0.010 s
 ```
 
-`H` is the original-headroom contextual envelope, not a low-headroom noise
-estimate. `P` is the fixed 10 ms preflight effect floor. The lock record is
-`rq3lh_metric_lock.json` and includes run IDs, artifact hashes, all per-LAN
-values, `H`, `P`, and the analyzer hash.
+`H` is a **descriptive, exploratory** envelope of the archived runs under the
+amended endpoint (the archived `D` values were inspected during endpoint
+development, so this is not a pre-registered noise bound). `P` is the fixed
+10 ms preflight effect floor. The lock record is `rq3lh_metric_lock.json` and
+includes run IDs, per-pair seeds (from `open_loop_schedule.json`), all
+per-LAN values, `H`, `P`, artifact hashes (request CSV, admission logs,
+phases/env/status snapshots, service logs), and the analyzer hash.
 
 ## 5. Preparation Bridge
 
