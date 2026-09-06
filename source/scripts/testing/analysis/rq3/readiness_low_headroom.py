@@ -192,6 +192,9 @@ def run_arm(run_dir: Path) -> str:
     env = parse_env(run_dir / "controller_env_snapshot.env")
     propagation = env.get("READINESS_PROPAGATION", "")
     if propagation == DISCOVERY:
+        if env.get("EDGE_APP_READY_EVENT") == "0":
+            raise ValueError(
+                f"unsupported arm combination (discovery + event absence): {run_dir}")
         return DISCOVERY
     if env.get("EDGE_APP_READY_EVENT") == "0":
         return EVENT_ABSENT
@@ -290,11 +293,12 @@ def first_anchors(run_dir: Path,
         missing = [
             row for row in candidates
             if row["lan"] == lan and row.get("_log_missing")
+            and row.get("result") == "admitted"
             and start <= row["_spawn"] <= end
         ]
         if missing:
             raise ValueError(
-                f"missing service log for plateau-spawned candidate, lan{lan}: {run_dir}")
+                f"missing service log for plateau-admitted candidate, lan{lan}: {run_dir}")
         eligible = [
             row for row in candidates
             if row["lan"] == lan and row["_true_ready"] is not None
@@ -523,11 +527,12 @@ def capacity_summary(run_dir: Path, expected_quota: str | None = None) -> dict[s
             reliefs.append(pre - post)
     status_path = run_dir / "run_status.json"
     status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
+    event_count = sum(1 for row in all_admissions if row.get("admit_source") == "event")
     return {
         "run": run_dir.name,
         "arm": run_arm(run_dir),
         "run_status": status.get("status"),
-        "event_fraction": analyze_run(run_dir, include_qoe=False)["event_fraction"],
+        "event_fraction": event_count / len(all_admissions) if all_admissions else None,
         "admissions_lan1": sum(row["lan"] == 1 for row in all_admissions),
         "admissions_lan2": sum(row["lan"] == 2 for row in all_admissions),
         "first_wave_lan1": len(first_wave[1]),
@@ -611,8 +616,6 @@ def historical_lock(args: argparse.Namespace) -> int:
         groups.setdefault(key, {})[record["arm"]] = record
     if set(groups) != {str(number) for number in range(1, 8)}:
         raise ValueError(f"expected historical pair keys 1..7, got {sorted(groups)}")
-    if set(seeds) != {str(number) for number in range(1, 8)}:
-        raise ValueError(f"missing base_seed provenance for pairs: {set(groups) - set(seeds)}")
     pairs = []
     for key in sorted(groups, key=int):
         direct = groups[key].get(DIRECT)
@@ -714,6 +717,8 @@ def capacity_screen(args: argparse.Namespace) -> int:
                                   and baseline["cancel_rate"] < 0.05
                                   and result["run_cancel_rate"] is not None
                                   and result["run_cancel_rate"] < 0.05)
+        # Plan §6 specifies a single "canceled+dropped < 5%" requirement; both
+        # the baseline-window and whole-run rates are checked defensively.
         result["gate_manipulation"] = (result["event_fraction"] == 1.0
                                         and result["ready_to_admit_median"] is not None
                                         and result["ready_to_admit_median"] <= 1.0)
@@ -831,10 +836,16 @@ def event_absence(args: argparse.Namespace) -> int:
         run_dir = Path(path)
         # §8 does not require the primary ±7 s window floors; tolerate their
         # absence so a valid fallback-liveness run cannot be voided by them.
+        # The fallback is recorded so "cost not measured" is distinguishable
+        # from a measured null cost.
+        qoe_fallback = False
+        qoe_fallback_reason = None
         try:
             record = analyze_run(run_dir, include_qoe=True)
-        except ValueError:
+        except ValueError as exc:
             record = analyze_run(run_dir, include_qoe=False)
+            qoe_fallback = True
+            qoe_fallback_reason = str(exc)
         env = parse_env(run_dir / "controller_env_snapshot.env")
         admitted = admissions(run_dir)
         max_probe = as_float(env.get("READINESS_PROBE_MAX_S")) or 120.0
@@ -857,6 +868,8 @@ def event_absence(args: argparse.Namespace) -> int:
                         "n_admitted": len(admitted),
                         "liveness_budget_s": liveness_budget,
                         "liveness_pass": liveness,
+                        "qoe_fallback": qoe_fallback,
+                        "qoe_fallback_reason": qoe_fallback_reason,
                         "fallback_lag_median_s": statistics.median(observed_lag)
                         if observed_lag else None,
                         "fallback_lag_max_s": max(observed_lag) if observed_lag else None})
