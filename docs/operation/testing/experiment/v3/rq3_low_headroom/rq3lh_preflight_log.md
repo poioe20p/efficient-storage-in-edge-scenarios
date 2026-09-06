@@ -14,7 +14,7 @@ stage proceeds. This template is not evidence until run artifacts are attached.
 | | 2.1 | image state captured | Docker aliases | edge latest=638e3efdcdc5; local latest=de40e99c159d; backups edge/local_state:rq3lh-backup | GO | |
 | | 2.2 | exact edge image verified | `638e3efdcdc5` | `edge_server:latest` already the frozen August image (unchanged by September) | GO | |
 | | 2.3 | frozen local-state image | source/digest | built 60f3d8a34dc2 from tag source; smoke OK (pyzmq 27.2.0); `latest` switched to frozen; untracked runtime `osken-controller.env` (Jul-6, pre-August) overlaid with sha256 3ba06c1f recorded in manifest+state | GO | |
-| | 2.4 | bridge compatibility | direct/discovery 0.15 | `rq3lh_bridge_direct` launched (pid 3199785); watchdog active | RUNNING | |
+| | 2.4 | bridge compatibility | direct/discovery 0.15 | direct completed exit=0 (2 adds/LAN, event admits); discovery launched with mid-run quota capture | RUNNING | launcher quota-write fixed (sudo -n + no-overwrite) after direct's post-run PermissionError |
 | | 3.1 | quota screen | `rq3lh_screen_q12_1` | | | |
 | | 3.2 | quota screen | `rq3lh_screen_q10_1` | | | |
 | | 3.3 | quota screen | `rq3lh_screen_q10_2` | | | |
