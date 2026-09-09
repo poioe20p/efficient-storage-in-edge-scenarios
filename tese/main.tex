@@ -630,7 +630,7 @@ so that network behaviour can follow the life cycle of the services it
 carries without reconfiguring the forwarding devices individually.
 Programmable forwarding therefore turns the admission of a newly ready
 backend into a controller decision rather than a fixed property of the
-network, which is the mechanism RQ3 varies.
+network.
 
 \begin{figure}[H]
     \centering
@@ -673,7 +673,7 @@ provisioning unit well suited to constrained edge nodes, with start-up
 cost as the quantity that matters when capacity must be added quickly.
 Precisely because start-up itself is sub-second, the interval that
 remains between readiness and first served traffic is not absorbed by
-provisioning cost, which is the interval RQ3 isolates.
+provisioning cost.
 
 \subsection{NoSQL and MongoDB: The Storage Tier}\label{sec:platform_storage}
 Document-oriented NoSQL stores organise data as schema-flexible
@@ -745,7 +745,7 @@ while placement re-optimises which node serves data rather than
 selecting a capacity action. None of these works selects storage
 scale-out from a live observed bottleneck, adding or removing
 replica-set members while the deployment keeps serving, which is the
-capacity action RQ2 evaluates.
+capacity action evaluated in the thesis.
 
 \section{Monitoring \& Telemetry}\label{sec:lit_monitoring}
 Monitoring and telemetry observe the state of a running service and
@@ -881,8 +881,7 @@ produces delay, Yaseen documents the gaps that polling leaves, and
 aggregation summarises away intermediate observations, yet no reviewed
 work distinguishes delayed event-preserving delivery from latest-state
 delivery, and none traces either regime through a stateful service's
-scaling and traffic-admission path. This distinction is the gap that RQ1
-isolates and measures.
+scaling and traffic-admission path.
 
 \section{Auto Scaling}\label{sec:lit_auto_scaling}
 Auto-scaling adjusts the amount of allocated resources to the load that
@@ -904,29 +903,31 @@ which scarce resources are managed.
 %     \label{fig:autoscaling_loop}
 % \end{figure}
 
-    The field is organised around two questions: when to scale and how
-many resources to add. The classification scheme of Qu et al. separates
-the surveyed auto-scalers along dimensions such as the scaling
-indicator, the resource estimation method, and the timing of the
-scaling action \parencite{Qu2018AutoScalingWebApplicationsClouds}. The
-edge-specific categorisation of Taherizadeh and Stankovski organises
-the same questions across edge application types and operational
-challenges, and likewise surveys the scaling of application instances,
-whether virtual machines or containers, and treats auto-scaling as a
-runtime-adaptation requirement shared by the analysed application types
-\parencite{Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
+    The field show what the surveyed
+auto-scalers have in common. Qu et al. classify them along the scaling
+indicator, the resource estimation method, and the timing of the action,
+and Taherizadeh and Stankovski organise the same questions across edge
+application types and operational challenges. In both, the unit surveyed
+is the scaling of service instances, whether virtual machines or
+containers: the questions the field asks are when to scale and how many
+instances to add, and which kind of capacity is provisioned is not among
+the classification dimensions
+\parencite{Qu2018AutoScalingWebApplicationsClouds,Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
 
-    When SDN enters the loop, the traffic side is added but the decision
-space remains single-option: Llorens-Carrodeguas et al. couple SDN-based
-traffic steering with horizontal scaling of virtualised network functions,
-so that a single controller re-programs the forwarding paths while
-instances of the same pre-dimensioned function pool are activated or
-deactivated. Metric collection and the lifecycle operations that feed and
-execute the decision remain external, and the decision itself reduces to
-whether and how many instances of that one function to activate, leaving
-no selection among alternative capacity actions in response to the
-observed bottleneck
+    When SDN enters the loop, the traffic side is added, but the scaled
+resource remains the one the service function is built from:
+Llorens-Carrodeguas et al. couple SDN-based traffic steering with
+horizontal scaling of a transparent VNF cluster, so that a single
+controller re-programs the forwarding paths while instances of the same
+pre-dimensioned function pool are activated or deactivated according to
+their load and CPU status
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+The decision reduces to whether and how many instances of that one
+function to activate, and the service model contains no data tier on
+which those instances depend. A stateful edge service differs precisely
+on that point: its replicas depend on a data tier that is itself live
+capacity, and when the limiting resource is that data tier, adding
+instances does not relieve the pressure that sits there.
 
     Predictive and learning-based approaches sharpen the same decision
 without widening it: Toka et al. formalise the Kubernetes horizontal
@@ -937,9 +938,10 @@ demand, the latter jointly with placement
 \parencite{Ju2021ProactiveAutoscalingEdgeComputingSystems,Cheng2023ProScaleProactiveAutoscalingMicroserviceTime},
 and Li et al. couple scaling and placement in a single optimisation
 \parencite{Li2021JointOptimizationAutoScalingAdaptive}. Across these
-systems the question answered is how many replicas of the one compute
-tier to run and where, while the possibility of scaling a different kind
-of capacity does not arise.
+systems the unit whose count is forecast and adjusted is the compute
+replica. The improvement they pursue is a better forecast of how many
+instances to run; which tier holds the limiting resource does not enter
+their problem.
 
     Scaling one resource does not always make the service better,
 because the pressure may sit elsewhere. Nikravesh et al. quantify what
@@ -955,10 +957,13 @@ lies elsewhere
 \parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among those
 systems, awareness of the effect is scarce and cross-service only:
 Waterfall, a machine-learning auto-scaler, accounts for how scaling
-one microservice can shift the bottleneck towards downstream
-services, and ATOM uses layered queuing networks to reduce bottleneck
-shifts in model-agnostic controllers; both provisions remain
-compute-side, and no surveyed system selects a storage action.
+one microservice can shift the bottleneck towards downstream services,
+and ATOM uses layered queuing networks to reduce bottleneck shifts in
+model-agnostic controllers
+\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Both
+provisions remain compute-side: the data tier, even when it is the one
+driving the violations, is not part of the action space the reviewed
+systems expose.
 
     The most recent systems sharpen the same boundary: PBScaler identifies
 the microservice whose degradation propagates through the call graph,
@@ -967,8 +972,9 @@ identified bottleneck
 \parencite{Xie2024PBScalerBottleneckAwareAutoscalingFramework}.
 Bottleneck awareness therefore exists in the current state of the art,
 but the bottleneck it locates is always a microservice and the action it
-takes is always a compute-replica count, so the selection between
-compute and storage capacity remains outside the action space.
+takes is always a compute-replica count. When the limiting resource is
+the data store rather than any microservice, locating the bottleneck is
+not enough: the action must change kind.
 
     The closest reviewed precedent to selecting between resource tiers
 is the provisioning model of Li et al., which adds both cloud compute
@@ -982,9 +988,10 @@ management efficiency.
 
     Pelle et al. keep function and state placement in sync through
 an integrated optimisation over an edge platform
-\parencite{Pelle2022CostLatencyEdgePlatform}, yet again the mechanism
-is placement, not a runtime capacity action chosen between compute and
-storage.
+\parencite{Pelle2022CostLatencyEdgePlatform}. The mechanism is
+placement rather than live capacity action: state is moved to follow
+the functions, while the response to an observed bottleneck remains
+outside the optimisation.
 
     The most recent survey converges on the same boundary: El Mrabet et
 al. extend the classification across cloud, fog, and edge, categorising
@@ -1052,8 +1059,10 @@ whether the action matched to the observed bottleneck helps, but how much:
 how the benefit is distributed across targeted-tier relief, service recovery,
 and resource use; where mismatched fixed policies pay the cost of their
 choice; and how reliably a telemetry-driven selector commits to the right
-single action. This is the gap that RQ2 isolates and measures. Equally
-unexamined is the boundary at which the decision is fed: where the reviewed
+single action. 
+    
+    Equally unexamined is the boundary at which
+the decision is fed: where the reviewed
 works describe the monitoring and lifecycle components that supply the
 scaling decision at all, they leave those components outside the decision
 loop, a default examined across all three interfaces in
@@ -1151,7 +1160,7 @@ to routing eligibility is not separated from the surrounding lifecycle.
     Across this literature, therefore, the selection of a backend among
 eligible candidates is well characterised, and integrated systems implement
 broader membership transitions. What remains unisolated in the reviewed
-corpus is the post-readiness handoff from lifecycle completion to actual
+literature is the post-readiness handoff from lifecycle completion to actual
 traffic contribution under controlled invariants. This is the gap RQ3
 isolates: the dissertation varies readiness-admission coordination while
 holding the application-readiness criterion and selection function constant,
