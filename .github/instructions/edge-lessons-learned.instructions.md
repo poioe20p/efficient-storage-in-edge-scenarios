@@ -106,3 +106,53 @@ Runs can take 40+ minutes. The current approach (`mode=async` terminal +
   detached execution with periodic phase-polling from a separate SSH session,
   or a lightweight watchdog script on the cloud VM that writes heartbeat
   timestamps the runner can check independently.
+
+## Pre-Registered Zero-Admission Cells vs the Shared Min-Admissions Gate (RQ3 robustness)
+
+The shared RQ3 gate in `run_experiment.sh` hard-requires ≥1 admitted backend
+per LAN. The robustness `loss_all × event_only` cell pre-registers ZERO
+admissions (every event dropped; the 130 s fallback is inert because abandon
+fires at probe max 120) — and the gate false-failed a run whose data was
+exactly as pre-registered (0 admitted, 32 abandoned, zero `probe_fallback`,
+flow checks all PASS).
+
+**Fix:** the gate now waives min-admissions when the env snapshot has
+`READINESS_EVENT_DROP_MODE=all` AND `READINESS_EVENT_FALLBACK_S >= 120`
+(the zero-admission cell signature). Any other cell keeps the hard gate.
+
+**Lesson:** when a plan pre-registers an outcome that a shared gate treats as
+an error, the gate must be keyed to the cell's config signature BEFORE the
+first evidence run — same class as the RQ2 × RQ3 gate false-failure above.
+Diagnose from the gate's own output first; a "failed" run can hold valid data.
+
+Discovered on 2026-09-06 during `rq3rob_loss_all_event_only_0` (Stage 0.2.3).
+
+## osken Logging Config Suppresses sdn_controller INFO (Fault-Evidence Invisible)
+
+The `osken-controller` image's `/etc/osken/logging.conf` sets the ROOT logger
+to WARNING and only promotes `os_ken.*` to DEBUG. `sdn_controller.*` module
+loggers inherit root, so `logger.info(...)` evidence lines never reach the
+captured controller logs. The RQ3 robustness drop-knob originally logged
+dropped app_ready events at INFO: the mechanism worked (all admissions were
+`probe_fallback`) but zero drop rows appeared in `controller_lan*.log`,
+breaking the plan's "drop-log rows match mode" gate.
+
+**Fix:** fault-evidence lines in `sdn_controller` must be emitted at WARNING
+(or the logging config must promote the module). Verify the level change with
+a live mid-run grep of the captured controller log before the run ends.
+
+Discovered on 2026-09-06 during `rq3rob_loss_all_hybrid_0` (Stage 0.2.2).
+
+## Frozen Worktree Materialization: Verify Phases CONTENT, Not Just JSON Validity
+
+When materializing canonical phases into a frozen worktree, copy from the
+correct source and verify the CONTENT (phase names, durations, mixes) — not
+just `python3 -m json.tool`. The base tag's `phases_override/
+phases_rq3_saturation.json` carries a MIXED plateau (service_pressure 0.6 /
+content_lookup 0.2 / feed_ranking 0.2), while the canonical pure-compute P4
+(service_pressure 1.0) lives in the low-headroom frozen worktree. Copying the
+wrong variant produced a run with 33% plateau timeouts and a degraded
+flow-validation Check D before the mistake was caught by comparing the
+plateau endpoint mix and CPU envelope against the archived healthy run.
+
+Discovered on 2026-09-06 during `rq3rob_none_hybrid_0` (Stage 0.2.1, attempt 1).

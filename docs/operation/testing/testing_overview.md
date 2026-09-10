@@ -76,6 +76,43 @@ It has preparation tooling only; no VM run has launched. The follow-up screens
 uniform `EDGE_CPUS` quotas, then conditionally compares direct versus discovery
 under low headroom and separately tests total readiness-event-source absence.
 
+### RQ3 readiness-admission robustness (launched, STOPPED — QoE pivot)
+
+The robustness follow-up under the reframed RQ3 is documented in
+[`v3/rq3_robustness/experiment_plan.md`](experiment/v3/rq3_robustness/experiment_plan.md).
+It compares event-only, hybrid, and reconciliation-only admission under
+controlled event loss and controller restart. It launched 2026-09-06…07 on
+`cloud-vm-rq3` and was **STOPPED by user decision after 19 valid runs** (block
+1 9/9, block 2 9/9, block 3 1/9): the frozen 0.15-quota regime lands in the
+0.28–0.69% failure envelope, so n=6 cannot produce visible QoE degradation.
+The 19 runs are retained as separate 0.15-family evidence; restart findings
+were characterized (arm-independent post-restart orphaning).
+
+### RQ3 QoE-consequence configuration discovery (pre-registered, STOPPED 2026-09-08)
+
+The QoE-consequence follow-up (Family 3) is documented in
+[`v3/rq3_qoe/experiment_plan.md`](experiment/v3/rq3_qoe/experiment_plan.md).
+It descended a uniform `EDGE_CPUS` quota ladder {0.13 … 0.09} to find and lock
+a **reasonable** low-headroom configuration where total readiness-event loss
+produces visible, bounded degradation in the event-only arm while hybrid
+(20 s fallback) and reconcile (10 s discovery) stay healthy, then certifies
+the contrast at n=6/arm. Pre-registration approved 2026-09-07 (Approach A);
+a slow-share QoE axis was added 2026-09-08 (user-approved). **STOPPED and
+superseded 2026-09-08**: the plateau-saturation failure rate is structurally
+capped at ~1.5 % (driver patience makes timeout share bimodal), so the family
+could not produce solid RQ3 evidence; 7 runs retained as archive, superseded
+by [`rq3_timing`](experiment/v3/rq3_timing/experiment_plan.md).
+
+### RQ3 Timing — readiness-loss relief contrast (pre-registered)
+
+The reframed QoE family (Family 4) is documented in
+[`v3/rq3_timing/experiment_plan.md`](experiment/v3/rq3_timing/experiment_plan.md).
+It keeps the three arms and both fault cells, fixes the quota at 0.12, and
+sweeps the `compute_plateau` **rate** {2.0, 2.5, 3.0} so the old static tier
+is visibly overloaded when solo while hybrid/reconcile recover into a healthy
+plateau tail. Preflight signal (P1 + P2 across 3 seeds, ≥7 pp median power
+margin) is required before the n=6 E stage launches.
+
 ---
 
 ## Architecture: Experiment Data Flow

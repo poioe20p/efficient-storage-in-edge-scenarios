@@ -1,0 +1,66 @@
+{
+  "pass": false,
+  "assessable_blocks": [1, 2, 3, 5, 6],
+  "failures": [
+    "H-T2 relief completion/ordering not reproduced",
+    "H-T3 none-cell health floor violated (bad>1% or slow>2pp)"
+  ],
+  "H-T1": {
+    "cliffs_delta": 1.0,
+    "delta_slow_ge_5pp_blocks": 5,
+    "full_pass": true,
+    "median_pp": 7.64,
+    "mwu_p": 0.003968253968253968,
+    "onset_delta_ge_5pp_blocks": 5,
+    "onset_median_pp": 28.01,
+    "onset_pass": true,
+    "pass": true
+  },
+  "H-T1_boundedness": {
+    "blocks_le_25pct": 5,
+    "event_only_slow_blocks": [0.106, 0.1439, 0.0834, 0.101, 0.1366],
+    "median": 0.10599480229536218,
+    "pass": true
+  },
+  "H-T2": {
+    "event_only_zero_new_success_blocks": true,
+    "pass": false,
+    "relief_blocks": [1, 2, 3, 5, 6],
+    "ttr_hybrid_s": [1.2000110149383545, 0.9830019474029541, 0.0, 0.9238190650939941, 1.0839018821716309, 0.0],
+    "ttr_order_hybrid_gt_reconcile": false,
+    "ttr_reconcile_s": [1.3037009239196777, 1.2863399982452393, 7.377744913101196, 1.0721490383148193, 7.788332939147949, 0.0]
+  },
+  "H-T3": {
+    "none_cell_healthy": false,
+    "pass": false
+  },
+  "block_delta_slow_pp": [7.0, 10.87, 6.21, 7.64, 9.99],
+  "block_exclusions": {
+    "4": "controls_tail_slow_gt_2pp"
+  },
+  "block_onset_delta_slow_pp": [28.01, 25.17, 25.11, 30.84, 29.1],
+  "family": "rq3_timing",
+  "onset_slow": {
+    "b1_event_only": 0.39025779803446803,
+    "b1_hybrid": 0.11016888762203378,
+    "b1_reconcile": 0.04755115135096599,
+    "b2_event_only": 0.3561956366747469,
+    "b2_hybrid": 0.057122507122507125,
+    "b2_reconcile": 0.10449782593199801,
+    "b3_event_only": 0.29667901938426455,
+    "b3_hybrid": 0.045542014111610005,
+    "b3_reconcile": 0.03426414019091038,
+    "b4_event_only": 0.3653530962730706,
+    "b4_hybrid": 0.03656711098438948,
+    "b4_reconcile": 0.10590079817559864,
+    "b5_event_only": 0.36824083321443857,
+    "b5_hybrid": 0.049914432401597264,
+    "b5_reconcile": 0.059854638734501926,
+    "b6_event_only": 0.3630600470118954,
+    "b6_hybrid": 0.07203933304831124,
+    "b6_reconcile": 0.056605118699650674
+  },
+  "rate": "2.0",
+  "runs": 36,
+  "timing_version": 2
+}

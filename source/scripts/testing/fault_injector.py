@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Phase-aware fault injector for targeted experiment runs.
 
-The injector waits for configured phase windows, resolves the most recent
-normal VIP_DATA backend from the captured controller logs, maps the backend IP
-to a running storage container, hard-stops that container, and records the
-result to a CSV artifact consumed by the offline analysis CLIs.
+The injector waits for configured phase windows, then applies the configured
+action: resolve the most recent normal VIP_DATA backend and hard-stop its
+storage container (docker_stop), or restart a LAN controller container
+(docker_restart, RQ3 robustness restart cell). Results are recorded to a CSV
+artifact consumed by the offline analysis CLIs.
 """
 
 from __future__ import annotations
@@ -147,8 +148,21 @@ def resolve_storage_container_for_ip(backend_ip: str) -> str:
     raise RuntimeError(f"no running storage container found for backend IP {backend_ip}")
 
 
+def restart_container_name(action: FaultAction) -> str:
+    """Map a docker_restart action to the LAN controller container."""
+    if action.controller_lan == "lan2" or action.domain == "n2":
+        return "osken_2"
+    return "osken"
+
+
 def execute_action(action: FaultAction, container_name: str) -> str:
     docker = docker_cmd()
+    if action.action_type == "docker_restart":
+        result = run_command(
+            [docker, "restart", container_name],
+            timeout=max(action.timeout_s + 5.0, 20.0),
+        )
+        return result.stdout.strip() or container_name
     if action.action_type != "docker_stop":
         raise RuntimeError(f"unsupported action type: {action.action_type}")
     result = run_command(
@@ -238,6 +252,18 @@ def main() -> None:
         for action in actions:
             try:
                 wait_for_action_window(action, Path(args.phase_file), args.poll_interval_s)
+                if action.action_type == "docker_restart":
+                    container_name = restart_container_name(action)
+                    result = execute_action(action, container_name)
+                    write_event(
+                        writer,
+                        action=action,
+                        status="executed",
+                        message=result,
+                        container_name=container_name,
+                    )
+                    handle.flush()
+                    continue
                 if action.selector_mode != "last_normal_backend_from_controller_log":
                     raise RuntimeError(
                         f"unsupported selector mode: {action.selector_mode}"

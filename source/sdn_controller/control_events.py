@@ -7,6 +7,7 @@ Thread safety: all methods are called exclusively from Thread 2.
 """
 
 import logging
+import os
 import time
 from typing import Callable
 
@@ -17,6 +18,13 @@ from .scaling_config import _FLOW_ISOLATION_WARMUP_S
 from .telemetry.models import TelemetrySummary
 
 logger = logging.getLogger(__name__)
+
+# RQ3 robustness campaign (2026-09): deterministic controller-side drop of
+# app_ready events. `off` (default) keeps every other run byte-identical;
+# `all` drops every event; `alternate` drops every 2nd event per controller
+# (each controller serves one LAN, so the counter is per-LAN). Discovery runs
+# ignore app_ready events anyway, so the knob only affects direct arms.
+_READINESS_EVENT_DROP_MODE = os.environ.get("READINESS_EVENT_DROP_MODE", "off")
 
 
 class ControlEventDispatcher:
@@ -30,6 +38,9 @@ class ControlEventDispatcher:
         # RQ3 flow-isolation counters / guard state (Thread 2 only).
         self._request_complete_count: int = 0
         self._flow_guard_warned: bool = False
+        # RQ3 robustness: per-controller app_ready arrival counter for the
+        # deterministic `alternate` drop mode (Thread 2 only).
+        self._app_ready_arrival_count: int = 0
 
     def process_flow_events(self, summary, vip_routing, enabled, uptime_s) -> None:
         """Handle request_complete control events (RQ3 flow isolation).
@@ -67,14 +78,32 @@ class ControlEventDispatcher:
         readiness gate for event-driven admission. No-op when the gate is None
         (``READINESS_PROPAGATION == "off"``); unknown/unpending MACs are
         ignored (e.g. static servers that boot before the run).
+
+        RQ3 robustness (default off): ``READINESS_EVENT_DROP_MODE=all`` drops
+        every app_ready event at the controller, and ``alternate`` drops every
+        2nd event per controller. Every drop is logged with the mode and MAC.
         """
         if readiness_gate is None:
             return
+        drop_mode = _READINESS_EVENT_DROP_MODE
         for event in summary.control_events:
-            if event.get("event_type") == "app_ready":
-                mac = event.get("server_id")
-                if mac:
-                    readiness_gate.admit_on_event(mac)
+            if event.get("event_type") != "app_ready":
+                continue
+            mac = event.get("server_id")
+            if not mac:
+                continue
+            if drop_mode == "all":
+                logger.warning("[control] app_ready event dropped (mode=all) mac=%s", mac)
+                continue
+            if drop_mode == "alternate":
+                self._app_ready_arrival_count += 1
+                if self._app_ready_arrival_count % 2 == 0:
+                    logger.warning(
+                        "[control] app_ready event dropped (mode=alternate, "
+                        "ordinal=%d) mac=%s", self._app_ready_arrival_count, mac,
+                    )
+                    continue
+            readiness_gate.admit_on_event(mac)
 
     def _log_storage_ready(self, info, source: str) -> None:
         if info.ready_logged or info.spawn_started_monotonic_s <= 0:

@@ -191,9 +191,9 @@ consumes storage and replication bandwidth
     Scale-out alone does not guarantee usable capacity: the orchestration
 system must detect when data must be brought closer, deliver that
 information to the decision point, provision the right kind of capacity,
-and redirect traffic to it, and each of these steps introduces delay that
-worsens resource orchestration and can, in turn, lead to user service
-quality degradation.
+and redirect traffic to it, and each of these steps introduces delay, or
+can fail, either of which worsens resource orchestration and can, in turn,
+lead to user service quality degradation.
 
     This sequence forms what this dissertation calls the demand-to-capacity
 chain: the default path that an orchestration system must traverse to convert
@@ -250,8 +250,9 @@ measured under controlled conditions.
 deployed across two geo-distributed sites: how demand evidence is
 delivered to the controller (telemetry delivery semantics), which
 capacity action the controller selects in response to the observed
-bottleneck (compute or storage scale-out), and when ready capacity is
-admitted to traffic (readiness admission).
+bottleneck (compute or storage scale-out), and how ready capacity is
+admitted to traffic, including the failure of that admission path
+(readiness admission).
 
     The thesis does not claim that this SDN-based architecture is
 superior to existing orchestration platforms such as Kubernetes or NFV
@@ -267,9 +268,10 @@ The main objective of this thesis is to study the coordination gaps that
 arise between independent modules with their own control loops and to
 contribute to more efficient resource orchestration for stateful edge
 services, by characterising a specific and less examined part of this
-problem: the handoff delays that accumulate at the interfaces between
-telemetry delivery, capacity action selection, and traffic admission
-under varying demand shifts. The investigation rests on the idea that
+problem: the handoff delays that accumulate, and the failures that can
+arise, at the interfaces between telemetry delivery, capacity action
+selection, and traffic admission under varying demand shifts. The
+investigation rests on the idea that
 co-locating telemetry consumption, scaling decisions, and routing within each
 controller process keeps their controller-side coordination in-process while
 retaining telemetry delivery as an explicit, configurable boundary. Along with
@@ -290,20 +292,28 @@ flexibly the service responds to demand variation.
 This thesis seeks to answer the following three research questions:
 
 \begin{itemize}
-    \item \textbf{RQ1} -- How do verified event-preserving, delayed event-preserving,
-    and latest-state telemetry delivery semantics affect overload observability,
-    scaling response, and transient service quality in a stateful edge service?
+    \item \textbf{RQ1} -- How does the way demand evidence is delivered to the
+    controller affect what it observes about overload, how it responds by
+    scaling, and the quality of service users experience during a demand shift?
 
-    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand,
-    how does bottleneck-aware scale-out, compared
-    with fixed single-tier policies, affect
-    targeted-tier relief, service recovery, and resource use?
+    \item \textbf{RQ2} -- When a service is bottlenecked on compute or on data
+    access, how does selecting the scale-out action that matches the observed
+    bottleneck affect relief of the tier under pressure, service recovery, and
+    resource use?
 
-    \item \textbf{RQ3} -- For newly provisioned compute backends satisfying an
-    identical servability criterion, how do lifecycle-driven and periodic
-    readiness-admission mechanisms affect the time from verified readiness to
-    routable and usable capacity?
+    \item \textbf{RQ3} -- When a newly provisioned backend becomes ready, how
+    does the way it is admitted to traffic affect when it actually serves
+    requests, and does faster admission carry a service-quality cost when
+    spare capacity is low and the readiness signal fails?
 \end{itemize}
+
+    RQ1 compares event-preserving, delayed event-preserving, and
+    latest-state delivery; RQ2 compares bottleneck-matched selection against
+    fixed single-tier policies under compute-bound and data-access-bound
+    demand; and RQ3 compares lifecycle-coupled with periodically reconciled
+    admission, including the failure of the readiness signal under thin
+    incumbent headroom. The experimental form of each question is specified in
+    \ref{ch:results}.
 
 \section{Research Methodology}\label{sec:research_methodology}
 The work presented in this dissertation follows the Design Science Research
@@ -396,10 +406,11 @@ This dissertation makes the following contributions:
     from the observed bottleneck, compared with fixed single-tier policies,
     affects targeted-tier relief, service recovery, and resource use under
     compute-bound and data-access-bound demand (RQ2).
-    \item An experimental characterisation of readiness admission that
-    quantifies, under direct lifecycle notification versus periodic
-    discovery, the time from verified readiness to routable capacity and
-    the transition-window effects of each mechanism (RQ3).
+    \item An experimental characterisation of readiness-admission
+    coordination that quantifies, under lifecycle-coupled and periodically
+    reconciled admission, the time from verified readiness to usable
+    capacity, and the bounded reliability cost the faster mechanism incurs
+    when the lifecycle event source fails (RQ3).
     \item A comparative synthesis of the observation, action-selection, and
     readiness-admission interfaces under their respective controlled
     workload regimes, identifying which effects were robust,
@@ -440,8 +451,8 @@ implementation.
 \item \textbf{Chapter 5} presents the experimental results. Following the
 demand-to-capacity chain, the experimental campaigns address telemetry delivery
 semantics (RQ1), bottleneck-aware scaling action selection (RQ2), and readiness admission
-to traffic (RQ3), followed by resource orchestration and scalability analysis, and a
-synthesis across the three interfaces.
+to traffic and its robustness cost (RQ3), followed by resource orchestration and
+scalability analysis, and a synthesis across the three interfaces.
 
 \item \textbf{Chapter 6} concludes the dissertation, restating the findings and the
 contributions, discussing the limitations of the work, and outlining directions for future
@@ -491,6 +502,10 @@ and the research gaps derived from this review are stated in
     Searches were executed in Google Scholar and IEEE Xplore 
 targeting recent literature, publications from 2017 onward with consideration for 
 the number of citations. 
+The 2017 bound applies to the primary searches; older seminal works were
+admitted only when reached by citation chaining or when they meet the
+citation threshold, both recorded among the inclusion criteria of
+Table~\ref{tab:selection_criteria}.
 Works reached through Google Scholar were
 retrieved from IEEE Xplore, ACM Digital Library, Springer, and ScienceDirect.
 Each query resulted in roughly 30 papers evaluated for selection. 
@@ -671,9 +686,14 @@ to dynamic edge environments
     Taken together, these studies establish containers as a
 provisioning unit well suited to constrained edge nodes, with start-up
 cost as the quantity that matters when capacity must be added quickly.
-Precisely because start-up itself is sub-second, the interval that
-remains between readiness and first served traffic is not absorbed by
-provisioning cost.
+Where the field measures the full provisioning-to-serving span, it does
+so for serverless functions, whose cold start is dominated by image pull
+and runtime initialisation and is reported end to end as a single time
+to first response \parencite{EdgeFaaSBench,ColdStartServerlessSurvey}.
+In this thesis those aspects are simplified away, since the backends are
+pre-built containers that start in under a second, with the aim of
+focusing on the interval that remains between readiness and first served
+traffic, which is the interval the review isolates next.
 
 \subsection{NoSQL and MongoDB: The Storage Tier}\label{sec:platform_storage}
 Document-oriented NoSQL stores organise data as schema-flexible
@@ -903,8 +923,7 @@ which scarce resources are managed.
 %     \label{fig:autoscaling_loop}
 % \end{figure}
 
-    The field show what the surveyed
-auto-scalers have in common. Qu et al. classify them along the scaling
+    Qu et al. classify the auto-scalers along the scaling
 indicator, the resource estimation method, and the timing of the action,
 and Taherizadeh and Stankovski organise the same questions across edge
 application types and operational challenges. In both, the unit surveyed
@@ -1165,8 +1184,56 @@ traffic contribution under controlled invariants. This is the gap RQ3
 isolates: the dissertation varies readiness-admission coordination while
 holding the application-readiness criterion and selection function constant,
 and measures the time until newly provisioned capacity becomes selectable
-and serves traffic. Direct lifecycle notification and periodic discovery are
-the two operational realisations of that coordination interface.
+and serves traffic. Lifecycle-coupled admission and periodically reconciled
+admission are the two operational realisations of that coordination
+interface.
+
+\subsection{Readiness-Admission Coordination}
+    The two operational realisations, admitting a backend when its lifecycle
+    event fires or admitting it when a periodic scan observes the same state,
+    are not new to software-defined networking. The OpenFlow programming model
+    already separates the two philosophies under different names: a reactive
+    controller installs forwarding state only when the first packet of a flow
+    arrives, whereas a proactive controller pre-installs rules ahead of
+    traffic, trading per-flow setup latency against controller round-trips
+    and flow-table occupancy
+    \parencite{Fernandez2013ComparingOpenFlowControllerParadigms}. The
+    parallel is illustrative rather than exact: reactive installation is
+    triggered by traffic rather than by loss resilience, but it is the same
+    dichotomy applied to a different layer.
+    The closest measured precedent is a SmartNIC-based load balancer that
+    scales network functions at the edge and measures the transition from a
+    scale signal to rebalanced traffic, yet it reports that transition as a
+    single combined process and does not isolate the post-readiness handoff
+    \parencite{Ni2021SmartLB}.
+
+    The network side of the boundary has a direct precedent. Xu et al. dock
+    and undock Docker applications at the edge switch through SDN, so that a
+    container's network attachment is itself a controller-programmed step
+    \parencite{Xu2016SDNDockerAutoDockingUndocking}. Their mechanism shows
+    that attachment is programmable, but it does not separate the interval in
+    which a verified application-ready backend waits to be admitted from the
+    provisioning and attachment steps that precede it, and it does not vary
+    the admission mechanism while holding the readiness criterion and the
+    selection function fixed.
+
+    The reviewed literature leaves a second dimension unexamined. Shard
+    Manager's ordered lifecycle sequence assumes reliable dissemination and
+    drops no requests, the load-balancing surveys treat pool state as
+    accurate and current, and the freshness remarks of the service-discovery
+    surveys concern stale data rather than lost events. No reviewed work
+    models what happens to a ready backend when the readiness event that
+    would admit it is lost. The admission interface is therefore both a
+    latency choice and a reliability choice: lifecycle-coupled admission
+    realises capacity sooner, while periodically reconciled admission
+    self-heals on every cycle, because a lost event leaves a ready backend
+    dark until it is re-checked or abandoned. RQ3 characterises the two
+    together, measuring the time from verified readiness to usable capacity
+    and the service-quality consequence when the event path fails and
+    incumbent headroom is thin. The question mirrors the one RQ1 poses for
+    demand evidence at the opposite end of the chain: how state moves from
+    known to acted upon across a control-loop boundary, and what the crossing
+    costs when the state is delayed or lost.
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration}
 Resource orchestration is the management layer that keeps a running
@@ -1386,10 +1453,11 @@ between bottleneck-specific compute and storage remedies
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Nikravesh2017ImpactDatabaseLayerAutoScaling,Li2020HeterogeneityAwareElasticProvisioningCloud}.
 Load-balancing systems implement integrated membership
 transitions, but the reviewed work does not isolate the post-readiness handoff
-to traffic contribution under controlled invariants. Finally, orchestration
-platforms either leave these functions separated or coordinate them by
-construction; neither mode varies one interface while holding the others
-fixed.
+to traffic contribution under controlled invariants, and none models the
+failure of the notification path that would admit a ready backend. Finally,
+orchestration platforms either leave these functions separated or coordinate
+them by construction; neither mode varies one interface while holding the
+others fixed.
 
     Table~\ref{tab:interface_gaps} condenses these findings into the
 three interfaces and the question each leaves open.
@@ -1414,9 +1482,10 @@ three interfaces and the question each leaves open.
         recovery, and resource efficiency relative to fixed single-tier
         policies, and where do the effects concentrate? \\
         Ready backend to traffic (RQ3) &
-        How does readiness-admission coordination affect the delay from
-        verified readiness to usable capacity and its transition-window
-        service consequence? \\
+        How does readiness-admission coordination affect the time from
+        verified readiness to usable capacity, and does its delay become a
+        transient service-quality cost when the event path fails and
+        incumbent headroom is thin? \\
         \bottomrule
     \end{tabular}
 \end{table}

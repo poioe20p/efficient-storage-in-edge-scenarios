@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Guarded launcher for one RQ3 low-headroom preparation run.
-# This file is intentionally not invoked by implementation or local validation.
+# Guarded launcher for one RQ3 timing run (frozen worktree, no active run).
+# Delta vs rq3qoe_p1_01_launch_run.sh: the swept axis is the compute_plateau
+# RATE (2.0/2.5/3.0) instead of the EDGE_CPUS ladder; quota is FIXED at 0.12
+# and the launcher ASSERTS that the frozen phases.json compute_plateau rate
+# equals the requested rung (a wrong-file edit must STOP, never run silently).
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-readonly MANIFEST="${RQ3LH_MANIFEST:-$REPO_ROOT/.rq3lh_frozen_manifest.json}"
+readonly MANIFEST="${RQ3TIM_MANIFEST:-$REPO_ROOT/.rq3tim_frozen_manifest.json}"
 readonly IMAGE_STATE="${RQ3LH_IMAGE_STATE:-$REPO_ROOT/rq3lh_image_state.json}"
+readonly EDGE_CPUS="0.12"
 TEMP_ENV=""
 
 die() {
@@ -15,24 +19,39 @@ die() {
 }
 
 cleanup() {
-    if [[ -n "${TEMP_ENV:-}" && -f "$TEMP_ENV" ]]; then
-        rm -f "$TEMP_ENV"
-    fi
+    if [[ -n "${TEMP_ENV:-}" && -f "$TEMP_ENV" ]]; then rm -f "$TEMP_ENV"; fi
 }
 trap cleanup EXIT
 
-[[ $# -eq 4 ]] || die "usage: $0 <direct|discovery|event_absent> <label> <seed> <edge_cpus>"
-MODE="$1"
-LABEL="$2"
-SEED="$3"
-EDGE_CPUS="$4"
-[[ "$MODE" == "direct" || "$MODE" == "discovery" || "$MODE" == "event_absent" ]] || die "invalid mode"
-[[ "$LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || die "invalid label"
+[[ $# -eq 5 ]] || die "usage: $0 <arm> <fault> <label> <seed> <rate>"
+ARM="$1"
+FAULT="$2"
+LABEL="$3"
+SEED="$4"
+RATE="$5"
+[[ "$ARM" == "event_only" || "$ARM" == "hybrid" || "$ARM" == "reconcile" ]] || die "invalid arm"
+[[ "$FAULT" == "none" || "$FAULT" == "loss_all" ]] || die "invalid fault"
+[[ "$LABEL" =~ ^rq3tim_(none|loss_all)_(event_only|hybrid|reconcile)_[0-9]+$ ]] \
+    || die "invalid label (expect rq3tim_<cell>_<arm>_<ordinal|block>)"
 [[ "$SEED" =~ ^[0-9]+$ ]] || die "invalid seed"
-[[ "$EDGE_CPUS" == "0.10" || "$EDGE_CPUS" == "0.12" || "$EDGE_CPUS" == "0.15" ]] || die "quota must be 0.10, 0.12, or 0.15"
+python3 - "$RATE" "$REPO_ROOT/source/scripts/testing/phases.json" <<'PY' || die "rate outside the 2.0/2.5/3.0 ladder or phases.json mismatch"
+import json
+import sys
 
-[[ -f "$MANIFEST" ]] || die "missing frozen manifest"
-[[ -f "$IMAGE_STATE" ]] || die "missing image state record"
+rate = sys.argv[1]
+if rate not in ("2.0", "2.5", "3.0"):
+    raise SystemExit(1)
+phases = json.load(open(sys.argv[2], encoding="utf-8"))["phases"]
+plateau = next((phase for phase in phases if phase.get("name") == "compute_plateau"), None)
+if plateau is None:
+    raise SystemExit(2)
+actual = str(plateau.get("rate_per_client"))
+if actual != rate:
+    raise SystemExit(3)
+PY
+
+[[ -f "$MANIFEST" ]] || die "missing timing manifest"
+[[ -f "$IMAGE_STATE" ]] || die "missing shared image state record"
 python3 - "$MANIFEST" "$IMAGE_STATE" "$REPO_ROOT" <<'PY'
 import json
 import pathlib
@@ -50,23 +69,31 @@ PY
 readonly PHASES="testing/phases.json"
 readonly DIRECT_ENV="$REPO_ROOT/source/scripts/testing/controller_env_overrides/rq3sat_direct.env"
 readonly DISCOVERY_ENV="$REPO_ROOT/source/scripts/testing/controller_env_overrides/rq3sat_discovery.env"
-readonly ABSENT_DELTA="$REPO_ROOT/source/scripts/testing/controller_env_overrides/rq3lh_direct_event_absent.env"
+readonly EVENT_ONLY_DELTA="$REPO_ROOT/source/scripts/testing/controller_env_overrides/rq3rob_event_only.env"
+readonly LOSS_ALL_DELTA="$REPO_ROOT/source/scripts/testing/controller_env_overrides/rq3rob_loss_all.env"
 
-case "$MODE" in
-    direct)
-        ENV_FILE="$DIRECT_ENV"
-        ;;
-    discovery)
-        ENV_FILE="$DISCOVERY_ENV"
-        ;;
-    event_absent)
-        TEMP_ENV="$(mktemp "${TMPDIR:-/tmp}/rq3lh_env_XXXXXX.env")"
-        python3 - "$DIRECT_ENV" "$ABSENT_DELTA" "$TEMP_ENV" <<'PY'
+BASE_ENV="$DIRECT_ENV"
+ARM_DELTA=""
+case "$ARM" in
+    event_only) ARM_DELTA="$EVENT_ONLY_DELTA" ;;
+    hybrid) ;;
+    reconcile) BASE_ENV="$DISCOVERY_ENV" ;;
+esac
+FAULT_DELTA=""
+case "$FAULT" in
+    none) ;;
+    loss_all) FAULT_DELTA="$LOSS_ALL_DELTA" ;;
+esac
+
+TEMP_ENV="$(mktemp "${TMPDIR:-/tmp}/rq3tim_env_XXXXXX.env")"
+python3 - "$BASE_ENV" "$ARM_DELTA" "$FAULT_DELTA" "$TEMP_ENV" <<'PY'
 import sys
 
 out = {}
 order = []
-for name in sys.argv[1:3]:
+for name in sys.argv[1:4]:
+    if not name:
+        continue
     for raw in open(name, encoding="utf-8"):
         line = raw.rstrip("\r\n")
         text = line.strip()
@@ -76,17 +103,12 @@ for name in sys.argv[1:3]:
         if key not in out:
             order.append(key)
         out[key] = line
-with open(sys.argv[3], "w", encoding="utf-8") as handle:
-    handle.write("# generated RQ3 low-headroom event-source-absence merge\n")
+with open(sys.argv[4], "w", encoding="utf-8") as handle:
+    handle.write("# generated RQ3 timing controller-env merge (rq3rob envs reused byte-identical)\n")
     for key in order:
         handle.write(out[key] + "\n")
 PY
-        ENV_FILE="$TEMP_ENV"
-        ;;
-    *)
-        die "unsupported mode: $MODE"
-        ;;
-esac
+ENV_FILE="$TEMP_ENV"
 
 cd "$REPO_ROOT"
 ulimit -n 65535
@@ -105,7 +127,10 @@ sudo -n make -C source/scripts \
 status=$?
 set -e
 
-python3 - "$REPO_ROOT" "$LABEL" "$EDGE_CPUS" <<'PY'
+# The run folder is root-owned (created by sudo make); run the post-run quota
+# snapshot writer under sudo so it can write into it (plan gate:
+# "quota_snapshot matches").
+sudo -n python3 - "$REPO_ROOT" "$LABEL" "$EDGE_CPUS" "$status" <<'PY'
 import json
 import re
 import subprocess
@@ -139,8 +164,12 @@ if candidates:
         "containers": inspected,
         "all_compute_containers_match": bool(inspected) and all(item["matches"] for item in inspected),
     }
-    (run_dir / "quota_snapshot.json").write_text(
-        json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-sys.exit(status)
+    target = run_dir / "quota_snapshot.json"
+    if not target.exists():
+        # Never overwrite a mid-run snapshot: by run end dynamic nodes are
+        # torn down and only statics would be recorded.
+        target.write_text(
+            json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+sys.exit(int(sys.argv[4]))
 PY

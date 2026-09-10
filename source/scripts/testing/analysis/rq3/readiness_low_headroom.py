@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """RQ3 low-headroom readiness analysis.
 
-This module is intentionally artifact-only: it never starts containers or
+This module is intentionally artifact-only: it never starts containers o
 changes experiment state.  It supports the historical lock, outcome-blind
 capacity screens, the two-pair preflight, and the event-source-absence cell.
 """
@@ -841,7 +841,7 @@ def event_absence(args: argparse.Namespace) -> int:
     results = []
     for path in args.run_dir:
         run_dir = Path(path)
-        # §8 does not require the primary ±7 s window floors; tolerate their
+        # §8 does not require the primary ±7 s window floors; tolerate thei
         # absence so a valid fallback-liveness run cannot be voided by them.
         # The fallback is recorded so "cost not measured" is distinguishable
         # from a measured null cost.

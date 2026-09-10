@@ -6,16 +6,15 @@ stage proceeds. This template is not evidence until run artifacts are attached.
 
 | Date | Stage | Checkpoint | Label/Scope | Result | Verdict | Resolution note |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-09-06 | 0.1 | archive inventory | all August pairs | 14/14 folders complete; snapshots byte-identical (md5 2ada9f3f07); no active run/watchdog/launcher on VM | GO | |
-| 2026-09-06 | 0.2 | historical metric lock | 14 runs | H=0.180 s, P=0.010 s, 7/7 pairs, seeds 3001-3007 verified from open_loop_schedule.json; amended plateau-eligible anchor (§3.1); per-LAN values + artifact/analyzer hashes in lock | GO | H is descriptive/exploratory only (D values inspected during endpoint development); lock synced locally |
-| 2026-09-06 | 1.1 | detached worktree/tag identity | frozen tree | `~/rq3lh_frozen` detached at 55c22fbf; tag fetched to VM via bundle | GO | |
-| 2026-09-06 | 1.2 | canonical P4 phases materialized | phases snapshot source | P4 profile (service_pressure=1.0) materialized from campaign-ready source; manifest phase hash recorded | GO | |
-| 2026-09-06 | 1.3 | protected source hashes | controller/network/images | 70 protected files hashed; diff vs tag empty; static preflight checks PASS | GO | |
-| | 2.1 | image state captured | Docker aliases | edge latest=638e3efdcdc5; local latest=de40e99c159d; backups edge/local_state:rq3lh-backup | GO | |
-| | 2.2 | exact edge image verified | `638e3efdcdc5` | `edge_server:latest` already the frozen August image (unchanged by September) | GO | |
-| | 2.3 | frozen local-state image | source/digest | built 60f3d8a34dc2 from tag source; smoke OK (pyzmq 27.2.0); `latest` switched to frozen; untracked runtime `osken-controller.env` (Jul-6, pre-August) overlaid with sha256 3ba06c1f recorded in manifest+state | GO | |
-| | 2.4 | bridge compatibility | direct/discovery 0.15 | attempt 1: delta 202.8 ms, CPU 52.3/58.0, LAN sep 2.22/8.38 s — FAIL under original gates; **amended 2026-09-06**: separation = per-position mean ≥5 s (5.30 ✓), CPU band re-anchored [40.3,66.5] ✓, delta report-only → **PASS** (mechanism PASS throughout) | GO | amendment pre-registered in plan §5; confirmation replicate pair launched (replication policy) |
-| | 2.4b | bridge confirmation replicate | direct/discovery 0.15 seed 3001 | confirmation pair runs (same seed, fresh poll phase) | RUNNING | |
+| | 0.1 | archive inventory | all August pairs | | | |
+| | 0.2 | historical metric lock | 14 runs | | | |
+| | 1.1 | detached worktree/tag identity | frozen tree | | | |
+| | 1.2 | canonical P4 phases materialized | phases snapshot source | | | |
+| | 1.3 | protected source hashes | controller/network/images | | | |
+| | 2.1 | image state captured | Docker aliases | | | |
+| | 2.2 | exact edge image verified | `638e3efdcdc5` | | | |
+| | 2.3 | frozen local-state image | source/digest | | | |
+| | 2.4 | bridge compatibility | direct/discovery 0.15 | | | |
 | | 3.1 | quota screen | `rq3lh_screen_q12_1` | | | |
 | | 3.2 | quota screen | `rq3lh_screen_q10_1` | | | |
 | | 3.3 | quota screen | `rq3lh_screen_q10_2` | | | |
