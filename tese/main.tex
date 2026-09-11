@@ -97,7 +97,7 @@
 % =====================================================================
 \begin{document}
 
-\chapter{Introduction}\label{ch:introduction}
+\chapter{Introduction}\label{ch:introduction} %DONE
 Studies have shown that edge web services encompassing routing, monitoring and auto-scaling
 can suffer from coordination delays that arise from the independent control loops through
 which each module operates. This accumulation of handoff delays
@@ -177,7 +177,7 @@ fluctuation of user demand.
     The resource management problem gains more relevance when the services
 themselves are stateful. Unlike stateless microservices, which can be
 replicated freely and absorb traffic immediately, stateful services in a
-geo-distributed edge deployment depend on data co-located with compute:
+geo-distributed edge deployment depend on data held close to the compute:
 a content item ingested at one site is served from the database of that
 site. In distributed deployments, such data is routinely replicated
 across sites for locality and robustness, but replication is neither
@@ -191,9 +191,9 @@ consumes storage and replication bandwidth
     Scale-out alone does not guarantee usable capacity: the orchestration
 system must detect when data must be brought closer, deliver that
 information to the decision point, provision the right kind of capacity,
-and redirect traffic to it, and each of these steps introduces delay, or
-can fail, either of which worsens resource orchestration and can, in turn,
-lead to user service quality degradation.
+and redirect traffic to it, and each of these steps introduces delay that
+worsens resource orchestration and can, in turn, lead to user service
+quality degradation.
 
     This sequence forms what this dissertation calls the demand-to-capacity
 chain: the default path that an orchestration system must traverse to convert
@@ -238,8 +238,8 @@ these handoffs are acknowledged in passing but never isolated or
 varied as an independent variable
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 This thesis investigates them directly through two peer \ac{SDN}
-controllers, one per network domain. Within each controller process,
-telemetry consumption, scaling decisions, and traffic routing are co-located.
+controllers, one per network domain. Within each controller,
+telemetry consumption, scaling decisions, and traffic routing run in the same process.
 Telemetry production and aggregation remain external to the controller, making
 the delivery of aggregated demand evidence an explicit and configurable
 interface. Together with explicit lifecycle hooks for capacity action and
@@ -250,9 +250,8 @@ measured under controlled conditions.
 deployed across two geo-distributed sites: how demand evidence is
 delivered to the controller (telemetry delivery semantics), which
 capacity action the controller selects in response to the observed
-bottleneck (compute or storage scale-out), and how ready capacity is
-admitted to traffic, including the failure of that admission path
-(readiness admission).
+bottleneck (compute or storage scale-out), and when ready capacity is
+admitted to traffic (readiness admission).
 
     The thesis does not claim that this SDN-based architecture is
 superior to existing orchestration platforms such as Kubernetes or NFV
@@ -263,59 +262,50 @@ previously characterised in isolation, and that varying each
 independently reveals which dimensions matter and under what
 conditions.
 
-\section{Objectives}\label{sec:objectives}
+\section{Objectives}\label{sec:objectives} %DONE
 The main objective of this thesis is to study the coordination gaps that
 arise between independent modules with their own control loops and to
 contribute to more efficient resource orchestration for stateful edge
 services, by characterising a specific and less examined part of this
-problem: the handoff delays that accumulate, and the failures that can
-arise, at the interfaces between telemetry delivery, capacity action
-selection, and traffic admission under varying demand shifts. The
-investigation rests on the idea that
-co-locating telemetry consumption, scaling decisions, and routing within each
+problem: the handoff delays that accumulate at the interfaces between
+telemetry delivery, capacity action selection, and traffic admission
+under varying demand shifts. 
+
+    The investigation rests on the idea that
+running telemetry consumption, scaling decisions, and routing within each
 controller process keeps their controller-side coordination in-process while
 retaining telemetry delivery as an explicit, configurable boundary. Along with
 explicit lifecycle hooks for scaling and admission, this arrangement exposes
-the selected interfaces to direct measurement. When one selected interface is
-varied while the other interfaces and the surrounding platform are held
-constant, its contribution to the demand-to-capacity timeline can be measured,
-forming the basis of the experimental design.
+the selected interfaces to direct measurement.
 
-    Because the co-located components are coupled,
-making each interface independently variable is itself a deliberate
-design of the platform, and that allows its impact to be measured not
-only on the time from demand to usable capacity but also on service
-quality, on how load is distributed across resources, and on how
-flexibly the service responds to demand variation.
+    Because the components share one process and are therefore coupled,
+making each interface independently configurable is itself
+a deliberate design choice: the platform can change the
+delivery of demand evidence, the scaling action
+selected, or the admission of ready capacity while keeping the others
+fixed, and measure the effect of that single change.
 
-\section{Research Questions}\label{sec:research_questions}
+\section{Research Questions}\label{sec:research_questions} %DONE
 This thesis seeks to answer the following three research questions:
 
 \begin{itemize}
-    \item \textbf{RQ1} -- How does the way demand evidence is delivered to the
-    controller affect what it observes about overload, how it responds by
-    scaling, and the quality of service users experience during a demand shift?
+    \item \textbf{RQ1} -- How do verified event-preserving, delayed event-preserving,
+    and latest-state telemetry delivery semantics affect overload observability,
+    scaling response, and transient service quality in a stateful edge service?
 
-    \item \textbf{RQ2} -- When a service is bottlenecked on compute or on data
-    access, how does selecting the scale-out action that matches the observed
-    bottleneck affect relief of the tier under pressure, service recovery, and
-    resource use?
+    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand,
+    how does bottleneck-aware scale-out, compared
+    with fixed single-tier policies, affect
+    targeted-tier relief, service recovery, and resource use?
 
-    \item \textbf{RQ3} -- When a newly provisioned backend becomes ready, how
-    does the way it is admitted to traffic affect when it actually serves
-    requests, and does faster admission carry a service-quality cost when
-    spare capacity is low and the readiness signal fails?
+    \item \textbf{RQ3} -- For newly provisioned compute backends satisfying an
+    identical servability criterion, how do lifecycle-driven and periodic
+    readiness-admission mechanisms affect the time from verified readiness to
+    routable and usable capacity, and what does the faster mechanism lose
+    when its readiness notification is lost and spare capacity is scarce?
 \end{itemize}
 
-    RQ1 compares event-preserving, delayed event-preserving, and
-    latest-state delivery; RQ2 compares bottleneck-matched selection against
-    fixed single-tier policies under compute-bound and data-access-bound
-    demand; and RQ3 compares lifecycle-coupled with periodically reconciled
-    admission, including the failure of the readiness signal under thin
-    incumbent headroom. The experimental form of each question is specified in
-    \ref{ch:results}.
-
-\section{Research Methodology}\label{sec:research_methodology}
+\section{Research Methodology}\label{sec:research_methodology} %DONE
 The work presented in this dissertation follows the Design Science Research
 (DSR) methodology \parencite{Hevner2004DesignScienceInformationSystemsResearch1},
 \parencite{vomBrocke2020IntroductionDesignScienceResearch}
@@ -330,15 +320,16 @@ and demonstrated in Figure~\ref{fig:design_science_research_methodology}.
 \end{figure}
 
     Design science produces and evaluates purposeful artefacts that address certain
-real-world problems, the research contribution lies in the knowledge generated
-by designing the artefact and evaluating it against defined objectives. The \ac{DSRM} 
-organises the research effort into six activities: problem
+real-world problems, the research contribution corresponds to the knowledge gained
+by designing the artefact and evaluating it against defined objectives.
+In \ac{DSRM} the research is organized into six sections: problem
 identification and motivation, definition of the objectives of a solution,
 design and development, demonstration, evaluation, and communication.
 
     This dissertation follows a problem-centred approach where the problem motivates
 the research and is defined as the coordination delays that accumulate between independently
-operating control loops in edge orchestration of services, which is justified by the state of the art reviewed
+operating control loops in edge orchestration of services,
+which is justified by the state of the art reviewed
 in \ref{ch:literature_review}. The six activities unfolded as follows.
 
 \begin{enumerate}
@@ -348,17 +339,17 @@ accumulate handoff delays between control loops, degrading orchestration
 efficiency. The problem is introduced in
 \ref{sec:context_motivation}, and the review of the state of the art in
 \ref{ch:literature_review} establishes both that these functions are typically
-studied in isolation and that co-located architectures with independently
+studied in isolation and that single-process architectures with independently
 configurable interfaces are less commonly present in the reviewed literature, which
 motivates and delimits the problem.
 
 \item \textbf{Objectives of a solution.} As defined in \ref{sec:objectives},
 the solution is an experimental platform, not a novel algorithm, whose
 purpose is to make the interfaces of the demand-to-capacity chain
-measurable, so that their contribution to resource orchestration can be
+measurable, so that their impact on resource orchestration can be
 evaluated through measurement and better understood.
 
-\item \textbf{Design and development.} The artefact is the co-located platform
+\item \textbf{Design and development.} The artefact is the single-process platform
 described in \ref{ch:system_architecture} and \ref{ch:implementation}: two peer
 SDN controllers (OS-Ken/OpenFlow), one per network domain, each hosting
 controller-side telemetry consumption, elasticity decision-making and the
@@ -386,14 +377,14 @@ composed of multiple independent runs, each treated as an experimental unit,
 driven by a scheduled open-loop workload driver that preserves the offered
 load; the primary comparisons are detailed in \ref{sec:experimental_setup}.
     Internal, external and repeatability validity threats
-are discussed alongside the results.
+are discussed in \ref{sec:limitations}.
 
 \item \textbf{Communication.} The communication of the problem, the artefact
 and the findings is accomplished through this dissertation itself and its
 public defence, as well as through any resulting publications.
 \end{enumerate}
 
-\section{Main Contributions of this Dissertation}\label{sec:contributions}
+\section{Main Contributions of this Dissertation}\label{sec:contributions} %DONE
 This dissertation makes the following contributions:
 
 \begin{enumerate}
@@ -406,11 +397,11 @@ This dissertation makes the following contributions:
     from the observed bottleneck, compared with fixed single-tier policies,
     affects targeted-tier relief, service recovery, and resource use under
     compute-bound and data-access-bound demand (RQ2).
-    \item An experimental characterisation of readiness-admission
-    coordination that quantifies, under lifecycle-coupled and periodically
-    reconciled admission, the time from verified readiness to usable
-    capacity, and the bounded reliability cost the faster mechanism incurs
-    when the lifecycle event source fails (RQ3).
+    \item An experimental characterisation of readiness admission that
+    quantifies, under direct lifecycle notification versus periodic
+    discovery, the time from verified readiness to routable and usable
+    capacity, and the reliability cost the faster mechanism incurs when
+    its readiness notification is lost and spare capacity is scarce (RQ3).
     \item A comparative synthesis of the observation, action-selection, and
     readiness-admission interfaces under their respective controlled
     workload regimes, identifying which effects were robust,
@@ -419,10 +410,10 @@ This dissertation makes the following contributions:
 
     These contributions are claimed within the evaluated two-domain testbed
 and workload families. The evaluation does not allow us to claim that
-co-location is superior to other orchestration platforms, nor was it
-conducted with such intent.
+the single-process arrangement is superior to other orchestration platforms,
+nor was it conducted with such intent.
 
-\section{Dissertation Structure}\label{sec:document_structure}
+\section{Dissertation Structure}\label{sec:document_structure} %DONE
 This dissertation is organised into six chapters:
 
 \begin{itemize}
@@ -436,12 +427,12 @@ proposed solution rests (edge platforms, SDN and OpenFlow, containers, and NoSQL
 stores), then monitoring and telemetry, auto-scaling, load balancing on SDN, and resource
 orchestration on SDN, examines the default separation of monitoring, routing and scaling
 into independent components observed across these areas, and concludes with the research
-gaps that motivate this dissertation.
+gaps that motivate this dissertation. % TO REVIEW CONFIRM IS THE STRUCTURE STILL HOLDS
 
 \item \textbf{Chapter 3} presents the architecture and design of the proposed solution for
 edge services: the design requirements, the SDN-based architecture, the distributed elastic
 allocation of compute and data resources, the monitoring and decision engine, and the control
-workflow.
+workflow. % TO REVIEW CONFIRM IS THE STRUCTURE STILL HOLDS
 
 \item \textbf{Chapter 4} describes the implementation of the proposed solution: the
 experimental infrastructure, the implementation of the elastic allocation of compute and data
@@ -451,8 +442,8 @@ implementation.
 \item \textbf{Chapter 5} presents the experimental results. Following the
 demand-to-capacity chain, the experimental campaigns address telemetry delivery
 semantics (RQ1), bottleneck-aware scaling action selection (RQ2), and readiness admission
-to traffic and its robustness cost (RQ3), followed by resource orchestration and
-scalability analysis, and a synthesis across the three interfaces.
+to traffic (RQ3), followed by resource orchestration and scalability analysis, and a
+synthesis across the three interfaces.
 
 \item \textbf{Chapter 6} concludes the dissertation, restating the findings and the
 contributions, discussing the limitations of the work, and outlining directions for future
@@ -461,7 +452,7 @@ research.
 
 
 \raggedbottom
-\chapter{Background and Related Work}\label{ch:literature_review}
+\chapter{Background and Related Work}\label{ch:literature_review} %DONE
 This chapter presents the background and related work that motivated
 the research, selected through the search strategy described in
 \ref{sec:review_method}. The review is separated into two parts.
@@ -471,22 +462,21 @@ and why it suits the edge scenario. These are, more specifically,
 edge computing, SDN and OpenFlow, containerisation, and NoSQL
 document stores.
 
-    Then, the management layer that binds these technologies and
-concepts into a running service, known as resource orchestration, is
-reviewed, together with the three functions through which resource
-orchestration happens: monitoring and telemetry, which observe
-demand; auto-scaling, which selects the capacity action; and load
-balancing on SDN, which distributes traffic across the available
-backends. More specifically, the focus is drawn onto the interfaces
-of the demand-to-capacity chain: how demand shifts are detected,
+    The layer that binds these technologies and concepts into a
+running service, known as resource orchestration, is also reviewed and alongside the
+three functions it covers, which are monitoring and telemetry, auto-scaling,
+and load balancing. Then the focus is drawn onto the 
+interfaces between them that are part of the demand-to-capacity chain to evaluate
+how demand shifts are detected,
 which capacity action is selected when several are available, and how
-readiness admission is handled, capturing the demand-driven slice of
-orchestration.
+readiness admission is handled. 
     
     Within each area, the review examines whether and how the interfaces
-between these functions are considered, studied, evaluated, or mentioned,
-and what ideas each field offers about them, with the aim of establishing a
-solid ground for the evaluation of the three interfaces of the
+between these functions are considered, studied, evaluated, or mentioned;
+whether the reviewed work provides evidence that the delays and losses at
+these handoffs cause orchestration or service-quality problems; and what
+ideas each field offers about them, with the aim of establishing a solid
+ground for the evaluation of the three interfaces of the
 demand-to-capacity chain. 
 
     This examination grounds the claim, introduced in \ref{sec:context_motivation},
@@ -496,16 +486,12 @@ platforms that provide the context for these functions are reviewed in
 \ref{sec:lit_sdn_orchestration}, the dominant separation that emerges
 across all areas is examined in \ref{sec:lit_three_layer_separation},
 and the research gaps derived from this review are stated in
-\ref{sec:lit_synthesis}.
+\ref{sec:lit_synthesis}. % TO-DO: Verified that the strucutre referenced still holds up
 
-\section{Review Methodology}\label{sec:review_method}
+\section{Review Methodology}\label{sec:review_method} %DONE
     Searches were executed in Google Scholar and IEEE Xplore 
-targeting recent literature, publications from 2017 onward with consideration for 
+targeting recent literature, publications from 2016 onward with consideration for 
 the number of citations. 
-The 2017 bound applies to the primary searches; older seminal works were
-admitted only when reached by citation chaining or when they meet the
-citation threshold, both recorded among the inclusion criteria of
-Table~\ref{tab:selection_criteria}.
 Works reached through Google Scholar were
 retrieved from IEEE Xplore, ACM Digital Library, Springer, and ScienceDirect.
 Each query resulted in roughly 30 papers evaluated for selection. 
@@ -529,9 +515,8 @@ the retrieved hits.
         ``auto scaling SDN'', ``scaling trigger'', ``Kubernetes HPA
         end-to-end latency'', ``application metrics'', ``edge storage
         survey'', ``edge data placement'' \\
-        Load balancing and discovery &
-        ``load balancing SDN'', ``service discovery survey'',
-        ``service discovery edge'', ``handoff delay'' \\
+        Load balancing &
+        ``load balancing SDN'', ``handoff delay'' \\
         Platform context &
         ``cross-layer orchestration'', ``SDN resource orchestration edge'',
         ``edge platform survey'', ``geo-distributed edge'', ``stateful edge
@@ -573,56 +558,56 @@ platform technologies in \ref{sec:platform_background} are treated as
 background rather than as independent evidence of an RQ gap. The synthesis is
 recorded in \ref{sec:lit_synthesis}.
 
-\section{Platform Technology Background}\label{sec:platform_background}
-This section clarifies the platform technologies used in the proposed
-architecture. Four building blocks define the testbed evaluated in this
-dissertation: edge computing, which sets the deployment scenario; SDN
-with OpenFlow, which provides the programmable network control through which
-the architecture logic is implemented,
-containerisation which supplies the unit of compute provisioning; and
-NoSQL document stores, which hold the service state.
+\section{Platform Technology Background}\label{sec:platform_background} %DONE
+This section presents and explains the four building blocks that define
+the testbed evaluated in this thesis: edge computing, SDN with OpenFlow,
+containerisation, and MongoDB.
 
-    For each building block, the section states
-what it is and why it matters for the thesis scenario,
-and reviews the relevant studies that establish its role.
-How the building blocks are applied is the subject of Chapters
-\ref{ch:system_architecture} and \ref{ch:implementation}.
+    Each subsection states what the building block is and why it
+matters for the thesis scenario. How the building blocks are applied
+is the subject of Chapters \ref{ch:system_architecture}
+and \ref{ch:implementation}.
 
-\subsection{Edge Computing and Edge Platforms}
+\subsection{Edge Computing} %DONE
 Edge computing is the placement of computational and storage resources
 between end devices and centralised cloud data centres, close to where
-data is produced and consumed, which brings benefits but also
-management challenges, as presented in \ref{sec:context_motivation}.
+data is produced and consumed. It complements rather than replaces the
+cloud: latency-sensitive processing is shifted to the edge,
+while large-scale analytics and long-term
+storage remain in the cloud
+\parencite{Cao2020OverviewEdgeComputingResearch}.
 
-    Liu et al. characterise the platforms that materialise this
-environment by the design demands they answer: cloud providers push
-services and computation to the edge to exploit locality, IoT
-applications pull computation towards the edge to handle the large
-volume of data generated by the devices, and hybrid systems combine
-the two, using edge resources to filter and preprocess data while the
-cloud runs the heavier analytics
-\parencite{Liu2019SurveyEdgeComputingSystemsTools}.
+    In essence, edge computing exists because centralised clouds
+alone cannot serve every workload well, and bringing computation
+closer to the user lowers the latency of
+interactive and data-intensive services, and processing data locally
+relieves the bandwidth pressure on the core
+network \parencite{Satyanarayanan2017EmergenceEdgeComputing}.
 
-    Managing these platforms remains an open challenge: Nain et al.
-systematically review resource optimisation in edge and SDN-based edge
-computing and identify the integration of SDN with edge computing as a
-continuing challenge
-\parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. 
-    
-    The integrated platforms reviewed in the literature go part of
-the way: LAVEA monitors execution continuously and uses the monitoring
-information for task placement \parencite{Yi2017LAVEA}, and Pelle et
-al. jointly optimise function and state placement with runtime
-monitoring and redirection
-\parencite{Pelle2022CostLatencyEdgePlatform}.  Both pursue the
-efficient management of edge resources, and yet neither combines
-monitoring, placement, and redirection with the runtime scaling of
-the service itself; in none of them are the interfaces between the
-functions they do combine exposed as independently tunable
-dimensions, the point developed in
-\ref{sec:lit_three_layer_separation}.
+    Despite the advantages of edge computing, as mentioned previously in 
+\ref{sec:context_motivation}, the inherent geo-distribution of resources
+increases their management and orchestration complexity.
+Resource heterogeneity, scarcity, and demand varying over time are all 
+aspects that can degrade resource orchestration efficiency, making it a 
+concept of continuous study and research
+\parencite{Liu2019SurveyEdgeComputingSystemsTools,Luo2021ResourceSchedulingEdgeComputingSurvey}.
+Scheduling that does not follow the workload leads either to
+over-provisioning, where resources are held but not used, or to
+under-provisioning, where service quality degrades
+\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}.
+In addition, Luo et al.
+identify the joint scheduling of communication, computing,
+and storage resources as an open direction for the field
+\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}.
 
-\subsection{SDN and OpenFlow}
+    Managing these platforms remains an open challenge, and their
+combination with SDN is recorded as one of the continuing challenges
+\parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The service
+evaluated in this dissertation runs in this environment: a stateful
+edge service whose capacity must follow fluctuating demand, which is
+the management problem the remainder of this chapter reviews.
+
+\subsection{SDN and OpenFlow} %DONE
 Software-Defined Networking separates the control plane, which decides
 how traffic is handled, from the data plane, which forwards packets, so
 that forwarding behaviour can be reprogrammed centrally from a
@@ -656,46 +641,15 @@ network.
     \label{fig:sdn_architecture}
 \end{figure}
 
-\subsection{Containerisation and Docker}
+\subsection{Containerisation and Docker} %DONE
 Containers package an application with its dependencies and share the
-host kernel, which makes them lighter to provision and tear down than
-virtual machines, a property that suits resource-constrained edge platforms.
-On ARM-based edge devices, Kaiser et al. benchmark Docker, Podman, and
-Singularity using computer-vision and data-science workloads typical of
-edge scenarios, and find that Docker achieves near-native start-up times,
-around 0.9 seconds, together with the best CPU and RAM utilisation for
-most of the evaluated applications
-\parencite{Kaiser2023BenchmarkingContainerTechnologiesARMEdge}.
+host kernel, which makes them lightweight and quick to start up compared
+to virtual machines, properties that suit resource-constrained edge
+platforms. Docker is adopted as the platform's containerisation tool
+because it is the most widely used tool for building and running
+containers.
 
-    Orchestration of containerised applications has also been studied
-across layers: Sofia et al. propose context-aware cross-layer
-orchestration for containerised applications in decentralised edge-cloud
-environments serving next-generation IoT services, treating contextual
-information such as data freshness as part of the orchestration input
-\parencite{Sofia2023DynamicContextAwareCrossLayer}.
-
-    Orchestration tools must also adapt to the edge, and Cilic et al.
-evaluate Kubernetes, the lightweight distributions K3s and KubeEdge,
-and the ioFog platform in real edge execution environments, finding
-that none of the evaluated tools monitors and schedules services based
-on client QoS parameters, a logic that must be supplied externally,
-and that challenges remain to fully adapt these cloud-designed tools
-to dynamic edge environments
-\parencite{Cilic2023PerformanceEvaluationContainerOrchestrationTools}.
-
-    Taken together, these studies establish containers as a
-provisioning unit well suited to constrained edge nodes, with start-up
-cost as the quantity that matters when capacity must be added quickly.
-Where the field measures the full provisioning-to-serving span, it does
-so for serverless functions, whose cold start is dominated by image pull
-and runtime initialisation and is reported end to end as a single time
-to first response \parencite{EdgeFaaSBench,ColdStartServerlessSurvey}.
-In this thesis those aspects are simplified away, since the backends are
-pre-built containers that start in under a second, with the aim of
-focusing on the interval that remains between readiness and first served
-traffic, which is the interval the review isolates next.
-
-\subsection{NoSQL and MongoDB: The Storage Tier}\label{sec:platform_storage}
+\subsection{NoSQL and MongoDB}\label{sec:platform_storage} %DONE
 Document-oriented NoSQL stores organise data as schema-flexible
 documents rather than as rows of relational tables. Because related
 data is embedded in a single document and the model avoids joins and
@@ -712,8 +666,9 @@ set: a group of \texttt{mongod} processes that maintain the same
 data set. One member is elected primary and serves the clients'
 writes, which it records in an operation log; the remaining
 members, the secondaries, replicate by applying that log
-asynchronously. Members exchange heartbeats, and when the primary
-fails or becomes unreachable, the secondaries hold an election and
+asynchronously and autonomously. Members exchange heartbeats,
+and when the primary fails or becomes unreachable,
+the secondaries hold an election and
 promote one of their own, so the set keeps serving without
 operator intervention. Members can also be added to and removed
 from a deployment while it keeps serving, which turns the replica
@@ -728,46 +683,12 @@ fixed configuration.
     \label{fig:mongodb_replica_set}
 \end{figure}
 
-    Eyada et al. compare MongoDB against MySQL for IoT data management
-and find that MongoDB outperforms the relational system in latency
-across a wide range of IoT workloads
-\parencite{Eyada2020PerformanceEvaluationIoTDataManagement}.
+    This dissertation builds on that capability: the storage tier is
+scaled by adding and removing replica-set members while the set keeps
+serving, leveraging MongoDB's native replication and election
+mechanisms.
 
-    Ferreira et al. survey databases in edge and fog environments,
-dissecting the drivers for pushing storage towards the edge and the
-mechanisms employed to deal with the challenges these environments
-pose. In the study, surveyed systems rest on replication protocols
-that maximise the latency advantage of geographical placement,
-and the survey leaves the expansion of replica counts while
-minimising the coordination overhead it incurs as an open
-direction, adjacent to the storage capacity action this
-dissertation evaluates
-\parencite{MerujeFerreira2024DatabasesEdgeFogEnvironmentsSurvey}.
-
-    Geo-distributed deployments combine replication with placement, and
-Mealha et al. exemplify the frontier: their cloud/edge replication over the
-MongoDB data model leaves a \enquote{dynamic placement strategy of
-either full or partial databases} to future work
-\parencite{Mealha2019DataReplicationCloudEdge}.
-
-    Related work on the data side of the scaling loop, however, treats
-placement and retention rather than a live scale-out decision.
-Popularity-based placement distributes content according to access
-frequency, but Wei and Wang describe their placement decision as static
-and list online placement as future work
-\parencite{Wei2023PopularityDataPlacementLoadBalancing}.
-
-    Malazi et al. survey dynamic service placement in 
-multi-access edge computing and record fragmented evaluation
-practice across the field 
-\parencite{TabatabaeeMalazi2022DynamicServicePlacementMultiAccess},
-while placement re-optimises which node serves data rather than
-selecting a capacity action. None of these works selects storage
-scale-out from a live observed bottleneck, adding or removing
-replica-set members while the deployment keeps serving, which is the
-capacity action evaluated in the thesis.
-
-\section{Monitoring \& Telemetry}\label{sec:lit_monitoring}
+\section{Monitoring \& Telemetry}\label{sec:lit_monitoring} % DONE
 Monitoring and telemetry observe the state of a running service and
 deliver that evidence to whoever acts on it. Monitoring is the
 collection of resource and load metrics, telemetry the transport that
@@ -781,20 +702,15 @@ evidence must travel from many dispersed nodes to the decision point,
 so any delay or gap in its delivery becomes delay or blindness in the
 orchestration response. 
 
-    The state of the art in this area is built around a common
-pipeline: per-node collectors sample resource and load metrics, an
+    The state of the art in this area is built around 
+per-node collectors sample resource and load metrics, an
 aggregation layer summarises the samples, and the resulting series feed
-the consumers that make decisions. In orchestrators this pipeline is
+the consumers that make decisions. 
+In orchestrators this pipeline is
 standardised around periodic scraping into a time-series store, as in
 OSM-based NFV for transparent VNF clusters, where the monitoring module
 polls the infrastructure into a Prometheus database
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
-Containerised edge stacks assemble the same building blocks in one place:
-an SDN controller, a Kubernetes cluster, and a time-series database share
-a single orchestration stack for industrial IoT, yet the monitoring
-evidence reaches the time-series store through a dedicated power-meter
-agent outside the cluster
-\parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized}.
 
     Delivery is conventionally pull-based, the
 consumer requesting the latest sample at a fixed interval
@@ -844,12 +760,12 @@ monitoring and records that pull-based polling produces
 \enquote{visibility gaps} between collection instants, calling for
 monitoring to be \enquote{tightly integrated with network control and
 automation} \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}.
-Industry practice points in the same direction: a production SDN
-controller for 5G backhaul networks co-locates a telemetry collector with
-a routing adjuster in a closed loop over the wide area
-\parencite{Hung2022SDNControllerMonitoringArchitecture5G}, showing that
-co-location of monitoring with control is feasible, although the loop
-omits scaling altogether. 
+Hung et al. present an SDN controller for 5G backhaul networks that
+runs a telemetry collector and a routing adjuster in one closed loop
+over the wide area, showing that monitoring and control functions can
+be combined in a single component, although the loop omits scaling
+altogether
+\parencite{Hung2022SDNControllerMonitoringArchitecture5G}.
 
     At the platform level, adjacent observability
 work exhibits the same open dimension: Usman et al., surveying
@@ -874,8 +790,6 @@ evidence each of these works provides for the link under study.
         \midrule
         Llorens-Carrodeguas et al. (2021) & Measured & Orchestration
         monitoring polls into Prometheus; delivery semantics not varied \\
-        Okwuibe et al. (2020) & Measured & SDN controller, Kubernetes,
-        and a time-series store share one stack; no delivery dimension \\
         AdapPF (Huang \& Pierre, 2023) & Measured & Freshness changes a
         scheduler's accuracy; no stateful-service or admission trace \\
         Huang \& Pierre (2024) & Measured & Aggregation contains
@@ -884,8 +798,8 @@ evidence each of these works provides for the link under study.
         quality; the delivery mechanism stays fixed \\
         Yaseen (2025) & Documented & Pull-based polling leaves visibility
         gaps; calls for monitoring integrated with control \\
-        Hung et al. (2022) & Measured & Production controller co-locates
-        telemetry and routing; scaling omitted \\
+        Hung et al. (2022) & Measured & Telemetry and routing combined
+        in one component; scaling omitted \\
         Usman et al. (2022) & Surveyed & Appropriate measurement
         intervals remain an open research topic \\
         Belgaum et al. (2020) & Not addressed & A seventy-six-paper review of the
@@ -901,19 +815,27 @@ produces delay, Yaseen documents the gaps that polling leaves, and
 aggregation summarises away intermediate observations, yet no reviewed
 work distinguishes delayed event-preserving delivery from latest-state
 delivery, and none traces either regime through a stateful service's
-scaling and traffic-admission path.
+scaling and traffic-admission path. This distinction is the gap this
+dissertation isolates and measures.
 
-\section{Auto Scaling}\label{sec:lit_auto_scaling}
+\section{Auto Scaling}\label{sec:lit_auto_scaling} %DONE
 Auto-scaling adjusts the amount of allocated resources to the load that
 a service receives: when demand grows, additional capacity is
 provisioned, and when demand recedes, surplus capacity is released, so
 that the service keeps serving requests without holding resources it
-does not use. In edge deployments the question gains more relevance 
-because each site holds limited capacity and receives demand that
-fluctuates over time, so when and how many resources
-to add or remove determines both the quality of service during
-a demand shift and the efficiency with
-which scarce resources are managed.
+does not use. Auto-scaling strategies are commonly grouped into
+horizontal scaling, which changes the number of units, and vertical
+scaling, which changes the capacity of a single unit
+\parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
+Horizontal scaling suits the edge scenario, and is the direction this
+dissertation follows. 
+
+    In edge computing, a site's capacity is bounded by the nodes deployed
+there, so enlarging an individual unit has a hard ceiling, whereas
+adjusting the number of units lets capacity grow and shrink as demand
+changes. When and how many resources to add or remove therefore
+determines both the quality of service during a demand shift and
+the efficiency with which scarce resources are managed.
 
 % \begin{figure}[H]
 %     \centering
@@ -925,28 +847,24 @@ which scarce resources are managed.
 
     Qu et al. classify the auto-scalers along the scaling
 indicator, the resource estimation method, and the timing of the action,
-and Taherizadeh and Stankovski organise the same questions across edge
+and Taherizadeh and Stankovski organise the same concepts across edge
 application types and operational challenges. In both, the unit surveyed
 is the scaling of service instances, whether virtual machines or
-containers: the questions the field asks are when to scale and how many
-instances to add, and which kind of capacity is provisioned is not among
-the classification dimensions
+containers. 
+In short, the main questions the field asks are when to scale and how many
+instances to add, and which kind of capacity is provisioned, 
+when applicable is not among the classification dimensions
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
 
-    When SDN enters the loop, the traffic side is added, but the scaled
+    When SDN is considered, the traffic side is added, but the scaled
 resource remains the one the service function is built from:
 Llorens-Carrodeguas et al. couple SDN-based traffic steering with
-horizontal scaling of a transparent VNF cluster, so that a single
+horizontal scaling of virtualised network functions, so that a single
 controller re-programs the forwarding paths while instances of the same
-pre-dimensioned function pool are activated or deactivated according to
-their load and CPU status
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
-The decision reduces to whether and how many instances of that one
-function to activate, and the service model contains no data tier on
-which those instances depend. A stateful edge service differs precisely
-on that point: its replicas depend on a data tier that is itself live
-capacity, and when the limiting resource is that data tier, adding
-instances does not relieve the pressure that sits there.
+pre-dimensioned function pool are activated or deactivated. The decision
+reduces to whether and how many instances of that one function to
+activate, and the data tier those functions depend on is held fixed by
+the design \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 
     Predictive and learning-based approaches sharpen the same decision
 without widening it: Toka et al. formalise the Kubernetes horizontal
@@ -957,10 +875,10 @@ demand, the latter jointly with placement
 \parencite{Ju2021ProactiveAutoscalingEdgeComputingSystems,Cheng2023ProScaleProactiveAutoscalingMicroserviceTime},
 and Li et al. couple scaling and placement in a single optimisation
 \parencite{Li2021JointOptimizationAutoScalingAdaptive}. Across these
-systems the unit whose count is forecast and adjusted is the compute
-replica. The improvement they pursue is a better forecast of how many
-instances to run; which tier holds the limiting resource does not enter
-their problem.
+systems the quantity that is forecast and adjusted is the number of
+compute replicas. The improvement they pursue is a better forecast of
+how many instances to run; which tier holds the limiting resource does
+not enter their problem.
 
     Scaling one resource does not always make the service better,
 because the pressure may sit elsewhere. Nikravesh et al. quantify what
@@ -976,24 +894,23 @@ lies elsewhere
 \parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among those
 systems, awareness of the effect is scarce and cross-service only:
 Waterfall, a machine-learning auto-scaler, accounts for how scaling
-one microservice can shift the bottleneck towards downstream services,
-and ATOM uses layered queuing networks to reduce bottleneck shifts in
-model-agnostic controllers
-\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Both
-provisions remain compute-side: the data tier, even when it is the one
-driving the violations, is not part of the action space the reviewed
-systems expose.
+one microservice can shift the bottleneck towards downstream services
+\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. That
+provision remains compute-side: the data tier is not part of the
+action space the reviewed systems expose.
 
-    The most recent systems sharpen the same boundary: PBScaler identifies
+    PBScaler identifies
 the microservice whose degradation propagates through the call graph,
 ranks candidate bottlenecks, and optimises replica management around the
 identified bottleneck
 \parencite{Xie2024PBScalerBottleneckAwareAutoscalingFramework}.
 Bottleneck awareness therefore exists in the current state of the art,
-but the bottleneck it locates is always a microservice and the action it
-takes is always a compute-replica count. When the limiting resource is
+but the bottleneck it locates is a microservice and the action it takes
+is a change in that microservice's replica count. When the limiting resource is
 the data store rather than any microservice, locating the bottleneck is
-not enough: the action must change kind.
+not enough: the action must change kind. That case, in which the
+database is the tier under pressure, is the one this dissertation
+evaluates.
 
     The closest reviewed precedent to selecting between resource tiers
 is the provisioning model of Li et al., which adds both cloud compute
@@ -1005,21 +922,14 @@ observed bottleneck, and the outcome is measured in tenancy cost and
 utilisation rather than in user service quality and resource
 management efficiency. 
 
-    Pelle et al. keep function and state placement in sync through
-an integrated optimisation over an edge platform
-\parencite{Pelle2022CostLatencyEdgePlatform}. The mechanism is
-placement rather than live capacity action: state is moved to follow
-the functions, while the response to an observed bottleneck remains
-outside the optimisation.
-
-    The most recent survey converges on the same boundary: El Mrabet et
-al. extend the classification across cloud, fog, and edge, categorising
+    The most recent survey by El Mrabet et
+al. extends the classification across cloud, fog, and edge, categorising
 the surveyed methods by their decision mechanism, scaling strategy, and
-deployment layer, and the provisioned tier is not among the
+deployment layer; which kind of resource is added is not among the
 classification dimensions
 \parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
-The field's own framing expresses the same default:
-Qu et al. describe the web application as split into
+
+    Qu et al. describe the web application as split into
 application logic and a database tier, and
 record that \enquote{the database tier is often considered dynamically
 unscalable and ignored by auto-scalers}
@@ -1052,51 +962,34 @@ unscalable and ignored by auto-scalers}
         compute \\
         Li et al. (2020) & Measured & Compute instances and data replicas
         provisioned together, but from a forecast, not a live bottleneck \\
-        El Mrabet et al. (2025) & Surveyed & Recent taxonomy; the
-        provisioned tier is not among the classification dimensions \\
+        El Mrabet et al. (2025) & Surveyed & Recent taxonomy; which
+        resource is added is not among the classification dimensions \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-    Taken together, this evidence establishes first that the kind of
-capacity added can matter. Adding compute replicas cannot relieve pressure
-whose limiting resource lies in the data tier; database capacity can govern
-SLA violations while a compute-tier scaling decision remains unchanged; and
-bottleneck-aware compute systems already improve their decisions by locating
-which microservice constrains the request path. Capacity actions are therefore
-not interchangeable merely because each adds resources.
+    Overall, the literature demonstrates that the kind of capacity added
+under certain scenarios can have an impact,
+compute replicas cannot relieve pressure whose limiting
+resource lies in the data tier, and database capacity can govern SLA
+violations while a compute-tier scaling decision remains unchanged.
+Capacity actions are therefore not interchangeable merely because each
+adds resources.
 
-    The unresolved step appears when monitoring can identify more than one
-class of bottleneck and the platform exposes a corresponding remedy for each.
-The reviewed taxonomies still organise auto-scaling around when to scale and
-how many resources to add, while the provisioned tier remains an architectural
-given. Where compute and data resources enter the same problem, they are
-jointly provisioned from forecasts or jointly placed, rather than selected at
-runtime as alternative actions conditioned on a live compute-bound or
-data-access-bound bottleneck. What is left uncharacterised is therefore not
-whether the action matched to the observed bottleneck helps, but how much:
-how the benefit is distributed across targeted-tier relief, service recovery,
-and resource use; where mismatched fixed policies pay the cost of their
-choice; and how reliably a telemetry-driven selector commits to the right
-single action. 
-    
-    Equally unexamined is the boundary at which
-the decision is fed: where the reviewed
-works describe the monitoring and lifecycle components that supply the
-scaling decision at all, they leave those components outside the decision
-loop, a default examined across all three interfaces in
-\ref{sec:lit_three_layer_separation}.
+    Therefore in the reviewed studies, the choice between these actions
+remains an architectural given, settled by forecasts or by joint
+placement rather than selected at runtime from a live observed
+bottleneck. This dissertation isolates that selection, with storage
+scale-out among the actions the controller may select, and measures
+how the benefit divides across targeted-tier relief, service recovery,
+and resource use. How that decision reaches execution is examined,
+with the other interfaces, in \ref{sec:lit_three_layer_separation}.
 
-    Works that do couple compute with data do so at design time
-or from forecasts, in the strand reviewed in
-\ref{sec:platform_storage}.
-
-% Aqui
-\section{Load Balancing on SDN}\label{sec:lit_sdn_lb}
+\section{Load Balancing on SDN}\label{sec:lit_sdn_lb} %DONE
 Load balancing distributes incoming traffic among a set of available
 backends so that no single backend is overloaded while others remain
-idle. In SDN networks this distribution is programmed centrally: the
-controller installs forwarding rules that steer each flow to a
+idle. In SDN networks this distribution is programmed centrally, where
+the controller installs forwarding rules that steer each flow to a
 selected backend, and a selection policy decides which backend
 receives the next flow. The function matters at the edge because a
 newly provisioned backend only becomes usable capacity once traffic
@@ -1127,49 +1020,32 @@ decisions. This change does not alter the selection problem itself; it
 creates a separate lifecycle responsibility. A backend must be provisioned,
 become able to serve the application, have that state propagated to the
 routing plane, and be included in the eligible set before the next routing
-decision can select it. The interval between verified readiness and routing
-eligibility is therefore an admission delay, not a property of the
+decision can select it. In the papers studied here this sequence 
+is not highlighted. Readiness
+is a property of the running application rather than of the container that
+hosts it, so a backend that has been provisioned and started may still be
+unable to serve. The change of the eligible set is therefore gated by an
+observation of that ability, and the interval between verified readiness
+and routing eligibility is an admission delay, not a property of the
 backend-selection algorithm.
 
-\subsection{Admission as a Lifecycle and Discovery Interface}
-    Service-discovery research distinguishes publication or registration,
-discovery, resolution to an endpoint, and maintenance of service
-information. It also recognises that dynamic services may join or leave
-and that the freshness of maintained information can affect availability
-and delay
-\parencite{Pourghebleh2020ServiceDiscoveryInternetThingsReview,Achir2022ServiceDiscoverySelectionIoTSurvey}.
-These concerns are adjacent to the present problem, but they do not by
-themselves measure when a newly ready compute backend becomes eligible for
-traffic in an elastic SDN service.
+\subsection{Admission as a Lifecycle Interface}
+    Kurma, a load balancer for geo-distributed storage systems, is
+explicitly designed to operate at a granularity of seconds so that it
+can \enquote{work in tandem with modern elastic controllers, thereby
+reducing over-provisioning and SLO violations incurred during provisioning
+delays} \parencite{Bogdanov2018Kurma}. The delay between provisioning
+and usable capacity is therefore a recognised cost, but the unit of
+analysis remains the load-balancing service, and the interval in which
+readiness state propagates to the routing plane is not separated from
+it.
 
-    Production systems mechanise the same interface, generally as one step
-within a broader lifecycle rather than as an independently varied factor.
-Shard Manager, the framework that manages Facebook's geo-distributed
-sharded applications, treats readiness as an explicit, ordered step of
-the shard lifecycle: it negotiates with the cluster managers about when
-to safely execute container lifecycle operations and ensures that an
-application drops no request during a graceful shard migration, with
-the readiness-to-traffic transition performed through a service-discovery
-map. Its unit, however, is shard-role migration rather than
-container-readiness admission, and the propagation semantics of the
-transition are part of that unit rather than an independently varied
-factor in its evaluation
-\parencite{Lee2021ShardManager}. On the routing side, Kurma, a load
-balancer for geo-distributed storage systems, is explicitly designed to
-operate at a granularity of seconds so that it can \enquote{work in
-tandem with modern elastic controllers, thereby reducing over-provisioning
-and SLO violations incurred during provisioning delays}
-\parencite{Bogdanov2018Kurma}. The delay between provisioning and usable
-capacity is therefore a recognised cost in production routing, yet the
-unit of analysis in both systems is the broader lifecycle: the interval
-in which readiness state propagates to the routing plane is not
-separated from it.
-
-    The closest architectural antecedent is Llorens-Carrodeguas et al.,
-whose SDN redirector combines monitoring, auto-scaling, and load balancing
-for a transparent VNF cluster. Their system changes the number of active
-cluster members and removes flow rules for unhealthy instances using
-status obtained through the MANO monitoring path
+    Llorens-Carrodeguas et al. combine, through an SDN redirector,
+monitoring, auto-scaling, and load balancing for a transparent VNF
+cluster, activating and deactivating cluster members while the load
+balancer keeps distributing traffic, and removing flow rules for
+unhealthy instances using status obtained through the MANO monitoring
+path
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 It therefore demonstrates that dynamic membership is already a legitimate
 concern. Its evaluation, however, reports activation at the granularity of
@@ -1178,72 +1054,22 @@ to routing eligibility is not separated from the surrounding lifecycle.
 
     Across this literature, therefore, the selection of a backend among
 eligible candidates is well characterised, and integrated systems implement
-broader membership transitions. What remains unisolated in the reviewed
-literature is the post-readiness handoff from lifecycle completion to actual
-traffic contribution under controlled invariants. This is the gap RQ3
-isolates: the dissertation varies readiness-admission coordination while
-holding the application-readiness criterion and selection function constant,
-and measures the time until newly provisioned capacity becomes selectable
-and serves traffic. Lifecycle-coupled admission and periodically reconciled
-admission are the two operational realisations of that coordination
-interface.
+broader membership transitions. But none of the reviewed papers
+isolates the interval between a backend becoming ready
+and traffic actually reaching it. In this dissertation
+evaluates that interval. It varies only how readiness admission is
+coordinated, and it measures the time until newly provisioned capacity
+becomes selectable and serves traffic. Direct lifecycle notification and
+periodic discovery are the two mechanisms compared.
 
-\subsection{Readiness-Admission Coordination}
-    The two operational realisations, admitting a backend when its lifecycle
-    event fires or admitting it when a periodic scan observes the same state,
-    are not new to software-defined networking. The OpenFlow programming model
-    already separates the two philosophies under different names: a reactive
-    controller installs forwarding state only when the first packet of a flow
-    arrives, whereas a proactive controller pre-installs rules ahead of
-    traffic, trading per-flow setup latency against controller round-trips
-    and flow-table occupancy
-    \parencite{Fernandez2013ComparingOpenFlowControllerParadigms}. The
-    parallel is illustrative rather than exact: reactive installation is
-    triggered by traffic rather than by loss resilience, but it is the same
-    dichotomy applied to a different layer.
-    The closest measured precedent is a SmartNIC-based load balancer that
-    scales network functions at the edge and measures the transition from a
-    scale signal to rebalanced traffic, yet it reports that transition as a
-    single combined process and does not isolate the post-readiness handoff
-    \parencite{Ni2021SmartLB}.
-
-    The network side of the boundary has a direct precedent. Xu et al. dock
-    and undock Docker applications at the edge switch through SDN, so that a
-    container's network attachment is itself a controller-programmed step
-    \parencite{Xu2016SDNDockerAutoDockingUndocking}. Their mechanism shows
-    that attachment is programmable, but it does not separate the interval in
-    which a verified application-ready backend waits to be admitted from the
-    provisioning and attachment steps that precede it, and it does not vary
-    the admission mechanism while holding the readiness criterion and the
-    selection function fixed.
-
-    The reviewed literature leaves a second dimension unexamined. Shard
-    Manager's ordered lifecycle sequence assumes reliable dissemination and
-    drops no requests, the load-balancing surveys treat pool state as
-    accurate and current, and the freshness remarks of the service-discovery
-    surveys concern stale data rather than lost events. No reviewed work
-    models what happens to a ready backend when the readiness event that
-    would admit it is lost. The admission interface is therefore both a
-    latency choice and a reliability choice: lifecycle-coupled admission
-    realises capacity sooner, while periodically reconciled admission
-    self-heals on every cycle, because a lost event leaves a ready backend
-    dark until it is re-checked or abandoned. RQ3 characterises the two
-    together, measuring the time from verified readiness to usable capacity
-    and the service-quality consequence when the event path fails and
-    incumbent headroom is thin. The question mirrors the one RQ1 poses for
-    demand evidence at the opposite end of the chain: how state moves from
-    known to acted upon across a control-loop boundary, and what the crossing
-    costs when the state is delayed or lost.
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration}
 Resource orchestration is the management layer that keeps a running
 service within its requirements by coordinating the compute, network,
 and storage resources of the infrastructure on which it runs. It is
 the activity that the technologies and tools reviewed in
-\ref{sec:platform_background} are assembled to serve: edge sites
-supply the resources, SDN supplies the programmable connectivity,
-containers supply the unit of compute, and the document store holds
-the service state. That decision-making, and its execution, is
+\ref{sec:platform_background} are assembled to serve. 
+That decision-making, and its execution, is
 orchestration, and at the edge it is the more demanding because each
 site holds scarce capacity and the demand on it fluctuates over time.
 Because the service is stateful, the capacity action is itself
@@ -1260,8 +1086,8 @@ of the demand-to-capacity chain, monitoring, scaling, and routing,
 are held together in each, using the terms interface and coordination
 gap as defined in \ref{sec:context_motivation}.
 
-    Along the layers axis, edge orchestration is cross-layer by
-construction. Baktir et al. organise the gains that SDN brings to
+    Within the SDN edge resource orchestration literature, 
+Baktir et al. organizes the gains that SDN brings to
 edge computing into benefit areas such as centralised visibility and
 programmatic traffic management
 \parencite{Baktir2017HowCanEdgeComputingBenefit}; Wang et al. survey
@@ -1271,11 +1097,14 @@ that SDN's role at the edge extends beyond forwarding into
 orchestration
 \parencite{Wang2019SoftwareDefinedNetworkingEnhancedEdge}; and Sofia
 et al. build context-aware cross-layer orchestration for
-containerised edge-cloud applications
+containerised edge-cloud applications serving next-generation IoT
+services, treating contextual information such as data freshness as
+part of the orchestration input
 \parencite{Sofia2023DynamicContextAwareCrossLayer}.
 
-    The surveyed stacks bind these layers into concrete deployments.
-Okwuibe et al. assemble the stack closest to the one built in this
+    The surveyed architectures bind these vertical layers
+into concrete deployments. Okwuibe et al. assemble the 
+architecture closest to the one built in this
 dissertation: an SDN controller, a Kubernetes cluster, and a
 time-series database serve containerised industrial-IoT edge
 applications, while a MongoDB instance stores the sensor data. The
@@ -1289,23 +1118,22 @@ treating telemetry as available input rather than as an interface to
 be studied, and without container orchestration or tier scaling
 \parencite{Peng2019SDNResourceManagementAutonomousVehicular}.
 
-    A recurring minority of these platforms co-locates the functions
+    A recurring minority of these platforms brings the functions together
 at the SDN control point itself. Llorens-Carrodeguas et al. combine
 monitoring, auto-scaling, and load balancing in a single SDN
 redirector for a transparent VNF cluster, although metric collection
 and the lifecycle operations that feed and execute the decision
 remain external
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing};
-a production SDN controller for 5G backhaul co-locates a telemetry
-collector with routing adjustment in a closed loop, omitting scaling
-altogether
+Hung et al. present an SDN controller for 5G backhaul in which a
+telemetry collector and routing adjustment run in one closed loop,
+omitting scaling altogether
 \parencite{Hung2022SDNControllerMonitoringArchitecture5G}. The first
 arrangement binds all three functions at one control point, the
 second binds two of the three, and the Okwuibe stack shows the full
 assembly in one deployment while keeping the functions as separate
-components. Co-location at the SDN control point is therefore a
-feasible, precedented arrangement rather than an invention of this
-dissertation.
+components. Combining the functions at an SDN control point is
+therefore demonstrated as reviewed feasible, precedented arrangement.
 
 % \begin{figure}[H]
 %     \centering
@@ -1337,13 +1165,17 @@ variable.
 mode, monitoring, scaling, and routing are implemented as separate
 components, each running its own control loop, so the evidence and
 commands that tie them together must cross component boundaries. The
-separation is visible even in the tools themselves: the orchestration
-platforms evaluated by Cilic et al. cannot re-schedule from dynamic
-QoS parameters, so the tracking of QoS and the customisation of
-scheduling logic must be performed by an external component
+separation is visible even in the tools themselves: Cilic et al.
+evaluate Kubernetes, the lightweight distributions K3s and KubeEdge,
+and the ioFog platform in real edge execution environments, finding
+that none of the evaluated tools monitors and schedules services based
+on client QoS parameters, so the tracking of QoS and the customisation
+of scheduling logic must be performed by an external component, and
+that challenges remain to fully adapt these cloud-designed tools to
+dynamic edge environments
 \parencite{Cilic2023PerformanceEvaluationContainerOrchestrationTools}.
-In a second, recurring mode, the same functions are co-located at an
-SDN-based control point or coordinated through shared state. What
+In a second, recurring mode, the same functions are kept together
+at an SDN-based control point or coordinated through shared state. What
 neither mode provides, however, is a controlled decomposition in which
 one handoff is varied while the others are held fixed. Prior systems
 measure complete control processes or coordinate them by construction;
@@ -1453,11 +1285,10 @@ between bottleneck-specific compute and storage remedies
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Nikravesh2017ImpactDatabaseLayerAutoScaling,Li2020HeterogeneityAwareElasticProvisioningCloud}.
 Load-balancing systems implement integrated membership
 transitions, but the reviewed work does not isolate the post-readiness handoff
-to traffic contribution under controlled invariants, and none models the
-failure of the notification path that would admit a ready backend. Finally,
-orchestration platforms either leave these functions separated or coordinate
-them by construction; neither mode varies one interface while holding the
-others fixed.
+to traffic contribution under controlled invariants. Finally, orchestration
+platforms either leave these functions separated or coordinate them by
+construction; neither mode varies one interface while holding the others
+fixed.
 
     Table~\ref{tab:interface_gaps} condenses these findings into the
 three interfaces and the question each leaves open.
@@ -1482,22 +1313,18 @@ three interfaces and the question each leaves open.
         recovery, and resource efficiency relative to fixed single-tier
         policies, and where do the effects concentrate? \\
         Ready backend to traffic (RQ3) &
-        How does readiness-admission coordination affect the time from
-        verified readiness to usable capacity, and does its delay become a
-        transient service-quality cost when the event path fails and
-        incumbent headroom is thin? \\
+        How does readiness-admission coordination affect the delay from
+        verified readiness to usable capacity and its transition-window
+        service consequence? \\
         \bottomrule
     \end{tabular}
 \end{table}
 
     Across the reviewed studies, the three interfaces are documented
-in passing, their symptoms observed, and their study called for. The
-cross-field connection is clearest where monitoring speaks of visibility
-gaps between collection instants and service discovery speaks of registry
-freshness. These are related formulations of stale control state, but the
-reviewed work does not isolate how either interface contributes to the
-end-to-end realization of usable capacity
-\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork,Pourghebleh2020ServiceDiscoveryInternetThingsReview}.
+in passing, their symptoms observed, and their study called for, yet
+the reviewed work does not isolate how any one of them contributes to
+the end-to-end realization of usable capacity
+\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}.
 The research questions of \ref{sec:research_questions} are the
 experimental form of Table~\ref{tab:interface_gaps}.
 
@@ -1584,9 +1411,9 @@ wide-area data link. Each domain contains client workloads, an \ac{OVS}
 data plane, a pool of containerised edge servers, a MongoDB replica-set
 storage tier, a telemetry aggregator, and an \ac{SDN} controller. The peer
 controllers exchange topology information, and each consumes the telemetry
-summaries published by both domain aggregators. Each controller co-locates
-traffic steering, telemetry consumption, and elasticity coordination for its
-own domain.
+summaries published by both domain aggregators. Each controller runs
+traffic steering, telemetry consumption, and elasticity coordination in the
+same process for its own domain.
 
     The emulated wide-area link represents cross-domain data traffic. In contrast,
 telemetry delivery and controller-to-controller topology exchange use
