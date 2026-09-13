@@ -188,15 +188,17 @@ consumes storage and replication bandwidth
 \parencite{Nicolaescu2021StoreEdgeNetworkedDataSEND},
 \parencite{Pelle2022CostLatencyEdgePlatform}.
 
-    Scale-out alone does not guarantee usable capacity: the orchestration
-system must detect when data must be brought closer, deliver that
-information to the decision point, provision the right kind of capacity,
-and redirect traffic to it, and each of these steps introduces delay that
-worsens resource orchestration and can, in turn, lead to user service
-quality degradation.
+    Scale-out alone does not guarantee usable capacity instantly. The
+orchestration system must detect when data must be brought closer,
+deliver that information to the decision point, provision the right
+kind of capacity, and redirect traffic to it. Each of these steps,
+when executed in a system whose components must communicate with
+each other over the network, can introduce delay or data loss that
+degrades orchestration efficiency and, in turn, the quality of
+service experienced by users.
 
     This sequence forms what this dissertation calls the demand-to-capacity
-chain: the default path that an orchestration system must traverse to convert
+chain which is the path that an orchestration system takes to convert
 a change in overall user demand into capacity that serves that demand. A demand
 shift is first observed by monitoring and telemetry, which deliver the
 evidence to a decision point; the decision point selects a capacity action,
@@ -210,11 +212,13 @@ loss of evidence can accumulate.\footnote{Throughout this dissertation, the
 shift to usable capacity; an \emph{interface} is a boundary between two
 steps of the chain at which two functions meet; a \emph{handoff delay} is
 the latency added at an interface when the functions on either side run
-under independent control loops; and the \emph{coordination gap} is the
+under independent control loops, that is, without explicit coordination
+between them; and the \emph{coordination gap} is the
 accumulated effect of these handoff delays along the chain.} Three of these
-interfaces, more specifically how demand evidence reaches the decision, which capacity
-action the decision selects, and when a ready backend is admitted to
-traffic are the subject of this thesis. Figure~\ref{fig:demand_capacity_chain}
+interfaces, more specifically how demand evidence reaches the decision,
+which capacity action the decision hands over to the infrastructure,
+and when a ready backend is admitted to traffic, are the subject of
+this thesis. Figure~\ref{fig:demand_capacity_chain}
 illustrates the chain.
 
 \begin{figure}[H]
@@ -249,9 +253,9 @@ measured under controlled conditions.
     Along this chain, three interfaces are studied in a stateful service
 deployed across two geo-distributed sites: how demand evidence is
 delivered to the controller (telemetry delivery semantics), which
-capacity action the controller selects in response to the observed
-bottleneck (compute or storage scale-out), and when ready capacity is
-admitted to traffic (readiness admission).
+capacity action the controller hands over to the infrastructure in
+response to the observed bottleneck (compute or storage scale-out),
+and when ready capacity is admitted to traffic (readiness admission).
 
     The thesis does not claim that this SDN-based architecture is
 superior to existing orchestration platforms such as Kubernetes or NFV
@@ -259,50 +263,50 @@ MANO, nor that the platform mechanisms generalise
 beyond the tested infrastructure; it claims only that these three
 interfaces are measurable and, within the reviewed literature, not
 previously characterised in isolation, and that varying each
-independently reveals which dimensions matter and under what
-conditions.
+independently reveals how these dimensions affect resource orchestration 
+and under what conditions.
 
 \section{Objectives}\label{sec:objectives} %DONE
 The main objective of this thesis is to study the coordination gaps that
 arise between independent modules with their own control loops and to
 contribute to more efficient resource orchestration for stateful edge
 services, by characterising a specific and less examined part of this
-problem: the handoff delays that accumulate at the interfaces between
-telemetry delivery, capacity action selection, and traffic admission
-under varying demand shifts. 
-
-    The investigation rests on the idea that
-running telemetry consumption, scaling decisions, and routing within each
-controller process keeps their controller-side coordination in-process while
+problem: the coordination at the interfaces of the demand-to-capacity
+chain under varying demand shifts, covering the handoff delays that
+can arise in delivering demand evidence and in admitting ready
+capacity, and the capacity-action choice that determines which
+resource tier is relieved.
 retaining telemetry delivery as an explicit, configurable boundary. Along with
 explicit lifecycle hooks for scaling and admission, this arrangement exposes
 the selected interfaces to direct measurement.
 
     Because the components share one process and are therefore coupled,
 making each interface independently configurable is itself
-a deliberate design choice: the platform can change the
-delivery of demand evidence, the scaling action
-selected, or the admission of ready capacity while keeping the others
+a deliberate design choice, the platform can change the
+consumption and delivery of demand evidence, the scaling action
+selected and the admission of ready capacity while keeping the others
 fixed, and measure the effect of that single change.
 
 \section{Research Questions}\label{sec:research_questions} %DONE
 This thesis seeks to answer the following three research questions:
 
 \begin{itemize}
-    \item \textbf{RQ1} -- How do verified event-preserving, delayed event-preserving,
-    and latest-state telemetry delivery semantics affect overload observability,
-    scaling response, and transient service quality in a stateful edge service?
+    \item \textbf{RQ1} -- How do three ways of delivering demand evidence
+    to the controller, more specifically: event-preserving, delayed event-preserving, and
+    latest-state, affect what the controller observes about overload,
+    how it responds by scaling, and the quality of service users
+    experience during a demand shift?
 
-    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand,
-    how does bottleneck-aware scale-out, compared
-    with fixed single-tier policies, affect
-    targeted-tier relief, service recovery, and resource efficiency?
+    \item \textbf{RQ2} -- When the bottleneck is compute or data access,
+    how does choosing the scale-out action that matches the observed
+    bottleneck, compared with always scaling the same tier, affect relief
+    of the tier under pressure, service recovery, and resource use?
 
-    \item \textbf{RQ3} -- For newly provisioned compute backends satisfying an
-    identical servability criterion, how do lifecycle-driven and periodic
-    readiness-admission mechanisms affect the time from verified readiness to
-    routable and usable capacity, and what does the faster mechanism lose
-    when its readiness notification is lost and spare capacity is scarce?
+    \item \textbf{RQ3} -- When a newly provisioned backend becomes ready,
+    how does the way it is admitted to traffic affect when it actually
+    serves requests, and does a faster admission become a service-quality
+    cost when spare capacity is already low and the readiness signal
+    fails?
 \end{itemize}
 
 \section{Research Methodology}\label{sec:research_methodology} %DONE
@@ -322,7 +326,7 @@ and demonstrated in Figure~\ref{fig:design_science_research_methodology}.
     Design science produces and evaluates purposeful artefacts that address certain
 real-world problems, the research contribution corresponds to the knowledge gained
 by designing the artefact and evaluating it against defined objectives.
-In \ac{DSRM} the research is organized into six sections: problem
+In \ac{DSRM} the research is organized into six categories: problem
 identification and motivation, definition of the objectives of a solution,
 design and development, demonstration, evaluation, and communication.
 
@@ -372,10 +376,10 @@ interface varied across runs of each experimental campaign for evaluation.
 \item \textbf{Evaluation.} Each research question was evaluated in a dedicated
 experimental campaign reported in \ref{ch:results}, with controlled reference
 conditions holding the other two interfaces constant. The evaluation follows a
-pre-registered measurement and statistical procedure: each experiment is
+pre-registered measurement and statistical procedure where each experiment is
 composed of multiple independent runs, each treated as an experimental unit,
 driven by a scheduled open-loop workload driver that preserves the offered
-load; the primary comparisons are detailed in \ref{sec:experimental_setup}.
+load. The primary comparisons are detailed in \ref{sec:experimental_setup}.
     Internal, external and repeatability validity threats
 are discussed in \ref{sec:limitations}.
 
@@ -393,7 +397,8 @@ This dissertation makes the following contributions:
     their effects on overload observability, scaling response, and transient
     service quality (RQ1).
     \item An experimental characterisation of bottleneck-aware capacity
-    action selection: how deciding between compute and storage scale-out
+    action selection, more specifically how deciding between
+    compute and storage scale-out
     from the observed bottleneck, compared with fixed single-tier policies,
     affects targeted-tier relief, service recovery, and resource use under
     compute-bound and data-access-bound demand (RQ2).
