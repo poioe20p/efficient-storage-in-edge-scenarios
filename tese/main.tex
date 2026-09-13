@@ -98,60 +98,59 @@
 \begin{document}
 
 \chapter{Introduction}\label{ch:introduction} %DONE
-Studies have shown that edge web services encompassing routing, monitoring and auto-scaling
-can suffer from coordination delays that arise from the independent control loops through
-which each module operates. This accumulation of handoff delays
-between components degrades orchestration efficiency and reliability which can
-potentially reduce service quality.
+Edge web services that encompass routing, monitoring and auto-scaling rely
+on several control loops, and when these loops operate independently the
+handoffs between them accumulate delays. This accumulation of handoff
+delays degrades orchestration efficiency and reliability, and may reduce
+service quality~\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 
- In this chapter the context, motivation and problem statement are explained in 
-\ref{sec:context_motivation} with the objectives presented in \ref{sec:objectives}. 
-The research questions that emerged are available in \ref{sec:research_questions}. 
-The methodology used to develop the thesis is detailed in \ref{sec:research_methodology},
-the main contributions in \ref{sec:contributions} and finally the outlining of the rest of the 6 
-chapters of the thesis are presented in \ref{sec:document_structure}.
+The remainder of this chapter is organised as follows.
+Section~\ref{sec:context_motivation} presents the context, motivation and
+problem statement; Section~\ref{sec:objectives} states the objectives;
+Section~\ref{sec:research_questions} lists the research questions;
+Section~\ref{sec:research_methodology} details the methodology used to
+develop the thesis; Section~\ref{sec:contributions} summarises the main
+contributions; and Section~\ref{sec:document_structure} outlines the rest
+of the dissertation.
 
 \section{Context, Motivation, and Problem Statement}\label{sec:context_motivation}
-In the year 2025 global internet traffic surpassed 7 exabytes 
-(1 exabyte = 1 000 000 000 gigabytes), this 
-corresponds to a more than double increase in the amount of internet traffic
-generated since 2020 across fixed and mobile networks, this is represented in Figure 1.1.
-\parencite{ITU2025InternetTraffic}.
+In 2025, global internet traffic across fixed and mobile networks exceeded
+7 000 exabytes\footnote{One exabyte equals \(10^{9}\) gigabytes.}, more than
+doubling since 2020~\parencite{ITU2025InternetTraffic}, as shown in
+Figure~\ref{fig:internet_traffic}.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.4\textwidth]{images/global-internet-traffic-over-the-years.pdf}
+    \includegraphics[width=0.55\textwidth]{images/global-internet-traffic-over-the-years.pdf}
     \caption{Global internet traffic between 2020 and 2025. Source: Statista, based on ITU data~\parencite{ITU2025InternetTraffic}.}
     \label{fig:internet_traffic}
 \end{figure}
 
-    This growth has been driven by many technological advancements some of which, 
-have in turn galvanized the emergence of real-time interactive and data-intensive
-applications among others. Examples include web streaming and cloud gaming, 
-which are both services where users expect sub-second latency and high resolution
-multimedia, highlighting the need for fast and capable data processing. These are just
-a few examples that demonstrate the demand of infrastructure that is able to deliver
-performance with high availability and reliability at global scale, in other words
-regardless of where the end users are located.
+    This growth has been driven by many technological advancements, some of
+which have in turn spurred the emergence of real-time interactive and
+data-intensive applications, among others. Examples include web streaming
+and cloud gaming, both services where users expect sub-second latency and
+high-resolution multimedia, highlighting the need for fast and capable
+data processing. These examples demonstrate the demand for infrastructure
+able to deliver performance with high availability and reliability at a
+global scale, regardless of where the end users are located.
 
-Cloud computing is and has been the \parencite{Gurung2026CloudRevolutionTracingOriginsRise}
-backbone that enables these applications to operate at a global scale. 
-It offers automatic scaling, both horizontally and vertically,
-a pay-per-use model and among other aspects, 
-\parencite{Gurung2026CloudRevolutionTracingOriginsRise} a globally distributed offering
-and availability that has established it as
-the foundational layer that supports modern applications and services. 
+Cloud computing has been the backbone that enables these applications to
+operate at a global scale. It offers automatic scaling, both horizontally
+and vertically, a pay-per-use model and, among other aspects, a globally
+distributed offering and availability that have established it as the
+foundational layer supporting modern applications and services
+\parencite{Gurung2026CloudRevolutionTracingOriginsRise}.
 
     Yet, in parallel, a growing share of internet traffic now originates from
 mobile devices, which have become the main gateway to internet access
 \parencite{Gaudiaut2026MobileTrafficShare}. Much of this access is
 therefore generated and consumed at the network edge, far from
-centralised cloud data centres. As presented in 
-\parencite{Cao2020OverviewEdgeComputingResearch},
-\parencite{Satyanarayanan2017EmergenceEdgeComputing} edge computing brings
-the computational resources to the network edge therefore closer to the
-end-users, allowing for much lower latency in delivering services
-and applications to users by leveraging its geo-distributed nature. 
+centralised cloud data centres. Edge computing brings the computational
+resources to the network edge, therefore closer to the end-users, allowing
+for much lower latency in delivering services and applications to users by
+leveraging its geo-distributed nature
+\parencite{Cao2020OverviewEdgeComputingResearch,Satyanarayanan2017EmergenceEdgeComputing}.
 Beyond lower latency, edge computing's inherent
 geo-distributed servers dispersed geographically and close to users relieves bandwidth
 pressure on the core network, since data can be processed and stored locally,
@@ -163,7 +162,7 @@ freeing up backbone available bandwidth.
 less capacity per location and greater complexity in managing the distributed
 edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
 edge computing raises the complexity of management considerably}
-\parencite{Satyanarayanan2017EmergenceEdgeComputing}. This management complexity stems
+\parencite[p.~37]{Satyanarayanan2017EmergenceEdgeComputing}. This management complexity stems
 from the dispersion of the edge servers across many sites,
 aggravated by considerable variation in user demand over time and by the
 heterogeneous resource requirements of the requests served. Luo et al. further
@@ -198,7 +197,7 @@ degrades orchestration efficiency and, in turn, the quality of
 service experienced by users.
 
     This sequence forms what this dissertation calls the demand-to-capacity
-chain which is the path that an orchestration system takes to convert
+chain, which is the path that an orchestration system takes to convert
 a change in overall user demand into capacity that serves that demand. A demand
 shift is first observed by monitoring and telemetry, which deliver the
 evidence to a decision point; the decision point selects a capacity action,
@@ -257,14 +256,13 @@ capacity action the controller hands over to the infrastructure in
 response to the observed bottleneck (compute or storage scale-out),
 and when ready capacity is admitted to traffic (readiness admission).
 
-    The thesis does not claim that this SDN-based architecture is
-superior to existing orchestration platforms such as Kubernetes or NFV
-MANO, nor that the platform mechanisms generalise
-beyond the tested infrastructure; it claims only that these three
-interfaces are measurable and, within the reviewed literature, not
-previously characterised in isolation, and that measurement can
-establish how these dimensions affect resource orchestration and
-under what conditions.
+    The thesis does not claim that this SDN-based architecture is superior
+to existing orchestration platforms such as Kubernetes or NFV Management
+and Orchestration (MANO) platforms, nor that its mechanisms generalise
+beyond the tested infrastructure. It claims only that these three
+interfaces are measurable, that within the reviewed literature they have
+not been previously characterised in isolation, and that measurement can
+establish how they affect resource orchestration and under what conditions.
 
 \section{Objectives}\label{sec:objectives} %DONE
 The main objective of this thesis is to study the coordination gaps that
@@ -278,36 +276,34 @@ capacity, and the capacity-action choice that determines which
 resource tier is relieved.
 
     The platform keeps controller-side coordination in-process while
-retaining telemetry delivery as an explicit, configurable boundary. Along with
-explicit lifecycle hooks for scaling and admission, this arrangement exposes
-the selected interfaces to direct measurement.
-
-    Because the components share one process and are therefore coupled,
-making each interface independently configurable is itself
-a deliberate design choice, so that the platform can change the
-consumption and delivery of demand evidence, the scaling action
-selected, or the admission of ready capacity, and measure the effect.
+retaining telemetry delivery as an explicit, configurable boundary. Along
+with explicit lifecycle hooks for scaling and admission, this arrangement
+exposes the selected interfaces to direct measurement. Because the
+components share one process and are therefore coupled, making each
+interface independently configurable is itself a deliberate design choice,
+so that the platform can vary the delivery of demand evidence, the scaling
+action selected, or the admission of ready capacity, and measure the effect.
 
 \section{Research Questions}\label{sec:research_questions} %DONE
 This thesis seeks to answer the following three research questions:
 
 \begin{itemize}
     \item \textbf{RQ1} -- How do three ways of delivering demand evidence
-    to the controller, more specifically: event-preserving, delayed event-preserving, and
+    to the controller, more specifically, event-preserving, delayed event-preserving, and
     latest-state, affect what the controller observes about overload,
     how it responds by scaling, and the quality of service users
     experience during a demand shift?
 
-    \item \textbf{RQ2} -- When the bottleneck is compute or data access,
-    how does choosing the scale-out action that matches the observed
-    bottleneck, compared with always scaling the same tier, affect relief
-    of the tier under pressure, service recovery, and resource use?
+    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand,
+    how does bottleneck-aware scale-out, compared with fixed single-tier
+    policies, affect targeted-tier relief, service recovery, and resource use?
 
     \item \textbf{RQ3} -- When a newly provisioned backend becomes ready,
-    how does the way it is admitted to traffic affect when it actually
-    serves requests, and does a faster admission become a service-quality
-    cost when spare capacity is already low and the readiness signal
-    fails?
+    how does the readiness-admission mechanism, direct lifecycle
+    notification versus periodic discovery, affect when the backend
+    actually serves requests, and does lifecycle notification become a
+    service-quality cost when spare capacity is already low and a
+    readiness notification is lost?
 \end{itemize}
 
 \section{Research Methodology}\label{sec:research_methodology} %DONE
@@ -331,31 +327,32 @@ In \ac{DSRM} the research is organized into six categories: problem
 identification and motivation, definition of the objectives of a solution,
 design and development, demonstration, evaluation, and communication.
 
-    This dissertation follows a problem-centred approach where the problem motivates
-the research and is defined as the coordination delays that accumulate between independently
-operating control loops in edge orchestration of services,
-which is justified by the state of the art reviewed
-in \ref{ch:literature_review}. The six activities unfolded as follows.
+    This dissertation follows a problem-centred approach, in which the problem
+motivates the research and is defined as the coordination delays that
+accumulate between independently operating control loops in the
+orchestration of edge services. The problem definition is grounded in the
+state of the art reviewed in Chapter~\ref{ch:literature_review}. The six
+activities unfolded as follows.
 
 \begin{enumerate}
 \item \textbf{Problem identification and motivation.} Edge services whose
 monitoring, routing and scaling modules operate as independent components
 accumulate handoff delays between control loops, degrading orchestration
 efficiency. The problem is introduced in
-\ref{sec:context_motivation}, and the review of the state of the art in
-\ref{ch:literature_review} establishes both that these functions are typically
+Section~\ref{sec:context_motivation}, and the review of the state of the art in
+Chapter~\ref{ch:literature_review} establishes both that these functions are typically
 studied in isolation and that single-process architectures with independently
 configurable interfaces are less commonly present in the reviewed literature, which
 motivates and delimits the problem.
 
-\item \textbf{Objectives of a solution.} As defined in \ref{sec:objectives},
+\item \textbf{Objectives of a solution.} As defined in Section~\ref{sec:objectives},
 the solution is an experimental platform, not a novel algorithm, whose
 purpose is to make the interfaces of the demand-to-capacity chain
 measurable, so that their impact on resource orchestration can be
 evaluated through measurement and better understood.
 
 \item \textbf{Design and development.} The artefact is the single-process platform
-described in \ref{ch:system_architecture} and \ref{ch:implementation}: two peer
+described in Chapters~\ref{ch:system_architecture} and~\ref{ch:implementation}: two peer
 SDN controllers (OS-Ken/OpenFlow), one per network domain, each hosting
 controller-side telemetry consumption, elasticity decision-making and the
 double-VIP routing model, with Docker containerised service backends and a
@@ -375,13 +372,13 @@ observation through scaling action to traffic admission, with the tested
 interface varied across runs of each experimental campaign for evaluation.
 
 \item \textbf{Evaluation.} Each research question was evaluated in a dedicated
-experimental campaign reported in \ref{ch:results}. The evaluation follows a
+experimental campaign reported in Chapter~\ref{ch:results}. The evaluation follows a
 pre-registered measurement and statistical procedure where each experiment is
 composed of multiple independent runs, each treated as an experimental unit,
 driven by a scheduled open-loop workload driver that preserves the offered
-load. The primary comparisons are detailed in \ref{sec:experimental_setup}.
-    Internal, external and repeatability validity threats
-are discussed in \ref{sec:limitations}.
+load. The primary comparisons are detailed in Section~\ref{sec:experimental_setup}.
+Internal, external and repeatability validity threats
+are discussed in Section~\ref{sec:limitations}.
 
 \item \textbf{Communication.} The communication of the problem, the artefact
 and the findings is accomplished through this dissertation itself and its
@@ -414,9 +411,7 @@ This dissertation makes the following contributions:
 \end{enumerate}
 
     These contributions are claimed within the evaluated two-domain testbed
-and workload families. The evaluation does not allow us to claim that
-the single-process arrangement is superior to other orchestration platforms,
-nor was it conducted with such intent.
+and workload families.
 
 \section{Dissertation Structure}\label{sec:document_structure} %DONE
 This dissertation is organised into six chapters:
@@ -429,8 +424,9 @@ guided the work, and the main contributions.
 \item \textbf{Chapter 2} reviews the background and related work. After presenting the
 methodology used to conduct the review, it surveys the platform technologies on which the
 proposed solution rests (edge platforms, SDN and OpenFlow, containers, and NoSQL document
-stores), then monitoring and telemetry, auto-scaling, load balancing on SDN, and resource
-orchestration on SDN, examines the default separation of monitoring, routing and scaling
+stores), then monitoring and telemetry, auto-scaling, load balancing and readiness
+admission on SDN, and resource orchestration on SDN, examines the default separation of
+monitoring, routing and scaling
 into independent components observed across these areas, and concludes with the research
 gaps that motivate this dissertation.
 
@@ -460,7 +456,7 @@ research.
 \chapter{Background and Related Work}\label{ch:literature_review} %DONE
 This chapter presents the background and related work that motivated
 the research, selected through the search strategy described in
-\ref{sec:review_method}. The review is separated into two parts.
+Section~\ref{sec:review_method}. The review is separated into two parts.
 First, the technologies and concepts used to build the experimental
 platform are explained and surveyed, each introduced for what it is
 and why it suits the edge scenario. These are, more specifically,
@@ -484,18 +480,18 @@ ideas each field offers about them, with the aim of establishing a solid
 ground for the evaluation of the three interfaces of the
 demand-to-capacity chain. 
 
-    This examination grounds the claim, introduced in \ref{sec:context_motivation},
+    This examination grounds the claim, introduced in Section~\ref{sec:context_motivation},
 that these interfaces are acknowledged in the literature but have not been
 systematically isolated and studied. The orchestration
 platforms that provide the context for these functions are reviewed in
-\ref{sec:lit_sdn_orchestration}, and the findings across all areas,
+Section~\ref{sec:lit_sdn_orchestration}, and the findings across all areas,
 together with the research gaps they define, are synthesised in
-\ref{sec:lit_synthesis}.
+Section~\ref{sec:lit_synthesis}.
 
 \section{Review Methodology}\label{sec:review_method} %DONE
-    Searches were executed in Google Scholar and IEEE Xplore 
-targeting recent literature, publications from 2016 onward with consideration for 
-the number of citations. 
+    Searches were executed in Google Scholar and IEEE Xplore for
+publications from 2016 onward, with the number of citations taken into
+consideration.
 Works reached through Google Scholar were
 retrieved from IEEE Xplore, ACM Digital Library, Springer, and ScienceDirect.
 Each query resulted in roughly 30 papers evaluated for selection. 
@@ -548,18 +544,19 @@ the retrieved hits.
         unavailable \\
         Full text freely available or accessible under ISCTE's scientific
         access licences & \\
-        At least ten citations and or published within the last 6 years and
-        retained on topical relevance & \\
+        Published from 2016 onward, with the number of citations taken
+        into consideration, and retained on topical relevance & \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-    Screening and citation chaining produced the reviewed literature, organised by
-the interface each work informs: telemetry delivery, capacity action selection,
-readiness admission, and platform context. Sources used solely to explain the
-platform technologies in \ref{sec:platform_background} are treated as
-background rather than as independent evidence of an RQ gap. The synthesis is
-recorded in \ref{sec:lit_synthesis}.
+    Screening and citation chaining produced the reviewed literature, 31 works
+organised by the interface each work informs: telemetry delivery, capacity
+action selection, readiness admission, and platform context. Eight background
+sources support the platform technologies presented in
+Section~\ref{sec:platform_background}, and are treated as context rather than
+as independent evidence of an RQ gap. The synthesis is recorded in
+Section~\ref{sec:lit_synthesis}.
 
 \section{Platform Technology Background}\label{sec:platform_background} %DONE
 This section presents and explains the four building blocks that define
@@ -569,8 +566,8 @@ containerisation, and MongoDB.
     Each subsection states what the building block is and why it
 matters for the thesis scenario. 
 How the building blocks are applied
-is the subject of Chapters \ref{ch:system_architecture}
-and \ref{ch:implementation}.
+is the subject of Chapters~\ref{ch:system_architecture}
+and~\ref{ch:implementation}.
 
 \subsection{Edge Computing} %DONE
 Edge computing is the placement of computational and storage resources
@@ -588,8 +585,8 @@ interactive and data-intensive services, and processing and storing
 data locally relieves the bandwidth pressure on the core
 network \parencite{Satyanarayanan2017EmergenceEdgeComputing}.
 
-    Despite the advantages of edge computing, as mentioned previously in 
-\ref{sec:context_motivation}, the inherent geo-distribution of resources
+    Despite the advantages of edge computing, as mentioned previously in
+Section~\ref{sec:context_motivation}, the inherent geo-distribution of resources
 increases their management and orchestration complexity.
 Resource heterogeneity, scarcity, and demand varying over time are all 
 aspects that can degrade resource orchestration efficiency, making it a 
@@ -646,9 +643,9 @@ carries without reconfiguring the forwarding devices individually.
 Containers package an application with its dependencies and share the
 host kernel, which makes them lightweight and quick to start up compared
 to virtual machines, properties that suit resource-constrained edge
-platforms. In this thesis Docker is adopted as the platform's 
-containerisation tool because it is the most widely
-used tool for building and running containers.
+platforms. In this thesis Docker is adopted as the platform's
+containerisation tool because of its wide adoption for building and
+running containers.
 
 \subsection{NoSQL and MongoDB}\label{sec:platform_storage} %DONE
 Document-oriented NoSQL stores organise data as schema-flexible
@@ -671,7 +668,8 @@ asynchronously and autonomously. Members exchange heartbeats,
 and when the primary fails or becomes unreachable,
 the secondaries hold an election and
 promote one of their own, so the set keeps serving without
-operator intervention. Members can also be added to and removed
+operator intervention~\parencite{MongoDBDocsReplicaSet}. Members can
+also be added to and removed
 from a deployment while it keeps serving, which turns the replica
 set into a controllable unit of storage capacity rather than a
 fixed configuration.
@@ -848,12 +846,11 @@ the efficiency with which scarce resources are managed.
     Qu et al. classify the auto-scalers along the scaling
 indicator, the resource estimation method, and the timing of the action,
 and Taherizadeh and Stankovski organise the same concepts across edge
-application types and operational challenges. In both, the unit surveyed
-is the scaling of service instances, whether virtual machines or
-containers.
-In short, the main questions the field asks are when to scale and how many
-instances to add, and which kind of capacity is provisioned, 
-when applicable is not among the classification dimensions
+application types and operational challenges. Both surveys take the
+scaling of service instances, whether virtual machines or containers,
+as the unit of analysis. The main questions the field asks are when to
+scale and how many instances to add, which kind of capacity is
+provisioned, when applicable, is not among the classification dimensions
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
 
     With SDN, the traffic side is added, but the scaled
@@ -880,7 +877,7 @@ and Li et al. couple scaling and placement in a single optimisation
 \parencite{Li2021JointOptimizationAutoScalingAdaptive}. Across these
 systems the optimisation lies on the forecast and adjusting the number of
 compute replicas over time. The improvement pursued is a better forecast of
-how many instances to run but which tier holds the limiting resource does
+how many instances to run, which tier holds the limiting resource does
 not enter the scope of study.
 
     Scaling one resource does not always make the service better,
@@ -894,12 +891,12 @@ scaling decisions ignore
 al. record the same boundary across the systems they survey. Adding
 resources does not necessarily raise throughput when the bottleneck
 lies elsewhere
-\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among those
-systems, awareness of the effect is scarce and cross-service only:
-Waterfall, a machine-learning auto-scaler, accounts for how scaling
-one microservice can shift the bottleneck towards downstream
-services, and ATOM uses layered queuing networks to reduce bottleneck
-shifts in model-agnostic controllers. Both provisions remain
+\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among the
+systems covered by that survey, awareness of the effect is scarce and
+cross-service only: Waterfall, a machine-learning auto-scaler, accounts
+for how scaling one microservice can shift the bottleneck towards
+downstream services, and ATOM uses layered queuing networks to reduce
+bottleneck shifts in model-agnostic controllers. Both mechanisms remain
 compute-side, and no surveyed system selects a storage action.
 
     PBScaler identifies the microservice whose degradation
@@ -933,7 +930,7 @@ Qu et al. describe the web application as split into
 application logic and a database tier, and
 record that \enquote{the database tier is often considered dynamically
 unscalable and ignored by auto-scalers}
-\parencite{Qu2018AutoScalingWebApplicationsClouds}.
+\parencite[p.~6]{Qu2018AutoScalingWebApplicationsClouds}.
 
 \begin{table}[htbp]
     \centering
@@ -983,9 +980,9 @@ bottleneck. This dissertation isolates that selection, with storage
 scale-out among the actions the controller may select, and measures
 how the benefit divides across targeted-tier relief, service recovery,
 and resource use. How that decision reaches execution is examined,
-with the other interfaces, in \ref{sec:lit_synthesis}.
+with the other interfaces, in Section~\ref{sec:lit_synthesis}.
 
-\section{Load Balancing on SDN}\label{sec:lit_sdn_lb} %DONE
+\section{Load Balancing and Readiness Admission on SDN}\label{sec:lit_sdn_lb} %DONE
 Load balancing distributes incoming traffic among a set of available
 backends so that no single backend is overloaded while others remain
 underutilized. In SDN networks this distribution is programmed centrally,
@@ -1013,7 +1010,7 @@ criteria such as load, path properties, and resource utilisation
 explicitly designed to operate at a granularity of seconds so that it
 can \enquote{work in tandem with modern elastic controllers, thereby
 reducing over-provisioning and SLO violations incurred during
-provisioning delays} \parencite{Bogdanov2018Kurma}. The delay between
+provisioning delays} \parencite[p.~386]{Bogdanov2018Kurma}. The delay between
 provisioning and usable capacity is therefore a recognised cost, yet
 the interval in which readiness state propagates to the routing plane
 is not separated from the surrounding lifecycle.
@@ -1045,16 +1042,42 @@ selectable and serves traffic. Direct lifecycle notification and periodic
 discovery are the two operational realisations of that coordination
 interface.
 
+Table~\ref{tab:admission_evidence} summarises the strength of the
+evidence each of these works provides for the admission interface.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Evidence on ready-backend admission in the reviewed literature.}
+    \label{tab:admission_evidence}
+    \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
+        \toprule
+        Work & Strength & What it shows \\
+        \midrule
+        Neghabi et al. (2018); Belgaum et al. (2020) & Surveyed & Load-balancing
+        policies optimise the distribution over the eligible set; its
+        membership is taken as given \\
+        Kurma (Bogdanov et al., 2018) & Measured & Seconds-granularity operation
+        beside elastic controllers; provisioning-delay stages named but
+        combined \\
+        Llorens-Carrodeguas et al. (2021) & Measured & Membership changed through
+        the monitoring path; activation reported at integrated-system
+        granularity \\
+        Okwuibe et al. (2020) & Measured & Migration latency reported as a
+        bundle; the service is reachable again only after a DNS update \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration} %DONE
 Resource orchestration is the management layer that keeps a running
 service within its requirements by coordinating the compute, network,
 and storage resources of the infrastructure on which it runs. It is
 the activity that the technologies and tools reviewed in
-\ref{sec:platform_background} are assembled to serve. Edge sites
+Section~\ref{sec:platform_background} are assembled to serve. Edge sites
 supply the resources, SDN supplies the programmable connectivity,
 containers supply the unit of compute, and the document store holds
 the service state. That decision-making, and its execution, is
-orchestration, and at the edge it is the more demanding because each
+orchestration, and at the edge it is all the more demanding because each
 site holds scarce capacity and the demand on it fluctuates over time.
 For stateful services, the capacity action can be two-sided
 because compute replicas serve requests, while the data
@@ -1070,7 +1093,7 @@ platforms reviewed here bind these layers with different degrees of
 coupling, and this section examines how closely the three functions
 of the demand-to-capacity chain, monitoring, scaling, and routing,
 are held together in each, using the terms interface and coordination
-gap as defined in \ref{sec:context_motivation}.
+gap as defined in Section~\ref{sec:context_motivation}.
 
     Baktir et al. organise the gains SDN brings to
 edge computing into benefit areas such as centralised visibility and
@@ -1103,7 +1126,7 @@ performance and the network fabric to container and application
 start-up, without attributing time to them individually, and it lists
 reducing these factors as future work. Its databases serve the
 power-measurement instrumentation rather than the service path, and
-the demonstration workload is stateless
+the demonstration involves no service-state transfer
 \parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized}.
 Peng et al. exercise SDN-based resource management in vehicular
 multi-access edge computing as task migration and radio slicing,
@@ -1186,9 +1209,8 @@ highlights.
 
     SDN-based resource orchestration is therefore an established and
 feasible arrangement, and the coordination it rests on is a recorded
-open issue. Nain et al. list the coordinated management of resources
-across the SDN-based edge among the continuing challenges of the
-field
+open issue. Nain et al. record resource optimisation in SDN-based
+edge environments among the continuing challenges of the field
 \parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The handoff
 delay studied in this dissertation is one measurable dimension of
 that coordination, and because the functions meet at boundaries that
@@ -1198,10 +1220,10 @@ evaluating the handoff delays between them. The platform built in
 this dissertation follows that arrangement and exposes telemetry
 delivery, capacity-action selection, and readiness admission as
 independently configurable interfaces, as presented in
-\ref{ch:system_architecture}.
+Chapter~\ref{ch:system_architecture}.
 
 \section{Synthesis and Research Gaps}\label{sec:lit_synthesis} % DONE
-    The review travelled through the functions of resource
+    The review has examined the functions of resource
 orchestration. Where the reviewed works address the delay between the
 functions, it is treated at three levels.
 The delay is first acknowledged as a real cost. Kurma's
@@ -1268,7 +1290,7 @@ three interfaces and the question each leaves open.
     \end{tabular}
 \end{table}
 
-    The research questions of \ref{sec:research_questions} are the
+    The research questions of Section~\ref{sec:research_questions} are the
 experimental form of Table~\ref{tab:interface_gaps}. This
 dissertation does not argue that the coordination gap is universal,
 only that, within the reviewed literature, the interfaces that
