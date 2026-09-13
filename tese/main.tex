@@ -856,7 +856,7 @@ instances to add, and which kind of capacity is provisioned,
 when applicable is not among the classification dimensions
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
 
-    Whit SDN, the traffic side is added, but the scaled
+    With SDN, the traffic side is added, but the scaled
 resource remains the one the service function is built from:
 Llorens-Carrodeguas et al. couple SDN-based traffic steering with
 horizontal scaling of virtualised network functions, so that a single
@@ -921,7 +921,7 @@ actions are available, but the trigger is a forecast rather than a live
 observed bottleneck, and the study is set in the cloud rather than at
 the edge, with its outcome measured in tenancy cost. 
 
-    Even among the must recent surveys regarding autoscaling, 
+    Even among the most recent surveys regarding autoscaling, 
 El Mrabet et al. extend the classification across cloud,
 fog, and edge, categorising the surveyed methods by their
 decision mechanism, scaling strategy, and
@@ -1036,10 +1036,10 @@ propagated to the routing plane, and it is included in the eligible
 set. The interval between verified readiness and routing eligibility is
 therefore an admission delay, and it lies outside the scope of the
 selection studies reviewed here, which take the eligible set as given.
-    This dissertation studies load balancing through this membership, not
-through the choice of which backend receives the next flow, and
+    This dissertation studies load balancing through this membership, without
+focusing on the choice of which backend receives the next flow, and
 evaluates the effects of a changing set of backends and of delay in the
-admission of ready capacity. It isolates the admission interval
+admission of ready capacity. It evaluates the admission interval
 and measures the time until newly provisioned capacity becomes
 selectable and serves traffic. Direct lifecycle notification and periodic
 discovery are the two operational realisations of that coordination
@@ -1056,11 +1056,13 @@ containers supply the unit of compute, and the document store holds
 the service state. That decision-making, and its execution, is
 orchestration, and at the edge it is the more demanding because each
 site holds scarce capacity and the demand on it fluctuates over time.
-Because the service is stateful, the capacity action is itself
-two-sided. Compute replicas serve requests, while the data they serve
-lives in the storage tier, so scaling can address either side.
+For stateful services, the capacity action can be two-sided
+because compute replicas serve requests, while the data
+they serve lives in the storage tier, so scaling can address either side.
+Demand for data can therefore exist without demand for compute and vice 
+versa.
 
-    This dissertation studies the SDN-based form of this management
+    This dissertation studies the SDN-based form of this architectural
 layer, in which the coordination spans the SDN controller, the
 container runtime, and the data store, and the challenge is to keep
 these layers working together as demand moves across sites. The
@@ -1070,8 +1072,7 @@ of the demand-to-capacity chain, monitoring, scaling, and routing,
 are held together in each, using the terms interface and coordination
 gap as defined in \ref{sec:context_motivation}.
 
-    Along the layers axis, edge orchestration is cross-layer by
-construction. Baktir et al. organise the gains SDN brings to
+    Baktir et al. organise the gains SDN brings to
 edge computing into benefit areas such as centralised visibility and
 programmatic traffic management
 \parencite{Baktir2017HowCanEdgeComputingBenefit}; Wang et al. survey
@@ -1089,9 +1090,8 @@ document architectures rather than the
 coordination inside a running system, so the interfaces between the
 functions fall outside their scope.
 
-    The surveyed architectures take concrete form in deployments that
-run SDN and container orchestration side by side as separate systems.
-Okwuibe et al. combine an OpenDaylight controller with Kubernetes for
+
+    Okwuibe et al. combine an OpenDaylight controller with Kubernetes for
 a containerised industrial-IoT video service, the component set
 closest to this dissertation's. The two platforms are coupled through
 scripted triggers rather than shared state. A script watches the
@@ -1123,11 +1123,11 @@ telemetry-and-routing loop, with telemetry collection delegated to
 decentralised microservices reached through an API, omitting scaling
 altogether
 \parencite{Hung2022SDNControllerMonitoringArchitecture5G}. The first
-arrangement binds all three functions at one control point and the
+study binds all three functions at one control point and the
 second binds two of the three, so combining the functions at an SDN
-control point is a feasible, precedented arrangement rather than an
-invention of this dissertation. Neither system, however, measures the
-delay that its coordination introduces.
+control point is an approach established in the literature 
+and leveraged in this dissertation. Neither system, however, reports the
+delay attributable to its coordination.
 
 % \begin{figure}[H]
 %     \centering
@@ -1138,8 +1138,7 @@ delay that its coordination introduces.
 % \end{figure}
 
     At the geo-distributed scale, three systems coordinate the same
-functions by construction, and they delimit the claim of this
-dissertation. OneEdge keeps authoritative state at each edge site,
+functions. OneEdge keeps authoritative state at each edge site,
 reconciles it with a central aggregate through two-phase commits, and
 uses \ac{ZMQ} for communication among its distributed components,
 reporting the whole control plane's deployment latency rather than
@@ -1155,11 +1154,12 @@ measurements among datacenters and redirect requests at second
 granularity while elastic controllers provision capacity, naming the
 stages of the provisioning delay, detection, acquisition, and
 warm-up, before treating them as one combined quantity
-\parencite{Bogdanov2018Kurma}. The coordination works by construction in
-each, but the delay it carries is not isolated. The state updates,
-exchanges, and redirects along those communication paths are not
-attributed to the individual handoffs between observing demand, deciding,
-and admitting capacity.
+\parencite{Bogdanov2018Kurma}. The coordination is built into each system, 
+but the delay it carries is not isolated. 
+The time taken by the state updates, exchanges, 
+and redirects along those communication paths is not
+attributed to the individual handoffs
+between observing demand, deciding, and admitting capacity.
 
     The related background is therefore organised in two modes. In the dominant
 mode, monitoring, scaling, and routing are implemented as separate
@@ -1178,8 +1178,8 @@ In a second, recurring mode, the same functions are kept together at an
 SDN-based control point or coordinated through shared state. What
 neither mode provides, however, is a decomposition of the control
 process into its interfaces. Prior systems measure complete control
-processes or coordinate them by construction;
-they do not isolate the contribution of telemetry delivery, capacity-action
+processes or coordinate them by construction.
+They do not isolate the contribution of telemetry delivery, capacity-action
 selection, or readiness admission to the demand-to-capacity path. This
 interface-level contribution is precisely the quantity this dissertation
 highlights.
@@ -1202,9 +1202,9 @@ independently configurable interfaces, as presented in
 
 \section{Synthesis and Research Gaps}\label{sec:lit_synthesis} % DONE
     The review travelled through the functions of resource
-orchestration, and each area concluded with the gap it leaves; read
-together, the four areas show the handoff delay at three levels of
-treatment. The delay is first acknowledged as a real cost. Kurma's
+orchestration. Where the reviewed works address the delay between the
+functions, it is treated at three levels.
+The delay is first acknowledged as a real cost. Kurma's
 seconds-granularity operation aims to reduce the over-provisioning
 and SLO violations incurred during provisioning delays
 \parencite{Bogdanov2018Kurma}, Yaseen records the visibility gaps that
@@ -1233,7 +1233,8 @@ monitoring freshness and measures a downstream consequence, but only
 for a single consumer, a scheduler
 \parencite{Huang2023AdapPFSelfAdaptiveScrapeInterval}. The separation
 that produces these delays is not an artefact of one platform family
-but the shared default of the areas reviewed; what varies across them
+but the shared default of the areas reviewed. 
+What varies across them
 is only how far each acknowledges the boundaries it imposes
 \parencite{TabatabaeeMalazi2022DynamicServicePlacementMultiAccess}.
 
@@ -1277,6 +1278,14 @@ compose it have not been isolated as independent variables.
 demand-to-capacity chain is treated as a sequence of separately
 measured interfaces, whose aggregate cost this dissertation
 deliberately does not claim.
+
+    Read together, the reviewed works provide evidence of the topics
+studied in this thesis: the freshness of demand evidence and its effect
+on the link between monitoring and decision, the cost of scaling the
+wrong resource when the bottleneck lies elsewhere, and the interval
+between provisioning and usable capacity. They also show that
+coordinating these functions at an SDN control point is an established
+approach.
 
     The questions also sit between the surveyed fields rather than
 inside any of them. Each area's abstraction serves its own question.
