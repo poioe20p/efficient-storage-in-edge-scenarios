@@ -181,7 +181,7 @@ geo-distributed edge deployment depend on data held close to the compute:
 a content item ingested at one site is served from the database of that
 site. In distributed deployments, such data is routinely replicated
 across sites for locality and robustness, but replication is neither
-instantaneous nor free: a request reaching a server whose local copy is
+instantaneous nor free. A request reaching a server whose local copy is
 still synchronising must wait for it to catch up, and maintaining copies
 consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement},
@@ -232,7 +232,7 @@ illustrates the chain.
 
     The steps described above must be coordinated under the time pressure of
 an ongoing demand shift. In practice, however, they are performed by
-separate components: a monitoring system collects metrics, an
+separate components. A monitoring system collects metrics, an
 auto-scaler provisions capacity, and a load balancer redirects traffic,
 each running under its own control loop. The information needed to
 respond to demand must therefore cross from one component to the next,
@@ -271,8 +271,8 @@ The main objective of this thesis is to study the coordination gaps that
 arise between independent modules with their own control loops and to
 contribute to more efficient resource orchestration for stateful edge
 services, by characterising a specific and less examined part of this
-problem: the coordination at the interfaces of the demand-to-capacity
-chain under varying demand shifts, covering the handoff delays that
+problem, the coordination at the interfaces of the demand-to-capacity
+chain under varying demand shifts. This coordination covers the handoff delays that
 can arise in delivering demand evidence and in admitting ready
 capacity, and the capacity-action choice that determines which
 resource tier is relieved.
@@ -363,7 +363,7 @@ double-VIP routing model, with Docker containerised service backends and a
 MongoDB replica set per domain serving as the storage tier, each scaled in and
 out through MongoDB native replication. The
 technology choices are justified by
-their utility for the platform: SDN provides a single programmable control
+their utility for the platform. SDN provides a single programmable control
 plane through which routing behaviour can be re-programmed directly in a central manner, 
 Docker enables fast provisioning and teardown of service backends, and MongoDB for native
 replica-set replication and concurrent access.
@@ -627,16 +627,13 @@ the flexibility of edge deployments \parencite{Baktir2017HowCanEdgeComputingBene
 
     The OpenFlow protocol implements the decoupling through match-action
 flow rules installed on the switches, and is, as reviewed by Waseem et al.,
-the most extensively used interface for programming such networks
+the most extensively used interface for programming software defined networks
 \parencite{Waseem2022SoftwareDefinedNetworkingSDNReview}. 
 
     In its OpenFlow form, a single controller re-programs the forwarding
 behaviour of the network by installing and updating match-action flow rules,
 so that network behaviour can follow the life cycle of the services it
 carries without reconfiguring the forwarding devices individually.
-Programmable forwarding therefore turns the admission of a newly ready
-backend into a controller decision rather than a fixed property of the
-network.
 
 \begin{figure}[H]
     \centering
@@ -651,9 +648,9 @@ network.
 Containers package an application with its dependencies and share the
 host kernel, which makes them lightweight and quick to start up compared
 to virtual machines, properties that suit resource-constrained edge
-platforms. Docker is adopted as the platform's containerisation tool
-because it is the most widely used tool for building and running
-containers.
+platforms. In this thesis Docker is adopted as the platform's 
+containerisation tool because it is the most widely
+used tool for building and running containers.
 
 \subsection{NoSQL and MongoDB}\label{sec:platform_storage} %DONE
 Document-oriented NoSQL stores organise data as schema-flexible
@@ -665,10 +662,10 @@ relational systems are traditionally scaled vertically by enlarging a
 single server. This model suits the heterogeneous data of edge and IoT
 services, whose structure varies between sources and evolves over time.
 
-    MongoDB is a document store of this family: it holds data as BSON
+    MongoDB is a document store of this family. It holds data as BSON
 documents within collections and provides a flexible schema.
 In MongoDB, redundancy is organised natively around the replica
-set: a group of \texttt{mongod} processes that maintain the same
+set, a group of \texttt{mongod} processes that maintain the same
 data set. One member is elected primary and serves the clients'
 writes, which it records in an operation log; the remaining
 members, the secondaries, replicate by applying that log
@@ -689,7 +686,7 @@ fixed configuration.
     \label{fig:mongodb_replica_set}
 \end{figure}
 
-    This dissertation builds on that capability: the storage tier is
+    This dissertation builds on that capability. The storage tier is
 scaled by adding and removing replica-set members while the set keeps
 serving, leveraging MongoDB's native replication and election
 mechanisms.
@@ -699,7 +696,7 @@ Monitoring and telemetry observe the state of a running service and
 deliver that evidence to whoever acts on it. Monitoring is the
 collection of resource and load metrics, telemetry the transport that
 carries the collected data to the consumer, and together they form the
-first link of the demand-to-capacity chain: every later decision, on
+first link of the demand-to-capacity chain. Every later decision, on
 scaling or on routing, can act only on the evidence this link delivers,
 at the time it delivers it, and with whatever intermediate observations
 the delivery process preserves.
@@ -720,7 +717,7 @@ polls the infrastructure into a Prometheus database
     Delivery is conventionally pull-based, the
 consumer requesting the latest sample at a fixed interval
 \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}, and this
-choice alone determines much of what the consumer can know: between two
+choice alone determines much of what the consumer can know. Between two
 collection instants the monitored state is unobserved, and what the
 pipeline forwards between instants determines whether the consumer
 receives the complete history, a complete but delayed history, or only
@@ -739,7 +736,7 @@ variation is shown to produce, and what the work leaves as a given.
 been shown to be a genuine variable rather than a fixed parameter. AdapPF
 \parencite{Huang2023AdapPFSelfAdaptiveScrapeInterval} varies the
 Prometheus scrape interval of a geo-distributed Kubernetes federation and
-measures the effect on a downstream consumer: under high load, a coarse
+measures the effect on a downstream consumer. Under high load, a coarse
 sixty-second interval substantially degrades scheduling accuracy relative
 to a five-second interval, and an adaptive cadence restores it while
 reducing cross-cluster monitoring traffic.
@@ -773,7 +770,7 @@ control point, although the loop omits scaling altogether
 \parencite{Hung2022SDNControllerMonitoringArchitecture5G}.
 
     At the platform level, adjacent observability
-work exhibits the same open dimension: Usman et al., surveying
+work exhibits the same open dimension. Usman et al., surveying
 observability of distributed edge and container-based microservices,
 leave the definition of appropriate measurement intervals as an
 open research topic
@@ -815,7 +812,7 @@ evidence each of these works provides for the link under study.
 \end{table}
 
     Across the reviewed literature, therefore, the building blocks of the
-delivery question appear separately: AdapPF varies the interval that
+delivery question appear separately. AdapPF varies the interval that
 produces delay, Yaseen documents the gaps that polling leaves, and
 aggregation summarises away intermediate observations, yet no reviewed
 work distinguishes delayed event-preserving delivery from latest-state
@@ -825,7 +822,7 @@ dissertation isolates and measures.
 
 \section{Auto Scaling}\label{sec:lit_auto_scaling} %DONE
 Auto-scaling adjusts the amount of allocated resources to the load that
-a service receives: when demand grows, additional capacity is
+a service receives. When demand grows, additional capacity is
 provisioned, and when demand recedes, surplus capacity is released, so
 that the service keeps serving requests without holding resources it
 does not use. Auto-scaling strategies are commonly grouped into
@@ -870,12 +867,12 @@ pre-dimensioned function pool are activated or deactivated. The decision
 reduces to whether and how many instances of that one function to
 activate, and the data tier those functions depend on is held fixed by
 the design. In a stateful edge service, however, that fixed tier is
-itself a live capacity: when the pressure sits in the data rather than
+itself a live capacity. When the pressure sits in the data rather than
 in the function instances, adding instances cannot relieve it
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 
     Predictive and learning-based approaches sharpen the same decision
-without widening it: Toka et al. formalise the Kubernetes horizontal
+without widening it. Toka et al. formalise the Kubernetes horizontal
 autoscaler's control model to anticipate demand for edge clusters
 \parencite{Toka2021MachineLearningScalingManagementKubernetes}, Ju et
 al. and Cheng et al. forecast workload to adjust replica counts ahead of
@@ -890,13 +887,13 @@ not enter their problem.
 
     Scaling one resource does not always make the service better,
 because the pressure may sit elsewhere. Nikravesh et al. quantify what
-that default costs in a three-tier web service: the scaling decisions
+that default costs in a three-tier web service. The scaling decisions
 taken for the business tier turn out to be insensitive to database
 capacity, yet reducing database capacity raises the rate of SLA
 violations, so service quality can be governed by the tier that the
 scaling decisions ignore
 \parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}. Dogani et
-al. record the same boundary across the systems they survey: adding
+al. record the same boundary across the systems they survey. Adding
 resources does not necessarily raise throughput when the bottleneck
 lies elsewhere
 \parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among those
@@ -907,7 +904,7 @@ services, and ATOM uses layered queuing networks to reduce bottleneck
 shifts in model-agnostic controllers; both provisions remain
 compute-side, and no surveyed system selects a storage action.
 
-    The most recent systems sharpen the same boundary: PBScaler identifies
+    The most recent systems sharpen the same boundary. PBScaler identifies
 the microservice whose degradation propagates through the call graph,
 ranks candidate bottlenecks, and optimises replica management around the
 identified bottleneck
@@ -930,11 +927,11 @@ management efficiency.
     Pelle et al. keep function and state placement in sync through
 an integrated optimisation over an edge platform
 \parencite{Pelle2022CostLatencyEdgePlatform}. The mechanism is
-placement rather than live capacity action: state is moved to follow
+placement rather than live capacity action. State is moved to follow
 the functions, while the response to an observed bottleneck remains
 outside the optimisation.
 
-    The most recent survey converges on the same boundary: El Mrabet et
+    The most recent survey converges on the same boundary. El Mrabet et
 al. extend the classification across cloud, fog, and edge, categorising
 the surveyed methods by their decision mechanism, scaling strategy, and
 deployment layer, and the provisioned tier is not among the
@@ -1061,7 +1058,7 @@ to routing eligibility is not separated from the surrounding lifecycle.
 eligible candidates is well characterised, and integrated systems implement
 broader membership transitions. What remains unisolated in the reviewed
 studies is the interval between a backend becoming ready and traffic
-actually reaching it. This dissertation isolates that interval: it varies
+actually reaching it. This dissertation isolates that interval. It varies
 readiness-admission coordination while holding the application-readiness
 criterion and selection function constant, and measures the time until
 newly provisioned capacity becomes selectable and serves traffic.
@@ -1073,14 +1070,14 @@ Resource orchestration is the management layer that keeps a running
 service within its requirements by coordinating the compute, network,
 and storage resources of the infrastructure on which it runs. It is
 the activity that the technologies and tools reviewed in
-\ref{sec:platform_background} are assembled to serve: edge sites
+\ref{sec:platform_background} are assembled to serve. Edge sites
 supply the resources, SDN supplies the programmable connectivity,
 containers supply the unit of compute, and the document store holds
 the service state. That decision-making, and its execution, is
 orchestration, and at the edge it is the more demanding because each
 site holds scarce capacity and the demand on it fluctuates over time.
 Because the service is stateful, the capacity action is itself
-two-sided: compute replicas serve requests, while the data they serve
+two-sided. Compute replicas serve requests, while the data they serve
 lives in the storage tier, so scaling can address either side.
 
     This dissertation studies the SDN-based form of this management
@@ -1117,7 +1114,7 @@ run SDN and container orchestration side by side as separate systems.
 Okwuibe et al. combine an OpenDaylight controller with Kubernetes for
 a containerised industrial-IoT video service, the component set
 closest to this dissertation's. The two platforms are coupled through
-scripted triggers rather than shared state: a script watches the
+scripted triggers rather than shared state. A script watches the
 mobile core's log for client handovers and triggers a Kubernetes
 migration of the service between MEC servers, and the service becomes
 reachable again only after a DNS update. The study reports the total
@@ -1179,7 +1176,7 @@ granularity while elastic controllers provision capacity, naming the
 stages of the provisioning delay, detection, acquisition, and
 warm-up, before treating them as one combined quantity
 \parencite{Bogdanov2018Kurma}. The coordination works by construction in
-each, but the delay it carries is not isolated: the state updates,
+each, but the delay it carries is not isolated. The state updates,
 exchanges, and redirects along those communication paths are not
 attributed to the individual handoffs between observing demand, deciding,
 and admitting capacity.
@@ -1188,7 +1185,7 @@ and admitting capacity.
 mode, monitoring, scaling, and routing are implemented as separate
 components, each running its own control loop, so the evidence and
 commands that tie them together must cross component boundaries. The
-separation is visible even in the tools themselves: Cilic et al.
+separation is visible even in the tools themselves. Cilic et al.
 evaluate Kubernetes, the lightweight distributions K3s and KubeEdge,
 and the ioFog platform in real edge execution environments, and find
 that the scheduling logic of these tools can be customised to a
@@ -1209,7 +1206,7 @@ highlights.
 
     SDN-based resource orchestration is therefore an established and
 feasible arrangement, and the coordination it rests on is a recorded
-open issue: Nain et al. list the coordinated management of resources
+open issue. Nain et al. list the coordinated management of resources
 across the SDN-based edge among the continuing challenges of the
 field
 \parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The handoff
@@ -1227,7 +1224,7 @@ independently configurable interfaces, as presented in
     The review travelled through the functions of resource
 orchestration, and each area concluded with the gap it leaves; read
 together, the four areas show the handoff delay at three levels of
-treatment. The delay is first acknowledged as a real cost: Kurma's
+treatment. The delay is first acknowledged as a real cost. Kurma's
 seconds-granularity operation aims to reduce the over-provisioning
 and SLO violations incurred during provisioning delays
 \parencite{Bogdanov2018Kurma}, Yaseen records the visibility gaps that
@@ -1238,7 +1235,7 @@ Cilic et al. conclude that integration work is still required around
 the scheduling logic of cloud-designed edge tools
 \parencite{Cilic2023PerformanceEvaluationContainerOrchestrationTools}.
 Second, where the delay is evaluated, it is evaluated only in
-composite: Llorens-Carrodeguas et al. report activation at the
+composite. Llorens-Carrodeguas et al. report activation at the
 granularity of the integrated system, Okwuibe et al. report a total
 migration latency, OneEdge reports the deployment latency of its
 whole control plane, and Kurma combines its provisioning stages into
@@ -1280,7 +1277,7 @@ three interfaces and the question each leaves open.
         When compute and storage actions are both available, how much does
         selecting the action matched to an observed compute-bound or
         data-access-bound bottleneck change targeted-tier relief, service
-        recovery, and resource efficiency relative to fixed single-tier
+        recovery, and resource use relative to fixed single-tier
         policies, and where do the effects concentrate? \\
         Ready backend to traffic (RQ3) &
         How does readiness-admission coordination affect the delay from
@@ -1303,7 +1300,7 @@ of separately measured interfaces, whose aggregate cost this
 dissertation deliberately does not claim.
 
     The questions also sit between the surveyed fields rather than
-inside any of them: each area's abstraction serves its own question.
+inside any of them. Each area's abstraction serves its own question.
 Chapter~\ref{ch:system_architecture} presents the platform designed
 to make them askable and measurable.
 
@@ -1454,7 +1451,7 @@ The policy is instantiated once per resource tier, with tier-specific
 signals and parameters. Each tier is observed through two signals: a
 utilisation signal and a latency signal. For each telemetry window $w$, let
 $c(w)$ denote the window's utilisation and $t(w)$ its typical latency. Each
-signal is first mapped onto the unit interval: a value at or below its floor
+signal is first mapped onto the unit interval. A value at or below its floor
 contributes nothing, a value at or above the floor plus its span contributes
 the maximum, and intermediate values contribute proportionally, so that a
 single extreme window cannot dominate the score. The two normalised
@@ -1478,7 +1475,7 @@ which therefore always lies between zero and one, where:
     \item $w_{\mathrm{util}}$, $w_{\mathrm{lat}}$ -- configurable weights of the utilisation and latency components.
 \end{itemize}
     The floors, spans, and weights are configuration parameters, set
-independently for each tier: for the service tier the signals are CPU
+independently for each tier. For the service tier the signals are CPU
 utilisation and request-processing latency, while for the data tier they
 are storage utilisation and data-access latency.
 
@@ -1540,7 +1537,7 @@ and request-processing latency as signals.
 registration step; the replica becomes eligible for backend selection only
 once it is visible in the routing pool used by the selector. The point at
 which registration occurs relative to application readiness is itself a
-configurable design dimension: the replica may be admitted immediately upon
+configurable design dimension. The replica may be admitted immediately upon
 creation, or admission may be deferred until a readiness condition is
 verified, which is the mechanism examined for the admission interface of
 the demand-to-capacity chain.
@@ -1557,11 +1554,11 @@ reclamation.
 The replica set is the unit in which storage capacity is scaled. The data
 tier of each domain runs as a MongoDB replica set whose primary serves the
 clients' writes and whose secondaries replicate the data and absorb the
-remainder of the traffic. Storage scale-up is a membership change: the
+remainder of the traffic. Storage scale-up is a membership change. The
 controller provisions a new storage member, joins it to the set, and admits
 it to the data path only once the member has reached the state at which it
 can serve reads, so that traffic is never directed to a member that cannot
-yet serve it. The preparation may also be decoupled from the reaction: a
+yet serve it. The preparation may also be decoupled from the reaction. A
 ready member can be held in reserve outside the routing pool and activated
 when a data action fires, removing the initial readiness wait from the
 reaction path, with a new reserve prepared immediately afterwards.
@@ -1577,7 +1574,7 @@ latency and utilisation.
 tiers, named here for completeness: Tier 0, direct remote reads over the
 virtual data path; Tier 1, a partial hot copy held in the consumer domain;
 and Tier 2, the replica-set extension described above. These locality
-mechanisms are platform capabilities rather than evaluated treatments: they
+mechanisms are platform capabilities rather than evaluated treatments. They
 are disabled or held constant wherever an evaluation requires their
 isolation, and the capacity action evaluated in this dissertation is the
 same-domain membership change.
@@ -1600,8 +1597,8 @@ or incomplete demand evidence can be studied while the aggregation, the
 workload, and the decisions remain identical.
 
     Inside the controller, the summaries feed two consumers. The first is the
-routing state: per-backend metrics update the state that backend selection
-uses. The second is the decision engine: per-domain degradation scores,
+routing state. Per-backend metrics update the state that backend selection
+uses. The second is the decision engine. Per-domain degradation scores,
 computed per resource tier from bounded utilisation and typical request
 latency, are evaluated against adaptive thresholds over sliding windows.
 When a tier's predicate is sustained, the decision engine emits a typed,
