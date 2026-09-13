@@ -276,6 +276,8 @@ chain under varying demand shifts, covering the handoff delays that
 can arise in delivering demand evidence and in admitting ready
 capacity, and the capacity-action choice that determines which
 resource tier is relieved.
+
+    The platform keeps controller-side coordination in-process while
 retaining telemetry delivery as an explicit, configurable boundary. Along with
 explicit lifecycle hooks for scaling and admission, this arrangement exposes
 the selected interfaces to direct measurement.
@@ -465,10 +467,10 @@ First, the technologies and concepts used to build the experimental
 platform are explained and surveyed, each introduced for what it is
 and why it suits the edge scenario. These are, more specifically,
 edge computing, SDN and OpenFlow, containerisation, and NoSQL
-document stores.
+document stores with a focus on MongoDB.
 
     The layer that binds these technologies and concepts into a
-running service, known as resource orchestration, is also reviewed and alongside the
+running service, known as resource orchestration, is also reviewed, alongside the
 three functions it covers, which are monitoring and telemetry, auto-scaling,
 and load balancing. Then the focus is drawn onto the 
 interfaces between them that are part of the demand-to-capacity chain to evaluate
@@ -477,9 +479,9 @@ which capacity action is selected when several are available, and how
 readiness admission is handled. 
     
     Within each area, the review examines whether and how the interfaces
-between these functions are considered, studied, evaluated, or mentioned;
-whether the reviewed work provides evidence that the delays and losses at
-these handoffs cause orchestration or service-quality problems; and what
+between these functions are considered, studied, evaluated, or mentioned.
+Whether the reviewed work provides evidence that the delays and losses at
+these handoffs cause orchestration or service-quality problems, and what
 ideas each field offers about them, with the aim of establishing a solid
 ground for the evaluation of the three interfaces of the
 demand-to-capacity chain. 
@@ -548,13 +550,12 @@ the retrieved hits.
         unavailable \\
         Full text freely available or accessible under ISCTE's scientific
         access licences & \\
-        At least ten citations, or published within the last five years and
+        At least ten citations and or published within the last 6 years and
         retained on topical relevance & \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-% Review before sending to professor because we seem to have more than 39 papers
     Screening and citation chaining produced the reviewed literature, organised by
 the interface each work informs: telemetry delivery, capacity action selection,
 readiness admission, and platform context. Sources used solely to explain the
@@ -564,11 +565,12 @@ recorded in \ref{sec:lit_synthesis}.
 
 \section{Platform Technology Background}\label{sec:platform_background} %DONE
 This section presents and explains the four building blocks that define
-the testbed evaluated in this thesis: edge computing, SDN with OpenFlow,
+the testbed evaluated in this thesis, edge computing, SDN with OpenFlow,
 containerisation, and MongoDB.
 
     Each subsection states what the building block is and why it
-matters for the thesis scenario. How the building blocks are applied
+matters for the thesis scenario. 
+How the building blocks are applied
 is the subject of Chapters \ref{ch:system_architecture}
 and \ref{ch:implementation}.
 
@@ -576,16 +578,16 @@ and \ref{ch:implementation}.
 Edge computing is the placement of computational and storage resources
 between end devices and centralised cloud data centres, close to where
 data is produced and consumed. It complements rather than replaces the
-cloud: latency-sensitive processing is shifted to the edge,
+cloud, as latency-sensitive processing is shifted to the edge,
 while large-scale analytics and long-term
 storage remain in the cloud
 \parencite{Cao2020OverviewEdgeComputingResearch}.
 
     In essence, edge computing exists because centralised clouds
-alone cannot serve every workload well, and bringing computation
+alone cannot serve every workload efficiently, and bringing computation
 closer to the user lowers the latency of
-interactive and data-intensive services, and processing data locally
-relieves the bandwidth pressure on the core
+interactive and data-intensive services, and processing and storing 
+data locally relieves the bandwidth pressure on the core
 network \parencite{Satyanarayanan2017EmergenceEdgeComputing}.
 
     Despite the advantages of edge computing, as mentioned previously in 
@@ -607,9 +609,9 @@ and storage resources as an open direction for the field
     Managing these platforms remains an open challenge, and their
 combination with SDN is recorded as one of the continuing challenges
 \parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The service
-evaluated in this dissertation runs in this environment: a stateful
-edge service whose capacity must follow fluctuating demand, which is
-the management problem the remainder of this chapter reviews.
+evaluated in this dissertation runs in an emulated edge environment as
+a stateful edge service whose capacity must follow fluctuating demand,
+which is the management problem the remainder of this chapter reviews.
 
 \subsection{SDN and OpenFlow} %DONE
 Software-Defined Networking separates the control plane, which decides
