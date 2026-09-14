@@ -134,7 +134,7 @@ ax.text(c7, BOT_Y - 0.95 - 0.4, "first successful request",
 bracket(cxs_top[1] + 1.25 + 0.05, cxs_top[2] - 1.025 - 0.05, 6.8,
         "Interface 1 (RQ1)\nhow demand evidence\nreaches the decision", 7.15)
 bracket(cxs_top[2] + 1.025 + 0.05, cxs_top[3] - 0.95 - 0.05, 6.8,
-        "Interface 2 (RQ2)\nwhich capacity action\nthe decision selects", 7.35)
+        "Interface 2 (RQ2)\nwhich capacity action\nthe decision hands over\nto the infrastructure", 7.35)
 bracket(c6 + 0.95 + 0.05, c5 - hex_w / 2 - 0.05, 2.35,
         "Interface 3 (RQ3)\nwhen a ready backend\nis admitted to traffic", 2.95)
 
@@ -144,6 +144,8 @@ ax.text(13.9, 5.55, "time", fontsize=9.5, color="#999999",
         ha="center", va="center", style="italic", rotation=90)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-OUT = REPO_ROOT / "tese" / "images" / "demand_to_capacity_chain.png"
-fig.savefig(OUT, dpi=200, facecolor="white", edgecolor="none")
-print("saved", OUT)
+for name in ("demand_to_capacity_chain_v2.png",
+             "demand_to_capacity_chain.png"):
+    OUT = REPO_ROOT / "tese" / "images" / name
+    fig.savefig(OUT, dpi=200, facecolor="white", edgecolor="none")
+    print("saved", OUT)
