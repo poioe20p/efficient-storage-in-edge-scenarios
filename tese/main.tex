@@ -775,38 +775,6 @@ None of these works runs over a stateful service, so they are read
 here for the delivery mechanisms they expose, not as direct precedents
 for the platform under study.
 
-    Table~\ref{tab:monitoring_evidence} summarises the strength of the
-evidence each of these works provides for the link under study.
-
-\begin{table}[htbp]
-    \centering
-    \caption{Evidence for the link between monitoring and decision in the reviewed literature.}
-    \label{tab:monitoring_evidence}
-    \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
-        \toprule
-        Work & Strength & What it shows \\
-        \midrule
-        Llorens-Carrodeguas et al. (2021) & Measured & Orchestration
-        monitoring polls into Prometheus; delivery semantics not varied \\
-        AdapPF (Huang \& Pierre, 2023) & Measured & Freshness changes a
-        scheduler's accuracy; no stateful-service or admission trace \\
-        Huang \& Pierre (2024) & Measured & Aggregation contains
-        monitoring overhead but discards intermediate observations \\
-        Zhou \& Yong (2024) & Measured & Metric choice changes scaling
-        quality; the delivery mechanism stays fixed \\
-        Yaseen (2025) & Documented & Pull-based polling leaves visibility
-        gaps; calls for monitoring integrated with control \\
-        Hung et al. (2022) & Measured & Telemetry-and-routing loop at
-        one control point; scaling omitted \\
-        Usman et al. (2022) & Surveyed & Appropriate measurement
-        intervals remain an open research topic \\
-        Belgaum et al. (2020) & Not addressed & A seventy-six-paper review of the
-        adjacent load-balancing field lists no freshness issue among its
-        open problems \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
     Across the reviewed literature, therefore, the building blocks of the
 delivery question appear separately. AdapPF varies the interval that
 produces delay, Yaseen documents the gaps that polling leaves, and
@@ -932,39 +900,6 @@ record that \enquote{the database tier is often considered dynamically
 unscalable and ignored by auto-scalers}
 \parencite[p.~6]{Qu2018AutoScalingWebApplicationsClouds}.
 
-\begin{table}[htbp]
-    \centering
-    \caption{Evidence on capacity-action selection in the reviewed literature.}
-    \label{tab:autoscaling_evidence}
-    \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
-        \toprule
-        Work & Strength & What it shows \\
-        \midrule
-        Qu et al. (2018) & Surveyed & Canonical taxonomy of when and how many
-        to scale; database tier ignored by the surveyed auto-scalers \\
-        Taherizadeh \& Stankovski (2017) & Surveyed & Edge-specific
-        taxonomy; scaling surveyed over service instances \\
-        Llorens-Carrodeguas et al. (2021) & Measured & SDN steering coupled to
-        horizontal VNF scaling; capacity-action type fixed \\
-        Toka et al. (2021) & Measured & Learning improves Kubernetes edge
-        scaling; compute-only with the metrics pipeline taken as given \\
-        Cheng et al. (2023) & Measured & Instance counts and placement
-        jointly optimised; provisioned unit remains compute \\
-        Nikravesh et al. (2017) & Measured & Database capacity ignored by
-        the business-tier autoscaler, yet it drives the SLA violations \\
-        Dogani et al. (2023) & Surveyed & Bottleneck-shift awareness exists,
-        compute-only and cross-service; no storage action \\
-        PBScaler (2024) & Measured & Bottleneck-aware replica
-        management; the bottleneck is a microservice, the action remains
-        compute \\
-        Li et al. (2020) & Measured & Compute instances and data replicas
-        provisioned together, but from a forecast, not a live bottleneck \\
-        El Mrabet et al. (2025) & Surveyed & Recent taxonomy; which
-        resource is added is not among the classification dimensions \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
     Overall, the literature demonstrates that the kind of capacity added
 under certain scenarios can have an impact,
 compute replicas cannot relieve pressure whose limiting
@@ -1041,32 +976,6 @@ and measures the time until newly provisioned capacity becomes
 selectable and serves traffic. Direct lifecycle notification and periodic
 discovery are the two operational realisations of that coordination
 interface.
-
-Table~\ref{tab:admission_evidence} summarises the strength of the
-evidence each of these works provides for the admission interface.
-
-\begin{table}[htbp]
-    \centering
-    \caption{Evidence on ready-backend admission in the reviewed literature.}
-    \label{tab:admission_evidence}
-    \begin{tabular}{p{0.40\textwidth} p{0.16\textwidth} p{0.36\textwidth}}
-        \toprule
-        Work & Strength & What it shows \\
-        \midrule
-        Neghabi et al. (2018); Belgaum et al. (2020) & Surveyed & Load-balancing
-        policies optimise the distribution over the eligible set; its
-        membership is taken as given \\
-        Kurma (Bogdanov et al., 2018) & Measured & Seconds-granularity operation
-        beside elastic controllers; provisioning-delay stages named but
-        combined \\
-        Llorens-Carrodeguas et al. (2021) & Measured & Membership changed through
-        the monitoring path; activation reported at integrated-system
-        granularity \\
-        Okwuibe et al. (2020) & Measured & Migration latency reported as a
-        bundle; the service is reachable again only after a DNS update \\
-        \bottomrule
-    \end{tabular}
-\end{table}
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration} %DONE
 Resource orchestration is the management layer that keeps a running
