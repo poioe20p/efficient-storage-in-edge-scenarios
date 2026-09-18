@@ -138,7 +138,6 @@ experimental variable.
 |---|---|
 | Yaseen (2025) | "SNMP polling operates on a pull-based model with periodic queries, introducing latency and potential data loss especially under congestion. This can lead to visibility gaps." |
 | Podolskiy et al. (IaaS) | "The reactive nature of autoscaling solutions jeopardizes the ability of cloud applications to meet the QoS requirements under the dynamically changing load." |
-| Pourghebleh et al. (2020, SD) | "the freshness of the data still remains a problem" (passing remark, not a research dimension) |
 
 ### Form 2 — Symptoms observed, cause misattributed (`SYMPTOM`)
 
@@ -211,8 +210,7 @@ action itself** (sync bandwidth/overload), and scopes honestly: cold, same-LAN
 
 | Evidence | Detail | Strength |
 |---|---|---|
-| **Pourghebleh et al.** (2020) / **Achir et al.** (2022) | SD field: “the freshness of the data still remains a problem” (one CoAP mechanism in Pourghebleh); Achir's taxonomy of 87 approaches has **no category for discovery timing or registry freshness**. | `DOCUMENTED` / `TAXONOMY-GAP` |
-| **The same gap, two names** (strongest cross-domain evidence) | Monitoring calls it "visibility gaps" (knowledge of *load*); SD calls it "freshness still a problem" (knowledge of *existence*) — two fields, one phenomenon, no cross-citation. | `DOCUMENTED` (synthesis) |
+| *(retired 2026-09-18)* | The SD-side entries of this table (Pourghebleh et al. 2020 — verified but out of scope; the monitoring↔SD "same gap" synthesis) were retired with their sources. The monitoring-side "visibility gaps" evidence remains under I1. | — |
 | SDN-LB literature in general | Asks "given available backend state, which backend?" — treats pool availability/readiness as established fact. | `TAXONOMY-GAP` |
 
 **The RQ3 gap statement:** no study isolates the path from a backend becoming
@@ -337,8 +335,8 @@ workload-level, validity.
 
 - Framing: `tese/Notes/thesis_overview.md` (§1–§10).
 - Evidence corpus with forms/gap matrix: `tese/literature_review/global_literature_review.md`
-  (§1 three-layer default; §2 Form 1; §3 Form 2; §4 Form 3; §5 Form 4 incl. the
-  "same gap, two names" table; §6 Form 5; §7 summary + gap matrix).
+  §1 three-layer default; §2 Form 1; §3 Form 2; §4 Form 3; §5 Form 4 (§5.5
+  reduced 2026-09-18 — monitoring side only); §6 Form 5; §7 summary + gap matrix).
 - Per-folder State of the Art and paper analysis: the RQ/context folder READMEs
   under `tese/literature_review/` (index: `tese/literature_review/README.md`).
 - BibTeX: `tese/references.bib` (populated as citations are used — add entries at

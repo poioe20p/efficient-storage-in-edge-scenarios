@@ -60,10 +60,8 @@ Three premises, each grounded in the reviewed corpus:
 2. **The gap.** The SDN load-balancing corpus optimises *which* backend to
    select given accurate state, treating readiness as established (Belgaum
    et al., 2020; Neghabi et al., 2018). Production systems mechanise the
-   readiness→traffic interface (Shard Manager's ordered
-   prepare/add/disseminate/drop sequence; Lee et al., 2021), and
-   service-discovery surveys name "freshness" as a problem without measuring it
-   (Pourghebleh et al., 2020; Achir et al., 2022). Within the corpus, no study
+   readiness→traffic interface as fixed platform behaviour.
+   Within the corpus, no study
    isolates the post-readiness handoff under controlled invariants, and none
    tests whether delay at that handoff becomes a transient service-quality cost
    when headroom is constrained.

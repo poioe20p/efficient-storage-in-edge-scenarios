@@ -50,21 +50,20 @@ The papers that ground this RQ:
 
 | Paper                                                     | What it establishes                                                                                                                                                              | Strength                 | Role in the basis                                                                                              |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| **Pourghebleh et al. (2020)** — SD SLR             | *"the freshness of the data still remains a problem"* — registry staleness acknowledged, never studied as a latency dimension.                                                | `DOCUMENTED`           | Service-discovery version of the same gap.                                                                     |
-| **Achir et al. (2022)** — SD taxonomy (87 approaches) | **No category** for discovery timing, registration latency, or registry freshness.                                                                                         | `TAXONOMY-GAP`         | Even a broad SD taxonomy lacks the dimension.                                                   |
-| **Yaseen (2025)**                                   | Pull-based monitoring → "visibility gaps".                                                                                                                                      | `DOCUMENTED`           | The "same gap, two names" cross-domain thread (see below).                                                   |
+| **Yaseen (2025)**                                   | Pull-based monitoring → "visibility gaps".                                                                                                                                      | `DOCUMENTED`           | Cross-domain thread, monitoring side (see below).                                                   |
 | **Podolskiy et al. (IaaS)**                         | Reactive autoscaling*"jeopardizes"* QoS under dynamic load across all three clouds.                                                                                            | `DOCUMENTED` (context) | The LB-discovery lag is one segment of the reactive-scaling lag.                                               |
 
-### The "same gap, two names" (strongest cross-domain evidence)
+### The cross-domain thread (monitoring side) *(reduced 2026-09-18)*
 
-Two fields independently describe the same blind spot without citing each other:
+The service-discovery side of this thread was retired with its sources
+(Pourghebleh et al. 2020 — verified but out of scope; Achir et al. 2022 —
+unobtainable). What remains:
 
 | Domain                   | Name for it                                                                            | Paper                                          |
 | ------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | Monitoring               | "Visibility gaps" — no knowledge of backend**load**                             | Yaseen (2025)                                  |
-| Service Discovery        | "Freshness still a problem" — no knowledge of backend**existence**              | Pourghebleh et al. (2020); Achir et al. (2022) |
 
-RQ3 isolates the **readiness** member of this blind spot: the path from a backend becoming application-ready to it being eligible for traffic, holding the backend-selection function fixed. (An earlier draft listed a third, load-balancing/scaling name — "synchronization-before-inclusion delay" — with no supporting paper; the global review §5.5 keeps two names, and this document follows.)
+RQ3 isolates the **readiness** member of this blind spot: the path from a backend becoming application-ready to it being eligible for traffic, holding the backend-selection function fixed. *(2026-09-18: the "two/three names" cross-domain framing was reduced when its SD-side sources were retired; only the monitoring side remains in corpus.)*
 
 ### The gap statement
 
@@ -101,7 +100,7 @@ The two arms are the two mechanisms the corpus describes but never isolates — 
 | Arm                                     | Mechanism                                                                                                                                                                      | Foundation                                                                                                                                                                                                                                                                                                              |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Direct lifecycle notification** | Event-driven inclusion: the component that owns the lifecycle (the controller that spawned the backend and verified readiness) immediately registers it into the routing pool. | Notify-on-complete, i.e. event-driven inclusion. Only possible when the lifecycle owner and the routing plane share an event path (the thesis's co-located apparatus). |
-| **Periodic discovery**            | Pull/registry-based: the routing plane learns backend state by polling on a fixed period; admission is quantized to discovery cycles (up to one period of added delay).        | Service-discovery field — Pourghebleh et al. ("freshness of the data still remains a problem"), Achir et al. (no discovery-timing category); the K8s-style endpoints/health-check status quo; the "same gap, two names" blind spot.                                                                                  |
+| **Periodic discovery**            | Pull/registry-based: the routing plane learns backend state by polling on a fixed period; admission is quantized to discovery cycles (up to one period of added delay).        | The K8s-style endpoints/health-check status quo: admission is quantized to the reconciliation period.                                                                                  |
 
 Reasons these two, specifically:
 
@@ -160,7 +159,7 @@ on verified readiness and selectable per run. Implemented (2026-08-04, per
 
 ## 6. Papers to cite in related work (Ch.2)
 
-Pourghebleh et al. (2020) · Achir et al. (2022) · Yaseen (2025) · Podolskiy et al. (IaaS) · plus the Load Balancing on SDN and Service Discovery README SOTA.
+Yaseen (2025) · Podolskiy et al. (IaaS) · plus the Load Balancing on SDN and Service Discovery README SOTA.
 
 ## 7. Cross-references
 
@@ -168,5 +167,5 @@ Pourghebleh et al. (2020) · Achir et al. (2022) · Yaseen (2025) · Podolskiy e
   (evidence chain: `docs/operation/testing/experiment/v2/rq3/` — `results.md`,
   `post_run_analysis.md`, `run_matrix.md`, `graphs/campaign_fixed/`).
 - Purpose map: `tese/Notes/purpose_evidence_map.md` → I3 (interface evidence), P6 (SEND delimitation).
-- Global review: `tese/literature_review/global_literature_review.md` → §2.4 (SD blind spot), §5.5 (same gap, two names).
+- Global review: `tese/literature_review/global_literature_review.md` → §5.5 (monitoring "visibility gaps"; reduced 2026-09-18).
 - Implementation plan (docs): `docs/operation/testing/experiment/v2/rq3/` (RQ3 v2 records).

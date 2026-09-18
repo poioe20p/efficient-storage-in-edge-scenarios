@@ -183,7 +183,7 @@ across sites for locality and robustness, but replication is neither
 instantaneous nor free. A request reaching a server whose local copy is
 still synchronising must wait for it to catch up, and maintaining copies
 consumes storage and replication bandwidth
-\parencite{Breitbach2019ContextAwareDataTaskPlacement},
+\parencite{Breitbach2019ContextAwareDataTaskPlacement}.
 
     Scale-out alone does not guarantee usable capacity instantly. The
 orchestration system must detect when data must be brought closer,
@@ -770,12 +770,11 @@ for the platform under study.
 
     Across the reviewed literature, therefore, the building blocks of the
 delivery question appear separately. AdapPF varies the interval that
-produces delay, Yaseen documents the gaps that polling leaves, and
-aggregation summarises away intermediate observations, yet no reviewed
-work distinguishes delayed event-preserving delivery from latest-state
-delivery, and none traces either regime through a stateful service's
-scaling and traffic-admission path. This distinction is the gap this
-dissertation isolates and measures.
+produces delay, and Yaseen documents the gaps that polling leaves, yet
+no reviewed work distinguishes delayed event-preserving delivery from
+latest-state delivery, and none traces either regime through a stateful
+service's scaling and traffic-admission path. This distinction is the gap
+this dissertation isolates and measures.
 
 \section{Auto Scaling}\label{sec:lit_auto_scaling} %DONE
 Auto-scaling adjusts the amount of allocated resources to the load that
@@ -1089,8 +1088,7 @@ between observing demand, deciding, and admitting capacity.
     The related background is therefore organised in two modes. In the dominant
 mode, monitoring, scaling, and routing are implemented as separate
 components, each running its own control loop, so the evidence and
-commands that tie them together must cross component boundaries. The
-separation is visible even in the tools themselves.
+commands that tie them together must cross component boundaries.
 In a second, recurring mode, the same functions are kept together at an
 SDN-based control point or coordinated through shared state. What
 neither mode provides, however, is a decomposition of the control

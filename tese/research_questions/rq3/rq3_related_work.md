@@ -17,11 +17,9 @@
 
 ## 1. The gap RQ3 addresses (recap)
 
-The readiness-admission blind spot, as established in `rq3.md` §3 and the
-global review §5.5 — the *same gap, two names* (monitoring ↔ service
-discovery): monitoring ("visibility gaps", Yaseen) and service discovery
-("freshness still a problem", Pourghebleh; no discovery-timing category,
-Achir). No study isolates the
+The readiness-admission blind spot, as established in `rq3.md` §3. The
+monitoring "visibility gaps" thread (Yaseen) is the closest remaining
+cross-domain analogue. No study isolates the
 path **from a backend becoming application-ready to it becoming eligible for
 traffic**, holding the backend-selection function fixed. RQ3 isolates the
 *readiness* member of that blind spot.
@@ -99,13 +97,11 @@ without isolating the mechanism (B), or classifies without a timing dimension
 
 | Paper (label from `rq3.md`) | Style | What it measures | What it does NOT measure |
 |---|---|---|---|
-| Pourghebleh et al. (2020) | A (survey) | registry freshness acknowledged | not measured as a latency dimension |
-| Achir et al. (2022) | A (taxonomy) | SD categories (87 approaches) | **no category for discovery timing / registration latency** |
 | Yaseen (2025) | B | pull-based monitoring → visibility gaps | readiness, not load, is the gap |
 | Podolskiy et al. (IaaS) | B | reactive autoscaling jeopardizes QoS | the LB-discovery lag is one segment, not isolated |
 
 The table doubles as the thesis's positioning argument: the corpus has
-mechanism-adjacent results (B) and taxonomies (A) but **no isolated,
+mechanism-adjacent results (B) but **no isolated,
 controlled measurement of the ready→admitted quantization** — which is RQ3's
 contribution.
 
@@ -135,7 +131,7 @@ section, each to be **verified by DOI** before it lands in the .bib:
 - `rq3.md` — research question, basis papers (§3), papers-to-cite list (§6).
 - `rq3_evaluation_conclusions.md` — results, critical review, the
   "demonstrated vs argued" claim boundary (§1.7).
-- `tese/literature_review/global_literature_review.md` — §2.4 (SD blind spot),
-  §5.5 (same gap, two names).
+- `tese/literature_review/global_literature_review.md` — §5.5 (monitoring
+  "visibility gaps"; reduced 2026-09-18 — SD side retired).
 - `tese/Notes/purpose_evidence_map.md` — I3 (interface evidence), P6 (SEND
   delimitation).
