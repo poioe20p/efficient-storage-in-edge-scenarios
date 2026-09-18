@@ -102,7 +102,7 @@ Edge web services that encompass routing, monitoring and auto-scaling rely
 on several control loops, and when these loops operate independently the
 handoffs between them accumulate delays. This accumulation of handoff
 delays degrades orchestration efficiency and reliability, and may reduce
-service quality~\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+service quality~\parencite{Qu2018AutoScalingWebApplicationsClouds,Bogdanov2018Kurma,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 
 The remainder of this chapter is organised as follows.
 Section~\ref{sec:context_motivation} presents the context, motivation and
@@ -184,8 +184,6 @@ instantaneous nor free. A request reaching a server whose local copy is
 still synchronising must wait for it to catch up, and maintaining copies
 consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement},
-\parencite{Nicolaescu2021StoreEdgeNetworkedDataSEND},
-\parencite{Pelle2022CostLatencyEdgePlatform}.
 
     Scale-out alone does not guarantee usable capacity instantly. The
 orchestration system must detect when data must be brought closer,
@@ -706,8 +704,9 @@ per-node collectors sample resource and load metrics, an
 aggregation layer summarises the samples, and the resulting series feed
 the consumers that make decisions. In orchestrators this pipeline is
 standardised around periodic scraping into a time-series store, as in
-OSM-based NFV for transparent VNF clusters, where the monitoring module
-polls the infrastructure into a Prometheus database
+OSM-based NFV for transparent VNF clusters, where the MANO collector
+polls the infrastructure into a Prometheus database that the control
+modules consume
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 
     Delivery is conventionally pull-based, the
@@ -740,13 +739,7 @@ AdapPF is the only reviewed work that varies monitoring freshness and
 measures a downstream consequence, although not
 in the context of a stateful service. 
 
-    The same line of work treats monitoring overhead as a
-recognised bottleneck in geo-distributed deployments, proposing
-aggregation so that monitoring can scale with the federation 
-\parencite{Huang2024AggregateMonitoringGeoDistributedKubernetes},
-aggregation being itself a form of summarisation that discards
-intermediate observations. Within the same platform context, Zhou and
-Yong study what to monitor rather than how it is delivered, comparing
+Zhou and Yong study what to monitor rather than how it is delivered, comparing
 custom-metric autoscaling driven by application-level failure rates
 against conventional CPU-based autoscaling in Kubernetes, and find that
 metric choice changes scaling quality under load, albeit on a small
@@ -824,8 +817,8 @@ provisioned, when applicable, is not among the classification dimensions
     With SDN, the traffic side is added, but the scaled
 resource remains the one the service function is built from:
 Llorens-Carrodeguas et al. couple SDN-based traffic steering with
-horizontal scaling of virtualised network functions, so that a single
-controller re-programs the forwarding paths while instances of the same
+horizontal scaling of virtualised network functions, so that the SDN
+controllers re-program the forwarding paths while instances of the same
 pre-dimensioned function pool are activated or deactivated. The decision
 reduces to whether and how many instances of that one function to
 activate, and the data tier those functions depend on is not scaled by
@@ -1007,12 +1000,12 @@ gap as defined in Section~\ref{sec:context_motivation}.
     Baktir et al. organise the gains SDN brings to
 edge computing into benefit areas such as centralised visibility and
 programmatic traffic management
-\parencite{Baktir2017HowCanEdgeComputingBenefit}; Wang et al. survey
+\parencite{Baktir2017HowCanEdgeComputingBenefit}. Wang et al. survey
 architectures in which SDN and NFV jointly coordinate placement,
 traffic, and caching across the network and service layers, showing
 that SDN's role at the edge extends beyond forwarding into
 orchestration
-\parencite{Wang2019SoftwareDefinedNetworkingEnhancedEdge}; and Sofia
+\parencite{Wang2019SoftwareDefinedNetworkingEnhancedEdge}. Sofia
 et al. argue for context-aware cross-layer orchestration of
 containerised edge-cloud applications serving next-generation IoT
 services, treating contextual information such as location and data
@@ -1097,15 +1090,7 @@ between observing demand, deciding, and admitting capacity.
 mode, monitoring, scaling, and routing are implemented as separate
 components, each running its own control loop, so the evidence and
 commands that tie them together must cross component boundaries. The
-separation is visible even in the tools themselves. Cilic et al.
-evaluate Kubernetes, the lightweight distributions K3s and KubeEdge,
-and the ioFog platform in real edge execution environments, and find
-that the scheduling logic of these tools can be customised to a
-degree, but that scheduling from client QoS parameters still requires
-integration around them, since QoS tracking and re-scheduling are not
-built in; they conclude that further integration work is needed to
-adapt these cloud-designed tools to dynamic edge environments
-\parencite{Cilic2023PerformanceEvaluationContainerOrchestrationTools}.
+separation is visible even in the tools themselves.
 In a second, recurring mode, the same functions are kept together at an
 SDN-based control point or coordinated through shared state. What
 neither mode provides, however, is a decomposition of the control
@@ -1116,6 +1101,9 @@ selection, or readiness admission to the demand-to-capacity path. This
 interface-level contribution is precisely the quantity this dissertation
 highlights.
 
+% Com paper do sdn otimization podes se quiser adicionar que o SDN 
+% permitir maior agilidade para obter metodologias e tecnicas
+% para tornar orchestracao e gestao de recursos mais eficiente.
     SDN-based resource orchestration is therefore an established and
 feasible arrangement, and the coordination it rests on is a recorded
 open issue. Nain et al. record resource optimisation in SDN-based
@@ -1138,13 +1126,10 @@ functions, it is treated at three levels.
 The delay is first acknowledged as a real cost. Kurma's
 seconds-granularity operation aims to reduce the over-provisioning
 and SLO violations incurred during provisioning delays
-\parencite{Bogdanov2018Kurma}, Yaseen records the visibility gaps that
-pull-based polling leaves and calls for monitoring tightly integrated
-with control
-\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}, and
-Cilic et al. conclude that integration work is still required around
-the scheduling logic of cloud-designed edge tools
-\parencite{Cilic2023PerformanceEvaluationContainerOrchestrationTools}.
+\parencite{Bogdanov2018Kurma}, and Yaseen records the visibility gaps
+that pull-based polling leaves and calls for monitoring tightly
+integrated with control
+\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}.
 Second, where the delay is evaluated, it is evaluated only in
 composite. Llorens-Carrodeguas et al. report activation at the
 granularity of the integrated system, Okwuibe et al. report a total
@@ -1310,10 +1295,11 @@ separates data-path delay from control-path communication.
 \subsection{Virtual IP Data Paths}
 Clients access edge services through a per-domain \ac{VIP}. The virtual service
 addresses are \texttt{VIP\_SERVER\_N1} and \texttt{VIP\_SERVER\_N2}, collectively
-referred to as \texttt{VIP\_SERVER}. Edge servers use the virtual data addresses
-\texttt{VIP\_DATA\_N1} and \texttt{VIP\_DATA\_N2}, collectively referred to as
-\texttt{VIP\_DATA}, to access the storage tier. This separation represents
-service routing and data access as distinct routing surfaces.
+referred to as \texttt{VIP\_SERVER}. Edge servers route storage reads through
+the virtual data addresses \texttt{VIP\_DATA\_N1} and \texttt{VIP\_DATA\_N2},
+collectively referred to as \texttt{VIP\_DATA}, and issue storage writes
+directly to the replica-set primary. This separation represents service routing
+and data access as distinct routing surfaces.
 
     When a flow addressed to a virtual IP is first observed, the controller
 selects an eligible backend and configures the \ac{OVS} data plane to forward
@@ -1325,16 +1311,16 @@ include eligible backends in either domain when the topology permits.
 computes a \ac{WSM} cost from each eligible backend's cached resource
 metrics (CPU utilisation, memory usage, request count, and hop distance) and
 installs forwarding rules for the lowest-cost one. 
-The same rule selects a replica-set member for the data path,
-using the corresponding storage metrics (CPU utilisation, memory usage,
-connections, replication lag, and hop distance).
+For storage reads observed on the virtual data path, the same mechanism
+selects a replica-set member, using the corresponding storage metrics (CPU
+utilisation, memory usage, connections, replication lag, and hop distance).
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{images/vip_routing_sequence.png}
     \caption{Double-VIP routing sequence: a client request addressed to
     \texttt{VIP\_SERVER} triggers backend selection in the controller, and
-    the edge server's storage access through \texttt{VIP\_DATA} triggers the
+    the edge server's storage reads through \texttt{VIP\_DATA} trigger the
     selection of a replica-set member.}
     \label{fig:vip_routing_sequence}
 \end{figure}
@@ -1377,7 +1363,7 @@ data tier can be addressed without conflating the two. The two dimensions are
 described in turn.
 
 \subsection{Scaling Policy}\label{sec:scaling_policy}
-The policy is instantiated once per resource tier, with tier-specific
+The policy is applied per resource tier, with tier-specific
 signals and parameters. Each tier is observed through two signals: a
 utilisation signal and a latency signal. For each telemetry window $w$, let
 $c(w)$ denote the window's utilisation and $t(w)$ its typical latency
@@ -1390,13 +1376,13 @@ components are combined with weights $w_{\mathrm{util}}$ and
 $w_{\mathrm{lat}}$ into the degradation score
 \begin{equation}
 \begin{split}
-    s(w) &= \frac{w_{\mathrm{util}}\,\hat{c}(w) + w_{\mathrm{lat}}\,\hat{t}(w)}
-                 {w_{\mathrm{util}} + w_{\mathrm{lat}}}, \\
+    s(w) &= w_{\mathrm{util}}\,\hat{c}(w) + w_{\mathrm{lat}}\,\hat{t}(w), \\
     \hat{c}(w) &= \min\left(1,\ \max\left(0,\ \frac{c(w)-c_0}{c_\Delta}\right)\right), \\
     \hat{t}(w) &= \min\left(1,\ \max\left(0,\ \frac{t(w)-t_0}{t_\Delta}\right)\right),
 \end{split}
 \end{equation}
-which therefore always lies between zero and one, where:
+with the per-tier weights configured to sum to one, so the score lies
+between zero and one, where:
 \begin{itemize}[leftmargin=*, itemsep=0pt]
     \item $c(w)$ -- utilisation of the scored tier observed in window $w$;
     \item $t(w)$ -- typical latency of the scored tier observed in window $w$;
@@ -1433,12 +1419,16 @@ where:
     \item $\beta_{\mathrm{peer}}$ -- addend applied to the service-tier threshold while the peer domain is healthy enough to absorb spillover traffic.
 \end{itemize}
     The threshold $\theta(k)$ adapts upward as capacity grows, so each
-additional unit faces a higher bar, bounded by $\theta_{\max}$, and
+additional unit faces a higher bar, bounded by $\theta_{\max}$ (for the data
+tier the increment itself diminishes with each additional unit, down to a
+configured minimum), and
 $\beta_{\mathrm{peer}}$ raises the service-tier threshold slightly while the
 peer domain is healthy enough to absorb spillover traffic. A cooldown after
 each action and a
 per-tier cap on the number of units keep the number of scale actions
-bounded.
+bounded. The window advances only in windows where the tier was eligible to
+act (not blocked by an ongoing infrastructure operation, not at its cap, and
+not within a scale-up cooldown), and it is cleared when a scale-up fires.
 
     A window is declared idle when both signals fall below their idle
 thresholds,
@@ -1453,15 +1443,20 @@ where:
     A scale-down is requested only when idleness is sustained across
 $R_\downarrow$ of the last $W_\downarrow$ windows, a sliding window longer
 than the scale-up one, which prevents a transient data-bound stall from
-being misread as idle capacity. The concrete parameter values used in the
+being misread as idle capacity. Windows whose latency exceeds a ceiling are
+treated as indeterminate and do not count toward idleness. The concrete
+parameter values used in the
 evaluation are reported in Section~\ref{sec:experimental_setup}.
 
 \subsection{Services}\label{sec:elastic_compute}
 Service capacity is a per-domain pool of containerised edge servers, each
 capable of serving any request addressed to the domain's virtual service
-address. All storage access performed by a service replica goes through the
-domain's virtual data address, so a replica carries no physical knowledge of
-the storage tier. Service scale-up applies the policy defined in
+address. Storage reads performed by a service replica are routed through the
+domain's virtual data address (or served from a Tier~1 copy, where one is
+held), and its writes are issued directly to the replica-set primary. 
+The replica therefore holds no knowledge of the replica-set membership, since
+member selection for reads is left to the routing path. Service scale-up
+applies the policy defined in
 Section~\ref{sec:scaling_policy}, with CPU utilisation
 and request-processing latency as signals.
 
@@ -1488,10 +1483,11 @@ The replica set is the unit in which storage capacity is scaled. The data
 tier of each domain runs as a MongoDB replica set whose primary serves the
 clients' writes and whose secondaries replicate the data and absorb the
 remainder of the traffic. Storage scale-up is a membership change. The
-controller provisions a new storage member, joins it to the set, and admits
-it to the data path only once the member has reached the state at which it
-can serve reads, so that traffic is never directed to a member that cannot
-yet serve it. The preparation may also be decoupled from the reaction. A
+controller provisions a new storage member, which joins the set as a
+non-voting secondary through its seed-host configuration, and admits it to
+the data path only once the member has reached the state at which it can
+serve reads, so that traffic is never directed to a member that cannot yet
+serve it. The preparation may also be decoupled from the reaction. A
 ready member can be held in reserve outside the routing pool and activated
 when a data action fires, removing the initial readiness wait from the
 reaction path, with a new reserve prepared immediately afterwards.
@@ -1500,7 +1496,8 @@ reaction path, with a new reserve prepared immediately afterwards.
 serving. Only members added by the platform are eligible for removal, so the
 set's original membership is never disturbed, and the decision applies the
 idle condition defined in Section~\ref{sec:scaling_policy} to the data tier's
-utilisation and latency signals.
+idle signals (its data-access latency and, in the configurations that enable
+it, its storage utilisation).
 
     Beyond the membership change, the platform defines three data-placement
 tiers, named here for completeness: Tier 0, direct remote reads over the
@@ -1513,11 +1510,12 @@ member of the domain's own replica set.
 \section{Monitoring and Decision Engine}\label{sec:monitoring_decision}
 Observation begins at the producers. Each service replica emits a
 per-request record of its resource state and request experience, and each
-storage member's companion process emits periodic replication and resource
-state. A per-domain aggregator collects these records and publishes a
-windowed summary at a fixed cadence, so that time is observed as a regular
-sequence of windows and every window, including idle ones, carries an
-evaluation outcome. The summary contains the utilisation and latency signals
+storage member's companion process emits replication and resource-state
+samples as the member reports activity, with an optional periodic heartbeat.
+A per-domain aggregator collects these records and publishes a windowed
+summary at a fixed cadence, so that time is observed as a regular sequence
+of windows and every window, including idle ones, is evaluated and recorded.
+The summary contains the utilisation and latency signals
 that the scaling policy consumes, together with the per-backend metrics used
 by routing.
 
@@ -1526,7 +1524,8 @@ interface. The default delivery pushes each completed window as it is
 published. Alternative delivery modes supply the same windowed evidence in
 other forms, such as periodic retrieval of only the most recent window
 (latest-state delivery) or ordered replay of a retained window history
-(delayed event-preserving delivery), so that the effect of delayed
+(event-preserving delivery, immediate or delayed), so that the effect of
+delayed
 or incomplete demand evidence can be studied while the aggregation, the
 workload, and the decisions remain identical.
 
@@ -1570,9 +1569,12 @@ pool.
 it. The chain completes when the new unit serves its first successful
 request. Each step of this chain is instrumented, so the timeline from
 demand observation to usable capacity is recorded end to end
-(Figure~\ref{fig:control_workflow}). A unit that does not reach readiness
-within the configured bound is abandoned and torn down instead of being
-admitted.
+(Figure~\ref{fig:control_workflow}). When readiness admission is enabled, a
+unit that does not reach readiness within the configured bound is abandoned
+and torn down instead of being admitted. Without readiness admission,
+service replicas are registered as soon as they are provisioned and no
+readiness bound applies, so a replica that never becomes usable is reclaimed
+only by the ordinary lifecycle checks.
 
 \begin{figure}[H]
     \centering
@@ -1581,9 +1583,9 @@ admitted.
     demand-to-capacity chain runs across three contexts in the same process:
     the packet context, the observation context, and the action context. The
     contexts never block one another and they exchange state through shared
-    structures (the telemetry state, the action queue, and the routing pools)
-    rather than by calling each other directly. The numbered stages match the
-    chain in Figure~\ref{fig:demand_capacity_chain} and show the provisioning
+    structures (the telemetry state, the action queue, and the routing pools).
+    The numbered stages match the chain in
+    Figure~\ref{fig:demand_capacity_chain} and show the provisioning
     direction. Capacity removal follows the same steps in reverse, starting
     with the drain. The aggregator is omitted between the observations sent
     by the replicas and the windowed summary delivered to the controller.}
@@ -1626,32 +1628,53 @@ Chapter~\ref{ch:results}.
 
 \subsection{Services}\label{sec:impl_compute}
 % TODO: Edge server (Python/Flask); container lifecycle (build, start, health check,
-% OVS wiring, drain, removal); VIP_SERVER registration. BACKEND_SELECTION_POLICY
-% env var (topology_host / topology_slowstart / topology_lifecycle) = RQ3 propagation
-% mechanism; requires a compute readiness probe + pending-backend registry (thesis_overview.md §6-RQ3).
+% OVS wiring, drain/cancel, removal); VIP_SERVER registration. RQ3 propagation
+% mechanism: READINESS_PROPAGATION env var (off / direct / discovery) +
+% ReadinessGate (pending-backend registry, app_ready event admission, probe
+% fallback, abandonment bound) — thesis_overview.md §6-RQ3.
+% BACKEND_SELECTION_POLICY (topology_host / topology_slowstart /
+% topology_lifecycle) is the separate selection dimension (warm lease /
+% slow-start ramp), not the RQ3 propagation mechanism.
 
 \subsection{Data}\label{sec:impl_data}
-% TODO: MongoDB replica sets; programmatic rs.add()/rs.remove(); VIP_DATA routing;
-% epoch recovery; retryReads; connection pooling; storage container lifecycle.
-% Conntrack-based routing for VIP_DATA.
+% TODO: MongoDB replica sets; sidecar self-join via replSetReconfig (non-voting
+% secondary); controller-side rs.remove() + wait-for-removal; VIP_DATA routing
+% (conntrack DNAT/SNAT; per-client and per-connection flows); read path =
+% per-request leases over per-LAN epochs (VIP address; rotation on VIP update;
+% AutoReconnect retry with backoff; readPreference=secondaryPreferred); write
+% path = direct-to-primary client; storage container lifecycle.
 
 \section{Monitoring and Decision Engine}\label{sec:impl_monitoring}
-% TODO: Aggregator (ZMQ PUB/SUB + HTTP cache); collect_resource_stats.py
-% (domain + debug + per-node CSVs); telemetry source abstraction
-% (ZmqTelemetrySource, PollingTelemetrySource). Degradation score with
-% configurable weights via SCALEUP_W_CPU / SCALEUP_W_T_PROC env vars;
+% TODO: Aggregator (ZMQ PULL→PUB + HTTP window-log/latest-summary cache;
+% fixed window cadence; always-publishes incl. empty windows; overload label);
+% collect_resource_stats.py (domain + debug + per-node CSVs); telemetry source
+% abstraction (ZmqTelemetrySource default push; PollingTelemetrySource
+% latest-state; EventPreservingTelemetrySource; DelayedEventPreservingTelemetrySource;
+% SampledPushTelemetrySource). Degradation score with configurable weights via
+% SCALEUP_W_CPU / SCALEUP_W_T_PROC env vars (LATENCY_SIGNAL_MODE mean|median);
 % ElasticityManager. RQ2 requires a bottleneck-classification gate that logs episode label,
 % evidence, selected/rejected action, and action budget (thesis_overview.md §6-RQ2).
 
 \section{Control Workflow}\label{sec:impl_control}
-% TODO: OS-Ken/Ryu controller; 3 greenthreads; shared data structures;
-% key algorithm pseudo-code (degradation score → threshold → sliding window →
-% alert → spawn); Double-VIP ARP interception + DNAT/SNAT.
+% TODO: OS-Ken controller; three execution contexts (packet + observation on
+% the eventlet hub; action in a native elasticity thread, plus the
+% readiness-gate worker); shared data structures (telemetry state, priority
+% action queue, routing pools); key algorithm pseudo-code (degradation score →
+% threshold → sliding window → alert → spawn); Double-VIP ARP interception +
+% DNAT/SNAT (conntrack); release/admission log instrumentation.
 
 \section{Implementation Validation}\label{sec:impl_validation}
 % TODO: Golden-config stability experiments (15+ runs, variance ≤0.23%);
 % mechanism validation (Tier 2, Tier 1, compute, conntrack);
 % algorithm correctness via stable behavior, not code inspection.
+% TODO: observation-path validation, reporting checks the pipeline already logs:
+% window continuity (delivery log: every produced window delivered, or recorded
+% as an aged-out gap; none silently lost); treatment fidelity per mode
+% (completeness ≈1.0 in the ordered modes vs the calibrated fraction in the
+% lossy modes; sequence order preserved; measured delay ≈ configured DELAY_S);
+% observation overhead (aggregator CPU/RSS and per-window payload bounded and
+% constant across modes); optional one-run cross-calibration of node resource
+% records against an independent collector (docker stats/cAdvisor).
 
 
 
@@ -1719,6 +1742,10 @@ Chapter~\ref{ch:results}.
 % trade-offs? What is negligible? Implications for stateful edge-service designers.
 % Data-placement strategies (Tier 0/1/2) remain held-constant platform context; experimental
 % characterization of data-locality trade-offs is deferred to future work.
+% Scope discipline for every RQ section and this synthesis: observation +
+% measured magnitude + qualifier ("on the evaluated two-domain testbed",
+% "under the tested workloads"); never a generic subject ("edge deployments",
+% "microservices"); null and negative results carry the same qualifiers.
 
 
 
@@ -1726,9 +1753,14 @@ Chapter~\ref{ch:results}.
 
 \section{Conclusions}\label{sec:conclusions}
 % TODO: Summary of findings across RQ1, RQ2, RQ3.
+% Scope discipline: observation + measured magnitude + qualifier ("on the
+% evaluated two-domain testbed", "under the tested workloads"); no generic
+% claims about edge deployments; null results carry the same qualifiers.
 
 \section{Research Contributions}\label{sec:contributions_revisited}
-% TODO: Restate the four contributions with evidence from results.
+% TODO: Restate the four contributions with evidence from results, keeping the
+% scope declared in Section~\ref{sec:contributions} ("within the evaluated
+% two-domain testbed and workload families").
 
 \section{Limitations}\label{sec:limitations}
 % TODO: Controlled testbed; emulated (not real) WAN; single host; single window size;
@@ -1744,7 +1776,11 @@ Chapter~\ref{ch:results}.
 % variation (freshness vs. noise trade-off); Tier 1 Selective Sync full implementation
 % and experimental validation; data locality experimental characterization (Tier 0 vs.
 % Tier 1 vs. Tier 2 cold vs. Tier 2 warm — designed, deferred from RQ3 scope);
-% larger-scale deployment; real-world traces; ML-driven threshold adaptation.
+% larger-scale deployment; real-world traces; ML-driven threshold adaptation;
+% standard-stack replication (re-run the delivery-semantics experiment over
+% off-the-shelf observability components, e.g. an OTel collector over a message
+% broker, to test whether the measured effects are properties of the delivery
+% semantics or of this implementation).
 
 \end{document}
 % =====================================================================

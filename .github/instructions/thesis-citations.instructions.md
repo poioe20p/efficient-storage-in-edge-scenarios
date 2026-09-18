@@ -35,3 +35,11 @@ applyTo: "tese/**"
   cited in the text, via `tools/add_bib_from_doi.py` for DOIs already in the
   corpus. Verify generated keys (e.g., the tool can mangle non-ASCII author
   names) and fix HTML-escaped ampersands before building.
+
+## Extractions next to PDFs
+
+- Before reading a paper, check for an existing full-text extraction (`.txt`)
+  next to its PDF and reuse it instead of re-extracting. New extractions are
+  written to the PDF's folder, not `temp/`.
+- Never delete extraction files; they are kept so that papers do not have to
+  be extracted repeatedly.

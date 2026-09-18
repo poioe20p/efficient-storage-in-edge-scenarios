@@ -1,7 +1,7 @@
 ---
 description: "Use when: deep research reasoning, thesis planning, literature analysis, structuring arguments, writing LaTeX thesis chapters, managing BibTeX references, mapping system implementation to thesis narrative. Triggers on: 'research', 'thesis', 'literature review', 'write chapter', 'argument', 'methodology', 'related work', 'citation', 'BibTeX', 'DOI', 'proposal', 'research question', 'hypothesis', 'contribution'"
 name: "Thesis Researcher"
-tools: [read, edit, search, web, execute, todo, agent]
+tools: [read, edit, search, web, execute, todo, agent, browser]
 argument-hint: "Describe your research question, thesis section, or writing task..."
 model: deepseek-v4-flash-4.1
 reasoning: max

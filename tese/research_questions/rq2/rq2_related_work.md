@@ -21,7 +21,6 @@ The per-paper evidence, with what each explicitly does **not** do (the delimiter
 | **Qu, Calheiros & Buyya 2018** — auto-scaling taxonomy (ACM CSUR) | Canonical auto-scaling taxonomy; documents that the DB tier is *"often considered dynamically unscalable and ignored by auto-scalers"* | Doesn't test delivery semantics or compute-vs-storage choice; the DB remark characterizes surveyed work, not proof |
 | **Li et al. 2020** — heterogeneity-aware elastic provisioning (FGCS) — **closest RQ2 precedent** | Provisions cloud instances **and** data replicas jointly, from **forecast** workload (hybrid ARIMA/BP) | Forecast-driven, **never from a live observed bottleneck**; measures cost/utilization, not user-visible latency or usable capacity |
 | **Nicolaescu et al. 2021 (SEND)** — INFOCOM | Logically centralized manager ingests periodic stats → decides data relocation/replication + function placement + routing (co-location over data and functions) | Has monitoring + placement, but **no resource-tier scaling and no routing admission** — not a compute-vs-storage capacity action from a bottleneck |
-| **Ferreira, Coelho & Pereira 2024** — edge/fog DB survey (ACM CSUR) | Authoritative DB-side survey; DB scalability treated largely as replication/sharding/placement **design** | Discusses replication and FaaS scaling, but does not study bottleneck-selected tier action |
 | **Malazi et al. 2022** — MEC dynamic service placement SLR (IEEE Access) | "Dynamic" placement = re-placement/relocation from prediction, lifecycle, forwarding | Not runtime compute-vs-storage tier choice |
 | **Toka et al. 2021** — ML-based scaling for K8s edge clusters (IEEE TNSM) | ML-based edge scaling, formal HPA model; treats metrics→HPA pipeline as fixed infrastructure | **Compute-only**; no storage action or bottleneck classification |
 | **Breitbach et al. 2019** — context-aware data/task placement (IEEE PerCom) | Runtime MAPE loop creates data replicas when queuing time crosses a threshold (real testbed, n-replication spectrum) | Adapts only **data** replicas at runtime; does not choose compute-vs-storage from a bottleneck; no SDN/routing |
@@ -53,7 +52,7 @@ The honest reading: RQ2's slice is **narrow but specific**, and the closest neig
 
 > Auto-scaling research optimises *when* and *how many* instances to create, leaving the capacity-action type
 > (compute vs storage) as an architectural given (Qu et al.; Toka et al.). Edge-storage research treats
-> database elasticity as design-time replication/sharding/placement (Ferreira et al.) or as forecast-driven
+> database elasticity as design-time replication/sharding/placement (Mealha et al.) or as forecast-driven
 > provisioning (Li et al.), and the closest co-location precedent (SEND) omits resource-tier scaling and routing
 > admission. **Within the reviewed corpus, no system selects the capacity action — compute or storage scale-out —
 > from a live observed bottleneck while sharing monitoring, scaling, and routing state.** RQ2 compares fixed-priority

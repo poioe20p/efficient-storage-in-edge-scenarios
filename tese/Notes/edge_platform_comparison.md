@@ -13,7 +13,6 @@
 | **Thesis** | — | ✅ Flask+MongoDB | ✅ Thread 2 | ✅ Thread 3 | ✅ Thread 1 (VIP) | ✅ Tiered MongoDB | ✅ **Yes** |
 | MiCADO-Edge (2021) | ~95 | ✅ Microservices | ✅ App metrics | ✅ HPA-like | ✅ K8s SD | ❌ | ❌ |
 | ECaaS (2021) | ~44 | ✅ User services | ✅ Node health | ✅ DC formation | ⚠️ Membership | ❌ | ❌ |
-| LAVEA (2017) | 293 | Partial | ✅ Implicit | ✅ Implicit | ✅ Implicit | ❌ | ❌ |
 | Pelle et al. (2022) | 17 | ❌ | ⚠️ CloudWatch | ❌ | ⚠️ Greengrass | ✅ AnnaBellaDB | ❌ |
 | Okwuibe et al. (2020) | — | ❌ | ✅ InfluxDB | ✅ K8s | ❌ | ❌ | ❌ |
 | Toka et al. (2021) | — | Partial | ✅ K8s metrics | ✅ ML HPA | ❌ | ❌ | ❌ |

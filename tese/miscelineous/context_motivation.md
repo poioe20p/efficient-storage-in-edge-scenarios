@@ -44,11 +44,11 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > taxonomy (heterogeneity, demand volatility, placement/scheduling
 > decoupling, multi-owner resources), adding `Luo2021ResourceSchedulingEdgeComputingSurvey`
 > and `Liu2019SurveyEdgeComputingSystemsTools`; the production
-> over-provisioning/imbalance evidence `Xu2021FirstLookPublicEdgePlatforms`
-> (NEP) is now cited in ¶6 (previously absent despite being the
-> production-motivation). ¶8 gains a SOTA-positioning sentence (the thesis
+> over-provisioning/imbalance evidence from the public-edge-platform measurement was
+> retired from the corpus on 2026-09-18 (see `tese/literature_review/README.md`); ¶6
+> relies on the remaining sources. ¶8 gains a SOTA-positioning sentence (the thesis
 > follows the integration direction surveys call for, using standard
-> mechanisms). All three new keys are added to `tese/references.bib`.
+> mechanisms). Both new keys are added to `tese/references.bib`.
 > (2026-08-12) ¶6's data-gravity tail (network locality / serve-remotely /
 > replicate-hot-subset / full-replica options) moved to ¶7, where the
 > stateful-services discussion already carried the compressed version;
@@ -75,7 +75,7 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > added: Huang2023AdapPFSelfAdaptiveScrapeInterval.
 > (2026-08-21) This guide has been applied to the filled §1.1 in main.tex,
 > with deviations: ¶6 anchors to Breitbach/Nicolaescu/Pelle (Okwuibe not
-> cited in ¶6); Xu2021 (NEP) and Liu2019 are in references.bib but not cited
+> cited in ¶6); Liu2019 is in references.bib but not cited
 > in the filled §1.1; the 'Multi-Region Content Discovery Platform' workload
 > description below is stale — the filled §1.1 describes a stateful edge
 > service across two geo-distributed sites with a MongoDB replica-set
@@ -102,7 +102,6 @@ Understood. You want a properly developed introduction, not a compressed one. He
 | `Yaseen2025CountersTelemetrySurveyProgrammableNetwork`     | “From Counters to Telemetry: A Survey of Programmable Network-Wide Monitoring” — Yaseen, Network 5:38, 2025                                           | `01_telemetry_rq1/From Counters to Telemetry - A Survey of Programmable Network-Wide Monitoring.pdf`                              |
 | `Luo2021ResourceSchedulingEdgeComputingSurvey`             | “Resource Scheduling in Edge Computing: A Survey” — Luo et al., IEEE COMST 23(4), 2021                                                                | `04_context_edge/Resource_Scheduling_in_Edge_Computing_A_Survey.pdf`                                                              |
 | `Liu2019SurveyEdgeComputingSystemsTools`                   | “A Survey on Edge Computing Systems and Tools” — Liu et al., Proc. IEEE 107(8), 2019                                                                  | `04_context_edge/A_Survey_on_Edge_Computing_Systems_and_Tools.pdf`                                                                |
-| `Xu2021FirstLookPublicEdgePlatforms`                       | “From Cloud to Edge: A First Look at Public Edge Platforms” — Xu et al., ACM IMC 2021                                                                 | `04_context_edge/From Cloud to Edge - A First Look at Public Edge Platforms.pdf`                                                  |
 
 ### Replaced references (not in corpus / unverifiable — record only)
 
@@ -191,16 +190,7 @@ complexity: edge resources are heterogeneous — nodes of widely
 different capacity that must be scheduled jointly — and the demand
 they serve is volatile, so coarse or static scheduling degrades
 precisely when it matters most
-\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}. The
-consequences of that volatility are visible in production: a
-measurement of a major public edge platform found resource usage
-unbalanced by up to 14$\times$ across servers and 731$\times$ across
-sites in the same province, with utilization about six times lower
-than a comparable cloud — evidence that edge customers over-provision
-because demand is hard to forecast, and that the resulting imbalance
-traces to a decoupling between where capacity is placed and where
-requests are scheduled
-\parencite{Xu2021FirstLookPublicEdgePlatforms}. A further, often
+\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}. A further, often
 overlooked, source of complexity is that edge resources belong to
 different owners — a site's servers, the network it attaches to, and
 the gateways in its users' homes are administered by different

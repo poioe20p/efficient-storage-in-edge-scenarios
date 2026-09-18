@@ -136,7 +136,6 @@ experimental variable.
 
 | Paper | Quote |
 |---|---|
-| Xu et al. (2021, NEP) | "VM placement and end-user request scheduling strategies" decoupled ⇒ "Resource usage is highly unbalanced across servers… across sites." |
 | Yaseen (2025) | "SNMP polling operates on a pull-based model with periodic queries, introducing latency and potential data loss especially under congestion. This can lead to visibility gaps." |
 | Podolskiy et al. (IaaS) | "The reactive nature of autoscaling solutions jeopardizes the ability of cloud applications to meet the QoS requirements under the dynamically changing load." |
 | Pourghebleh et al. (2020, SD) | "the freshness of the data still remains a problem" (passing remark, not a research dimension) |
@@ -145,7 +144,6 @@ experimental variable.
 
 | Paper | Symptom | Their explanation |
 |---|---|---|
-| Xu et al. (NEP) | Resource imbalance across servers/sites | Workload pattern variability (not the decoupling itself) |
 | Podolskiy et al. | QoS violation under load spikes | Reactive scaling is inherently slow |
 | AdapPF (Huang & Pierre, 2023) | **Far more pending pods** with 60 s scraping than 5 s under high load | Contribution framed as bandwidth-saving adaptive interval, not decision-quality characterisation |
 
@@ -190,13 +188,12 @@ and admission.
 | **Qu et al.** (2018) | "the database tier is often considered dynamically unscalable and ignored by auto-scalers" — the data tier is a blind spot in auto-scaling. | `TAXONOMY-GAP` |
 | **Pelle et al.** (2022) | "Functions and data must be orchestrated in sync" — but at deployment time, not runtime action selection. | `CALLED-FOR` |
 | Auto-scaling literature in general | Studies *when* and *how many* to scale; monitoring is an input, not a variable; the action type (compute vs storage) is fixed by the operator. | `TAXONOMY-GAP` |
-| **Ferreira et al.** (2024) — ACM CSUR, edge/fog databases | Authoritative edge-DB survey has **no elasticity/runtime-scaling axis**; DB scalability treated as static replication/sharding/placement design; "increasing the number of replicas" listed as future work. | `TAXONOMY-GAP` (citable) |
 | **Wei & Wang** (2023) — popularity-based placement + LB | The *old-thesis* idea: popularity drives placement; explicitly "the placement decision is static". | `DOCUMENTED` (self-declared static) |
 
 **The RQ2 gap statement (three claims; only the third is novel):**
 
 1. Compute auto-scaling scales edge servers and leaves the DB tier out of the runtime control loop.
-2. Edge-DB research (Ferreira et al. 2024) treats database scalability as a **static/design-time** replication–sharding–placement decision — not as runtime capacity control.
+2. Edge-DB research treats database scalability as a **static/design-time** replication–sharding–placement decision — not as runtime capacity control.
 3. **No surveyed system makes a closed-loop, telemetry-driven decision of which tier — compute or storage — to scale from an observed bottleneck, and none co-locates monitoring + scaling + routing over both tiers with shared state.**
 
 **The cost of the scaling action itself (the honest claim):** scaling the data
