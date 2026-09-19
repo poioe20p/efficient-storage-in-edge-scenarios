@@ -185,7 +185,7 @@ still synchronising must wait for it to catch up, and maintaining copies
 consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement}.
 
-    Scale-out alone does not guarantee usable capacity instantly. The
+    Scale-up alone does not guarantee usable capacity instantly. The
 orchestration system must detect when data must be brought closer,
 deliver that information to the decision point, provision the right
 kind of capacity, and redirect traffic to it. Each of these steps,
@@ -251,7 +251,7 @@ measured under controlled conditions.
 deployed across two geo-distributed sites: how demand evidence is
 delivered to the controller (telemetry delivery semantics), which
 capacity action the controller hands over to the infrastructure in
-response to the observed bottleneck (compute or storage scale-out),
+response to the observed bottleneck (compute or storage scale-up),
 and when ready capacity is admitted to traffic (readiness admission).
 
     The thesis does not claim that this SDN-based architecture is superior
@@ -286,17 +286,17 @@ action selected, or the admission of ready capacity, and measure the effect.
 This thesis seeks to answer the following three research questions:
 
 \begin{itemize}
-    \item \textbf{RQ1} -- How do three ways of delivering demand evidence
+    \item \textit{RQ1} -- How do three ways of delivering demand evidence
     to the controller, more specifically, event-preserving, delayed event-preserving, and
     latest-state, affect what the controller observes about overload,
     how it responds by scaling, and the quality of service users
     experience during a demand shift?
 
-    \item \textbf{RQ2} -- Under compute-bound and data-access-bound demand,
-    how does bottleneck-aware scale-out, compared with fixed single-tier
+    \item \textit{RQ2} -- Under compute-bound and data-access-bound demand,
+    how does bottleneck-aware scale-up, compared with fixed single-tier
     policies, affect targeted-tier relief, service recovery, and resource use?
 
-    \item \textbf{RQ3} -- When a newly provisioned backend becomes ready,
+    \item \textit{RQ3} -- When a newly provisioned backend becomes ready,
     how does the readiness-admission mechanism, direct lifecycle
     notification versus periodic discovery, affect when the backend
     actually serves requests, and does lifecycle notification become a
@@ -321,7 +321,7 @@ and demonstrated in Figure~\ref{fig:design_science_research_methodology}.
     Design science produces and evaluates purposeful artefacts that address certain
 real-world problems, the research contribution corresponds to the knowledge gained
 by designing the artefact and evaluating it against defined objectives.
-In \ac{DSRM} the research is organized into six categories: problem
+In \ac{DSRM} the research is organised into six categories: problem
 identification and motivation, definition of the objectives of a solution,
 design and development, demonstration, evaluation, and communication.
 
@@ -333,7 +333,7 @@ state of the art reviewed in Chapter~\ref{ch:literature_review}. The six
 activities unfolded as follows.
 
 \begin{enumerate}
-\item \textbf{Problem identification and motivation.} Edge services whose
+\item \textit{Problem identification and motivation.} Edge services whose
 monitoring, routing and scaling modules operate as independent components
 accumulate handoff delays between control loops, degrading orchestration
 efficiency. The problem is introduced in
@@ -343,13 +343,13 @@ studied in isolation and that single-process architectures with independently
 configurable interfaces are less commonly present in the reviewed literature, which
 motivates and delimits the problem.
 
-\item \textbf{Objectives of a solution.} As defined in Section~\ref{sec:objectives},
+\item \textit{Objectives of a solution.} As defined in Section~\ref{sec:objectives},
 the solution is an experimental platform, not a novel algorithm, whose
 purpose is to make the interfaces of the demand-to-capacity chain
 measurable, so that their impact on resource orchestration can be
 evaluated through measurement and better understood.
 
-\item \textbf{Design and development.} The artefact is the single-process platform
+\item \textit{Design and development.} The artefact is the single-process platform
 described in Chapters~\ref{ch:system_architecture} and~\ref{ch:implementation}: two peer
 SDN controllers (OS-Ken/OpenFlow), one per network domain, each hosting
 controller-side telemetry consumption, elasticity decision-making and the
@@ -362,14 +362,14 @@ plane through which routing behaviour can be re-programmed directly in a central
 Docker enables fast provisioning and teardown of service backends, and MongoDB for native
 replica-set replication and concurrent access.
 
-\item \textbf{Demonstration.} The artefact was deployed as a running system in
+\item \textit{Demonstration.} The artefact was deployed as a running system in
 an emulated edge environment with two simulated sites, and was driven with
 scheduled workload phases reproducing demand shifts in order to demonstrate that
 the platform operates end-to-end from demand
 observation through scaling action to traffic admission, with the tested
 interface varied across runs of each experimental campaign for evaluation.
 
-\item \textbf{Evaluation.} Each research question was evaluated in a dedicated
+\item \textit{Evaluation.} Each research question was evaluated in a dedicated
 experimental campaign reported in Chapter~\ref{ch:results}. The evaluation follows a
 pre-registered measurement and statistical procedure where each experiment is
 composed of multiple independent runs, each treated as an experimental unit,
@@ -378,7 +378,7 @@ load. The primary comparisons are detailed in Section~\ref{sec:experimental_setu
 Internal, external and repeatability validity threats
 are discussed in Section~\ref{sec:limitations}.
 
-\item \textbf{Communication.} The communication of the problem, the artefact
+\item \textit{Communication.} The communication of the problem, the artefact
 and the findings is accomplished through this dissertation itself and its
 public defence, as well as through any resulting publications.
 \end{enumerate}
@@ -393,7 +393,7 @@ This dissertation makes the following contributions:
     service quality (RQ1).
     \item An experimental characterisation of bottleneck-aware capacity
     action selection, more specifically how deciding between
-    compute and storage scale-out
+    compute and storage scale-up
     from the observed bottleneck, compared with fixed single-tier policies,
     affects targeted-tier relief, service recovery, and resource use under
     compute-bound and data-access-bound demand (RQ2).
@@ -415,11 +415,11 @@ and workload families.
 This dissertation is organised into six chapters:
 
 \begin{itemize}
-\item \textbf{Chapter 1} introduces the research, presenting its context, motivation and
+\item \textit{Chapter 1} introduces the research, presenting its context, motivation and
 problem statement, the objectives, the research questions that emerged, the methodology that
 guided the work, and the main contributions.
 
-\item \textbf{Chapter 2} reviews the background and related work. After presenting the
+\item \textit{Chapter 2} reviews the background and related work. After presenting the
 methodology used to conduct the review, it surveys the platform technologies on which the
 proposed solution rests (edge platforms, SDN and OpenFlow, containers, and NoSQL document
 stores), then monitoring and telemetry, auto-scaling, load balancing and readiness
@@ -428,23 +428,23 @@ monitoring, routing and scaling
 into independent components observed across these areas, and concludes with the research
 gaps that motivate this dissertation.
 
-\item \textbf{Chapter 3} presents the architecture and design of the proposed solution for
+\item \textit{Chapter 3} presents the architecture and design of the proposed solution for
 edge services: the design requirements, the SDN-based architecture, the distributed elastic
-allocation of compute and data resources, the monitoring and decision engine, and the control
+allocation of compute and storage resources, the monitoring and decision engine, and the control
 workflow.
 
-\item \textbf{Chapter 4} describes the implementation of the proposed solution: the
-experimental infrastructure, the implementation of the elastic allocation of compute and data
+\item \textit{Chapter 4} describes the implementation of the proposed solution: the
+experimental infrastructure, the implementation of the elastic allocation of compute and storage
 resources, the monitoring and decision engine, the control workflow, and the validation of the
 implementation.
 
-\item \textbf{Chapter 5} presents the experimental results. Following the
+\item \textit{Chapter 5} presents the experimental results. Following the
 demand-to-capacity chain, the experimental campaigns address telemetry delivery
 semantics (RQ1), bottleneck-aware scaling action selection (RQ2), and readiness admission
 to traffic (RQ3), followed by resource orchestration and scalability analysis, and a
 synthesis across the three interfaces.
 
-\item \textbf{Chapter 6} concludes the dissertation, restating the findings and the
+\item \textit{Chapter 6} concludes the dissertation, restating the findings and the
 contributions, discussing the limitations of the work, and outlining directions for future
 research.
 \end{itemize}
@@ -788,7 +788,9 @@ scaling, which changes the capacity of a single unit, with hybrid
 strategies combining the two
 \parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
 Horizontal scaling suits the edge scenario, and is the direction this
-dissertation follows. 
+dissertation follows. Throughout this dissertation, adding a unit of
+capacity to a tier is referred to as scale-up, and removing one as
+scale-down. 
 
     In edge computing, a site's capacity is bounded by the nodes deployed
 there, so enlarging an individual unit has a hard ceiling, whereas
@@ -826,7 +828,7 @@ controllers re-program the forwarding paths while instances of the same
 pre-dimensioned function pool are activated or deactivated. The decision
 reduces to whether and how many instances of that one function to
 activate.\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
-In a stateful edge service, however, the data tier is
+In a stateful edge service, however, the storage tier is
 itself a live capacity. When the pressure sits in the data rather than
 in the function instances, adding instances cannot relieve it.
 
@@ -898,7 +900,7 @@ unscalable and ignored by auto-scalers}
     Overall, the literature demonstrates that the kind of capacity added
 under certain scenarios can have an impact,
 compute replicas cannot relieve pressure whose limiting
-resource lies in the data tier, and database capacity can govern SLA
+resource lies in the storage tier, and database capacity can govern SLA
 violations while a compute-tier scaling decision remains unchanged.
 Capacity actions are therefore not interchangeable merely because each
 adds resources.
@@ -907,7 +909,7 @@ adds resources.
 remains an architectural given, settled by forecasts or by joint
 placement rather than selected at runtime from a live observed
 bottleneck. This dissertation isolates that selection, with storage
-scale-out among the actions the controller may select, and measures
+scale-up among the actions the controller may select, and measures
 how the benefit divides across targeted-tier relief, service recovery,
 and resource use. How that decision is handed to the infrastructure is examined,
 with the other interfaces, in Section~\ref{sec:lit_synthesis}.
@@ -915,7 +917,7 @@ with the other interfaces, in Section~\ref{sec:lit_synthesis}.
 \section{Load Balancing and Readiness Admission on SDN}\label{sec:lit_sdn_lb} %DONE
 Load balancing distributes incoming traffic among a set of available
 backends so that no single backend is overloaded while others remain
-underutilized. In SDN networks this distribution is programmed centrally,
+underutilised. In SDN networks this distribution is programmed centrally,
 where the controller installs forwarding rules that steer each flow to a
 selected backend, and a selection policy decides which backend
 receives the next flow.
@@ -1220,9 +1222,11 @@ this chapter is presented in Chapter~\ref{ch:results}.
 the proposed solution, and Section~\ref{sec:architecture_overview} presents
 the two-domain architecture and its communication paths.
 Section~\ref{sec:elastic_allocation} describes the distributed elastic
-allocation of compute and data resources, Section~\ref{sec:monitoring_decision}
+allocation of compute and storage resources, Section~\ref{sec:monitoring_decision}
 the monitoring and decision engine, and Section~\ref{sec:control_workflow}
-the control workflow.
+the control workflow. Together, these sections realise the design
+requirements: the elastic allocation addresses DR3 and DR4, the decision
+path addresses DR1 and DR2, and the control workflow addresses DR5 and DR6.
 
 \section{Design Requirements}\label{sec:design_requirements}
 The platform was designed to support stateful edge services whose demand and
@@ -1231,32 +1235,32 @@ coordination problem and the research gaps established in
 Chapter~\ref{ch:literature_review}, and guide the design
 presented in the remainder of the chapter.
 
-\begin{enumerate}[label=\textbf{DR\arabic*:}, leftmargin=*]
-    \item \textbf{Cross-layer coordination.} Within each domain, traffic
+\begin{enumerate}[label=\textit{DR\arabic*:}, leftmargin=*]
+    \item \textit{Cross-layer coordination.} Within each domain, traffic
     steering, telemetry consumption, topology awareness, and resource lifecycle
     management must share controller state within the same process.
     Aggregated telemetry must reach the controller through a structured,
     configurable delivery interface. Peer controllers must share the topology
     state needed for cross-domain awareness.
 
-    \item \textbf{Separability of control interfaces.} The delivery of demand
+    \item \textit{Separability of control interfaces.} The delivery of demand
     evidence, the selection of a capacity action, and the admission of ready
     capacity to traffic must remain independently configurable.
 
-    \item \textbf{Independent compute and storage elasticity.} The platform
+    \item \textit{Independent compute and storage elasticity.} The platform
     must distinguish an increase or decrease in edge-service capacity from an
     increase or decrease in storage capacity, allowing each resource tier to
     be managed separately.
 
-    \item \textbf{Lifecycle-safe admission.} Provisioned resources must not be
+    \item \textit{Lifecycle-safe admission.} Provisioned resources must not be
     regarded as usable capacity until the relevant readiness condition has been
     reached and the resource has been admitted to the appropriate routing path.
 
-    \item \textbf{Fast-path isolation.} Packet handling must remain separate
+    \item \textit{Fast-path isolation.} Packet handling must remain separate
     from slow infrastructure operations, such as container creation, replica
     preparation, and resource removal.
 
-    \item \textbf{End-to-end observability.} The platform must record the path
+    \item \textit{End-to-end observability.} The platform must record the path
     from demand observation to the first successful request served by newly
     available capacity.
 \end{enumerate}
@@ -1276,7 +1280,9 @@ presented in the remainder of the chapter.
 \subsection{Two-Domain Organisation}
 
 The platform is organised as two network domains connected by an emulated
-wide-area data link. Each domain contains client workloads, an \ac{OVS}
+wide-area data link. The two domains correspond to the two geo-distributed
+sites across which the evaluated service is deployed. Each domain contains
+client workloads, an \ac{OVS}
 data plane, a pool of containerised edge servers, a MongoDB replica-set
 storage tier, a telemetry aggregator, and an \ac{SDN} controller. The peer
 controllers exchange topology information, and each consumes the telemetry
@@ -1355,8 +1361,8 @@ The platform scales capacity along two dimensions: edge-service replicas (also
 referred to as backends in the routing context), which serve requests, and
 storage members, which hold the service state. Each dimension
 has its own observation signal, its own action, and its own admission and
-release procedure, so that pressure on the service tier and pressure on the
-data tier can be addressed without conflating the two. The two dimensions are
+release procedure, so that pressure on the compute tier and pressure on the
+storage tier can be addressed without conflating the two. The two dimensions are
 described in turn.
 
 \subsection{Scaling Policy}\label{sec:scaling_policy}
@@ -1389,9 +1395,9 @@ between zero and one, where:
     \item $w_{\mathrm{util}}$, $w_{\mathrm{lat}}$ -- configurable weights of the utilisation and latency components.
 \end{itemize}
     The floors, spans, weights, and threshold parameters are configured
-independently for each tier. For the service tier the signals are CPU
-utilisation and request-processing latency, while for the data tier they
-are storage utilisation and data-access latency.
+independently for each tier. For the compute tier the signals are CPU
+utilisation and request-processing latency, while for the storage tier
+they are storage-member CPU utilisation and data-access latency.
 
     A window is considered degraded when its score reaches an adaptive
 threshold, and a scale-up is requested only when degradation is sustained
@@ -1463,8 +1469,7 @@ once it is visible in the routing pool used by the selector. How readiness
 reaches that pool is itself a configurable design dimension as readiness may
 be propagated by a direct lifecycle notification from the replica, or
 discovered by the controller through periodic probes. This
-readiness-admission mechanism is the interface examined for the third
-research question.
+readiness-admission mechanism is the interface examined for RQ3.
 
     Service scale-down removes the least disruptive eligible replica, applying
 the idle condition defined in Section~\ref{sec:scaling_policy}. 
@@ -1492,7 +1497,7 @@ reaction path, with a new reserve prepared immediately afterwards.
     Storage scale-down removes an idle member while the remaining members keep
 serving. Only members added by the platform are eligible for removal, so the
 set's original membership is never disturbed, and the decision applies the
-idle condition defined in Section~\ref{sec:scaling_policy} to the data tier's
+idle condition defined in Section~\ref{sec:scaling_policy} to the storage tier's
 idle signals (its data-access latency and, in the configurations that enable
 it, its storage utilisation).
 
@@ -1534,7 +1539,7 @@ latency, are evaluated against adaptive thresholds over sliding windows.
 When a tier's degradation condition is sustained, the decision engine emits a typed,
 prioritised request for a capacity action, with data-side actions given
 precedence over service-side actions. The type of a request identifies the
-resource tier it concerns (service or data) and the action requested (scale-up
+resource tier it concerns (compute or storage) and the action requested (scale-up
 or scale-down), and each request carries the evidence that produced it.
 Scale-down requests arise from
 separate idle conditions. 
