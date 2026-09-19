@@ -176,8 +176,8 @@ fluctuation of user demand.
     The resource management problem gains more relevance when the services
 themselves are stateful. Unlike stateless microservices, which can be
 replicated freely and absorb traffic immediately, stateful services in a
-geo-distributed edge deployment depend on data held close to the compute:
-a content item ingested at one site is served from the database of that
+geo-distributed edge deployment depend on data held close to the compute.
+A content item ingested at one site is served from the database of that
 site. In distributed deployments, such data is routinely replicated
 across sites for locality and robustness, but replication is neither
 instantaneous nor free. A request reaching a server whose local copy is
@@ -580,8 +580,8 @@ storage remain in the cloud
 alone cannot serve every workload efficiently, and bringing computation
 closer to the user lowers the latency of
 interactive and data-intensive services, and processing and storing 
-data locally relieves the bandwidth pressure on the core
-network \parencite{Satyanarayanan2017EmergenceEdgeComputing}.
+data locally reduces the ingress bandwidth into the cloud
+\parencite{Satyanarayanan2017EmergenceEdgeComputing}.
 
     Despite the advantages of edge computing, as mentioned previously in
 Section~\ref{sec:context_motivation}, the inherent geo-distribution of resources
@@ -613,14 +613,14 @@ that forwarding behaviour can be reprogrammed centrally from a
 controller instead of being configured device by device. 
 
     Baktir et al. survey how edge computing benefits from this decoupling
-and organise the gains into benefit areas such as centralised visibility
-and programmatic traffic management, arguing that SDN can act as
-the enabler that lowers the complexity barriers and enhances
-the flexibility of edge deployments \parencite{Baktir2017HowCanEdgeComputingBenefit}. 
+and organise the gains into benefit areas such as high-resolution
+control built on a centralised view and programmatic access, arguing
+that SDN can act as the enabler that lowers the complexity barriers
+and enhances the flexibility of edge deployments \parencite{Baktir2017HowCanEdgeComputingBenefit}. 
 
     The OpenFlow protocol implements the decoupling through match-action
 flow rules installed on the switches, and is, as reviewed by Waseem et al.,
-the most extensively used interface for programming software defined networks
+the most extensively used SDN protocol in the research community
 \parencite{Waseem2022SoftwareDefinedNetworkingSDNReview}. 
 
     In its OpenFlow form, a single controller re-programs the forwarding
@@ -740,14 +740,14 @@ measures a downstream consequence, although not
 in the context of a stateful service. 
 
 Zhou and Yong study what to monitor rather than how it is delivered, comparing
-custom-metric autoscaling driven by application-level failure rates
+custom-metric autoscaling driven by application-level 5xx error rates
 against conventional CPU-based autoscaling in Kubernetes, and find that
 metric choice changes scaling quality under load, albeit on a small
 single-service testbed \parencite{Zhou2024ImplementHPANginxServiceUsing}.
 
     A second context, network telemetry, is likewise pull-based.
 Yaseen reviews programmable network-wide monitoring and records that
-polling produces
+SNMP polling produces
 \enquote{visibility gaps} between collection instants, calling for
 monitoring to be \enquote{tightly integrated with network control and
 automation} \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}.
@@ -783,7 +783,8 @@ provisioned, and when demand recedes, surplus capacity is released, so
 that the service keeps serving requests without holding resources it
 does not use. Auto-scaling strategies are mostly grouped into
 horizontal scaling, which changes the number of units, and vertical
-scaling, which changes the capacity of a single unit
+scaling, which changes the capacity of a single unit, with hybrid
+strategies combining the two
 \parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
 Horizontal scaling suits the edge scenario, and is the direction this
 dissertation follows. 
@@ -803,10 +804,13 @@ the efficiency with which scarce resources are managed.
 %     \label{fig:autoscaling_loop}
 % \end{figure}
 
-    Qu et al. classify the auto-scalers along the scaling
-indicator, the resource estimation method, and the timing of the action,
-and Taherizadeh and Stankovski organise the same concepts across edge
-application types and operational challenges. Both surveys take the
+    Qu et al. classify the auto-scalers along several characteristics,
+among them the scaling indicator, the resource estimation method, and
+the timing of the action, and Taherizadeh and Stankovski present a
+taxonomy for edge computing whose dimensions include adaptation
+intervals and architectural support for multi-tier applications, noting
+that a scaling approach should account for different dynamic
+provisioning policies at each tier. Both surveys take the
 scaling of service instances, whether virtual machines or containers,
 as the unit of analysis. The main questions the field asks are when to
 scale and how many instances to add, which kind of capacity is
@@ -814,15 +818,14 @@ provisioned, when applicable, is not among the classification dimensions
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
 
     With SDN, the traffic side is added, but the scaled
-resource remains the one the service function is built from:
+resource remains the one the service function is built from.
 Llorens-Carrodeguas et al. couple SDN-based traffic steering with
 horizontal scaling of virtualised network functions, so that the SDN
 controllers re-program the forwarding paths while instances of the same
 pre-dimensioned function pool are activated or deactivated. The decision
 reduces to whether and how many instances of that one function to
-activate, and the data tier those functions depend on is not scaled by
-the design.\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
-In a stateful edge service, however, that tier is
+activate.\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+In a stateful edge service, however, the data tier is
 itself a live capacity. When the pressure sits in the data rather than
 in the function instances, adding instances cannot relieve it.
 
@@ -848,19 +851,18 @@ capacity, yet reducing database capacity raises the rate of SLA
 violations, so service quality can be governed by the tier that the
 scaling decisions ignore
 \parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}. Dogani et
-al. record the same boundary across the systems they survey. Adding
+al. make the same observation in their survey, noting that adding
 resources does not necessarily raise throughput when the bottleneck
 lies elsewhere
 \parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among the
-systems covered by that survey, awareness of the effect is scarce and
-cross-service only: Waterfall, a machine-learning auto-scaler, accounts
+systems covered by that survey, only a few take cross-service effects
+into account. Waterfall, a machine-learning auto-scaler, accounts
 for how scaling one microservice can shift the bottleneck towards
-downstream services, and ATOM uses layered queuing networks to reduce
-bottleneck shifts in model-agnostic controllers. Both mechanisms remain
-compute-side, and no surveyed system selects a storage action.
+downstream services. The mechanism remains compute-side, and no
+surveyed system selects a storage action.
 
     PBScaler identifies the microservice whose degradation
-propagates through the call graph, ranks candidate
+propagates through the invocation graph, ranks candidate
 bottlenecks, and optimises replica management around the
 identified bottleneck
 \parencite{Xie2024PBScalerBottleneckAwareAutoscalingFramework}.
@@ -875,8 +877,8 @@ instances and data replicas in cloud-assisted edge systems, from a
 forecast of future workload built over historical workload data
 \parencite{Li2020HeterogeneityAwareElasticProvisioningCloud}. Both
 actions are available, but the trigger is a forecast rather than a live
-observed bottleneck, and the study is set in the cloud rather than at
-the edge, with its outcome measured in tenancy cost. 
+observed bottleneck, and the capacity is provisioned across edge hosts
+and rented cloud instances, with the outcome measured in tenancy cost. 
 
     Even among the most recent surveys regarding autoscaling, 
 El Mrabet et al. extend the classification across cloud,
@@ -887,7 +889,7 @@ not among the classification dimensions
 \parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
 
 Qu et al. describe the web application as split into
-application logic and a database tier, and
+a front-end, application logic, and a database tier, and
 record that \enquote{the database tier is often considered dynamically
 unscalable and ignored by auto-scalers}
 \parencite[p.~6]{Qu2018AutoScalingWebApplicationsClouds}.
@@ -942,9 +944,10 @@ provisioning and usable capacity is therefore a recognised cost, yet
 the interval in which readiness state propagates to the routing plane
 is not separated from the surrounding lifecycle.
 
-    The closest architectural antecedent is Llorens-Carrodeguas et al.,
-whose SDN redirector combines monitoring, auto-scaling, and load balancing
-for a transparent VNF cluster. Their system changes the number of active
+    Llorens-Carrodeguas et al. combine monitoring, auto-scaling, and load
+balancing in an SDN redirector for a transparent VNF cluster, so that
+load balancing operates over a pool of instances that is resized while
+traffic is being served. Their system changes the number of active
 cluster members and removes flow rules for unhealthy instances using
 status obtained through the MANO monitoring path
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
@@ -955,11 +958,16 @@ to routing eligibility is not separated from the surrounding lifecycle.
 
     The membership of the eligible set, however, is not fixed. Backends are
 added as demand rises and removed as it recedes, and a backend becomes
-usable capacity only once it can serve the application, its state has
-propagated to the routing plane, and it is included in the eligible
-set. The interval between verified readiness and routing eligibility is
+usable capacity only once it can serve the application, its readiness
+state has propagated to the routing plane, and it is included in the
+eligible set. The interval between verified readiness and routing eligibility is
 therefore an admission delay, and it lies outside the scope of the
-selection studies reviewed here, which take the eligible set as given.
+selection studies reviewed here, which, as far as admission is
+concerned, take the eligible set as given. Indeed, Neghabi et al.
+record failure management as a concern that the mechanisms their
+survey covers have not taken into account, so failure-driven changes
+to the eligible set remain unaddressed
+\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}.
     This dissertation studies load balancing through this membership, without
 focusing on the choice of which backend receives the next flow, and
 evaluates the effects of a changing set of backends and of delay in the
@@ -997,8 +1005,8 @@ are held together in each, using the terms interface and coordination
 gap as defined in Section~\ref{sec:context_motivation}.
 
     Baktir et al. organise the gains SDN brings to
-edge computing into benefit areas such as centralised visibility and
-programmatic traffic management
+edge computing into benefit areas such as high-resolution control
+built on a centralised view and programmatic access
 \parencite{Baktir2017HowCanEdgeComputingBenefit}. Wang et al. survey
 architectures in which SDN and NFV jointly coordinate placement,
 traffic, and caching across the network and service layers, showing
@@ -1010,26 +1018,12 @@ containerised edge-cloud applications serving next-generation IoT
 services, treating contextual information such as location and data
 freshness as part of the orchestration input
 \parencite{Sofia2023DynamicContextAwareCrossLayer}. These works
-document architectures rather than the
-coordination inside a running system, so the interfaces between the
-functions fall outside their scope.
+document architectures or proofs of concept rather than the
+coordination inside a running system, and the interfaces between
+the functions fall outside the scope of all three.
 
 
-    Okwuibe et al. combine an OpenDaylight controller with Kubernetes for
-a containerised industrial-IoT video service, the component set
-closest to this dissertation's. The two platforms are coupled through
-scripted triggers rather than shared state. A script watches the
-mobile core's log for client handovers and triggers a Kubernetes
-migration of the service between MEC servers, and the service becomes
-reachable again only after a DNS update. The study reports the total
-migration latency and names the factors it bundles, from scheduler
-performance and the network fabric to container and application
-start-up, without attributing time to them individually, and it lists
-reducing these factors as future work. Its databases serve the
-power-measurement instrumentation rather than the service path, and
-the demonstration involves no service-state transfer
-\parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized}.
-Peng et al. exercise SDN-based resource management in vehicular
+    Peng et al. exercise SDN-based resource management in vehicular
 multi-access edge computing as task migration and radio slicing,
 treating telemetry as available input rather than as an interface to
 be studied, and without container orchestration or tier scaling
@@ -1064,9 +1058,10 @@ delay attributable to its coordination.
     At the geo-distributed scale, three systems coordinate the same
 functions. OneEdge keeps authoritative state at each edge site,
 reconciles it with a central aggregate through two-phase commits, and
-uses \ac{ZMQ} for communication among its distributed components,
-reporting the whole control plane's deployment latency rather than
-the contribution of any single handoff
+uses \ac{ZMQ} for communication among its distributed components. Its
+evaluation reports end-to-end deployment latency with a coarse
+breakdown into scheduling delay, WAN overhead, and container creation,
+but not the cost of each control-plane interaction
 \parencite{Saurez2021OneEdge}. McK8s deploys four controllers on a
 management cluster as Kubernetes operators over custom resources,
 connects member clusters through a Cilium mesh, and measures
@@ -1130,13 +1125,12 @@ integrated with control
 \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}.
 Second, where the delay is evaluated, it is evaluated only in
 composite. Llorens-Carrodeguas et al. report activation at the
-granularity of the integrated system, Okwuibe et al. report a total
-migration latency, OneEdge reports the deployment latency of its
-whole control plane, and Kurma combines its provisioning stages into
-one quantity, none attributing the measured time to an individual
-handoff
+granularity of the integrated system, OneEdge reports end-to-end
+deployment latency breaking it down into scheduling, network, and
+container-creation components, and Kurma presents the provisioning
+delay as one combined quantity, none attributing the measured time
+to an individual handoff
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing,
-Okwuibe2020SDNEnhancedResourceOrchestrationContainerized,
 Saurez2021OneEdge,Bogdanov2018Kurma}.
 Third, the delay is never materialised as an experimental variable.
 The interfaces of the demand-to-capacity chain are acknowledged and,
@@ -1144,12 +1138,16 @@ in places, combined, but no reviewed work traces the effect of an
 individual interface through a stateful service. The closest reviewed
 precedent is AdapPF, which varies
 monitoring freshness and measures a downstream consequence, but only
-for a single consumer, a scheduler
+for a single evaluated consumer, a scheduler
 \parencite{Huang2023AdapPFSelfAdaptiveScrapeInterval}. The separation
 that produces these delays is not an artefact of one platform family
 but the shared default of the areas reviewed. 
 What varies across them
-is only how far each acknowledges the boundaries it imposes
+is only how far each acknowledges the boundaries it imposes. The
+placement literature, as surveyed by Tabatabaee Malazi et al., for
+instance, names the interval between an instance's arrival and its
+readiness to serve as launch time, but the step from readiness to
+traffic admission lies outside its scope
 \parencite{TabatabaeeMalazi2022DynamicServicePlacementMultiAccess}.
 
     Table~\ref{tab:interface_gaps} condenses these findings into the
