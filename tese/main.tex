@@ -594,13 +594,14 @@ Scheduling that does not follow the workload leads either to
 over-provisioning, where resources are held but not used, or to
 under-provisioning, where service quality degrades
 \parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}.
-In addition, Luo et al.
-identify the joint scheduling of communication, computing,
-and storage resources as an open direction for the field
+Luo et al. also identify that the joint scheduling of
+communication, computing, and storage resources is an open
+direction for the field
 \parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}.
 
     Managing these platforms remains an open challenge, and their
-combination with SDN is recorded as one of the continuing challenges
+combination with SDN is recorded as an area with room for further
+investigation
 \parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The service
 evaluated in this dissertation runs in an emulated edge environment as
 a stateful edge service whose capacity must follow fluctuating demand,
@@ -866,9 +867,9 @@ propagates through the invocation graph, ranks candidate
 bottlenecks, and optimises replica management around the
 identified bottleneck
 \parencite{Xie2024PBScalerBottleneckAwareAutoscalingFramework}.
-Bottleneck awareness therefore exists in the current state of the art,
+Bottleneck awareness therefore exists in the reviewed state of the art,
 but the bottleneck it locates is always a microservice and the action it
-takes is always of the same type, so the selection between
+takes is always replica scaling, so the selection between
 compute and storage capacity remains outside the action space.
 
     The closest reviewed precedent to selecting between resource tiers
@@ -888,7 +889,7 @@ deployment layer, and the provisioned tier is
 not among the classification dimensions
 \parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
 
-Qu et al. describe the web application as split into
+Qu et al. describe a web application as split into
 a front-end, application logic, and a database tier, and
 record that \enquote{the database tier is often considered dynamically
 unscalable and ignored by auto-scalers}
@@ -908,7 +909,7 @@ placement rather than selected at runtime from a live observed
 bottleneck. This dissertation isolates that selection, with storage
 scale-out among the actions the controller may select, and measures
 how the benefit divides across targeted-tier relief, service recovery,
-and resource use. How that decision reaches execution is examined,
+and resource use. How that decision is handed to the infrastructure is examined,
 with the other interfaces, in Section~\ref{sec:lit_synthesis}.
 
 \section{Load Balancing and Readiness Admission on SDN}\label{sec:lit_sdn_lb} %DONE
@@ -974,7 +975,7 @@ evaluates the effects of a changing set of backends and of delay in the
 admission of ready capacity. It evaluates the admission interval
 and measures the time until newly provisioned capacity becomes
 selectable and serves traffic. Direct lifecycle notification and periodic
-discovery are the two operational realisations of that coordination
+discovery are the two operational mechanisms of that coordination
 interface.
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration} %DONE
@@ -1029,7 +1030,7 @@ treating telemetry as available input rather than as an interface to
 be studied, and without container orchestration or tier scaling
 \parencite{Peng2019SDNResourceManagementAutonomousVehicular}.
 
-    A recurring minority of these platforms brings the functions
+    Some of these platforms bring the functions
 together at the SDN control point itself. Llorens-Carrodeguas et al.
 combine monitoring, auto-scaling, and load balancing in a single SDN
 redirector for a transparent VNF cluster, although metric collection
@@ -1043,9 +1044,9 @@ altogether
 \parencite{Hung2022SDNControllerMonitoringArchitecture5G}. The first
 study binds all three functions at one control point and the
 second binds two of the three, so combining the functions at an SDN
-control point is an approach established in the literature 
-and leveraged in this dissertation. Neither system, however, reports the
-delay attributable to its coordination.
+control point has precedent in the literature
+and is leveraged in this dissertation. Neither system, however, reports the
+delay within its coordination.
 
 % \begin{figure}[H]
 %     \centering
@@ -1075,10 +1076,10 @@ stages of the provisioning delay, detection, acquisition, and
 warm-up, before treating them as one combined quantity
 \parencite{Bogdanov2018Kurma}. The coordination is built into each system, 
 but the delay it carries is not isolated. 
-The time taken by the state updates, exchanges, 
-and redirects along those communication paths is not
-attributed to the individual handoffs
-between observing demand, deciding, and admitting capacity.
+None of their evaluations attributes the time taken by the state
+updates, exchanges, and redirects along those communication paths to
+the individual handoffs between observing demand, deciding, and
+admitting capacity.
 
     The related background is therefore organised in two modes. In the dominant
 mode, monitoring, scaling, and routing are implemented as separate
