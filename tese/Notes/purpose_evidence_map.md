@@ -115,7 +115,6 @@ presented as the default, never as a design choice.
 | Evidence | Quote / source | Where | Strength |
 |---|---|---|---|
 | K8s / NFV MANO / MEC separation table | Prometheus→AlertManager / kube-proxy / HPA; OSM MON / SDN+HAProxy / OSM POL→LCM; InfluxDB / SDN / K8s scheduler | global_review §1 | `DOCUMENTED` (architecture) |
-| Separation is architectural, not accidental | Okwuibe et al. (2020) — Docker+SDN+edge+MongoDB, orchestration split across 3 systems (SDN forwarding, K8s lifecycles, InfluxDB+PowerAPI monitoring) | global_review §2.7 | `DOCUMENTED` |
 | MANO lacks native LB | "Well-known MANO frameworks, such as OSM and ONAP, lack native load-balancing services. Thereby, they rely on specific virtual functions (e.g., HAProxy) that need to be deployed along with the pool members." — Llorens-Carrodeguas et al. (2021) | global_review §2.7 | `DOCUMENTED` |
 | Even integrated SDN steering keeps components external | Llorens-Carrodeguas et al. (2021) — OSM MON → OSM POL → OSM LCM → SDN controller, API handoffs | global_review §2.7 | `DOCUMENTED` |
 
@@ -170,7 +169,6 @@ called-for), each ending with "never isolated or measured."
 | **AdapPF** (Huang & Pierre, 2023) | Varies scrape interval; 60 s vs 5 s changes scheduling accuracy under high load; adaptive cadence ≈ 36% traffic saving. **The only paper that varies freshness with a measured downstream effect — for ONE consumer (a scheduler).** | `MEASURED` |
 | **Yaseen** (2025) | Pull-based polling → "visibility gaps" (see P4/F1). | `DOCUMENTED` |
 | **Llorens-Carrodeguas et al.** (2021) | OSM-based NFV: the monitoring module polls the infrastructure into a Prometheus database — §2.2 SOTA-pipeline anchor for periodic scraping. | `DOCUMENTED` (architecture) |
-| **Okwuibe et al.** (2020) | Containerised edge stack combining SDN controller, Kubernetes cluster, and time-series database — §2.2 SOTA-pipeline anchor for the edge stack. | `DOCUMENTED` (architecture) |
 | **Belgaum et al.** (2020) | 76-paper SDN-LB review; open issues = security, controller placement, AI; **nothing about freshness**. | `SILENCE` — *inattention only, do not cite as importance* |
 
 **The RQ1 gap statement:** AdapPF proves freshness matters for a scheduler; this

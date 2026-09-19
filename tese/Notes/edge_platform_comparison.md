@@ -14,7 +14,6 @@
 | MiCADO-Edge (2021) | ~95 | ✅ Microservices | ✅ App metrics | ✅ HPA-like | ✅ K8s SD | ❌ | ❌ |
 | ECaaS (2021) | ~44 | ✅ User services | ✅ Node health | ✅ DC formation | ⚠️ Membership | ❌ | ❌ |
 | Pelle et al. (2022) | 17 | ❌ | ⚠️ CloudWatch | ❌ | ⚠️ Greengrass | ✅ AnnaBellaDB | ❌ |
-| Okwuibe et al. (2020) | — | ❌ | ✅ InfluxDB | ✅ K8s | ❌ | ❌ | ❌ |
 | Toka et al. (2021) | — | Partial | ✅ K8s metrics | ✅ ML HPA | ❌ | ❌ | ❌ |
 | StarlingX (2022) | ~14 | ✅ HTTP GET | ✅ CPU/mem/net | ⚠️ Failover | ⚠️ Failover | ❌ | ❌ |
 | Hung et al. (2022) | 4 | ❌ | ✅ Telemetry | ❌ | ✅ Routing | ❌ | ⚠️ 2 layers |

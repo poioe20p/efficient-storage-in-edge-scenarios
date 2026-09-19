@@ -20,7 +20,6 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > the literature corpus (PDF) or already in the `.bib` — see the reference map.
 > Not yet in the `.bib` (add at first use): `Qu2018AutoScalingWebApplicationsClouds`,
 > `Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing`,
-> `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized`,
 > `Nicolaescu2021StoreEdgeNetworkedDataSEND`, `Breitbach2019ContextAwareDataTaskPlacement`,
 > `Pelle2022CostLatencyEdgePlatform`, `Yaseen2025CountersTelemetrySurveyProgrammableNetwork`.
 > Already in the `.bib`: `ITU2025InternetTraffic`,
@@ -37,8 +36,7 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > disadvantages (dispersion-driven management complexity, weaker perimeter
 > security); `Cao2020OverviewEdgeComputingResearch` is dropped from ¶6 but
 > remains in ¶4/¶5. The capacity claim is anchored to
-> `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` and
-> `Breitbach2019ContextAwareDataTaskPlacement`. Those three keys are now in
+> `Breitbach2019ContextAwareDataTaskPlacement`. Those two keys are now in
 > use but still pending addition to `tese/references.bib`.
 > (2026-08-03) ¶6 expanded beyond per-site scarcity to the full complexity
 > taxonomy (heterogeneity, demand volatility, placement/scheduling
@@ -74,8 +72,8 @@ Understood. You want a properly developed introduction, not a compressed one. He
 > claim qualified to "along the full demand-to-capacity chain". BibTeX key
 > added: Huang2023AdapPFSelfAdaptiveScrapeInterval.
 > (2026-08-21) This guide has been applied to the filled §1.1 in main.tex,
-> with deviations: ¶6 anchors to Breitbach/Nicolaescu/Pelle (Okwuibe not
-> cited in ¶6); Liu2019 is in references.bib but not cited
+> with deviations: ¶6 anchors to Breitbach/Nicolaescu/Pelle;
+> Liu2019 is in references.bib but not cited
 > in the filled §1.1; the 'Multi-Region Content Discovery Platform' workload
 > description below is stale — the filled §1.1 describes a stateful edge
 > service across two geo-distributed sites with a MongoDB replica-set
@@ -93,7 +91,6 @@ Understood. You want a properly developed introduction, not a compressed one. He
 | `Gurung2026CloudRevolutionTracingOriginsRise`              | “Cloud Revolution: Tracing the Origins and Rise of Cloud Computing” — Gurung et al., IEEE CCWC 2026                                                   | `tese/references.bib` (no PDF)                                                                                                    |
 | `Cao2020OverviewEdgeComputingResearch`                     | “An Overview on Edge Computing Research” — Cao et al., IEEE Access 8, 2020                                                                            | `04_context_edge/An_Overview_on_Edge_Computing_Research.pdf` (+ in `.bib`)                                                      |
 | `Satyanarayanan2017EmergenceEdgeComputing`                 | “The Emergence of Edge Computing” — Satyanarayanan, IEEE Computer 50(1), 2017                                                                         | `04_context_edge/The_Emergence_of_Edge_Computing.pdf` (+ in `.bib`)                                                             |
-| `Okwuibe2020SDNEnhancedResourceOrchestrationContainerized` | “SDN Enhanced Resource Orchestration of Containerized Edge Applications for Industrial IoT” — Okwuibe et al., IEEE Access 8, 2020                     | `05_context_orchestration/SDN_Enhanced_Resource_Orchestration_of_Containerized_Edge_Applications_for_Industrial_IoT.pdf`          |
 | `Breitbach2019ContextAwareDataTaskPlacement`               | “Context-Aware Data and Task Placement in Edge Computing Environments” — Breitbach et al., IEEE PerCom 2019                                           | `02_action_selection_rq2/Context-Aware_Data_and_Task_Placement_in_Edge_Computing_Environments.pdf`                                |
 | `Nicolaescu2021StoreEdgeNetworkedDataSEND`                 | “Store Edge Networked Data (SEND): A Data and Performance Driven Edge Storage Framework” — Nicolaescu et al., IEEE INFOCOM 2021                       | `02_action_selection_rq2/Store_Edge_Networked_Data_SEND_A_Data_and_Performance_Driven_Edge_Storage_Framework.pdf`                 |
 | `Qu2018AutoScalingWebApplicationsClouds`                   | “Auto-Scaling Web Applications in Clouds: A Taxonomy and Survey” — Qu, Calheiros & Buyya, ACM Comput. Surv. 51(4), 2018                               | `02_action_selection_rq2/Auto-Scaling Web Applications in Clouds - A Taxonomy and Survey.pdf`                                     |
@@ -109,7 +106,7 @@ Understood. You want a properly developed introduction, not a compressed one. He
 | ---------------------------------------------------------- | ------------------------------------------------------------------ |
 | `Armbrust2010ViewCloudComputing`                         | `Gurung2026CloudRevolutionTracingOriginsRise` (¶3)              |
 | `Shi2016EdgeComputingVisionChallenges`                   | `Cao2020OverviewEdgeComputingResearch` (¶4)                     |
-| `Tao2019` (unverifiable)                                 | `Cao2020OverviewEdgeComputingResearch`, `Okwuibe2020...` (¶6) |
+| `Tao2019` (unverifiable)                                 | `Cao2020OverviewEdgeComputingResearch` (¶6) |
 | `Qadir2020` (unverifiable)                               | `Breitbach2019ContextAwareDataTaskPlacement` (¶6)               |
 | `Sonkoly2021`                                            | `Nicolaescu2021StoreEdgeNetworkedDataSEND` (¶6)                 |
 | `PodolskiyIaaS`                                          | `Qu2018AutoScalingWebApplicationsClouds` (¶8)                   |
@@ -179,7 +176,7 @@ deployments. The first is per-site scarcity: an edge site operates
 under finite per-site capacity, with limited compute, storage, and
 bandwidth, and — unlike a cloud data center — cannot mask a demand
 surge through over-provisioning
-\parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized,Breitbach2019ContextAwareDataTaskPlacement}.
+\parencite{Breitbach2019ContextAwareDataTaskPlacement}.
 The second is the operational cost of the dispersal itself:
 Satyanarayanan notes that “the dispersion inherent in edge computing
 raises the complexity of management considerably,” and that edge sites
@@ -249,9 +246,7 @@ amplified where resources are finite: cloud data centers mask the gap with
 over-provisioning; edge sites cannot. This coordination gap
 — the accumulated delay between overload onset and traffic reaching newly
 provisioned capacity — has been documented in passing in the OSM MANO architecture
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}, is
-reflected in the component split of a real containerized edge stack
-\parencite{Okwuibe2020SDNEnhancedResourceOrchestrationContainerized}, and
+\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}, and
 has been called for at the survey level by Yaseen
 \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork} — but
 never isolated, measured, or varied as an independent experimental
