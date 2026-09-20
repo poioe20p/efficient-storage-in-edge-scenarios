@@ -250,3 +250,5 @@ docs/operation/testing/experiment/v2/rq2/analysis/run_summaries
 temp_*
 docs/operation/testing/experiment/v2/control_group_retune/graphs
 temp/
+
+tese/images/unused

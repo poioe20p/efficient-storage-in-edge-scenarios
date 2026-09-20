@@ -220,7 +220,7 @@ illustrates the chain.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/demand_to_capacity_chain_v2.png}
+    \includegraphics[width=0.9\textwidth]{images/demand_to_capacity_chain_v3.png}
     \caption{The demand-to-capacity chain: from a demand shift to usable
     capacity, with the three interfaces studied in this dissertation
     highlighted.}
@@ -631,7 +631,7 @@ carries without reconfiguring the forwarding devices individually.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{images/sdn_architecture_v2.png}
+    \includegraphics[width=0.9\textwidth]{images/sdn_architecture_v3.png}
     \caption{Software-Defined Networking architecture: the control plane is
     decoupled from the data plane and programs the forwarding devices through
     the OpenFlow protocol.}
@@ -675,7 +675,7 @@ fixed configuration.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.7\textwidth]{images/mongodb_replica_set.png}
+    \includegraphics[width=0.9\textwidth]{images/mongodb_replica_set_v2.png}
     \caption{MongoDB replica set: a primary member serving the clients and
     secondary members to which the data is replicated.}
     \label{fig:mongodb_replica_set}
@@ -924,7 +924,7 @@ receives the next flow.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.7\textwidth]{images/sdn_load_balancing_v2.png}
+    \includegraphics[width=0.9\textwidth]{images/sdn_load_balancing_v3.png}
     \caption{Load balancing in an SDN network: the controller installs
     forwarding rules that distribute client traffic among the available
     backends.}
@@ -1269,7 +1269,7 @@ presented in the remainder of the chapter.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{images/architecture_overview.png}
+    \includegraphics[width=\textwidth]{images/architecture_overview_v2.png}
     \caption{Architecture of the proposed platform: two network domains whose
     clients, data planes, edge servers, storage tiers, and aggregators are
     coordinated by peer SDN controllers, with host-local control paths and an
@@ -1338,7 +1338,7 @@ link is the configurable telemetry-delivery interface.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/telemetry_delivery_paths.png}
+    \includegraphics[width=\textwidth]{images/telemetry_delivery_paths_v2.png}
     \caption{Control and observation paths: edge servers and storage members
     publish observations to the per-domain telemetry aggregator, whose
     windowed summaries reach both peer controllers through a configurable
@@ -1364,6 +1364,16 @@ has its own observation signal, its own action, and its own admission and
 release procedure, so that pressure on the compute tier and pressure on the
 storage tier can be addressed without conflating the two. The two dimensions are
 described in turn.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/elastic_allocation.png}
+    \caption{Elastic allocation of resources: each tier is scaled on its own
+    observation signal, with the service tier spawned and drained and the
+    data tier extended and reduced through replica-set membership, both
+    actions issued by the controller over the lifecycle-management interface.}
+    \label{fig:elastic_allocation}
+\end{figure}
 
 \subsection{Scaling Policy}\label{sec:scaling_policy}
 The policy is applied per resource tier, with tier-specific

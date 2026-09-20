@@ -1,0 +1,30 @@
+sequenceDiagram
+    actor C as Client
+    participant O as OVS switch
+    participant S as SDN controller
+    participant E as Edge server
+    participant D as Storage member<br/>(MongoDB)
+
+    Note over C,D: VIP_SERVER — service routing surface
+    C->>O: 1 · HTTP request to VIP_SERVER
+    Note right of O: no flow rule → punt to controller
+    O->>S: 2 · Packet-In (first packet)
+    S->>S: 3 · select_server():<br/>lowest WSM cost over the edge pool
+    S->>O: 4 · install DNAT / SNAT rules
+    O->>E: 5 · forwarded to the selected edge server
+
+    Note over C,D: VIP_DATA — data routing surface
+    E->>O: 6 · MongoDB query to VIP_DATA
+    Note right of O: no flow rule → punt to controller
+    O->>S: 7 · Packet-In (first packet)
+    S->>S: 8 · select_storage():<br/>lowest WSM cost over the replica set
+    S->>O: 9 · install DNAT rules
+    O->>D: 10 · forwarded to the selected member
+
+    D-->>O: result (SNAT rewrites member → VIP_DATA)
+    O-->>E: response
+    E-->>O: response (SNAT rewrites edge → VIP_SERVER)
+    O-->>C: response
+
+    Note over C,D: return path: SNAT rules rewrite backend addresses back to the virtual addresses,<br/>so clients and replicas never learn backend identities
+    Note over C,D: flow-based forwarding: subsequent packets of the same flow are handled in the data plane,<br/>without controller intervention

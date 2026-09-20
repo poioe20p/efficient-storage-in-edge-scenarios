@@ -96,7 +96,7 @@ This literature primarily asks: **given available backend state, which backend s
 
 ### 3.5 Resource Orchestration in Edge Environments
 
-Resource-orchestration literature recognizes the need for cross-layer context. Sofia et al. propose context-aware cross-layer orchestration for containerized applications. Nain et al.'s review identifies continuing challenges in integrating SDN with edge computing. Okwuibe et al. demonstrate a close technology stack involving containers, SDN, and edge services, but retain separate monitoring, container-orchestration, and network-control systems. Malazi et al. identify fragmented evaluation practice in dynamic MEC service placement. Production measurement shows that independent autoscalers across virtualization layers cause load-balancing issues and latency increases (Podolskiy et al.), grounding the separation premise.
+Resource-orchestration literature recognizes the need for cross-layer context. Sofia et al. propose context-aware cross-layer orchestration for containerized applications. Nain et al.'s review identifies continuing challenges in integrating SDN with edge computing. Malazi et al. identify fragmented evaluation practice in dynamic MEC service placement. Production measurement shows that independent autoscalers across virtualization layers cause load-balancing issues and latency increases (Podolskiy et al.), grounding the separation premise.
 
 These works motivate integrated orchestration, but they do not provide a controlled causal characterization of the three interfaces examined here: telemetry observation, scaling-action selection, and traffic admission after backend readiness.
 
