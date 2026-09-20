@@ -6,7 +6,7 @@ Compute scale-up spawns additional `edge_server` containers in response to
 sustained processing latency (`T_proc`) and CPU pressure on the local LAN.
 The decision is made by Thread 2 (`ScalingPolicy`) and executed by Thread 3
 (`ElasticityManager` → `ComputeNodeAdder`). A small peer-LAN health bias
-lowers the threshold when the peer LAN can absorb spillover traffic.
+raises the threshold when the peer LAN can absorb spillover traffic.
 
 Source: [`source/sdn_controller/scaling_policy.py`](../../../source/sdn_controller/scaling_policy.py),
 [`source/sdn_controller/elasticity/compute_node_manager.py`](../../../source/sdn_controller/elasticity/compute_node_manager.py)

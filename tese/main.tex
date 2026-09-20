@@ -1603,25 +1603,24 @@ resource tier it concerns (compute or storage) and the action requested (scale-u
 or scale-down), and the evidence behind each request is recorded in the
 decision log for the window that produced it.
 Scale-down requests arise from
-separate idle conditions. 
+separate idle conditions. Figure~\ref{fig:decision_engine_flow} details the
+per-window evaluation, from the eligibility check to the request emissions.
 
-% Figure~\ref{fig:decision_engine} shows the two
-% consumers of the windowed summaries and this decision path, from a sustained
-% condition to a prioritised capacity request.
-
-% \begin{figure}[H]
-%     \centering
-%     \includegraphics[width=\textwidth]{images/decision_engine_v3.png}
-%     \caption{The decision engine: the windowed summaries feed the routing
-%     state, which backend selection reads on flow decisions, and the decision
-%     engine, which evaluates each tier per window: first the degradation score
-%     against the adaptive threshold, and otherwise the idle conditions. A
-%     sustained condition emits a typed capacity request whose evidence is
-%     recorded in the decision log. Requests are queued in priority order:
-%     additions and preservations precede removals, storage scale-up precedes
-%     compute scale-up, and storage scale-down precedes compute scale-down.}
-%     \label{fig:decision_engine}
-% \end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{images/decision_engine_flow_v2.png}
+    \caption{The per-window evaluation, in the fixed order of
+    Section~\ref{sec:scaling_policy}: (1) the eligibility check, where the
+    window is skipped when the tier is ineligible; (2) the degradation score
+    $s(w)$, computed from the normalised signals; (3) the scale-up condition:
+    a scale-up request is emitted and the window history is cleared when at
+    least $R$ of the last $W$ eligible windows reach the adaptive threshold
+    $\theta(k)$; and (4) the idle condition, tested otherwise: idleness is
+    tracked, excluding indeterminate windows, and a scale-down request is
+    emitted once it spans $R_\downarrow$ of the last $W_\downarrow$ windows.
+    Every remaining branch returns to the next telemetry window.}
+    \label{fig:decision_engine_flow}
+\end{figure}
 
     The decision engine may also be configured to commit to a single action per
 window when several tiers signal simultaneously, which is the selection
