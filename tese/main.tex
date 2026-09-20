@@ -1257,7 +1257,7 @@ presented in the remainder of the chapter.
     capacity to traffic must remain independently configurable.
 
     \item \textit{Independent compute and storage elasticity.} The platform
-    must distinguish an increase or decrease in edge-service capacity from an
+    must distinguish an increase or decrease in compute capacity from an
     increase or decrease in storage capacity, allowing each resource tier to
     be managed separately.
 
@@ -1505,7 +1505,7 @@ treated as indeterminate and do not count toward idleness.
 evaluation are reported in Section~\ref{sec:experimental_setup}.
 
 \subsection{Compute}\label{sec:elastic_compute}
-Service capacity is a per-domain pool of containerised edge servers, each
+Compute capacity is a per-domain pool of containerised edge servers, each
 capable of serving any request addressed to the domain's virtual service
 address. Storage reads performed by a service replica are routed through the
 domain's virtual data address, or served from a Tier~1 copy where one is
@@ -1513,7 +1513,7 @@ held (the data-placement tiers are defined in
 Section~\ref{sec:elastic_data}), and its writes are issued directly to the
 replica-set primary. 
 The replica therefore holds no knowledge of the replica-set membership, since
-member selection for reads is left to the routing path. Service scale-up
+member selection for reads is left to the routing path. Compute scale-up
 applies the policy defined in
 Section~\ref{sec:scaling_policy}, with CPU utilisation
 and request-processing latency as signals.
@@ -1526,7 +1526,7 @@ be propagated by a direct lifecycle notification from the replica, or
 discovered by the controller through periodic probes. This
 readiness-admission mechanism is the interface examined for RQ3.
 
-    Service scale-down removes the least disruptive eligible replica, applying
+    Compute scale-down removes the least disruptive eligible replica, applying
 the idle condition defined in Section~\ref{sec:scaling_policy}. 
 Removal proceeds in two phases: the replica is first withdrawn
 from the routing pool and signalled to finish its in-flight requests,
@@ -1603,23 +1603,25 @@ resource tier it concerns (compute or storage) and the action requested (scale-u
 or scale-down), and the evidence behind each request is recorded in the
 decision log for the window that produced it.
 Scale-down requests arise from
-separate idle conditions. Figure~\ref{fig:decision_engine} shows the two
-consumers of the windowed summaries and this decision path, from a sustained
-condition to a prioritised capacity request.
+separate idle conditions. 
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{images/decision_engine_v3.png}
-    \caption{The decision engine: the windowed summaries feed the routing
-    state, which backend selection reads on flow decisions, and the decision
-    engine, which evaluates each tier per window: first the degradation score
-    against the adaptive threshold, and otherwise the idle conditions. A
-    sustained condition emits a typed capacity request whose evidence is
-    recorded in the decision log. Requests are queued in priority order:
-    additions and preservations precede removals, storage scale-up precedes
-    compute scale-up, and storage scale-down precedes compute scale-down.}
-    \label{fig:decision_engine}
-\end{figure}
+% Figure~\ref{fig:decision_engine} shows the two
+% consumers of the windowed summaries and this decision path, from a sustained
+% condition to a prioritised capacity request.
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=\textwidth]{images/decision_engine_v3.png}
+%     \caption{The decision engine: the windowed summaries feed the routing
+%     state, which backend selection reads on flow decisions, and the decision
+%     engine, which evaluates each tier per window: first the degradation score
+%     against the adaptive threshold, and otherwise the idle conditions. A
+%     sustained condition emits a typed capacity request whose evidence is
+%     recorded in the decision log. Requests are queued in priority order:
+%     additions and preservations precede removals, storage scale-up precedes
+%     compute scale-up, and storage scale-down precedes compute scale-down.}
+%     \label{fig:decision_engine}
+% \end{figure}
 
     The decision engine may also be configured to commit to a single action per
 window when several tiers signal simultaneously, which is the selection
@@ -1714,7 +1716,7 @@ Chapter~\ref{ch:results}.
 
 \section{Distributed Elastic Allocation of Resources}\label{sec:impl_elastic}
 
-\subsection{Services}\label{sec:impl_compute}
+\subsection{Compute}\label{sec:impl_compute}
 % TODO: Edge server (Python/Flask); container lifecycle (build, start, health check,
 % OVS wiring, drain/cancel, removal); VIP_SERVER registration. RQ3 propagation
 % mechanism: READINESS_PROPAGATION env var (off / direct / discovery) +
@@ -1724,7 +1726,7 @@ Chapter~\ref{ch:results}.
 % topology_lifecycle) is the separate selection dimension (warm lease /
 % slow-start ramp), not the RQ3 propagation mechanism.
 
-\subsection{Data}\label{sec:impl_data}
+\subsection{Storage}\label{sec:impl_data}
 % TODO: MongoDB replica sets; sidecar self-join via replSetReconfig (non-voting
 % secondary); controller-side rs.remove() + wait-for-removal; VIP_DATA routing
 % (conntrack DNAT/SNAT; per-client and per-connection flows); read path =
