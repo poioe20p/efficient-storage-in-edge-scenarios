@@ -163,7 +163,7 @@ admission: edgeStyle=orthogonalEdgeStyle;html=1;endArrow=classic;strokeColor=#2E
 Short noun phrases, lower case except proper nouns. In use across the family:
 
 - components: `Client`, `OVS Switch`, `Containerised Edge Servers`, `MongoDB Edge Storage`, `Telemetry Aggregator`, `SDN Controller`, `Hosts`, `Edge server N`, `Storage member N`, `Primary`, `Secondary`
-- links: `http requests`, `data`, `metrics`, `windowed summaries`, `OpenFlow`, `lifecycle management`, `peer topology exchange (host-local)`, `writes`, `reads`, `replicates oplog`, `heartbeats`, `demand`, `provisioning`, `usable capacity`
+- links: `http requests`, `data`, `metrics`, `windowed summaries`, `windowed summaries (host-local)`, `OpenFlow`, `lifecycle management`, `peer topology exchange (host-local)`, `writes`, `reads`, `replicates oplog`, `heartbeats`, `demand`, `provisioning`, `usable capacity`
 - interfaces: `Interface 1 (RQ1)`, `Interface 2 (RQ2)`, `Interface 3 (RQ3)` — drawn in the colour of the path they belong to (orange for observation, blue for control)
 - interaction figures: band titles `VIP_SERVER — service routing surface`, `VIP_DATA — data routing surface`; step labels carry a `N · ` prefix (`1 · HTTP request to VIP_SERVER`) in the figure's own sequence order
 - process figures: `demand shift`, `usable capacity`, `[sustained]`, `[not sustained]`, `[timeout]`, `[ready]`, `[compute-bound]`, `[data-access-bound]`, `new replica admitted`

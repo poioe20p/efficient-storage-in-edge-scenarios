@@ -20,3 +20,7 @@ Disregard development cost, as it's not actually important.
 
 - **Temporary one-time files** (scratch scripts, one-shot probes, ad-hoc analysis) must be placed in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and deleted after they have served their purpose. This is an explicit exception to the ask-and-clarify gate: throwaway scratch files in `temp/` do not require prior approval.
 - If a script proves reusable, keep it and give it a proper name and location (e.g., under `tools/`).
+
+## Thesis Writing — Consult the Skill
+
+- When adding or revising anything under `tese/` (chapters, paragraphs, equations, tables, captions, terminology), consult `.github/skills/thesis-writing/SKILL.md` before making changes. It aggregates the ISCTE graphical norms, the reference-thesis conventions, the terminology ledger, and the claim–evidence discipline that all thesis edits must follow.

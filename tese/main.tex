@@ -627,7 +627,8 @@ the most extensively used SDN protocol in the research community
     In its OpenFlow form, a single controller re-programs the forwarding
 behaviour of the network by installing and updating match-action flow rules,
 so that network behaviour can follow the life cycle of the services it
-carries without reconfiguring the forwarding devices individually.
+carries without reconfiguring the forwarding devices individually. The
+decoupling is illustrated in Figure~\ref{fig:sdn_architecture}.
 
 \begin{figure}[H]
     \centering
@@ -671,7 +672,8 @@ operator intervention~\parencite{MongoDBDocsReplicaSet}. Members can
 also be added to and removed
 from a deployment while it keeps serving, which turns the replica
 set into a controllable unit of storage capacity rather than a
-fixed configuration.
+fixed configuration. Figure~\ref{fig:mongodb_replica_set} shows the
+members of a set and the replication paths between them.
 
 \begin{figure}[H]
     \centering
@@ -920,7 +922,8 @@ backends so that no single backend is overloaded while others remain
 underutilised. In SDN networks this distribution is programmed centrally,
 where the controller installs forwarding rules that steer each flow to a
 selected backend, and a selection policy decides which backend
-receives the next flow.
+receives the next flow, as illustrated in
+Figure~\ref{fig:sdn_load_balancing}.
 
 \begin{figure}[H]
     \centering
@@ -1220,7 +1223,8 @@ this chapter is presented in Chapter~\ref{ch:results}.
 
     Section~\ref{sec:design_requirements} defines the requirements that guided
 the proposed solution, and Section~\ref{sec:architecture_overview} presents
-the two-domain architecture and its communication paths.
+the two-domain architecture and its communication paths
+(Figure~\ref{fig:architecture_overview}).
 Section~\ref{sec:elastic_allocation} describes the distributed elastic
 allocation of compute and storage resources, Section~\ref{sec:monitoring_decision}
 the monitoring and decision engine, and Section~\ref{sec:control_workflow}
@@ -1317,6 +1321,7 @@ installs forwarding rules for the lowest-cost one.
 For storage reads observed on the virtual data path, the same mechanism
 selects a replica-set member, using the corresponding storage metrics (CPU
 utilisation, memory usage, connections, replication lag, and hop distance).
+Figure~\ref{fig:vip_routing_sequence} walks through the resulting sequence.
 
 \begin{figure}[H]
     \centering
@@ -1334,7 +1339,8 @@ their local telemetry aggregator through \ac{ZMQ}. Each aggregator forms
 windowed summaries that are consumed by the controller. These summaries inform
 both backend selection and elasticity decisions, while topology exchange
 maintains awareness of peer-domain resources. The aggregation-to-controller
-link is the configurable telemetry-delivery interface.
+link is the configurable telemetry-delivery interface, shown in
+Figure~\ref{fig:telemetry_delivery_paths}.
 
 \begin{figure}[H]
     \centering
@@ -1352,9 +1358,12 @@ their coordination within each domain's controller process. The concrete
 implementation of these paths is described in Chapter~\ref{ch:implementation}.
 
     The deployment evaluated in this dissertation runs the two domains on a
-single host, with an emulated wide-area link. No performance claim is made
-for a real geo-distributed wide-area deployment. The testbed is described
-in Section~\ref{sec:experimental_setup}.
+single host, with an emulated wide-area link. The evaluation targets the
+coordination interfaces between the control functions rather than wide-area
+transport performance, and the emulated link provides the controlled,
+repeatable conditions that these interface measurements require. No
+performance claim is therefore made for a real geo-distributed wide-area
+deployment. The testbed is described in Section~\ref{sec:experimental_setup}.
 
 \section{Distributed Elastic Allocation of Resources}\label{sec:elastic_allocation}
 The platform scales capacity along two dimensions: edge-service replicas (also
@@ -1363,14 +1372,14 @@ storage members, which hold the service state. Each dimension
 has its own observation signal, its own action, and its own admission and
 release procedure, so that pressure on the compute tier and pressure on the
 storage tier can be addressed without conflating the two. The two dimensions are
-described in turn.
+summarised in Figure~\ref{fig:elastic_allocation} and described in turn.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{images/elastic_allocation.png}
     \caption{Elastic allocation of resources: each tier is scaled on its own
-    observation signal, with the service tier spawned and drained and the
-    data tier extended and reduced through replica-set membership, both
+    observation signal, with the compute tier spawned and drained and the
+    storage tier extended and reduced through replica-set membership, both
     actions issued by the controller over the lifecycle-management interface.}
     \label{fig:elastic_allocation}
 \end{figure}
@@ -1378,16 +1387,22 @@ described in turn.
 \subsection{Scaling Policy}\label{sec:scaling_policy}
 The policy is applied per resource tier, with tier-specific
 signals and parameters. Each tier is observed through two signals: a
-utilisation signal and a latency signal. For each telemetry window $w$, let
+utilisation signal, which in this platform is the CPU utilisation of the
+tier's units, and a latency signal. For each telemetry window $w$, let
 $c(w)$ denote the window's utilisation and $t(w)$ its typical latency
 (a per-campaign window statistic). Each signal is first mapped onto the unit
-interval. A value at or below its floor
-contributes nothing, a value at or above the floor plus its span contributes
-the maximum, and intermediate values contribute proportionally, so that a
-single extreme window cannot dominate the score. The two normalised
+interval through two calibration parameters, a floor and a span. A value at
+or below its floor contributes nothing, a value at or above the floor plus
+its span contributes the maximum, and intermediate values contribute
+proportionally. The aim is to achieve a system where the floor separates 
+normal operation from pressure, and the span sets how far the signal 
+must rise before its contribution saturates.
+Because both signals are mapped onto this bounded scale, they contribute on
+common terms despite being measured in different units, and a single extreme
+window cannot dominate the score. The two normalised
 components are combined with weights $w_{\mathrm{util}}$ and
 $w_{\mathrm{lat}}$ into the degradation score
-\begin{equation}
+\begin{equation}\label{eq:degradation_score}
 \begin{split}
     s(w) &= w_{\mathrm{util}}\,\hat{c}(w) + w_{\mathrm{lat}}\,\hat{t}(w), \\
     \hat{c}(w) &= \min\left(1,\ \max\left(0,\ \frac{c(w)-c_0}{c_\Delta}\right)\right), \\
@@ -1397,15 +1412,16 @@ $w_{\mathrm{lat}}$ into the degradation score
 with the per-tier weights configured to sum to one, so the score lies
 between zero and one, where:
 \begin{itemize}[leftmargin=*, itemsep=0pt]
-    \item $c(w)$ -- utilisation of the scored tier observed in window $w$;
+    \item $c(w)$ -- CPU utilisation of the scored tier observed in window $w$;
     \item $t(w)$ -- typical latency of the scored tier observed in window $w$;
-    \item $c_0$, $t_0$ -- signal floors: at or below these values a signal contributes nothing;
-    \item $c_\Delta$, $t_\Delta$ -- signal spans: at or above floor plus span a signal contributes the maximum;
+    \item $c_0$, $t_0$ -- signal floors: at or below these values a signal is considered normal for the tier;
+    \item $c_\Delta$, $t_\Delta$ -- signal spans: the rise above the floor at which a signal's contribution saturates;
     \item $\hat{c}(w)$, $\hat{t}(w)$ -- normalised components of window $w$, each in $[0,1]$;
     \item $w_{\mathrm{util}}$, $w_{\mathrm{lat}}$ -- configurable weights of the utilisation and latency components.
 \end{itemize}
     The floors, spans, weights, and threshold parameters are configured
-independently for each tier. For the compute tier the signals are CPU
+independently for each tier, so the policy can be calibrated to each tier
+without changing the structure of the score. For the compute tier the signals are CPU
 utilisation and request-processing latency, while for the storage tier
 they are storage-member CPU utilisation and data-access latency.
 
@@ -1414,7 +1430,7 @@ threshold, and a scale-up is requested only when degradation is sustained
 across a required number of recent windows. Let $\mathcal{W}_n$ be the set
 of the last $W$ windows and $R$ the required number of degraded windows;
 the scale-up condition is
-\begin{equation}
+\begin{equation}\label{eq:scale_up_condition}
 \begin{split}
     \left|\,\{\, w \in \mathcal{W}_n : s(w) \geq \theta(k) \,\}\right| &\geq R, \\
     \theta(k) &= \min\big(\theta_{\mathrm{base}} + k\,\Delta\theta + \beta_{\mathrm{peer}},\ \theta_{\max}\big),
@@ -1429,13 +1445,13 @@ where:
     \item $\theta_{\mathrm{base}}$ -- base threshold;
     \item $\Delta\theta$ -- threshold increment per additional dynamic unit;
     \item $\theta_{\max}$ -- upper bound of the adaptive threshold;
-    \item $\beta_{\mathrm{peer}}$ -- addend applied to the service-tier threshold while the peer domain is healthy enough to absorb spillover traffic.
+    \item $\beta_{\mathrm{peer}}$ -- addend applied to the compute-tier threshold while the peer domain is healthy enough to absorb spillover traffic.
 \end{itemize}
     The threshold $\theta(k)$ adapts upward as capacity grows, so each
-additional unit faces a higher bar, bounded by $\theta_{\max}$ (for the data
+additional unit faces a higher bar, bounded by $\theta_{\max}$ (for the storage
 tier the increment itself diminishes with each additional unit, down to a
 configured minimum), and
-$\beta_{\mathrm{peer}}$ raises the service-tier threshold slightly while the
+$\beta_{\mathrm{peer}}$ raises the compute-tier threshold slightly while the
 peer domain is healthy enough to absorb spillover traffic. A cooldown after
 each action and a
 per-tier cap on the number of units keep the number of scale actions
@@ -1445,7 +1461,7 @@ not within a scale-up cooldown), and it is cleared when a scale-up fires.
 
     A window is declared idle when both signals fall below their idle
 thresholds,
-\begin{equation}
+\begin{equation}\label{eq:idle_condition}
     c(w) < \tau_c \quad\text{and}\quad t(w) < \tau_t,
 \end{equation}
 where:
@@ -1457,16 +1473,34 @@ where:
 $R_\downarrow$ of the last $W_\downarrow$ windows, a sliding window longer
 than the scale-up one, which prevents a transient data-bound stall from
 being misread as idle capacity. Windows whose latency exceeds a ceiling are
-treated as indeterminate and do not count toward idleness. The concrete
-parameter values used in the
+treated as indeterminate and do not count toward idleness.
+
+    The policy evaluates each tier per telemetry window, in a fixed order:
+\begin{enumerate}[leftmargin=*, itemsep=0pt]
+    \item the window is skipped when the tier is ineligible: an
+    infrastructure operation is in progress, the tier is at its cap, or a
+    scale-up cooldown is active;
+    \item the degradation score $s(w)$ is computed from the two normalised
+    signals~\eqref{eq:degradation_score};
+    \item if at least $R$ of the last $W$ windows reach the adaptive
+    threshold $\theta(k)$~\eqref{eq:scale_up_condition}, the tier requests
+    a scale-up and the window history is cleared;
+    \item otherwise, if both signals fall below their idle
+    thresholds~\eqref{eq:idle_condition}, idleness is tracked, and the
+    tier requests a scale-down once idleness spans $R_\downarrow$ of the
+    last $W_\downarrow$ windows.
+\end{enumerate}
+    The concrete parameter values used in the
 evaluation are reported in Section~\ref{sec:experimental_setup}.
 
 \subsection{Services}\label{sec:elastic_compute}
 Service capacity is a per-domain pool of containerised edge servers, each
 capable of serving any request addressed to the domain's virtual service
 address. Storage reads performed by a service replica are routed through the
-domain's virtual data address (or served from a Tier~1 copy, where one is
-held), and its writes are issued directly to the replica-set primary. 
+domain's virtual data address, or served from a Tier~1 copy where one is
+held (the data-placement tiers are defined in
+Section~\ref{sec:elastic_data}), and its writes are issued directly to the
+replica-set primary. 
 The replica therefore holds no knowledge of the replica-set membership, since
 member selection for reads is left to the routing path. Service scale-up
 applies the policy defined in
@@ -1491,7 +1525,7 @@ rebounds before the replica exits, favouring fast recovery over aggressive
 reclamation.
 
 \subsection{Data}\label{sec:elastic_data}
-The replica set is the unit in which storage capacity is scaled. The data
+The replica set is the unit in which storage capacity is scaled. The storage
 tier of each domain runs as a MongoDB replica set whose primary serves the
 clients' writes and whose secondaries replicate the data and absorb the
 remainder of the traffic. Storage scale-up is a membership change. The

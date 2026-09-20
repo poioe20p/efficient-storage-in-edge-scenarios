@@ -450,6 +450,12 @@ def fig_architecture_overview() -> None:
     s_edge(d, ctrl[0], ctrl[1], "ctrl", "peer topology exchange (host-local)",
            points=[(ax(518.5, 0, 0), 810), (ax(518.5, 0, 1), 810)])
 
+    # cross-domain telemetry: each aggregator's summaries also reach the peer controller
+    s_abs_edge(d, 1046, 468, 2034, 733, "flow", "windowed summaries (host-local)",
+               points=[(1180, 468), (1180, 745), (2034, 745)])
+    s_abs_edge(d, 1546, 468, 559, 733, "flow", "windowed summaries (host-local)",
+               points=[(1412, 468), (1412, 745), (559, 745)])
+
     dio = d.write("architecture_overview_v2.drawio")
     export(dio, OUT_PNG / "architecture_overview_v2.png")
 

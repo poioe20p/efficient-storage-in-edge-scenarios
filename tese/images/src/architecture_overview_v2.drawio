@@ -1,11 +1,11 @@
 <mxfile host="65bd71144e">
     <diagram name="Page-1" id="d1">
-        <mxGraphModel dx="2515" dy="1973" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2592" pageHeight="880" background="#FFFFFF" math="0" shadow="0">
+        <mxGraphModel dx="2074" dy="1214" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2592" pageHeight="880" background="#FFFFFF" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
                 <mxCell id="3" value="" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#F4FFFF;fontFamily=Helvetica;fontSize=18;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="60" width="1111" height="700" as="geometry"/>
+                    <mxGeometry x="40" y="60" width="1111" height="720" as="geometry"/>
                 </mxCell>
                 <mxCell id="4" value="Network domain 1 (LAN 1)" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#3F3F3F;" parent="1" vertex="1">
                     <mxGeometry x="385" y="68" width="420" height="30" as="geometry"/>
@@ -63,7 +63,7 @@
                 <mxCell id="21" value="metrics" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#FF8000;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#FF8000;labelBackgroundColor=#FFFFFF;" parent="1" source="10" target="13" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="22" value="windowed summaries" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#FF8000;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#FF8000;labelBackgroundColor=#FFFFFF;exitX=0.365;exitY=1.011;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" edge="1" source="14">
+                <mxCell id="22" value="windowed summaries" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#FF8000;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#FF8000;labelBackgroundColor=#FFFFFF;exitX=0.365;exitY=1.011;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="14" edge="1">
                     <mxGeometry x="-0.5483" relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="860" y="580"/>
@@ -97,7 +97,7 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="26" value="" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#F4FFFF;fontFamily=Helvetica;fontSize=18;" parent="1" vertex="1">
-                    <mxGeometry x="1441" y="60" width="1111" height="700" as="geometry"/>
+                    <mxGeometry x="1441" y="60" width="1111" height="720" as="geometry"/>
                 </mxCell>
                 <mxCell id="27" value="Network domain 2 (LAN 2)" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#3F3F3F;" parent="1" vertex="1">
                     <mxGeometry x="1786" y="68" width="420" height="30" as="geometry"/>
@@ -216,6 +216,26 @@
                         </Array>
                         <mxPoint x="559" y="730" as="sourcePoint"/>
                         <mxPoint x="2033" y="740" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="54" value="windowed summaries (host-local)" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#FF8000;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#FF8000;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="14" target="39" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1180" y="468"/>
+                            <mxPoint x="1180" y="745"/>
+                            <mxPoint x="2034" y="745"/>
+                        </Array>
+                        <mxPoint x="260" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="55" value="windowed summaries (host-local)" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#FF8000;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#FF8000;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="37" target="16" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1412" y="468"/>
+                            <mxPoint x="1412" y="745"/>
+                            <mxPoint x="559" y="745"/>
+                        </Array>
+                        <mxPoint x="-260" as="offset"/>
                     </mxGeometry>
                 </mxCell>
             </root>

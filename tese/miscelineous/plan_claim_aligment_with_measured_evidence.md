@@ -9,15 +9,16 @@ comments in the thesis file.
 
 - [X] **A1** Narrow RQ2 (`sec:research_questions`), Contribution 3, and the
   related-work conclusion. Final wording: "Under compute-bound and
-  data-access-bound demand, how does bottleneck-aware scale-out, compared
+  data-access-bound demand, how does bottleneck-aware scale-up, compared
   with fixed single-tier policies, affect targeted-tier relief, service
   recovery, and resource use?" The compute/storage action space stays
-  explicit in Contribution 3 ("bottleneck-aware scale-out (compute versus
+  explicit in Contribution 3 ("bottleneck-aware scale-up (compute versus
   storage)"). Applied 2026-09-03; terminology settled 2026-09-03:
   bottleneck-aware for the RQ-level mechanism, resource-aware kept in the
   framing (design requirements, objectives, proposal bridge). Re-applied
   2026-09-04 after a concurrent rewrite restored `resource aware` in
-  `sec:research_questions`.
+  `sec:research_questions`. Action term unified to "scale-up" on
+  2026-09-20 (§2.4 definitions).
 - [X] **A2** RQ3 wording (`sec:research_questions`): servability criterion,
   lifecycle-driven vs periodic readiness-admission mechanisms. Applied
   2026-09-03; re-applied 2026-09-04 after a concurrent rewrite restored the
@@ -105,7 +106,8 @@ comments in the thesis file.
 - 2026-09-03: RQ2 terminology settled as "bottleneck-aware scale-out" (RQ2,
   Contribution 3, related-work conclusion, Chapter 5 section title,
   chapter outline); "resource-aware" retained only in framing contexts
-  (design requirements, objectives, proposal bridge).
+  (design requirements, objectives, proposal bridge). Action term later
+  unified to "scale-up" (2026-09-20, §2.4 definitions).
 - 2026-09-03: RQ3 typo "criterea" fixed to "criterion".
 - 2026-09-04: scaling-policy formulas moved from `sec:elastic_compute` into a
   shared, tier-generic `sec:scaling_policy` subsection; per-equation
