@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram name="Page-1" id="d1">
-        <mxGraphModel dx="2074" dy="1214" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2592" pageHeight="880" background="#FFFFFF" math="0" shadow="0">
+        <mxGraphModel dx="1282" dy="1578" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2592" pageHeight="880" background="#FFFFFF" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -73,7 +73,7 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="23" value="OpenFlow" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#007FFF;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="15" target="6" edge="1">
+                <mxCell id="23" value="OpenFlow" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#004C99;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="15" target="6" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="350" y="620"/>
@@ -81,7 +81,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="24" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#007FFF;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="15" target="8" edge="1">
+                <mxCell id="24" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#004C99;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="15" target="8" edge="1">
                     <mxGeometry x="-0.5565" relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="1020" y="650"/>
@@ -90,7 +90,7 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="25" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#007FFF;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="15" edge="1">
+                <mxCell id="25" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#004C99;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="15" edge="1">
                     <mxGeometry x="0.1304" relative="1" as="geometry">
                         <mxPoint x="558" y="490" as="targetPoint"/>
                         <mxPoint as="offset"/>
@@ -167,7 +167,7 @@
                         <mxPoint x="1976" y="634.6930769230769" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="46" value="OpenFlow" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#007FFF;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="38" target="29" edge="1">
+                <mxCell id="46" value="OpenFlow" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#004C99;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="38" target="29" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="2240" y="620"/>
@@ -175,7 +175,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="47" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#007FFF;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="38" target="31" edge="1">
+                <mxCell id="47" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#004C99;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="38" target="31" edge="1">
                     <mxGeometry x="-0.2819" y="8" relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="1480" y="640"/>
@@ -184,7 +184,7 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="48" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#007FFF;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="38" edge="1">
+                <mxCell id="48" value="lifecycle management" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#004C99;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" source="38" edge="1">
                     <mxGeometry x="-0.2173" y="-1" relative="1" as="geometry">
                         <mxPoint x="2035" y="490" as="targetPoint"/>
                         <mxPoint as="offset"/>
@@ -208,7 +208,7 @@
                         <mxPoint x="1629" y="148" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="53" value="peer topology exchange (host-local)" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#007FFF;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" edge="1">
+                <mxCell id="53" value="peer topology exchange (host-local)" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#004C99;dashed=1;fontFamily=Helvetica;fontSize=24;fontStyle=1;fontColor=#007FFF;labelBackgroundColor=#FFFFFF;" parent="1" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="558.5" y="810"/>

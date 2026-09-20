@@ -1156,6 +1156,114 @@ def std_control_workflow() -> None:
     export(dio, OUT_PNG / "control_workflow_v5.png")
 
 
+def std_decision_engine() -> None:
+    """Inside the controller: the two consumers of the windowed summaries and
+    the prioritised capacity requests.
+
+    Process figure (STYLE.md section 9): the summaries feed the routing state
+    and the decision engine. The policy evaluates each tier per window in
+    order: the degradation score is tested against the adaptive threshold
+    first, and the idle conditions are tested otherwise; a sustained
+    condition emits a typed request, and the priority panel shows the order in
+    which the queue serves them.
+    """
+    W, H = 2325, 1040
+    AMBER = "#8A6D2A"
+    d = Doc(W, H)
+
+    def edge(src, tgt, label="", fs=18, points=None):
+        st = (f"edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;startArrow=none;"
+              f"strokeColor=#000000;strokeWidth=1.3;fontFamily={FONT};fontSize={fs};"
+              f"fontColor=#3F3F3F;labelBackgroundColor=#FFFFFF;")
+        geo = '<mxGeometry relative="1" as="geometry">'
+        if points:
+            geo += '<Array as="points">' + "".join(
+                f'<mxPoint x="{px}" y="{py}"/>' for px, py in points) + '</Array>'
+        geo += "</mxGeometry>"
+        d.cells.append(f'<mxCell id="{d._nid()}" value="{escape(label, quote=True)}" style="{st}" '
+                       f'edge="1" parent="1" source="{src}" target="{tgt}">{geo}</mxCell>')
+
+    def frame(x, y, w, h, title):
+        d.cell("", x, y, w, h,
+               f"rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#F4FFFF;genre=process;"
+               f"fontFamily={FONT};fontSize=18;")
+        d.cell(title, x, y + 8, w, 34,
+               f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};"
+               f"fontSize=20;fontStyle=1;fontColor=#3F3F3F;")
+
+    def action_box(text, x, y, w, h, fs=18):
+        return d.cell(text, x, y, w, h,
+                      f"rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3F3F3F;"
+                      f"strokeWidth=1.4;fontFamily={FONT};fontSize={fs};fontColor=#222222;")
+
+    def diamond(label, x, y, w, h, fs=14):
+        return d.cell(label, x, y, w, h,
+                      f"rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor={AMBER};"
+                      f"strokeWidth=1.5;fontFamily={FONT};fontSize={fs};fontColor=#5C4400;")
+
+    def obj(text, x, y, w, h, fs=17):
+        return d.cell(text, x, y, w, h,
+                      f"rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F0F0;strokeColor=#8A8A8A;"
+                      f"strokeWidth=1.3;fontFamily={FONT};fontSize={fs};fontColor=#333333;")
+
+    def chip(text, x, y, w, h):
+        return d.cell(text, x, y, w, h,
+                      f"shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#FFFFFF;"
+                      f"strokeColor=#8A8A8A;strokeWidth=1.2;fontFamily={FONT};fontSize=15;"
+                      f"fontColor=#444444;align=left;spacingLeft=8;")
+
+    def tag(text, x, y, w=260):
+        """Detached flow annotation (process genre): lets the flow name sit at
+        a chosen spot instead of the router's automatic label position."""
+        return d.cell(text, x, y, w, 26,
+                      f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};"
+                      f"fontSize=18;fontColor=#3F3F3F;")
+
+    frame(460, 240, 780, 590, "Decision engine \u2014 per resource tier, per telemetry window")
+    frame(1240, 740, 1055, 280, "priority order of capacity requests")
+
+    summary = obj("windowed summaries|(from the aggregators)", 60, 400, 320, 84)
+    rs = obj("routing state", 520, 90, 300, 64)
+    bs = action_box("backend selection", 940, 90, 320, 64)
+    score = action_box("degradation score s(w)", 580, 320, 340, 64)
+    over = diamond("degradation sustained?|(\u2265 R of the last W eligible windows reach \u03b8(k))", 580, 410, 340, 120)
+    chip("\u03b8(k) adapts upward as capacity grows", 930, 300, 290, 46)
+    idle = action_box("idle conditions|(per tier)", 580, 570, 340, 64)
+    idle2 = diamond("idleness sustained?|(R\u2193 of the last W\u2193 windows)", 580, 660, 340, 110)
+    req = obj("capacity request|tier: compute or storage|action: scale-up or scale-down|"
+              "carrying the evidence recorded in the decision log", 1320, 240, 420, 170, fs=16)
+    queue = obj("prioritised action queue", 1360, 470, 340, 64)
+    ctx = action_box("action context executes", 1360, 600, 340, 64)
+    add = action_box("additions and preservations", 1310, 805, 400, 56, fs=16)
+    rem = action_box("removals", 1855, 805, 300, 56, fs=16)
+    su = action_box("storage scale-up", 1290, 905, 180, 52, fs=15)
+    cu = action_box("compute scale-up", 1550, 905, 180, 52, fs=15)
+    sd = action_box("storage scale-down", 1870, 905, 160, 52, fs=15)
+    cd = action_box("compute scale-down", 2110, 905, 160, 52, fs=15)
+
+    edge(summary, rs, "per-backend metrics", points=[(410, 413), (410, 122)])
+    edge(rs, bs, "read on flow decisions")
+    edge(summary, score, "utilisation, latency signals",
+         points=[(420, 438), (420, 310), (750, 310)])
+    edge(summary, idle, points=[(470, 480), (470, 602)])
+    edge(score, over)
+    edge(over, idle, "[not sustained]", points=[(550, 470), (550, 540), (650, 540)])
+    edge(over, req, points=[(1250, 470), (1250, 300)])
+    tag("scale-up request", 945, 424)
+    edge(idle, idle2)
+    edge(idle2, score, "[not idle]", points=[(440, 715), (440, 352)])
+    edge(idle2, req, points=[(1290, 715), (1290, 380)])
+    tag("scale-down request", 945, 668)
+    edge(req, queue)
+    edge(queue, ctx)
+    edge(add, rem, "take precedence over", fs=14)
+    edge(su, cu, "precedes", fs=14)
+    edge(sd, cd, "precedes", fs=14)
+
+    dio = d.write("decision_engine.drawio")
+    export(dio, OUT_PNG / "decision_engine_v3.png")
+
+
 if __name__ == "__main__":
     OUT_DIO.mkdir(parents=True, exist_ok=True)
     fig_architecture_overview()
@@ -1167,3 +1275,4 @@ if __name__ == "__main__":
     std_mongodb_replica_set()
     std_vip_routing_sequence()
     std_control_workflow()
+    std_decision_engine()

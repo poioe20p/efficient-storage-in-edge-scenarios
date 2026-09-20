@@ -1216,9 +1216,10 @@ This chapter presents the architecture and design of the proposed
 cross-layer \ac{SDN} orchestration platform for stateful edge services.
 The design provides an experimental environment in which traffic steering,
 controller-side telemetry consumption, and elasticity coordination operate
-within each domain's controller process. The delivery of aggregated telemetry
-and the lifecycle transitions from capacity action to traffic admission remain
-explicit observation points. The evaluation of the mechanisms described in
+within each domain's controller process. The delivery of aggregated telemetry,
+the selection of the capacity action, and the lifecycle transitions from
+capacity action to traffic admission remain explicit observation points. 
+The evaluation of the mechanisms described in
 this chapter is presented in Chapter~\ref{ch:results}.
 
     Section~\ref{sec:design_requirements} defines the requirements that guided
@@ -1229,8 +1230,12 @@ Section~\ref{sec:elastic_allocation} describes the distributed elastic
 allocation of compute and storage resources, Section~\ref{sec:monitoring_decision}
 the monitoring and decision engine, and Section~\ref{sec:control_workflow}
 the control workflow. Together, these sections realise the design
-requirements: the elastic allocation addresses DR3 and DR4, the decision
-path addresses DR1 and DR2, and the control workflow addresses DR5 and DR6.
+requirements: cross-layer coordination (DR1) and fast-path isolation (DR5)
+through the single-process architecture and its execution contexts,
+independent compute and storage elasticity (DR3) and lifecycle-safe
+admission (DR4) through the elastic allocation, separability of the control
+interfaces (DR2) through the configurable delivery, selection, and admission
+designs, and end-to-end observability (DR6) through the instrumented chain.
 
 \section{Design Requirements}\label{sec:design_requirements}
 The platform was designed to support stateful edge services whose demand and
@@ -1257,8 +1262,9 @@ presented in the remainder of the chapter.
     be managed separately.
 
     \item \textit{Lifecycle-safe admission.} Provisioned resources must not be
-    regarded as usable capacity until the relevant readiness condition has been
-    reached and the resource has been admitted to the appropriate routing path.
+    regarded as usable capacity before they are admitted to the appropriate
+    routing path, and where a readiness signal is configured, it must be
+    satisfied before admission.
 
     \item \textit{Fast-path isolation.} Packet handling must remain separate
     from slow infrastructure operations, such as container creation, replica
@@ -1284,8 +1290,9 @@ presented in the remainder of the chapter.
 \subsection{Two-Domain Organisation}
 
 The platform is organised as two network domains connected by an emulated
-wide-area data link. The two domains correspond to the two geo-distributed
-sites across which the evaluated service is deployed. Each domain contains
+wide-area data link. The two domains represent the two geo-distributed
+sites of the deployment scenario evaluated in this dissertation. Each domain
+contains
 client workloads, an \ac{OVS}
 data plane, a pool of containerised edge servers, a MongoDB replica-set
 storage tier, a telemetry aggregator, and an \ac{SDN} controller. The peer
@@ -1313,6 +1320,8 @@ selects an eligible backend and configures the \ac{OVS} data plane to forward
 the flow. Subsequent matching packets are handled in the data plane without
 requiring repeated controller intervention. Service backend selection can
 include eligible backends in either domain when the topology permits.
+Cross-domain placement is a platform capability held constant in the
+evaluation.
 
     Backend and storage-member selection are cost-based. The controller
 computes a \ac{WSM} cost from each eligible backend's cached resource
@@ -1369,7 +1378,7 @@ deployment. The testbed is described in Section~\ref{sec:experimental_setup}.
 The platform scales capacity along two dimensions: edge-service replicas (also
 referred to as backends in the routing context), which serve requests, and
 storage members, which hold the service state. Each dimension
-has its own observation signal, its own action, and its own admission and
+has its own observation signals, its own action, and its own admission and
 release procedure, so that pressure on the compute tier and pressure on the
 storage tier can be addressed without conflating the two. The two dimensions are
 summarised in Figure~\ref{fig:elastic_allocation} and described in turn.
@@ -1378,9 +1387,9 @@ summarised in Figure~\ref{fig:elastic_allocation} and described in turn.
     \centering
     \includegraphics[width=0.9\textwidth]{images/elastic_allocation.png}
     \caption{Elastic allocation of resources: each tier is scaled on its own
-    observation signal, with the compute tier spawned and drained and the
-    storage tier extended and reduced through replica-set membership, both
-    actions issued by the controller over the lifecycle-management interface.}
+    observation signals, with compute replicas provisioned and drained and
+    storage members added and removed through replica-set membership, both
+    actions issued by the controller over the infrastructure-management path.}
     \label{fig:elastic_allocation}
 \end{figure}
 
@@ -1428,8 +1437,8 @@ they are storage-member CPU utilisation and data-access latency.
     A window is considered degraded when its score reaches an adaptive
 threshold, and a scale-up is requested only when degradation is sustained
 across a required number of recent windows. Let $\mathcal{W}_n$ be the set
-of the last $W$ windows and $R$ the required number of degraded windows;
-the scale-up condition is
+of the last $W$ windows in which the tier was eligible to act, and $R$ the
+required number of degraded windows; the scale-up condition is
 \begin{equation}\label{eq:scale_up_condition}
 \begin{split}
     \left|\,\{\, w \in \mathcal{W}_n : s(w) \geq \theta(k) \,\}\right| &\geq R, \\
@@ -1438,26 +1447,27 @@ the scale-up condition is
 \end{equation}
 where:
 \begin{itemize}[leftmargin=*, itemsep=0pt]
-    \item $\mathcal{W}_n$ -- sliding set of the most recent $W$ windows;
+    \item $\mathcal{W}_n$ -- sliding set of the most recent $W$ windows in which the tier was eligible to act;
+    \item $W$ -- number of eligible windows in the scale-up window;
     \item $R$ -- minimum number of degraded windows required to request a scale-up;
     \item $k$ -- number of dynamic units currently in the tier's pool (units provisioned by the controller beyond the initial pool);
     \item $\theta(k)$ -- adaptive degradation threshold with $k$ dynamic units in the pool;
     \item $\theta_{\mathrm{base}}$ -- base threshold;
-    \item $\Delta\theta$ -- threshold increment per additional dynamic unit;
+    \item $\Delta\theta$ -- threshold increment per additional dynamic unit, applied linearly for the compute tier; for the storage tier the increment diminishes with each additional unit, down to a configured minimum;
     \item $\theta_{\max}$ -- upper bound of the adaptive threshold;
-    \item $\beta_{\mathrm{peer}}$ -- addend applied to the compute-tier threshold while the peer domain is healthy enough to absorb spillover traffic.
+    \item $\beta_{\mathrm{peer}}$ -- peer relief added to the compute-tier threshold while the peer domain is healthy enough to absorb spillover traffic (zero otherwise).
 \end{itemize}
     The threshold $\theta(k)$ adapts upward as capacity grows, so each
-additional unit faces a higher bar, bounded by $\theta_{\max}$ (for the storage
-tier the increment itself diminishes with each additional unit, down to a
-configured minimum), and
+additional unit faces a higher bar, bounded by $\theta_{\max}$, and
 $\beta_{\mathrm{peer}}$ raises the compute-tier threshold slightly while the
-peer domain is healthy enough to absorb spillover traffic. A cooldown after
-each action and a
-per-tier cap on the number of units keep the number of scale actions
-bounded. The window advances only in windows where the tier was eligible to
-act (not blocked by an ongoing infrastructure operation, not at its cap, and
-not within a scale-up cooldown), and it is cleared when a scale-up fires.
+peer domain is healthy enough to absorb spillover traffic. A scale-up cooldown
+after each committed scale-up and a scale-down cooldown keyed on the last
+scale-up fire keep the pace of actions bounded, together with a per-tier cap
+on the number of units. The window advances only in windows where the tier was
+eligible to act (not blocked by an ongoing infrastructure operation, not at
+its cap, and not within a scale-up cooldown), and it is cleared when a
+scale-up fires. A committed scale-up also clears the tier's scale-down window,
+so a recent scale-up is not immediately reversed.
 
     A window is declared idle when both signals fall below their idle
 thresholds,
@@ -1466,13 +1476,14 @@ thresholds,
 \end{equation}
 where:
 \begin{itemize}[leftmargin=*, itemsep=0pt]
-    \item $\tau_c$, $\tau_t$ -- idle thresholds of the utilisation and latency signals;
-    \item $R_\downarrow$, $W_\downarrow$ -- required idle windows and window size of the scale-down rule.
+    \item $\tau_c$, $\tau_t$ -- idle thresholds of the utilisation and latency signals.
 \end{itemize}
     A scale-down is requested only when idleness is sustained across
-$R_\downarrow$ of the last $W_\downarrow$ windows, a sliding window longer
-than the scale-up one, which prevents a transient data-bound stall from
-being misread as idle capacity. Windows whose latency exceeds a ceiling are
+$R_\downarrow$ of the last $W_\downarrow$ windows, where $R_\downarrow$ is the
+required number of idle windows and $W_\downarrow$ the length of the
+scale-down window. This window is longer than the scale-up one, which
+prevents a transient data-bound stall from being misread as idle capacity. 
+Windows whose latency exceeds a ceiling are
 treated as indeterminate and do not count toward idleness.
 
     The policy evaluates each tier per telemetry window, in a fixed order:
@@ -1482,7 +1493,7 @@ treated as indeterminate and do not count toward idleness.
     scale-up cooldown is active;
     \item the degradation score $s(w)$ is computed from the two normalised
     signals~\eqref{eq:degradation_score};
-    \item if at least $R$ of the last $W$ windows reach the adaptive
+    \item if at least $R$ of the last $W$ eligible windows reach the adaptive
     threshold $\theta(k)$~\eqref{eq:scale_up_condition}, the tier requests
     a scale-up and the window history is cleared;
     \item otherwise, if both signals fall below their idle
@@ -1493,7 +1504,7 @@ treated as indeterminate and do not count toward idleness.
     The concrete parameter values used in the
 evaluation are reported in Section~\ref{sec:experimental_setup}.
 
-\subsection{Services}\label{sec:elastic_compute}
+\subsection{Compute}\label{sec:elastic_compute}
 Service capacity is a per-domain pool of containerised edge servers, each
 capable of serving any request addressed to the domain's virtual service
 address. Storage reads performed by a service replica are routed through the
@@ -1524,34 +1535,37 @@ A pending drain can be cancelled if load
 rebounds before the replica exits, favouring fast recovery over aggressive
 reclamation.
 
-\subsection{Data}\label{sec:elastic_data}
+\subsection{Storage}\label{sec:elastic_data}
 The replica set is the unit in which storage capacity is scaled. The storage
 tier of each domain runs as a MongoDB replica set whose primary serves the
 clients' writes and whose secondaries replicate the data and absorb the
-remainder of the traffic. Storage scale-up is a membership change. The
-controller provisions a new storage member, which joins the set as a
-non-voting secondary through its seed-host configuration, and admits it to
-the data path only once the member has reached the state at which it can
-serve reads, so that traffic is never directed to a member that cannot yet
-serve it. The preparation may also be decoupled from the reaction. A
-ready member can be held in reserve outside the routing pool and activated
-when a data action fires, removing the initial readiness wait from the
-reaction path, with a new reserve prepared immediately afterwards.
+remainder of the traffic. Reads may therefore be served by any replica-set
+member, and the consistency contract is primary writes with eventually
+consistent secondary reads. The evaluation does not rely on read-after-write
+semantics. Storage scale-up is a membership change. The controller provisions
+a new storage member, which joins the set as a non-voting secondary, and
+admits it to the data path only once the member has reached the state at
+which it can serve reads, so that traffic is not directed to a member that
+cannot yet serve it. In the evaluated configuration, preparation is decoupled
+from the reaction: a readied member is held in reserve outside the routing
+pool, and the storage scale-up is the activation of this prepared reserve,
+which removes the initial readiness wait from the reaction path. A new
+reserve is prepared immediately afterwards.
 
     Storage scale-down removes an idle member while the remaining members keep
 serving. Only members added by the platform are eligible for removal, so the
-set's original membership is never disturbed, and the decision applies the
+set's original membership is left undisturbed, and the decision applies the
 idle condition defined in Section~\ref{sec:scaling_policy} to the storage tier's
 idle signals (its data-access latency and, in the configurations that enable
 it, its storage utilisation).
 
     Beyond the membership change, the platform defines three data-placement
-tiers, named here for completeness: Tier 0, direct remote reads over the
-virtual data path; Tier 1, a partial hot copy held in the consumer domain;
-and Tier 2, the replica-set extension described above. These different storage tiers 
-are platform capabilities rather than evaluated treatments. In the
-experiments, the storage action is limited to adding or removing a
-member of the domain's own replica set.
+tiers, named here for completeness: Tier~0 provides direct remote reads over
+the virtual data path, Tier~1 holds a partial hot copy in the consumer
+domain, and Tier~2 is the replica-set extension described above. Tier~0 and
+Tier~1 are platform capabilities rather than evaluated treatments, as in the
+experiments, the storage action is limited to activating the prepared
+reserve or removing a member of the domain's own replica set.
 
 \section{Monitoring and Decision Engine}\label{sec:monitoring_decision}
 Observation begins at the producers. Each service replica emits a
@@ -1573,7 +1587,7 @@ other forms, such as periodic retrieval of only the most recent window
 (event-preserving delivery, immediate or delayed), so that the effect of
 delayed
 or incomplete demand evidence can be studied while the aggregation, the
-workload, and the decisions remain identical.
+workload, and the decision logic remain unchanged.
 
     Inside the controller, the summaries feed two consumers. The first is the
 routing state. Per-backend metrics update the state that backend selection
@@ -1581,24 +1595,46 @@ uses. The second is the decision engine. Per-domain degradation scores,
 computed per resource tier from bounded utilisation and typical request
 latency, are evaluated against adaptive thresholds over sliding windows.
 When a tier's degradation condition is sustained, the decision engine emits a typed,
-prioritised request for a capacity action, with data-side actions given
-precedence over service-side actions. The type of a request identifies the
+prioritised request for a capacity action. Requests that add or preserve
+capacity take precedence over requests that remove capacity. Among the
+additions, a storage scale-up precedes a compute scale-up, and among the
+removals, a storage scale-down precedes a compute scale-down. The type of a request identifies the
 resource tier it concerns (compute or storage) and the action requested (scale-up
-or scale-down), and each request carries the evidence that produced it.
+or scale-down), and the evidence behind each request is recorded in the
+decision log for the window that produced it.
 Scale-down requests arise from
-separate idle conditions. 
+separate idle conditions. Figure~\ref{fig:decision_engine} shows the two
+consumers of the windowed summaries and this decision path, from a sustained
+condition to a prioritised capacity request.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{images/decision_engine_v3.png}
+    \caption{The decision engine: the windowed summaries feed the routing
+    state, which backend selection reads on flow decisions, and the decision
+    engine, which evaluates each tier per window: first the degradation score
+    against the adaptive threshold, and otherwise the idle conditions. A
+    sustained condition emits a typed capacity request whose evidence is
+    recorded in the decision log. Requests are queued in priority order:
+    additions and preservations precede removals, storage scale-up precedes
+    compute scale-up, and storage scale-down precedes compute scale-down.}
+    \label{fig:decision_engine}
+\end{figure}
 
     The decision engine may also be configured to commit to a single action per
 window when several tiers signal simultaneously, which is the selection
-interface of the demand-to-capacity chain. Lifecycle signals, such as the
+interface of the demand-to-capacity chain. In the bottleneck-aware
+configuration, that selection classifies the episode as compute-bound or
+data-access-bound and commits the action matched to the identified
+bottleneck, recording the selected and rejected actions as evidence. Lifecycle signals, such as the
 completion of a drain or the readiness of a storage member, reach the same
 decision path as control events, so that admission and release follow the
 same disciplined flow as the actions themselves.
 
 \section{Control Workflow}\label{sec:control_workflow}
 The control workflow separates three execution contexts. They share one
-process but never block one another. The packet context handles flow
-decisions and never waits on slow work. The observation context evaluates
+process but do not block one another. The packet context handles flow
+decisions and does not wait on slow work. The observation context evaluates
 telemetry windows and emits action requests. The action context performs
 infrastructure mutations such as provisioning, drain, and removal.
 
@@ -1609,15 +1645,16 @@ the change is published and delivered. The decision engine evaluates the
 delivered window. If the tier condition is sustained, the engine emits an
 action request, which the action context executes. The provisioned unit
 reaches its readiness state and is admitted to the corresponding routing
-pool. 
-
-    From the next packet onward, the data plane can direct traffic to
-it. The chain completes when the new unit serves its first successful
-request. Each step of this chain is instrumented, so the timeline from
-demand observation to usable capacity is recorded end to end
-(Figure~\ref{fig:control_workflow}). When readiness admission is enabled, a
-unit that does not reach readiness within the configured bound is abandoned
-and torn down instead of being admitted. Without readiness admission,
+pool, which for the storage tier is the activation of the prepared reserve.
+New flows can then be directed to it, while flows already installed on other
+members remain where they were placed. The chain completes when the new unit
+serves its first successful request. Each step of this chain is instrumented,
+so the timeline from demand observation to usable capacity is recorded end to
+end (Figure~\ref{fig:control_workflow}), with registration, routing-pool
+inclusion, and the first successful request recorded as distinct events. 
+When readiness admission is enabled, a
+service replica that does not reach readiness within the configured bound is
+abandoned and torn down instead of being admitted. Without readiness admission,
 service replicas are registered as soon as they are provisioned and no
 readiness bound applies, so a replica that never becomes usable is reclaimed
 only by the ordinary lifecycle checks.
@@ -1628,8 +1665,9 @@ only by the ordinary lifecycle checks.
     \caption{The control workflow, drawn as a UML diagram. The
     demand-to-capacity chain runs across three contexts in the same process:
     the packet context, the observation context, and the action context. The
-    contexts never block one another and they exchange state through shared
-    structures (the telemetry state, the action queue, and the routing pools).
+    contexts do not block one another and they exchange state through shared
+    structures (the telemetry state, the action queue, the lifecycle state, and
+    the routing pools).
     The numbered stages match the chain in
     Figure~\ref{fig:demand_capacity_chain} and show the provisioning
     direction. Capacity removal follows the same steps in reverse, starting
@@ -1640,12 +1678,15 @@ only by the ordinary lifecycle checks.
 
     State crosses these contexts through shared structures rather than
 through direct calls. The observation context writes the telemetry state
-and the action requests. The routing pools are updated as units are
-provisioned, readied, and removed. The packet context reads both on each
-flow decision.
-Because the packet context is never blocked by the action context, a
+and the action requests, and the action context owns the infrastructure
+mutations and records the lifecycle state of each in-flight operation. The
+routing pools are updated with the lifecycle transitions: a unit enters them
+when it is admitted and leaves them on removal, while a readied member held
+in reserve remains outside them until activation. The packet context reads
+both on each flow decision.
+Because the packet context is not blocked by the action context, a
 long-running mutation cannot stall request steering. Because the action
-requests are queued and prioritised, detection is never blocked by
+requests are queued and prioritised, detection is not blocked by
 execution. 
 
     Every request that adds or preserves capacity
@@ -1659,13 +1700,14 @@ before the request is queued.
 controller is aware of the peer domain's resources, while acting on its own
 domain's demand. The concrete realisation of this design, the technologies
 that implement each context, and the validation of the resulting platform
-are the subject of Chapter~\ref{ch:implementation}; the experimental
+are the subject of Chapter~\ref{ch:implementation}. The experimental
 characterisation of the three interfaces is presented in
 Chapter~\ref{ch:results}.
 
 
 \chapter{Implementation of Proposed Solution}\label{ch:implementation}
-
+% Aqui dizer coisas como tu utilizas o docker container, ta tudo a correr em vms e cenas do 
+% genero.
 \section{Experimental infraestructure}\label{sec:impl_infraestructure}
 % TODO: two emulated domains on a single cloud-VM host; Docker containers;
 % OVS topology (two LANs + WAN bridge, tc-netem); WAN emulation profiles.
