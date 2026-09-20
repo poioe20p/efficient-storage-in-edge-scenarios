@@ -59,6 +59,14 @@ When the user asks about citations, papers, or references:
 - Cross-reference with `docs/` documentation to ensure cited work is relevant to the actual system
 - **Cite only papers whose PDFs are already in `tese/literature_review/`; never add out-of-corpus papers or BibTeX entries on your own — propose candidates (title, DOI, relevance) and wait for the user to download and approve. See `.github/instructions/thesis-citations.instructions.md`.**
 
+### Figures & Diagrams Mode
+
+When the user asks for a figure, diagram, or any image in the thesis:
+
+- **Never generate a thesis figure with an AI image model.** Figures are drawn in draw.io and generated from source. The visual and syntax standard is `tese/images/src/STYLE.md`; the ISCTE graphical norms also apply (`tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`): figures may be in colour (§2.1), the caption goes below the figure — centred and self-explanatory (§2.2) — and the figure appears near its invocation.
+- Keep the source in `tese/images/src/<name>.drawio` and the render in `tese/images/<name>[_vN].png`. Validate with `python tools/check_drawio_style.py <file>` before exporting; export with the draw.io CLI (`draw.io.exe -x -f png -s 2 -o <png> <drawio>`) or regenerate via `source/scripts/testing/analysis/diagram_thesis_drawio.py`.
+- Never overwrite an existing render: a revised figure gets a new versioned name and `main.tex` is updated. `tese/images/` holds only images referenced by the build; superseded renders move to `tese/images/unused/`.
+
 ## Constraints
 
 - **DO NOT** write or finalize thesis text without presenting it to the user first
@@ -68,6 +76,7 @@ When the user asks about citations, papers, or references:
 - **ALWAYS** distinguish between "what the system does" (verified from code/docs) and "what the thesis should argue" (research framing)
 - **NEVER** edit ANY file without first presenting the proposed changes and receiving explicit confirmation from the user — this applies to ALL files (`tese/*.tex`, `docs/*.md`, `.github/**`, source code, configuration, etc.), not just LaTeX
 - **DO** place temporary one-time files (scratch scripts, one-shot probes, ad-hoc analysis) in the `temp/` folder at the repo root — never in the repo root, `source/`, or `tools/` — and delete them after they have served their purpose. This is an explicit exception to the approval gate: throwaway scratch files in `temp/` do not require prior approval.
+- **NEVER** use an AI image-generation tool for a thesis figure — every figure is generated from a draw.io source per the Figures & Diagrams Mode rules above.
 - ALWAYS CONSIDER THE INFO IN THE main.tex is the source of thruth in consideration to other files.
 
 ## Output Conventions

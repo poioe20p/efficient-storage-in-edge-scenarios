@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thesis figure family (drawio) -- sources in docs/diagrams/thesis/, PNG exports in tese/images/.
+"""Thesis figure family (drawio) -- sources in tese/images/src/, PNG exports in tese/images/.
 
 Visual system follows the reference figure style: red client actors, strong-blue
 controller, light-blue data plane, green storage, amber telemetry, grey compute,
@@ -384,8 +384,9 @@ def fig_architecture_overview() -> None:
     """Two congruent network domains joined by the emulated wide-area link.
 
     Domain 2 is domain 1 mirrored by position only, so the halves are congruent by
-    construction (standard sections 1 and 8). The controller artwork is embedded
-    from src/assets/controller.png, as in the reference figure.
+    construction (standard sections 1 and 2). The controller artwork is embedded
+    from src/assets/ (sdn_controller_logo.png preferred, controller.png as
+    fallback), as in the reference figure.
     """
     FW, FH = 1111, 700
     FX, FY = {0: 40, 1: 1441}, 60
@@ -823,6 +824,332 @@ def fig_telemetry_delivery_paths() -> None:
     export(dio, OUT_PNG / "telemetry_delivery_paths_v2.png")
 
 
+def std_vip_routing_sequence() -> None:
+    """The double-VIP request path: service routing surface, then data routing surface.
+
+    Interaction figure (STYLE.md section 8): icon headers with lifelines, one band
+    per routing surface - the data surface carries the storage tint - and numbered
+    messages in request-path order. The two footer
+    lines state return-path semantics the arrows cannot carry.
+    """
+    W, H = 2000, 1720
+    C, O, S, E, ST = 170, 560, 980, 1400, 1760
+    d = Doc(W, H)
+
+    def msg(x1, y1, x2, y2, kind, label=""):
+        colour, dash = {"data": ("#000000", ""), "ctrl": ("#007FFF", "dashed=1;"),
+                        "ret": ("#000000", "dashed=1;")}[kind]
+        style = (f"edgeStyle=none;html=1;endArrow=classic;startArrow=none;strokeColor={colour};{dash}"
+                 f"fontFamily={FONT};fontSize=24;fontStyle=1;fontColor={colour};labelBackgroundColor=#FFFFFF;")
+        d.cells.append(
+            f'<mxCell id="{d._nid()}" value="{escape(label, quote=True)}" style="{style}" edge="1" parent="1">'
+            f'<mxGeometry relative="1" as="geometry">'
+            f'<mxPoint x="{x1}" y="{y1}" as="sourcePoint"/><mxPoint x="{x2}" y="{y2}" as="targetPoint"/>'
+            f'</mxGeometry></mxCell>')
+
+    def band(x, y, w, h, title, fill, stroke):
+        st = (f"rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor={fill};genre=interaction;"
+              f"fontFamily={FONT};fontSize=26;")
+        if stroke:
+            st += f"strokeColor={stroke};"
+        d.cell("", x, y, w, h, st)
+        d.cell(title, x, y + 8, w, 36,
+               f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};fontSize=26;"
+               f"fontStyle=1;fontColor={STD['label']};")
+
+    def icon(kind, x, y, w, h, fill=None, stroke="none"):
+        st = (f"shape={kind};sketch=0;aspect=fixed;html=1;align=center;outlineConnect=0;"
+              f"strokeColor={stroke};verticalLabelPosition=bottom;verticalAlign=top;"
+              f"fontFamily={FONT};fontSize=24;fontStyle=1;fontColor={STD['label']};")
+        if fill:
+            st += f"fillColor={fill};"
+        d.cell("", x, y, w, h, st)
+
+    def column_label(text, cx, y, w=300, h=34, fs=24):
+        d.cell(text, cx - w // 2, y, w, h,
+               f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};"
+               f"fontSize={fs};fontStyle=1;fontColor={STD['label']};")
+
+    def chip(text, x, y, w=300, h=48):
+        d.cell(text, x, y, w, h,
+               f"shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#FFFFFF;strokeColor=#8A8A8A;"
+               f"strokeWidth=1.2;fontFamily={FONT};fontSize=16;fontColor=#444444;"
+               f"align=left;spacingLeft=8;")
+
+    band(80, 230, 1760, 490, "VIP_SERVER — service routing surface", "#F4FFFF", None)
+    band(80, 750, 1760, 560, "VIP_DATA — data routing surface", "#F1F8F1", "#4F7D4F")
+
+    for c in (C, O, S, E, ST):
+        d.cell("", c - 1, 210, 2, 1310,
+               "rounded=0;whiteSpace=wrap;html=1;fillColor=#B9B9B9;strokeColor=none;")
+
+    d.cell("", 140, 60, 60, 70,
+           "shape=actor;whiteSpace=wrap;html=1;fillColor=#FF6666;strokeColor=#3F3F3F;strokeWidth=1.4;")
+    icon("mxgraph.citrix.switch", 504, 60, 111, 50)
+    s_image(d, 932, 60, 97, 90)
+    icon("mxgraph.citrix.license_server", 1364, 60, 73, 95)
+    icon("mxgraph.networks.storage", 1712, 60, 95, 90, fill="#99FF99", stroke="#6881B3")
+    icon("mxgraph.weblogos.mongodb", 1745, 80, 30, 70)
+    column_label("Client", C, 168)
+    column_label("OVS Switch", O, 168)
+    column_label("SDN Controller", S, 168)
+    column_label("Edge server", E, 168)
+    column_label("Storage member|(MongoDB)", ST, 160, w=360, h=66)
+
+    chip("no flow rule → punt to controller", 575, 325)
+    chip("no flow rule → punt to controller", 575, 885)
+    for text, y in (("3 · select_server():|lowest WSM cost over the edge pool", 470),
+                    ("8 · select_storage():|lowest WSM cost over the replica set", 1020)):
+        d.cell(text, 995, y, 390, 64,
+               f"rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#8A8A8A;"
+               f"strokeWidth=1.4;fontFamily={FONT};fontSize=20;fontColor=#333333;"
+               f"align=left;spacingLeft=12;verticalAlign=middle;")
+
+    msg(C, 300, O, 300, "data", "1 · HTTP request to VIP_SERVER")
+    msg(O, 420, S, 420, "ctrl", "2 · Packet-In (first packet)")
+    msg(S, 580, O, 580, "ctrl", "4 · install DNAT / SNAT rules")
+    msg(O, 665, E, 665, "data", "5 · forwarded to the selected edge server")
+    msg(E, 860, O, 860, "data", "6 · MongoDB query to VIP_DATA")
+    msg(O, 970, S, 970, "ctrl", "7 · Packet-In (first packet)")
+    msg(S, 1130, O, 1130, "ctrl", "9 · install DNAT rules")
+    msg(O, 1215, ST, 1215, "data", "10 · forwarded to the selected member")
+    msg(ST, 1350, O, 1350, "ret", "result (SNAT rewrites member → VIP_DATA)")
+    msg(O, 1395, E, 1395, "ret", "response")
+    msg(E, 1440, O, 1440, "ret", "response (SNAT rewrites edge → VIP_SERVER)")
+    msg(O, 1485, C, 1485, "ret", "response")
+
+    d.cell("return path: SNAT rules rewrite backend addresses back to the virtual addresses, "
+           "so clients and replicas never learn backend identities", 80, 1560, 1760, 52,
+           f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};fontSize=18;fontColor=#444444;")
+    d.cell("flow-based forwarding: subsequent packets of the same flow are handled in the "
+           "data plane, without controller intervention", 80, 1622, 1760, 52,
+           f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};fontSize=18;fontColor=#444444;")
+
+    dio = d.write("vip_routing_sequence.drawio")
+    export(dio, OUT_PNG / "vip_routing_sequence_v2.png")
+
+
+def std_control_workflow() -> None:
+    """The demand-to-capacity chain across the three execution contexts.
+
+    Process figure (STYLE.md section 9): one frame per context, numbered
+    instrumented events, guard conditions on the decision branches, and one
+    compact notation key. Capacity removal follows the same steps in reverse.
+    """
+    W, H = 2040, 1330
+    GREEN, AMBER = "#2E7D32", "#8A6D2A"
+    d = Doc(W, H)
+
+    def edge(src, tgt, label="", colour="#000000", dashed=False, fs=13, points=None,
+             exitxy=None, entryxy=None):
+        st = (f"edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=classic;startArrow=none;"
+              f"strokeColor={colour};strokeWidth=1.3;{'dashed=1;' if dashed else ''}"
+              f"fontFamily={FONT};fontSize={fs};fontColor={colour};labelBackgroundColor=#FFFFFF;")
+        if exitxy:
+            st += f"exitX={exitxy[0]};exitY={exitxy[1]};exitDx=0;exitDy=0;"
+        if entryxy:
+            st += f"entryX={entryxy[0]};entryY={entryxy[1]};entryDx=0;entryDy=0;"
+        geo = '<mxGeometry relative="1" as="geometry">'
+        if points:
+            geo += '<Array as="points">' + "".join(
+                f'<mxPoint x="{px}" y="{py}"/>' for px, py in points) + '</Array>'
+        geo += "</mxGeometry>"
+        d.cells.append(f'<mxCell id="{d._nid()}" value="{escape(label, quote=True)}" style="{st}" '
+                       f'edge="1" parent="1" source="{src}" target="{tgt}">{geo}</mxCell>')
+
+    def frame(x, y, w, h, title, subtitle):
+        d.cell("", x, y, w, h,
+               f"rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#F4FFFF;genre=process;"
+               f"fontFamily={FONT};fontSize=18;")
+        d.cell(title, x, y + 8, w, 28,
+               f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};"
+               f"fontSize=22;fontStyle=1;fontColor=#3F3F3F;")
+        d.cell(subtitle, x, y + 38, w, 24,
+               f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};"
+               f"fontSize=15;fontColor=#6B6B6B;")
+
+    def action_box(text, x, y, w, h, fs=17):
+        return d.cell(text, x, y, w, h,
+                      f"rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3F3F3F;"
+                      f"strokeWidth=1.4;fontFamily={FONT};fontSize={fs};fontColor=#222222;")
+
+    def diamond(label, x, y, w, h, fs=14):
+        return d.cell(label, x, y, w, h,
+                      f"rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor={AMBER};"
+                      f"strokeWidth=1.5;fontFamily={FONT};fontSize={fs};fontColor=#5C4400;")
+
+    def obj(text, x, y, w, h, fs=16):
+        return d.cell(text, x, y, w, h,
+                      f"rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F0F0;strokeColor=#8A8A8A;"
+                      f"strokeWidth=1.3;fontFamily={FONT};fontSize={fs};fontColor=#333333;")
+
+    def chip(text, x, y, w, h):
+        return d.cell(text, x, y, w, h,
+                      f"shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#FFFFFF;"
+                      f"strokeColor=#8A8A8A;strokeWidth=1.2;fontFamily={FONT};fontSize=15;"
+                      f"fontColor=#444444;align=left;spacingLeft=8;")
+
+    def badge(n, x, y):
+        return d.cell(str(n), x, y, 26, 26,
+                      f"ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor={GREEN};"
+                      f"strokeWidth=2;fontFamily={FONT};fontSize=15;fontStyle=1;fontColor={GREEN};")
+
+    def final_activity(x, y):
+        d.cell("", x, y, 20, 20,
+               f"ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor={GREEN};strokeWidth=2.5;")
+        d.cell("", x + 6, y + 6, 8, 8, "ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=none;")
+
+    def final_flow(cx, cy):
+        d.cell("", cx - 10, cy - 10, 20, 20,
+               "ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=2;")
+        for rot in (45, -45):
+            d.cell("", cx - 7, cy - 1, 14, 2,
+                   f"rounded=0;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=none;rotation={rot};")
+
+    frame(40, 40, 440, 1160, "Clients and service replicas", "users and running service")
+    frame(500, 40, 440, 1160, "Packet context", "handles each request's flow; never blocks")
+    frame(960, 40, 440, 1160, "Observation context", "time-driven; evaluates windows")
+    frame(1420, 40, 580, 1160, "Action context", "slow path — queued and prioritised")
+
+    start = d.cell("", 250, 108, 18, 18,
+                   "ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=none;")
+    badge(1, 286, 104)
+    d.cell("demand shift", 150, 142, 240, 26,
+           f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};fontSize=18;"
+           f"fontStyle=1;fontColor=#3F3F3F;")
+    rep = action_box("replicas serve requests", 120, 210, 280, 70, fs=18)
+    first = action_box("first successful request", 120, 700, 280, 64)
+    badge(8, 410, 705)
+    final_activity(250, 820)
+    d.cell("usable capacity", 120, 850, 280, 28,
+           f"text;html=1;align=center;verticalAlign=middle;fontFamily={FONT};fontSize=18;"
+           f"fontStyle=1;fontColor=#3F3F3F;")
+    edge(start, rep)
+    edge(first, d.cell("", 250, 820, 20, 20,
+                       "ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;"))
+
+    chip("handles every request independently;|never blocks on provisioning", 520, 100, 400, 64)
+    steer = action_box("steer request to replica", 560, 260, 320, 64, fs=18)
+    edge(steer, rep, "request / response")
+    summary = obj("windowed summary", 1000, 440, 320, 60)
+    edge(rep, summary, "emit observations", colour=STD["telemetry"], dashed=True, fs=16,
+         points=[(260, 480), (1000, 480)])
+    newpkt = action_box("new packet routed to the new replica", 560, 640, 320, 64)
+    edge(newpkt, steer)
+    d.cell("steer new flows", 735, 555, 160, 24,
+           f"text;html=1;align=left;verticalAlign=middle;fontFamily={FONT};fontSize=13;fontColor=#555555;")
+    edge(newpkt, first, "first request", fs=14)
+
+    delivered = action_box("window delivered to controller", 1010, 540, 300, 60)
+    badge(2, 1340, 545)
+    score = action_box("evaluate degradation score", 1010, 640, 300, 60)
+    over = diamond("overload sustained?", 1030, 710, 260, 100)
+    badge(3, 1310, 715)
+    tier = diamond("which tier is the bottleneck?", 1005, 845, 310, 110)
+    rq_compute = action_box("request compute scale-out", 1000, 990, 180, 64, fs=15)
+    rq_storage = action_box("request storage scale-out", 1200, 990, 180, 64, fs=15)
+    badge(4, 1350, 935)
+    queue = obj("action queue", 1080, 1100, 220, 56)
+    edge(summary, delivered)
+    edge(delivered, score)
+    edge(score, over, "[sustained]", fs=12)
+    edge(over, delivered, "[not sustained]", fs=12, points=[(1360, 760), (1360, 585)])
+    edge(over, tier)
+    edge(tier, rq_compute, "[compute-bound]", fs=12)
+    edge(tier, rq_storage, "[data-access-bound]", fs=12)
+    edge(rq_compute, queue)
+    edge(rq_storage, queue)
+
+    chip("runs mutations in its own context;|detection is never blocked by execution", 1450, 100, 520, 64)
+    execute = action_box("execute action request", 1490, 260, 440, 64, fs=18)
+    badge(5, 1945, 265)
+    edge(queue, execute, points=[(1425, 1128), (1425, 292)])
+    sc_compute = action_box("scale out compute", 1450, 380, 220, 58, fs=16)
+    sc_storage = action_box("scale out storage", 1730, 380, 220, 58, fs=16)
+    edge(execute, sc_compute, "[compute-bound]", fs=12)
+    edge(execute, sc_storage, "[data-access-bound]", fs=12)
+    wait = action_box("wait until ready", 1560, 470, 300, 58)
+    badge(6, 1875, 475)
+    edge(sc_compute, wait)
+    edge(sc_storage, wait)
+    ready = diamond("ready?", 1600, 552, 220, 96, fs=15)
+    edge(wait, ready)
+    abandon = action_box("abandon unit", 1430, 690, 210, 56, fs=16)
+    edge(ready, abandon, "[timeout]", fs=12)
+    final_flow(1510, 780)
+    edge(abandon, d.cell("", 1500, 770, 20, 20,
+                         "ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;"))
+    admit = action_box("admit to routing pool", 1720, 690, 240, 56, fs=16)
+    edge(ready, admit, "[ready]", fs=12)
+    badge(7, 1665, 695)
+    pool = obj("routing pool (eligible backends)", 1690, 800, 290, 60)
+    edge(admit, pool)
+    edge(pool, newpkt, "new replica admitted", colour=GREEN, dashed=True, fs=14,
+         points=[(1835, 1170), (880, 1170)])
+
+    # compact notation key (STYLE.md section 9)
+    d.cell("", 40, 1230, 1960, 64,
+           "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B0B0B0;strokeWidth=1.0;")
+
+    def s_dot(x):
+        d.cell("", x, 1252, 16, 16, "ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=none;")
+
+    def s_fin(x):
+        d.cell("", x, 1252, 16, 16,
+               f"ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor={GREEN};strokeWidth=2.5;")
+        d.cell("", x + 5, 1257, 6, 6, "ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=none;")
+
+    def s_flow(x):
+        d.cell("", x, 1252, 16, 16,
+               "ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=2;")
+        for rot in (45, -45):
+            d.cell("", x + 1, 1259, 14, 2,
+                   f"rounded=0;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=none;rotation={rot};")
+
+    def s_action(x):
+        d.cell("", x, 1252, 22, 16,
+               "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3F3F3F;strokeWidth=1.3;")
+
+    def s_dec(x):
+        d.cell("", x, 1246, 24, 24,
+               f"rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor={AMBER};strokeWidth=1.5;")
+
+    def s_obj(x):
+        d.cell("", x, 1252, 22, 16,
+               "rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F0F0;strokeColor=#8A8A8A;strokeWidth=1.2;")
+
+    def s_note(x):
+        d.cell("", x, 1248, 20, 20,
+               "shape=note;whiteSpace=wrap;html=1;size=7;fillColor=#FFFFFF;strokeColor=#8A8A8A;")
+
+    def s_evt(x):
+        d.cell("1", x, 1246, 22, 22,
+               f"ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor={GREEN};"
+               f"strokeWidth=2;fontFamily={FONT};fontSize=13;fontStyle=1;fontColor={GREEN};")
+
+    items = [
+        (s_dot, "start node"),
+        (s_fin, "activity final node"),
+        (s_flow, "flow final node"),
+        (s_action, "action"),
+        (s_dec, "decision (guard condition)"),
+        (s_obj, "object node (data)"),
+        (s_note, "note"),
+        (s_evt, "instrumented event (timeline recorded end to end)"),
+    ]
+    x = 70
+    for draw, label in items:
+        draw(x)
+        w = 14 + int(8.2 * len(label)) + 30
+        d.cell(label, x + 34, 1244, w, 26,
+               f"text;html=1;align=left;verticalAlign=middle;fontFamily={FONT};"
+               f"fontSize=15;fontColor=#444444;")
+        x += 34 + w
+
+    dio = d.write("control_workflow.drawio")
+    export(dio, OUT_PNG / "control_workflow_v5.png")
+
+
 if __name__ == "__main__":
     OUT_DIO.mkdir(parents=True, exist_ok=True)
     fig_architecture_overview()
@@ -832,3 +1159,5 @@ if __name__ == "__main__":
     std_sdn_load_balancing()
     std_telemetry_delivery_paths()
     std_mongodb_replica_set()
+    std_vip_routing_sequence()
+    std_control_workflow()

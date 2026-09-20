@@ -23,7 +23,7 @@
                     <mxGeometry x="1126" y="115" width="300" height="610" as="geometry"/>
                 </mxCell>
                 <mxCell id="9" value="Backend pool" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontStyle=1;fontColor=#3F3F3F;" parent="1" vertex="1">
-                    <mxGeometry x="1066.5" y="140" width="420" height="30" as="geometry"/>
+                    <mxGeometry x="1067" y="140" width="420" height="30" as="geometry"/>
                 </mxCell>
                 <mxCell id="10" value="" style="shape=mxgraph.citrix.license_server;sketch=0;aspect=fixed;html=1;align=center;outlineConnect=0;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;fontFamily=Helvetica;fontSize=18;fontStyle=1;fontColor=#3F3F3F;" parent="1" vertex="1">
                     <mxGeometry x="1240" y="210" width="73" height="95" as="geometry"/>

@@ -14,7 +14,7 @@
                     <mxGeometry x="280" y="420" width="95" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="6" value="MongoDB Edge Storage" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontStyle=1;fontColor=#3F3F3F;" parent="1" vertex="1">
-                    <mxGeometry x="177.5" y="520" width="300" height="30" as="geometry"/>
+                    <mxGeometry x="178" y="520" width="300" height="30" as="geometry"/>
                 </mxCell>
                 <mxCell id="7" value="" style="shape=mxgraph.weblogos.mongodb;sketch=0;aspect=fixed;html=1;align=center;outlineConnect=0;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;fontFamily=Helvetica;fontSize=18;fontStyle=1;fontColor=#3F3F3F;" parent="1" vertex="1">
                     <mxGeometry x="312" y="440" width="30" height="70" as="geometry"/>
@@ -41,7 +41,7 @@
                     <mxGeometry x="1235" y="516" width="97" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="15" value="SDN Controller&lt;br&gt;(domain 2)" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontStyle=1;fontColor=#3F3F3F;" parent="1" vertex="1">
-                    <mxGeometry x="1133.5" y="614" width="300" height="30" as="geometry"/>
+                    <mxGeometry x="1134" y="614" width="300" height="30" as="geometry"/>
                 </mxCell>
                 <mxCell id="16" value="metrics" style="edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#FF8000;dashed=1;fontFamily=Helvetica;fontSize=18;fontStyle=1;fontColor=#FF8000;labelBackgroundColor=#FFFFFF;" parent="1" source="3" target="8" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
