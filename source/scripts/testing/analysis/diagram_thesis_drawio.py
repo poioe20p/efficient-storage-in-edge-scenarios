@@ -504,14 +504,22 @@ def std_component(d: Doc, x, y, w, h, kind, label, ly=None, lw=300, lh=30,
                    w=lw, h=lh)
 
 
-def std_controller(d: Doc, x, y, label: str) -> str:
+def std_controller(d: Doc, x, y, label: str, lw=300) -> str:
     """Controller artwork plus its label; returns the label cell, as above."""
     s_image(d, x, y, 97, 90)
-    return s_label(d, label, int(x + 48), int(y + 98), w=300)
+    return s_label(d, label, int(x + 48), int(y + 98), w=lw)
 
 
 def std_demand_to_capacity_chain() -> None:
-    """The chain from demand shift to usable capacity, with the three interfaces."""
+    """The chain from demand shift to usable capacity, with the three interfaces.
+
+    The backend pool is drawn as a group of members with a free slot: the
+    ready unit is admitted into it, and the clock marks the Interface 3 (RQ3)
+    window -- the time between provisioning and the unit's entry into the
+    pool, which is the point at which the capacity becomes usable. A fan of
+    guide lines with a magnifier marks the pool as the controller's own route
+    state, shown magnified.
+    """
     d = Doc(2000, 700)
     demand = s_actor(d, 100, 150, 60, 70, "Demand shift")
     obs = std_component(d, 560, 140, 70, 85, "aggregator",
@@ -519,20 +527,53 @@ def std_demand_to_capacity_chain() -> None:
                         fill=STD["telemetry"])
     dec = std_controller(d, 1010, 140, "Scaling decision")
     act = std_box(d, 1440, 145, 300, 80, "Capacity action")
-    rdy = std_component(d, 1440, 430, 73, 95, "servers", "Backend readiness", ly=533)
-    adm = std_component(d, 1010, 430, 111, 50, "dataplane", "Routing admission", ly=488)
-    use = std_box(d, 560, 445, 300, 80, "Usable capacity", fill="#99FF99",
+    rdy = std_component(d, 1510, 430, 73, 95, "servers", "Backend readiness", ly=533)
+    use = std_box(d, 80, 500, 300, 80, "Usable capacity", fill="#99FF99",
                   stroke="#6881B3")
+
+    pool = s_frame(d, 560, 390, 580, 270, "Backend pool")
+    std_component(d, 640, 460, 73, 95, "servers", "Edge server 1", ly=563, lw=240)
+    std_component(d, 810, 460, 73, 95, "servers", "Edge server 2", ly=563, lw=240)
+    slot = std_box(d, 980, 463, 90, 90, "+", fill="#FFFFFF")
 
     s_edge(d, demand, obs, "data", "demand")
     s_edge(d, obs, dec, "flow", "Interface 1 (RQ1)")
     s_edge(d, dec, act, "ctrl", "Interface 2 (RQ2)")
-    s_edge(d, act, rdy, "data", "provisioning")
-    s_edge(d, rdy, adm, "ctrl", "Interface 3 (RQ3)")
-    s_edge(d, adm, use, "data", "usable capacity")
+    s_edge(d, act, rdy, "data", "provisioning", points=[(1700, 505)])
+    s_edge(d, rdy, slot, "ctrl", "Interface 3 (RQ3)")
+    s_edge(d, pool, use, "data", "usable capacity")
+
+    # zoom-in callout: the pool frame is the controller's own route state,
+    # shown magnified, so a fan of thin guide lines links the decision step
+    # to it (thin stroke-only bars, so they can carry a diagonal)
+    d.cell("", 962, 268, 192, 1,
+           f"rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#3F3F3F;"
+           f"strokeWidth=1.5;fontFamily={FONT};")
+    d.cell("", 558, 333, 414, 1,
+           f"rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#3F3F3F;"
+           f"strokeWidth=1.5;rotation=161.6;fontFamily={FONT};")
+    d.cell("", 1076, 333, 133, 1,
+           f"rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#3F3F3F;"
+           f"strokeWidth=1.5;rotation=100;fontFamily={FONT};")
+    d.cell("", 1040, 283, 36, 36,
+           f"ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#3F3F3F;"
+           f"strokeWidth=3;fontFamily={FONT};")
+    d.cell("", 1068, 318, 16, 3,
+           f"rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#3F3F3F;"
+           f"strokeWidth=3;rotation=45;fontFamily={FONT};")
+
+    # interface mark: the clock sits on the admission transition, whose
+    # duration is what Interface 3 (RQ3) is about
+    d.cell("", 1211, 458, 44, 44,
+           f"ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#007FFF;"
+           f"strokeWidth=2;fontFamily={FONT};")
+    d.cell("", 1232, 467, 2, 13,
+           f"line;html=1;strokeColor=#007FFF;strokeWidth=2;fontFamily={FONT};")
+    d.cell("", 1233, 479, 11, 2,
+           f"line;html=1;strokeColor=#007FFF;strokeWidth=2;fontFamily={FONT};")
 
     export(d.write("demand_to_capacity_chain.drawio"),
-           OUT_PNG / "demand_to_capacity_chain_v3.png")
+           OUT_PNG / "demand_to_capacity_chain_v8.png")
 
 
 def std_elastic_allocation() -> None:
