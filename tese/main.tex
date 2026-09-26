@@ -198,19 +198,19 @@ service experienced by users.
 chain, which is the path that an orchestration system takes to convert
 a change in overall user demand into capacity that serves that demand. A demand
 shift is first observed by monitoring and telemetry, which deliver the
-evidence to a decision point; the decision point selects a capacity action,
-such as scaling compute or scaling storage; the action provisions the new
-capacity; the new capacity attains a readiness state and is admitted
+evidence to a decision point. The decision point selects a capacity action,
+such as scaling compute or scaling storage, then with the action a new capacity Is
+provisioned. Finally the new capacity attains a readiness state and is admitted
 to traffic, which is the point at which it becomes usable. The chain is therefore a
 timeline through the orchestration system,
 and certain steps are separated from the next by an interface at which delay or
 loss of evidence can accumulate.\footnote{Throughout this dissertation, the
 \emph{demand-to-capacity chain} denotes the full timeline from a demand
-shift to usable capacity; an \emph{interface} is a boundary between two
-steps of the chain at which two functions meet; a \emph{handoff delay} is
+shift to usable capacity. An \emph{interface} is a boundary between two
+steps of the chain at which two functions meet. An \emph{handoff delay} is
 the latency added at an interface when the functions on either side run
 under independent control loops, that is, without explicit coordination
-between them; and the \emph{coordination gap} is the
+between them. And the \emph{coordination gap} is the
 accumulated effect of these handoff delays along the chain.} Three of these
 interfaces, more specifically how demand evidence reaches the decision,
 which capacity action the decision hands over to the infrastructure,
@@ -228,7 +228,7 @@ illustrates the chain.
 \end{figure}
 
     The steps described above must be coordinated under the time pressure of
-an ongoing demand shift. In practice, however, they are performed by
+an ongoing demand shift. In practice, however, they are commonly performed by
 separate components. A monitoring system collects metrics, an
 auto-scaler provisions capacity, and a load balancer redirects traffic,
 each running under its own control loop. The information needed to
@@ -548,10 +548,9 @@ the retrieved hits.
     \end{tabular}
 \end{table}
 
-    Screening and citation chaining produced the reviewed literature, 34
-works organised by the interface each work informs: telemetry delivery (5),
-capacity action selection (13), readiness admission (3), cross-layer
-orchestration (6), and platform context (7). Eight background
+    Screening and citation chaining produced the reviewed literature, 40 works
+organised by the interface each work informs: telemetry delivery, capacity
+action selection, readiness admission, and platform context. Eight background
 sources support the platform technologies presented in
 Section~\ref{sec:platform_background}, and are treated as context rather than
 as independent evidence of an RQ gap. The synthesis is recorded in
@@ -663,7 +662,7 @@ documents within collections and provides a flexible schema.
 In MongoDB, redundancy is organised natively around the replica
 set, a group of \texttt{mongod} processes that maintain the same
 data set. One member is elected primary and serves the clients'
-writes, which it records in an operation log; the remaining
+writes, which it records in an operation log, the remaining
 members, the secondaries, replicate by applying that log
 asynchronously and autonomously. Members exchange heartbeats,
 and when the primary fails or becomes unreachable,
@@ -678,7 +677,7 @@ members of a set and the replication paths between them.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/mongodb_replica_set_v2.png}
+    \includegraphics[width=0.9\textwidth]{images/mongodb_replica_set_v3.png}
     \caption{MongoDB replica set: a primary member serving the clients and
     secondary members to which the data is replicated.}
     \label{fig:mongodb_replica_set}
@@ -686,8 +685,8 @@ members of a set and the replication paths between them.
 
     This dissertation builds on that capability. The storage tier is
 scaled by adding and removing replica-set members while the set keeps
-serving, leveraging MongoDB's native replication and election
-mechanisms.
+serving, leveraging MongoDB's native replication while customly managing
+the replica set pool.
 
 \section{Monitoring \& Telemetry}\label{sec:lit_monitoring} % DONE
 Monitoring and telemetry observe the state of a running service and
@@ -975,6 +974,7 @@ record failure management as a concern that the mechanisms their
 survey covers have not taken into account, so failure-driven changes
 to the eligible set remain unaddressed
 \parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}.
+    
     This dissertation studies load balancing through this membership, without
 focusing on the choice of which backend receives the next flow, and
 evaluates the effects of a changing set of backends and of delay in the
@@ -1815,6 +1815,23 @@ Chapter~\ref{ch:results}.
 % failures; time from scale decision to usable capacity. Direct lifecycle notification vs periodic
 % discovery, selection function held fixed (thesis_overview.md §6-RQ3). Supporting calibration
 % evidence: old RQ2 slowstart ≈ periodic discovery, ~31 s idle-capacity penalty (n=9).
+% CLAIM-DISCIPLINE NOTES (2026-09-25; verified against the experiment records before writing this section):
+% - Headline (rq3_timing, 36 runs, H-T1): event_only 8.3-14.4% slow-share vs recovering arms' <=2 pp tails;
+%   full-plateau contrast median 7.64 pp, onset median 28 pp; bounded (median 10.6%, <=25%); predominantly
+%   onset-concentrated, NOT block-uniformly transient (block 2 shows an 11.4% residual tail).
+% - The contrast prices LOST ADMISSION, not delay: event_only admits zero backends (fallback provably inert);
+%   controls recovered with ~10-21 s delayed admission and showed no harm — the seconds-level admission
+%   delay was not shown to be user-visible in any tested regime.
+% - Robustness family (19 runs, stopped early) = supporting: preservation under total and selective loss in
+%   the completed blocks; restart = arm-independent orphaning (all arms), characterised only, no
+%   differential claim (Stage 2 not triggered).
+% - Timing campaign overall pass = false (H-T2 ordering untested; H-T3 marginal): claim H-T1 (plus the
+%   H-T2 relief-completion component) only; do not present the full pre-registered pass as met.
+% - "30,000-45,000 requests per recovered backend" appears only in rq3_final.md, not in the retained
+%   records checked — verify against raw artifacts before citing.
+% - Scope: consequence demonstrated for total event loss + constrained headroom; selective loss/restart are
+%   descriptive (rq3_robustness, stopped early); rq3_qoe and rq3_low_headroom are stopped/superseded with
+%   no evidence claims (do not cite as results).
 
 \section{Network Performance}\label{sec:results_network}
 % TODO: Control-plane overhead (CPU%, RSS); cross-LAN latency;

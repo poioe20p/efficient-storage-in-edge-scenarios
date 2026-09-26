@@ -133,6 +133,8 @@ resilience margin that pays off when headroom disappears — in a deployment
 with weaker/fewer incumbent backends or higher relative load, the same ~7 s
 quantization would convert into user-visible degradation.
 
+> **Update (2026-09-25) — conversion since demonstrated, with the priced quantity identified.** The completed `rq3_timing` campaign (36 runs; `docs/operation/testing/experiment/v3/rq3_timing/`) demonstrates a user-visible cost under **total readiness-event loss with thin headroom** — but the priced quantity is **lost admission** (the event-only arm admits zero backends; its fallback is provably inert), not the ~7 s quantization. This boundary therefore stands: no tested regime converts the seconds-level admission *delay* into measurable user harm; the demonstrated user cost is the loss of admission without a recovery path. See `rq3_final.md` §5.
+
 ### 1.6 The container-bind stall (shared infra cost, documented)
 
 The ~10 s container startup stall is **not** the mechanism and not the
@@ -294,7 +296,10 @@ no value.
   tested (rates 8–25, old CPU up to ~88 %); the *conversion* of the ~7 s
   delay into user harm under bursty / low-headroom demand is **argued by
   mechanism, not separately demonstrated** — this is the stated boundary of
-  the C1 null.
+  the C1 null. **Cross-reference (2026-09-25):** a user-visible cost under
+  total event loss + thin headroom has since been demonstrated
+  (`rq3_timing`), priced on *lost admission* — not on this ~7 s quantization
+  (see §1.5 update).
 
 ### 3.4 Recommended claim
 

@@ -36,10 +36,8 @@ comments in the thesis file.
   ITU2025InternetTraffic and Gaudiaut2026MobileTrafficShare are retained as
   web sources with the author's approval.
 
-- [X] **A7** Paper count: reconciled 2026-09-20 against the manuscript's own
-  citations — the review cites 34 works (27 demand-to-capacity chain /
-  coordination gap + 7 platform context). `main.tex` §2.1 and the corpus
-  `README.md` §2 were updated; supersedes "corpus index 42 / text 39".
+- [-] **A7** Paper count: reconcile at the end against the final bibliography
+  (corpus index says 42; text says 39). Deferred per author.
 
 - [X] **A8** Appendix promise in `sec:research_methodology` deleted. Resolved
   2026-09-03; re-add when the statistical/gate appendix exists.

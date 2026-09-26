@@ -3,6 +3,9 @@
 > **Status:** consolidated final framing, 2026-09-10. Supersedes the framing in
 > `rq3.md` and folds in `rq3_reframing_recommendation.md` plus the completed
 > `rq3_timing` campaign (36/36 runs, `docs/operation/testing/experiment/v3/rq3_timing/`).
+> **Revised 2026-09-25:** claim-discipline corrections after verification against the
+> experiment records (restart claim, delay-vs-loss framing, transience wording,
+> per-backend range source check — notes inline).
 > **Companions:** `rq3_evaluation_conclusions.md` (mechanism evidence),
 > `rq3_related_work.md`, `rq3_diagrams.md`.
 
@@ -23,12 +26,15 @@ server to work, with no user harm while nothing fails. But when the readiness
 events are lost and spare capacity is tight, the event-only system visibly
 hurts users (~8–14 % slow requests, far more at the demand spike), while the
 fallback/polling systems recover and look healthy again. The recovered servers
-genuinely carry load (30,000–45,000 requests each).
+genuinely carry load and serve traffic for the remainder of the plateau
+(per-backend request counts: source check pending, see §5).
 
 **One sentence:** getting a ready server into use is the step that makes
-capacity real — event-driven does it ~7 s faster, and that speed carries a
-measured cost (visible slowdown when the signal is lost) that a fallback or a
-poll removes.
+capacity real — event-driven does it ~7 s faster, but it has no self-healing:
+when the signal is lost and headroom is thin, the lost admission (capacity dark)
+becomes a visible, bounded cost that a fallback or a poll removes. The
+seconds-level delay, where a recovery path exists, was not shown to be
+user-visible in any tested regime.
 
 ## 1. The research question
 
@@ -115,15 +121,34 @@ rate 2.0, the event-only arm degrades to 8.3–14.4 % slow-share (onset window
 full-plateau contrast of **6.2–10.9 pp (median 7.64 pp, MWU p = 0.004,
 δ = 1.0)** and an onset contrast of **25–31 pp (median 28 pp)**, reproduced in
 5/5 assessable blocks. The degradation is bounded (median 10.6 %, ceiling
-25 %) and onset-transient-dominated.
+25 %) and predominantly onset-concentrated — onset median 28 pp vs
+full-plateau 7.64 pp; block 2 shows a residual event-only tail of 11.4 %, so
+transience is not block-uniform. What the contrast prices is **lost
+admission**, not delay: the event-only arm admits zero backends (its fallback
+is provably inert), while the recovering arms' admission was merely delayed
+(~10–21 s) and produced no visible harm.
 
-**Usable capacity.** Admitted dynamic backends serve **30,000–45,000 successful
-requests each** per control run — direct evidence that recovered capacity
-carries load, not merely that it is admitted.
+**Usable capacity.** Admitted dynamic backends carry load for the remainder of
+the plateau — direct evidence that recovered capacity serves traffic, not merely
+that it is admitted. *Source check pending (2026-09-25): the per-backend range
+"30,000–45,000 successful requests each" appears only in this document, not in
+the retained experiment records checked (`rq3_timing` results/analysis,
+`rq3_robustness`, `rq3`); verify against raw run artifacts before citing in the
+thesis. The verified campaign record is that the recovering arms admit and serve
+backends while event-only achieves zero new-backend successes (6/6 blocks).*
 
-**RQ3c — robustness (supporting).** The robustness family (19 valid runs) shows
-fallback and polling preserve admission under total loss, selective loss, and
-restart, while event-only does not.
+**RQ3c — robustness (supporting).** The robustness family (19 valid runs: two
+complete blocks plus one run; stopped by user decision) shows fallback and
+polling preserve admission under total loss and selective loss in the completed
+blocks, while event-only does not (zero admitted under total loss — fallback
+provably inert; under selective loss it retains ~2/3 of backends in aggregate).
+Under controller restart the finding is **arm-independent orphaning** (pending
+capacity is orphaned in every arm), so restart is characterised behaviour with
+**no differential claim** (Stage 2 was never triggered). The timing campaign's
+pre-registered conjunction (H-T1 ∧ H-T2 ∧ H-T3) was **not** met: H-T2's ordering
+component is untested (spawns occur pre-onset; metric re-anchoring is
+analysis-only) and H-T3 is marginal (16/18 none-cell runs clean); the claim
+therefore rests on H-T1 plus the H-T2 relief-completion component.
 
 **H-T3 — health floor (mostly clean).** 16/18 no-fault runs meet both floors;
 the two breaches (bad 1.19 % — 0.19 pp over; tail 4.29 % — a single 30-s
@@ -133,8 +158,9 @@ for fault-independent instability.
 
 **The combined law.** The coordination delay is **absorbed** while the event
 path is healthy and headroom exists (zero harm at every tested load in the
-healthy regime), and becomes a **visible, bounded, recoverable** cost when the
-path fails and headroom is thin. The two arms of that conditional are the
+healthy regime); when the event path fails **without a recovery path** and
+headroom is thin, the **loss of admission** (capacity staying dark) becomes a
+**visible, bounded, recoverable** cost. The two arms of that conditional are the
 healthy-regime null and the fault-regime H-T1.
 
 ## 6. The claim it supports
@@ -142,11 +168,12 @@ healthy-regime null and the fault-regime H-T1.
 > Horizontal scale-out is not complete when a backend is created, or even when
 > it becomes application-ready — it is complete only when the backend is
 > admitted to the routing path and carries traffic. Readiness-admission
-> coordination determines how quickly that completion happens and whether its
-> delay becomes user-visible: lifecycle-coupled admission realizes capacity
-> ~7 s sooner, and that advantage is priced against a measured, bounded
-> robustness cost (~6–11 pp slow-share under total event loss) that fallback or
-> polling eliminates.
+> coordination determines how quickly that completion happens — lifecycle-coupled
+> admission realizes capacity ~7 s sooner — and what it costs when it fails:
+> without a recovery path, total event loss under thin headroom produces a
+> bounded slowdown (~6–11 pp median slow-share) that fallback or polling
+> eliminates; the seconds-level delay, where a recovery path exists, was not
+> shown to be user-visible in any tested regime.
 
 ## 7. Scope and boundaries
 
@@ -154,8 +181,10 @@ healthy-regime null and the fault-regime H-T1.
   headroom and demand escalation; it is not evidence about selective loss,
   duplication, reordering, or controller restart (those are covered
   descriptively by the robustness family, not inferentially).
-- The degradation is **bounded and transient**, not collapse; the direction is
-  expected by construction (the event-only fallback is provably inert), so the
+- The degradation is **bounded** (median 10.6 %, ceiling 25 %) and
+  **predominantly onset-concentrated** — not block-uniformly transient (block 2
+  shows a residual 11.4 % tail) — and not a collapse; the direction is expected
+  by construction (the event-only fallback is provably inert), so the
   contribution is the *quantified trade-off*, not the discovery that fallback
   helps.
 - The none-cell stochastic humps show the static tier is near saturation at
