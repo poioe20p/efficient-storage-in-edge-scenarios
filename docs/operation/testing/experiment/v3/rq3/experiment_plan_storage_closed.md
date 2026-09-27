@@ -432,4 +432,4 @@ per lessons-learned).
 | Step 3a | **Hardening**: SECONDARY-only `prefer_secondary` fix + M1 window-burst verification + R-stor-3 co-gate + per-run/cross-run tools | done (fix + tools; M1 verification runs before the number is used) |
 | Step 3b | **4-run preflight** (P1/P2/P1-fix/P2-fix, seeds 3001) vs `testing_requirements.md` (B2/M1/M2/V1/I1/I2/D1/D2/D3 + F1/F2 + G5/G7 + R-stor-3 co-gate) | **done** (2026-08-07/08) — D1/D2/D3/F/I pass; SG-4 benefit NULL → verdict (§5.4) |
 | Step 4 | Phase-2 storage campaign (12 runs) | **NOT RUN — SG-4 null ⇒ no storage campaign** (compute RQ3 already complete) |
-| Step 5 | Thesis doc updates (rq3.md, conclusions, thesis_overview) | pending |
+| Step 5 | Thesis doc updates (rq3_final.md, conclusions, thesis_overview) | pending |

@@ -46,15 +46,19 @@ Unless an approved RQ protocol explicitly states otherwise, thesis evaluation ru
 The demand model varies two axes — request intensity over time and request
 mix — while the spatial axis (which region owns the requested content) is
 held constant at local. Evaluation workloads therefore reference only
-locally-owned content, so the evaluated data path never traverses the
-emulated WAN; cross-region reads are a platform capability exercised only in
-pre-reframe calibration campaigns, not in the final evidence. The control
+locally-owned content, so storage reads never traverse the emulated WAN: each
+request is read from the replica set of the domain that serves it, and
+cross-region storage placement is disabled. Service placement is not
+restricted to the client's domain, however: backend selection may place a
+request on a peer-domain replica at a hop-cost penalty (sweep 2026-09-26: about
+2 % of requests with a recorded serving backend in RQ1/RQ2, 0.5 % in RQ3;
+RQ2 compute-bound cell medians 4.5–8.3 %, up to 19 % in single replicates). The control
 plane is likewise WAN-free by construction: aggregator→controller telemetry
 and controller↔controller topology sync are host-local, so the emulated
-185 ms WAN sits exclusively on the inter-LAN data link, which the evaluated
-demand does not use. The platform is thus cross-site-aware in its control
-plane — each controller observes the peer site's topology and health — while
-the evaluated data path remains single-site.
+185 ms WAN carries inter-domain data traffic only. The platform is thus
+cross-site-aware in its control plane — each controller observes the peer
+site's topology and health — while the evaluated storage path remains
+single-site.
 
 ---
 

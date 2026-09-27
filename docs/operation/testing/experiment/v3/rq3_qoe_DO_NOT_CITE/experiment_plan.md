@@ -216,9 +216,9 @@ a STOP (exit 3), never a fallback.
    `qoe-screen` (C1/C2/C3 gates) and `qoe-campaign` (E-stage H-Q1…H-Q4)
    subcommands; reuse `readiness_low_headroom` helpers (`status_rates`,
    `phase_bounds`, `capacity_summary`, `classify`, etc.).
-6. Docs: `docs/operation/testing/experiment/v3/rq3_qoe/`
+6. Docs: `docs/operation/testing/experiment/v3/rq3_qoe_DO_NOT_CITE/`
    {`experiment_plan.md`, `run_matrix.md`, `preflight_campaign.md`,
-   `preflight_log.md`}; cross-reference in `rq3_robustness/experiment_plan.md`;
+   `preflight_log.md`}; cross-reference in `rq3_robustness_DO_NOT_CITE/experiment_plan.md`;
    update `testing_overview.md`, `v3/README.md`.
 
 Non-goals: no `phases.json`/env-delta edits, no controller or application code

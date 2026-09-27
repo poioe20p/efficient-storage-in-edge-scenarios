@@ -10,7 +10,7 @@ Current evaluation families:
   campaigns under the current `thesis_overview.md` framing.
 - [v3/README.md](v3/README.md) — **v3 campaigns rebased on the storage-bind
   locked configuration** (2026-08-07): RQ2 bottleneck-aware scaling and the
-  RQ3 storage-replica benefit at the locked storage config.
+  RQ3 campaigns (see its folder-status table and RQ3 evidence map).
 - [stability/README.md](stability/README.md) — validation-first family for the current implemented architecture, with small reserve-specific tuning follow-ups after usability is already proved.
 - [v2/rq1/experiment_plan.md](v2/rq1/experiment_plan.md) — RQ1 telemetry delivery semantics evaluation (v2): 4-arm factorial (event-preserving, delayed, poll, sampled-push) under the open-loop driver; measures overload observability, scaling response, and transient service quality.
 

@@ -127,6 +127,77 @@ def _run_app_ready_probe(process_state, config) -> None:
     log.error("app NOT ready: MongoDB ping failed within %.0fs", max_wait_s)
 
 
+def _apply_request_concurrency_bound(server) -> None:
+    """Bound the number of concurrent request threads (2026-09-27).
+
+    werkzeug's threaded server spawns one handler thread per connection with
+    NO cap. Under an overload/retry-storm episode (extension rate-15 runs)
+    live threads grew into the thousands -> 43 GB virtual / memcg OOM at the
+    512 MB cap (B-P2r, 2026-09-27: both edges killed, service lost).
+
+    The gate acquires a slot in the ACCEPT loop before a handler thread is
+    spawned, so excess connections wait in the kernel accept backlog instead
+    of consuming thread/memory. Replaces ThreadingMixIn.process_request with
+    a bounded, faithful reimplementation. ``EDGE_MAX_CONCURRENCY`` (default
+    256; 0 disables).
+
+    Fix 3 (2026-09-27): the 1024 cap still allowed ~1024 live threads with
+    8 MB stacks (~300 MB resident) to fill the 512 MB memcg during
+    rq2_ext_b_dbcb_fix2 (n1 OOM-killed 09:10:28; total-vm 8.6 GB; buffer
+    only ~50 MB). Default lowered to 256 and worker stacks shrunk via
+    ``EDGE_THREAD_STACK_SIZE_KB`` (default 1024; 0 = leave process default).
+    """
+    limit = int(os.environ.get("EDGE_MAX_CONCURRENCY", "256"))
+    stack_kb = int(os.environ.get("EDGE_THREAD_STACK_SIZE_KB", "1024"))
+    if stack_kb > 0:
+        try:
+            threading.stack_size(stack_kb * 1024)
+            log.info("request-thread stack size set to %d KB", stack_kb)
+        except (ValueError, RuntimeError) as exc:
+            log.warning("request-thread stack size %d KB rejected: %s", stack_kb, exc)
+    if limit <= 0:
+        log.info("request-concurrency bound disabled (EDGE_MAX_CONCURRENCY=%d)", limit)
+        return
+    gate = threading.BoundedSemaphore(limit)
+    state = {"blocked": 0, "logged": False}
+    worker = server.process_request_thread
+
+    def process_request(request, client_address):
+        if not gate.acquire(blocking=False):
+            state["blocked"] += 1
+            if not state["logged"]:
+                state["logged"] = True
+                log.warning(
+                    "request-concurrency gate engaged: waiting for a free request slot (limit=%d)",
+                    limit,
+                )
+            gate.acquire()
+        try:
+            t = threading.Thread(
+                target=process_request_thread,
+                args=(request, client_address),
+                daemon=getattr(server, "daemon_threads", True),
+            )
+            t.start()
+        except BaseException:
+            gate.release()
+            try:
+                server.shutdown_request(request)
+            except Exception:
+                pass
+            raise
+
+    def process_request_thread(request, client_address):
+        try:
+            worker(request, client_address)
+        finally:
+            gate.release()
+
+    server.process_request = process_request
+    server.process_request_thread = process_request_thread
+    log.info("request-concurrency bound active: EDGE_MAX_CONCURRENCY=%d", limit)
+
+
 if __name__ == "__main__":
     log.info(
         "Starting edge-server on %s:%d  lan=%s  db_name=%s  vip_data=%s"
@@ -175,6 +246,7 @@ if __name__ == "__main__":
         "bind-timing getaddrinfo=%.3fs importlib.metadata=%.3fs make_server(bind+listen)=%.3fs total=%.3fs",
         _t1 - _t0, _t2 - _t1, _t3 - _t2, _t3 - _t0,
     )
+    _apply_request_concurrency_bound(server)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log.info("edge-server listening: http://%s:%d", CONFIG.bind_host, CONFIG.bind_port)
     # RQ3 readiness probe — background thread marks app_ready after a real

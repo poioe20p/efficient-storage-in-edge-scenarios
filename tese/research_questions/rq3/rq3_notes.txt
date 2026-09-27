@@ -9,3 +9,16 @@ is such an event path and it's the least done commonly
 
 And we have clear efficient gains in the orchestration part which are valid
 because the rq focuse on that.
+
+
+(2026-09-26) Latest — consolidated in rq3_final.md. Fault-injection campaign (rq3_timing, 36 runs):
+under total readiness-event loss with thin headroom, event-only admission degrades users
+(8.3-14.4% slow-share) while hybrid (20 s fallback) and reconcile (10 s poll) recover;
+the priced quantity is LOST ADMISSION (event-only fallback provably inert), not the ~7 s delay.
+Healthy regime: all arms healthy; the ~7 s event-driven advantage unchanged (mechanism campaign).
+
+(2026-09-26 b) Expectation set consolidated — E-LB1 (selectability), E-LB2 (handover),
+E-LB3 (redistribution latency), E-LB4 (fault redistribution), E-RO1 (loop closure),
+E-RO2 (usable-capacity realization), E-RO3 (relief completes); outcomes in rq3_final.md §5.
+Per-backend 30–45k volume claim removed (uncitable); boundedness kept as claim qualifier;
+controller restart excluded from scope.

@@ -72,7 +72,8 @@ correctly).
 
 ## 2. Research question mapping
 
-Unchanged RQ (same as `tese/research_questions/rq3/rq3.md`):
+Unchanged RQ (the original direct-vs-discovery framing; consolidated in
+`tese/research_questions/rq3/rq3_final.md`, which supersedes it):
 
 > For newly created compute backends that satisfy the same application-readiness
 > criterion, how does direct lifecycle notification versus periodic discovery
@@ -412,8 +413,8 @@ replacement seed (≤ 1 void/arm). G6–G8 are campaign-level verdicts.
 
 **Documentation to update after results:**
 
-- `tese/research_questions/rq3/rq3.md` — §4 evaluation-status note: add the
-  saturation re-run stage.
+- `tese/research_questions/rq3/rq3_final.md` — evaluation-status note: add the
+  saturation re-run stage (historical: superseded by the reframing).
 - `tese/research_questions/rq3/rq3_evaluation_conclusions.md` — add the
   saturation-consequence section (replaces the "consequence is null" reading
   if C1 is non-null; otherwise documents the bounded null at 48 clients).

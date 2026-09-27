@@ -1,0 +1,72 @@
+{
+  "generated": "2026-09-26",
+  "campaign": "rq3_timing",
+  "metric": "ttr_reanchored",
+  "kind": "analysis-only companion — do not mutate timing_campaign.json (its onset-anchored values remain as-run)",
+  "code_adoption": "readiness_robustness.py timing_relief_metrics re-anchored 2026-09-26 (spawn-anchored TTR; onset value kept as ttr_onset_s diagnostic; campaign output gains spawn_to_admit_s + ttr_onset_diagnostic_s fields)",
+  "scope": "loss_all cell; blocks b1–b6; b4 excluded from campaign assessability (controls_tail_slow_gt_2pp) — its values are shown for completeness only",
+  "definition": "TTR' = first successful request served by an admitted dynamic backend (any phase; completed 2xx) minus the earliest spawn_started_ts over the admitted first-relief-wave rows, from admission_log_lan{1,2}.csv and client_requests.csv; spawn_to_admit_s = first-admitted row's admitted_ts - spawn_started_ts.",
+  "source_files": [
+    "admission_log_lan1.csv",
+    "admission_log_lan2.csv",
+    "client_requests.csv"
+  ],
+  "blocks": [
+    {
+      "block": 1,
+      "seed": 5201,
+      "hybrid": {"run": "20260909_010331_rq3tim_loss_all_hybrid_1", "spawn_to_admit_s": 21.40, "ttr_prime_s": 22.13},
+      "reconcile": {"run": "20260909_022652_rq3tim_loss_all_reconcile_1", "spawn_to_admit_s": 13.21, "ttr_prime_s": 13.47}
+    },
+    {
+      "block": 2,
+      "seed": 5202,
+      "hybrid": {"run": "20260909_041445_rq3tim_loss_all_hybrid_2", "spawn_to_admit_s": 21.12, "ttr_prime_s": 21.87},
+      "reconcile": {"run": "20260909_053651_rq3tim_loss_all_reconcile_2", "spawn_to_admit_s": 14.10, "ttr_prime_s": 15.13}
+    },
+    {
+      "block": 3,
+      "seed": 5203,
+      "hybrid": {"run": "20260909_110618_rq3tim_loss_all_hybrid_3", "spawn_to_admit_s": 21.46, "ttr_prime_s": 22.04},
+      "reconcile": {"run": "20260909_082102_rq3tim_loss_all_reconcile_3", "spawn_to_admit_s": 20.58, "ttr_prime_s": 22.50},
+      "note": "sub-second tie on ttr_prime_s (sign depends on pairing rule: chainA +0.46 s hybrid-first; chainB -0.41 s reconcile-first)"
+    },
+    {
+      "block": 4,
+      "seed": 5204,
+      "excluded_from_assessability": true,
+      "hybrid": {"run": "20260909_151219_rq3tim_loss_all_hybrid_4", "spawn_to_admit_s": 21.41, "ttr_prime_s": 22.12},
+      "reconcile": {"run": "20260909_134947_rq3tim_loss_all_reconcile_4", "spawn_to_admit_s": 15.38, "ttr_prime_s": 16.19}
+    },
+    {
+      "block": 5,
+      "seed": 5205,
+      "hybrid": {"run": "20260909_163539_rq3tim_loss_all_hybrid_5", "spawn_to_admit_s": 21.37, "ttr_prime_s": 22.55},
+      "reconcile": {"run": "20260909_192413_rq3tim_loss_all_reconcile_5", "spawn_to_admit_s": 20.39, "ttr_prime_s": 21.13}
+    },
+    {
+      "block": 6,
+      "seed": 5206,
+      "hybrid": {"run": "20260909_221032_rq3tim_loss_all_hybrid_6", "spawn_to_admit_s": 21.26, "ttr_prime_s": 22.41},
+      "reconcile": {"run": "20260909_204716_rq3tim_loss_all_reconcile_6", "spawn_to_admit_s": 18.76, "ttr_prime_s": 19.32}
+    }
+  ],
+  "medians": {
+    "spawn_to_admit_s": {"hybrid": 21.38, "reconcile": 17.07},
+    "ttr_prime_s": {"hybrid": 22.12, "reconcile": 17.76}
+  },
+  "direction": {
+    "spawn_to_admit_s": {"reconcile_faster": "6/6 (5/5 excluding b4)"},
+    "ttr_prime_s": {"reconcile_faster": "5/6", "tie": "b3 (sub-second)"}
+  },
+  "ttr_order_hybrid_gt_reconcile": true,
+  "relief_completion": {
+    "separation": "none",
+    "note": "slow-rate <=2pp window timing is definition-sensitive across five variants; direction splits (3/3, 4/2, etc.); keep the campaign tail gate (5/6) as the relief-completion criterion"
+  },
+  "mechanism_note": "spawn->true-ready is arm-independent (12.6-13.4 s); the arm difference lives in true-ready->admit: hybrid fixed ~8 s (spawn->admit ~21 s via the 20 s fallback cadence), reconcile poll draw 0.4-7.7 s (spawn->admit 13.2-20.6 s)",
+  "provenance": [
+    "Re-anchoring executed by the Edge Experiment Analyzer, 2026-09-26, read-only on cloud-vm-rq3 (frozen worktree ~/rq3tim_frozen)",
+    "as-run onset-anchored values remain in timing_campaign.json (superseded for ordering; retained for provenance)"
+  ]
+}

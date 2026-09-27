@@ -13,7 +13,7 @@ Read-only artifact analysis. Subcommands:
 
 Family 3 measures the visible/bounded QoE consequence of readiness-event
 loss under a uniform EDGE_CPUS quota ladder; see
-docs/operation/testing/experiment/v3/rq3_qoe/experiment_plan.md.
+docs/operation/testing/experiment/v3/rq3_qoe_DO_NOT_CITE/experiment_plan.md.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ RUNNING_STATES = {"running", "created", "restarting"}
 # amended artifact-sanity minimums (pooled >=100, per-LAN >=50) so the
 # baseline bad_rate <=1% read is meaningful; the earlier draft's 1000/LAN
 # baseline figure is unreachable and was amended 2026-09-07 (see
-# docs/operation/testing/experiment/v3/rq3_qoe/experiment_plan.md §3).
+# docs/operation/testing/experiment/v3/rq3_qoe_DO_NOT_CITE/experiment_plan.md §3).
 QOE_LADDER = ("0.13", "0.12", "0.11", "0.10", "0.09")
 PLATEAU_MIN_POOLED = 5000
 PLATEAU_MIN_PER_LAN = 1000
@@ -67,7 +67,7 @@ CONTROL_BAD_MAX = 0.01
 BOUNDED_BAD_MAX = 0.15
 
 # Slow-share axis (amendment 2026-09-08, user-approved; see
-# docs/operation/testing/experiment/v3/rq3_qoe/experiment_plan.md §3/§4/§5).
+# docs/operation/testing/experiment/v3/rq3_qoe_DO_NOT_CITE/experiment_plan.md §3/§4/§5).
 # QoE worsening = "higher latency and/or timeouts": slow_rate counts plateau
 # service rows with status==timeout (unconditional; driver cap 300 s > T) or
 # latency_s > T. Controls slow ceiling 2 pp; event_only slow boundedness
@@ -1391,25 +1391,63 @@ def timing_onset_slow(run_dir: Path) -> float | None:
 
 
 def timing_relief_metrics(run_dir: Path) -> dict[str, Any]:
-    """Plateau-onset -> first new-backend success (time-to-relief, seconds).
+    """Spawn-anchored time-to-relief (H-T2 metric, re-anchored 2026-09-26).
 
-    A new backend is any backend_id matching edge_server_lan{1,2}_dynN (the
-    X-Backend-ID response header recorded per client row). Onset = the first
-    labeled compute_plateau sent_at (driver-labeled rows, not the snapshot).
+    TTR' = (first successful request served by an admitted dynamic backend,
+    any phase) - (earliest spawn_started_ts over the admitted relief wave),
+    read from the admission logs (`result == "admitted"`) and the client rows
+    (completed 2xx with a `backend_id` in the admitted-container set).
+
+    The as-run metric anchored at the plateau onset, but the relief wave is
+    spawned 27-35 s BEFORE onset, so the onset-anchored value measured the
+    phase boundary, not the relief interval; see
+    `docs/operation/testing/experiment/v3/rq3_timing/analysis/
+    timing_campaign_reanchored.json`. The old value is retained as
+    `ttr_onset_s` (diagnostic only).
+
+    Returns `ttr_s` (used by the campaign), `spawn_to_admit_s`,
+    `ttr_onset_s`, `new_backend_successes` (plateau-phase 2xx rows served by
+    admitted dynamic containers, for the eo_zero gate) and
+    `first_success_sent_s`.
     """
     rows = request_rows(run_dir)
     bounds = phase_bounds(run_dir)
-    onset = bounds[PHASE][0]
-    served = [row for row in rows
-              if row.get("phase") == PHASE
-              and is_completed(row) and is_success(row)
-              and TIMING_DYNAMIC_RE.search(row.get("backend_id", "") or "")]
-    if not served:
-        return {"ttr_s": None, "new_backend_successes": 0,
-                "first_success_sent_s": None}
-    first = min(row["_sent"] for row in served)
-    return {"ttr_s": first - onset, "new_backend_successes": len(served),
-            "first_success_sent_s": first}
+    onset = bounds[PHASE][0] if PHASE in bounds else None
+    admitted = [row for row in admission_rows(run_dir)
+                if row.get("result") == "admitted"
+                and TIMING_DYNAMIC_RE.search(row.get("container", "") or "")
+                and timestamp(row.get("spawn_started_ts")) is not None]
+    admitted_containers = {row.get("container") for row in admitted}
+    spawn_times = [timestamp(row.get("spawn_started_ts")) for row in admitted]
+    served_all = [row for row in rows
+                  if is_completed(row) and is_success(row)
+                  and (row.get("backend_id") or "") in admitted_containers]
+    served_plateau = [row for row in served_all
+                      if row.get("phase") == PHASE]
+
+    result: dict[str, Any] = {
+        "ttr_s": None,
+        "spawn_to_admit_s": None,
+        "ttr_onset_s": None,
+        "new_backend_successes": len(served_plateau),
+        "first_success_sent_s": None,
+    }
+    if admitted and served_all:
+        chain_start = min(spawn_times)
+        first = min(row["_sent"] for row in served_all)
+        result["ttr_s"] = first - chain_start
+        result["first_success_sent_s"] = first
+    if admitted:
+        first_admitted = min(
+            admitted, key=lambda row: row.get("_admitted_ts") or float("inf"))
+        spawn = timestamp(first_admitted.get("spawn_started_ts"))
+        admit = first_admitted.get("_admitted_ts")
+        if spawn is not None and admit is not None:
+            result["spawn_to_admit_s"] = admit - spawn
+    if onset is not None and served_plateau:
+        result["ttr_onset_s"] = (
+            min(row["_sent"] for row in served_plateau) - onset)
+    return result
 
 
 def _timing_row(path: Path, cell: str, arm: str) -> dict[str, Any]:
@@ -1699,6 +1737,8 @@ def timing_campaign_command(args: argparse.Namespace) -> int:
     none_slow: dict[tuple[int, str], float | None] = {}
     eo_slows: dict[int, float | None] = {}
     ttrs: dict[int, dict[str, float | None]] = {}
+    ttr_spawn_admit: dict[int, dict[str, float | None]] = {}
+    ttr_onset_diag: dict[int, dict[str, float | None]] = {}
     eo_new_successes: dict[int, int] = {}
     for block in blocks:
         infos = {key: _campaign_run_rates(cells[(block, *key)])
@@ -1757,6 +1797,10 @@ def timing_campaign_command(args: argparse.Namespace) -> int:
                   for arm in ("event_only", "hybrid", "reconcile")}
         ttrs[block] = {arm: relief[arm]["ttr_s"]
                        for arm in ("hybrid", "reconcile")}
+        ttr_spawn_admit[block] = {arm: relief[arm].get("spawn_to_admit_s")
+                                  for arm in ("hybrid", "reconcile")}
+        ttr_onset_diag[block] = {arm: relief[arm].get("ttr_onset_s")
+                                 for arm in ("hybrid", "reconcile")}
         eo_new_successes[block] = relief["event_only"]["new_backend_successes"]
 
     # H-T1 headline: per-block delta_slow AND onset delta (assessable blocks
@@ -1787,7 +1831,8 @@ def timing_campaign_command(args: argparse.Namespace) -> int:
                         and bounded_median is not None
                         and bounded_median <= SLOW_BOUNDED_EVENT_MAX)
 
-    # H-T2 relief completion + ordering.
+    # H-T2 relief completion + ordering (TTR re-anchored at the relief-wave
+    # spawn, 2026-09-26; the onset-anchored value is kept as a diagnostic).
     relief_blocks = [block for block in blocks
                      if tail_slow[(block, "hybrid")] is not None
                      and tail_slow[(block, "hybrid")] <= SLOW_CONTROL_MAX
@@ -1846,6 +1891,12 @@ def timing_campaign_command(args: argparse.Namespace) -> int:
         "H-T2": {"relief_blocks": relief_blocks,
                  "ttr_hybrid_s": ttr_hy, "ttr_reconcile_s": ttr_rc,
                  "ttr_order_hybrid_gt_reconcile": ttr_order,
+                 "spawn_to_admit_s": {f"b{block}_{arm}": ttr_spawn_admit[block][arm]
+                                      for block in blocks
+                                      for arm in ("hybrid", "reconcile")},
+                 "ttr_onset_diagnostic_s": {f"b{block}_{arm}": ttr_onset_diag[block][arm]
+                                            for block in blocks
+                                            for arm in ("hybrid", "reconcile")},
                  "event_only_zero_new_success_blocks": eo_zero,
                  "pass": h2_pass},
         "H-T3": {"none_cell_healthy": none_healthy, "pass": none_healthy},

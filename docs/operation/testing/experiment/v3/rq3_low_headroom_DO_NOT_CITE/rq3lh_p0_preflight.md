@@ -4,7 +4,7 @@
 
 **Host:** `cloud-vm-rq3`  
 **Frozen tag:** `rq3-sat-preflight-20260808`  
-**Experiment folder:** `docs/operation/testing/experiment/v3/rq3_low_headroom/`
+**Experiment folder:** `docs/operation/testing/experiment/v3/rq3_low_headroom_DO_NOT_CITE/`
 
 ## Stage 0 - Archive Inventory
 

@@ -101,8 +101,10 @@ echo "Launching application containers..."
 # --network none: prevents Docker from creating default network
 # --privileged for NAT router: needed to run iptables inside it
 docker run -dit --name edge_server_n1 --network none --restart=on-failure \
+  --log-opt max-size=100m --log-opt max-file=3 \
   --cpus=${EDGE_CPUS:-0.30} --memory=${EDGE_MEMORY:-256m} \
   --sysctl net.core.somaxconn=1024 \
+  --ulimit nofile=65536:65536 \
   -e LAN_ID=lan1 \
   -e OWN_MAC=00:00:00:00:00:02 \
   -e VIP_DATA_RECOVERY_N1_IP=10.0.0.252 \
@@ -119,6 +121,7 @@ docker run -dit --name edge_server_n1 --network none --restart=on-failure \
 
 echo "Starting edge_storage_server_n1 container..."
 docker run -dit --name edge_storage_server_n1 --network none \
+  --log-opt max-size=100m --log-opt max-file=3 \
   --cpus=${STORAGE_CPUS:-0.15} --memory=${STORAGE_MEMORY:-512m} \
   --no-healthcheck \
   -e LAN_ID=lan1 \
@@ -132,11 +135,12 @@ docker run -dit --name edge_storage_server_n1 --network none \
 
 echo "Starting aggregator_n1 container..."
 docker run -dit --name aggregator_n1 --network none --restart=on-failure \
+  --log-opt max-size=100m --log-opt max-file=3 \
   -e NETWORK_ID=lan1 \
   -e PULL_ADDR=tcp://0.0.0.0:5555 \
   -e PUB_ADDR=tcp://0.0.0.0:5556 \
   -e WINDOW_S=10 \
-  -e LOG_LEVEL=DEBUG \
+  -e LOG_LEVEL=${AGG_LOG_LEVEL:-INFO} \
   -e OVERLOAD_CPU_PCT="${OVERLOAD_CPU_PCT:-5.0}" \
   -e OVERLOAD_PEAK_LATENCY_MS="${OVERLOAD_PEAK_LATENCY_MS:-1000}" \
   -e OVERLOAD_ERROR_RATE="${OVERLOAD_ERROR_RATE:-0.05}" \

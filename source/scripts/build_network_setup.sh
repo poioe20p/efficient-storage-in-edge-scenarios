@@ -289,6 +289,7 @@ fi
 # -v /lib/modules:/lib/modules: share host kernel modules with container
 echo "Starting OVS container..."
 docker run -dit --name ovs --privileged --restart=on-failure \
+  --log-opt max-size=100m --log-opt max-file=3 \
   --cap-add=NET_ADMIN --cap-add=SYS_MODULE \
   --network host \
   -v /lib/modules:/lib/modules \
@@ -305,7 +306,8 @@ sleep 1
 # 2 - Start nat-router container
 # ===============================
 echo "Starting NAT router container..."
-docker run -dit --name nat-router --privileged --network none --restart=on-failure ubuntu-nat-router
+docker run -dit --name nat-router --privileged --network none --restart=on-failure \
+  --log-opt max-size=100m --log-opt max-file=3 ubuntu-nat-router
 
 if [[ $? -ne 0 ]]; then
     echo "Failed to start NAT router container. Aborting."
@@ -469,6 +471,7 @@ echo "Starting os-ken SDN controller container..."
 docker rm -f osken 2>/dev/null
 
 docker run -dit --name osken --network host --restart=on-failure \
+    --log-opt max-size=100m --log-opt max-file=3 \
     --privileged --pid=host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \
@@ -488,6 +491,7 @@ docker run -dit --name osken --network host --restart=on-failure \
         sdn_controller.main_n1
 
 docker run -dit --name osken_2 --network host --restart=on-failure \
+    --log-opt max-size=100m --log-opt max-file=3 \
     --privileged --pid=host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD":/workspace -w /workspace -e PYTHONPATH=/workspace \

@@ -1,6 +1,11 @@
 # RQ3 Reframing Recommendation — From Notification Transport to Usable-Capacity Realization
 
-> **Status:** proposed reframing, 2026-09-06.
+> **Status:** proposed reframing, 2026-09-06 — **implemented**.
+> **Implemented (2026-09-26):** the redesign recommended in §7 (event-only
+> vs periodic reconciliation vs hybrid under controlled event loss) was
+> executed as the `rq3_timing` campaign (36 runs, 2026-09-09/10) and is
+> reported in `rq3_final.md` §3.4–§6; §6's "if completed" language is
+> historical.
 > **Scope:** conceptual and literature review only. This document does not alter the frozen RQ3 treatments, metrics, or low-headroom campaign contract.
 
 ## 1. Decision

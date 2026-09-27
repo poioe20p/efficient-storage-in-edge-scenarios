@@ -185,6 +185,7 @@ add_arbiter() {
 	docker run -dit \
 		--name "$arbiter_name" \
 		--network none \
+		--log-opt max-size=100m --log-opt max-file=3 \
 		"$ARBITER_IMAGE" \
 		mongod --replSet "$RS_NAME" --bind_ip_all --port "$ARBITER_PORT"
 

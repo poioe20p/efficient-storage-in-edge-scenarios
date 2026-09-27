@@ -1,6 +1,8 @@
 # RQ3 — readiness admission: How It Works, in Simple Terms
 
-> Companion diagrams for `rq3.md` (readiness admission to traffic).
+> Companion diagrams for `rq3_final.md` (readiness-admission coordination and
+> usable-capacity realization; the former `rq3.md` was deleted 2026-09-26 and
+> absorbed into `rq3_final.md`).
 > One question, two modes: when a new compute backend is spawned, how does the
 > controller learn that it is ready to serve traffic?
 
@@ -92,7 +94,7 @@ sequenceDiagram
     G->>S: post-admission identity check: GET /ready
     S-->>G: 200 (identity OK)
     alt event lost or delayed
-        Note over G: after READINESS_EVENT_FALLBACK_S (5 s)<br/>worker probes /ready and admits via "probe_fallback"
+        Note over G: after READINESS_EVENT_FALLBACK_S (fallback window:<br/>5 s original v2 config, 20 s later direct/hybrid runs)<br/>worker probes /ready and admits via "probe_fallback"
     end
     C->>P: request to service VIP
     P->>P: backend selection + flow install
@@ -100,8 +102,11 @@ sequenceDiagram
 ```
 
 **Timing:** admission happens on the event (~0.001 s median), with a safety
-net — if the event never arrives, probing resumes after 5 s so a ready backend
-is never left dark forever.
+net — if the event never arrives, probing resumes after the fallback window
+(20 s in the evaluated direct/hybrid configurations; 5 s in the original v2
+configuration). In the fault-injection campaign the safety net is
+deliberately inert in the `event_only` arm (130 s — beyond the 120 s probe
+bound); see the variants section below.
 
 ---
 
@@ -111,14 +116,34 @@ is never left dark forever.
 | --------------------------------- | ------------------------------------------------------ | ------------------------------------------ |
 | How readiness is learned          | Edge emits`app_ready` event; controller admits on it | Controller polls`/ready` every 10 s      |
 | Admission delay (measured median) | 0.001 s                                                | ~7 s (up to one poll period)               |
-| Failure mode                      | Lost/delayed event → fallback probe after 5 s         | Ready backend stays dark until next scan   |
+| Failure mode                      | Lost/delayed event → fallback probe after the fallback window (20 s in the evaluated configs) | Ready backend stays dark until next scan   |
 | Robustness                        | Needs an event-absence safety net                      | Self-healing (re-checks state every cycle) |
 | Admission log source              | `admit_source = "event"` / `"probe_fallback"`      | `admit_source = "probe"`                 |
 
 ---
 
+## Fault-injection variants (timing campaign)
+
+The fault-injection campaign (`rq3_timing`, 36 runs) reuses these two
+mechanisms as three admission configurations, crossed with an intact or
+fully-dropped `app_ready` event source:
+
+| Arm | Configuration | Under total event loss |
+| --- | --- | --- |
+| `event_only` | direct + fallback 130 s (beyond the 120 s probe bound → provably inert) | admission lost; capacity stays dark |
+| `hybrid` | direct + fallback 20 s | edge lost, recovered by the fallback timer |
+| `reconcile` | periodic discovery (10 s poll); ignores the event channel | unaffected by construction |
+
+The drop is uniform and controller-side (`READINESS_EVENT_DROP_MODE=all`):
+the same fault reaches every arm, and only the arms that depend on the
+event channel are affected. Results: `rq3_final.md` §3.5 and §6;
+`docs/operation/testing/experiment/v3/rq3_timing/`.
+
 ## Where this lives in the system
 
 - Implementation: `source/sdn_controller/readiness_gate.py` (`ReadinessGate`, `PendingBackend`).
 - Plan: `docs/operation/testing/experiment/v2/rq3/` (RQ3 v2 records).
-- Results: `tese/research_questions/rq3/rq3_evaluation_conclusions.md`, `docs/operation/testing/experiment/v2/rq3/results.md`.
+- Results: `rq3_final.md` (consolidated; §3.5 rationale, §6 outcomes),
+  `rq3_evaluation_conclusions.md` (mechanism evidence), and the campaign
+  records `docs/operation/testing/experiment/v2/rq3/` and
+  `docs/operation/testing/experiment/v3/rq3_timing/`.

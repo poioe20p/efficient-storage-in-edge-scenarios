@@ -1,0 +1,7 @@
+block,position,cell,run_label,traffic_seed
+1,1,nn_cb,rq2_nn_cb_1,42
+1,2,nn_cb,rq2_nn_cb_2,42
+1,3,nn_cb,rq2_nn_cb_3,42
+1,4,nn_cb,rq2_nn_cb_4,42
+1,5,nn_cb,rq2_nn_cb_5,42
+1,6,nn_cb,rq2_nn_cb_6,43

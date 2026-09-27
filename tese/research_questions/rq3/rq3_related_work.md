@@ -1,15 +1,15 @@
 # RQ3 — Related Work: Evaluation Practice in readiness admission & Elasticity
 
 > **Status:** 2026-08-12 · draft for the related-work (Ch.2) positioning.
-> **Companion to:** `rq3.md` (research-question framing, basis papers) and
-> `rq3_evaluation_conclusions.md` (results + critical review).
+> **Companion to:** `rq3_final.md` (research-question framing, basis papers)
+> and `rq3_evaluation_conclusions.md` (results + critical review).
 > **Purpose:** this document answers *how the field evaluates
 > resource-orchestration mechanisms*, where RQ3 sits in that practice, and
 > how the RQ3 results should be read against it. It is the
 > evaluation-practice lens on the related work, not a replacement for the
-> basis-paper provenance in `rq3.md` §3.
+> basis-paper provenance in `rq3_final.md` §2.
 > **Bibliography note:** `tese/references.bib` currently holds 19 entries; the
-> RQ3 basis papers listed in `rq3.md` §6 are **not yet in the .bib**. Every
+> RQ3 basis papers listed in `rq3_final.md` §9 are **not yet in the .bib**. Every
 > citation proposed below must be **verified by DOI**
 > (`tools/add_bib_from_doi.py`) before it is added — none are fabricated.
 
@@ -17,7 +17,7 @@
 
 ## 1. The gap RQ3 addresses (recap)
 
-The readiness-admission blind spot, as established in `rq3.md` §3. The
+The readiness-admission blind spot, as established in `rq3_final.md` §2. The
 monitoring "visibility gaps" thread (Yaseen) is the closest remaining
 cross-domain analogue. No study isolates the
 path **from a backend becoming application-ready to it becoming eligible for
@@ -86,16 +86,23 @@ latency") while only showing efficiency + a null would look like the
 mechanism does not matter. RQ3's framing — **efficiency + bounded-QoS
 robustness** — is the safe one.
 
+**Update (2026-09-26):** the fault-injection campaign (`rq3_timing`)
+extends this picture with a demonstrated non-null QoS consequence: under
+total event loss with thin headroom, the non-recovering arm shows 8.3–14.4 %
+slow-share while recovering arms hold ≤ 2 pp tails (see `rq3_final.md` §6).
+The C1/C2 null stands, scoped to the fault-free regime, as the consequence
+check.
+
 ---
 
 ## 4. Applying the lens to the RQ3 basis papers
 
-Classifying the basis papers in `rq3.md` §3 by evaluation style shows why the
+Classifying the basis papers in `rq3_final.md` §2 by evaluation style shows why the
 ready→admitted axis is unmeasured: the field either reports the *symptom*
 without isolating the mechanism (B), or classifies without a timing dimension
 (A), or measures efficiency without the admission path (A/C).
 
-| Paper (label from `rq3.md`) | Style | What it measures | What it does NOT measure |
+| Paper (label from `rq3_final.md` §2) | Style | What it measures | What it does NOT measure |
 |---|---|---|---|
 | Yaseen (2025) | B | pull-based monitoring → visibility gaps | readiness, not load, is the gap |
 | Podolskiy et al. (IaaS) | B | reactive autoscaling jeopardizes QoS | the LB-discovery lag is one segment, not isolated |
@@ -109,7 +116,7 @@ contribution.
 
 ## 5. Bibliography status & to-add list (verify before citing)
 
-`tese/references.bib` has **19 entries**; the RQ3 basis papers (`rq3.md` §6)
+`tese/references.bib` has **19 entries**; the RQ3 basis papers (`rq3_final.md` §9)
 are not yet in it. Priority additions for the Ch.2 evaluation-practice
 section, each to be **verified by DOI** before it lands in the .bib:
 
@@ -128,7 +135,7 @@ section, each to be **verified by DOI** before it lands in the .bib:
 
 ## 6. Cross-references
 
-- `rq3.md` — research question, basis papers (§3), papers-to-cite list (§6).
+- `rq3_final.md` — research question, basis papers (§2), papers-to-cite list (§9).
 - `rq3_evaluation_conclusions.md` — results, critical review, the
   "demonstrated vs argued" claim boundary (§1.7).
 - `tese/literature_review/global_literature_review.md` — §5.5 (monitoring

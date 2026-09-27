@@ -1,7 +1,8 @@
 # RQ3 — Evaluation Conclusions & Critical Review
 
 > **Status:** 2026-08-21 · conclusions from the completed RQ3 evaluation (v3 compute-saturation evidence folded in, §3.2).
-> **Companion to:** `rq3.md` (research-question framing / provenance).
+> **Companion to:** `rq3_final.md` (current RQ3 framing; the former `rq3.md`
+> was deleted 2026-09-26 and absorbed into `rq3_final.md`).
 > **Evidence:** `docs/operation/testing/experiment/v2/rq3/` — `results.md` (§2–8),
 > `post_run_analysis.md` (§3–6), `run_matrix.md` (§3–6),
 > `rq3_campaign_summary.csv`, `rq3_probe_summary.csv`,
@@ -32,6 +33,7 @@
 | **Orchestration** (scale-decision → usable capacity, rate-12 cell) | Direct reaches usable capacity ~3.8 s sooner (2.17 vs 6.01 s, full separation, p = 0.0022, d = −1.000) |
 | **Sensitivity** (10 s → 15 s poll) | Quantization scales with the poll period (9.6 → 15.2 s) — the mechanism is the poll, not the host |
 | **User-harm consequence** (gap-window timeout/failure) | Null — 0.000 in every arm at every load tested (pre-registered-acceptable) |
+| **Fault consequence** (rq3_timing, 36 runs, 2026-09-09/10) | Under total event loss + thin headroom: event-only 8.3–14.4 % slow-share vs ≤ 2 pp recovering tails (5/6 blocks; one excluded); full-plateau contrast median 7.64 pp (MWU p = 0.004); onset median 28 pp; bounded (median 10.6 %); priced on **lost admission** (event-only fallback provably inert), not on the ~7 s delay |
 
 ### 1.1 What was evaluated
 
@@ -133,7 +135,7 @@ resilience margin that pays off when headroom disappears — in a deployment
 with weaker/fewer incumbent backends or higher relative load, the same ~7 s
 quantization would convert into user-visible degradation.
 
-> **Update (2026-09-25) — conversion since demonstrated, with the priced quantity identified.** The completed `rq3_timing` campaign (36 runs; `docs/operation/testing/experiment/v3/rq3_timing/`) demonstrates a user-visible cost under **total readiness-event loss with thin headroom** — but the priced quantity is **lost admission** (the event-only arm admits zero backends; its fallback is provably inert), not the ~7 s quantization. This boundary therefore stands: no tested regime converts the seconds-level admission *delay* into measurable user harm; the demonstrated user cost is the loss of admission without a recovery path. See `rq3_final.md` §5.
+> **Update (2026-09-25) — conversion since demonstrated, with the priced quantity identified.** The completed `rq3_timing` campaign (36 runs; `docs/operation/testing/experiment/v3/rq3_timing/`) demonstrates a user-visible cost under **total readiness-event loss with thin headroom** — but the priced quantity is **lost admission** (the event-only arm admits zero backends; its fallback is provably inert), not the ~7 s quantization. This boundary therefore stands: no tested regime converts the seconds-level admission *delay* into measurable user harm; the demonstrated user cost is the loss of admission without a recovery path. See `rq3_final.md` §5–§6.
 
 ### 1.6 The container-bind stall (shared infra cost, documented)
 
@@ -312,3 +314,9 @@ no value.
 > **no user-harm consequence under bounded demand** — and it does **not**
 > extend to the storage tier, which was evaluated and closed as a measured
 > null.
+
+> **Update (2026-09-26):** the fault regime adds a demonstrated non-null
+> consequence: under total event loss with thin headroom and no recovery
+> path, user-harm appears and is priced on lost admission (see the §1.5
+> update; `rq3_final.md` §6). The fault-free recommended claim above stands
+> as scoped.

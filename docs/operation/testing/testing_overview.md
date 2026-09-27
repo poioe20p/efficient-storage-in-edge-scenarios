@@ -56,42 +56,48 @@ The experiment-runner agent substitutes the campaign's host for `ssh cloud-vm`.
 
 ## Active Experiment Campaigns
 
-### research_q3 — surplus-capacity release mechanisms (2026-09-02)
+### research_q3 — surplus-capacity release mechanisms (2026-09-02) — 🚫 DEPRECATED
+
+> **Deprecated (2026-09-06)** — superseded by the RQ3 reframing; archive only (`_DO_NOT_CITE` folder). Do not cite as results.
 
 | Item | Value |
 | --- | --- |
-| Folder | `docs/operation/testing/experiment/research_q3/` |
+| Folder | `docs/operation/testing/experiment/research_q3_DO_NOT_CITE/` |
 | Arms | `off` / `immediate` / `drained` / `stabilized` (o/i/d/s) |
 | Runs | 12 (4 arms × n=3), `RANDOM_SEED=42`, labels `rq3rel_{o,i,d,s}1..3` |
 | Launch | `research_q3_launch_run.sh` (per run) |
 | Preflight | `rq3rel_p0_preflight.sh` |
 | Analysis | `cli_release_compare.py` |
-| Plan | `docs/operation/testing/experiment/research_q3/experiment_plan.md` |
+| Plan | `docs/operation/testing/experiment/research_q3_DO_NOT_CITE/experiment_plan.md` |
 
-### RQ3 low-headroom readiness follow-up (planned)
+### RQ3 low-headroom readiness follow-up (superseded — archive only)
 
-The approved follow-up to the August readiness-admission campaign is documented
-in [`v3/rq3_low_headroom/experiment_plan.md`](experiment/v3/rq3_low_headroom/experiment_plan.md).
-It has preparation tooling only; no VM run has launched. The follow-up screens
-uniform `EDGE_CPUS` quotas, then conditionally compares direct versus discovery
-under low headroom and separately tests total readiness-event-source absence.
+The superseded follow-up to the August readiness-admission campaign is
+documented in
+[`v3/rq3_low_headroom_DO_NOT_CITE/experiment_plan.md`](experiment/v3/rq3_low_headroom_DO_NOT_CITE/experiment_plan.md).
+It had preparation tooling only; no VM run was ever launched. The follow-up
+would have screened uniform `EDGE_CPUS` quotas and conditionally compared
+direct versus discovery under low headroom; it was superseded 2026-09-06 by
+the RQ3 reframing and is archive-only (`_DO_NOT_CITE`; do not cite as
+results).
 
-### RQ3 readiness-admission robustness (launched, STOPPED — QoE pivot)
+### RQ3 readiness-admission robustness (STOPPED — archive only)
 
 The robustness follow-up under the reframed RQ3 is documented in
-[`v3/rq3_robustness/experiment_plan.md`](experiment/v3/rq3_robustness/experiment_plan.md).
+[`v3/rq3_robustness_DO_NOT_CITE/experiment_plan.md`](experiment/v3/rq3_robustness_DO_NOT_CITE/experiment_plan.md).
 It compares event-only, hybrid, and reconciliation-only admission under
 controlled event loss and controller restart. It launched 2026-09-06…07 on
 `cloud-vm-rq3` and was **STOPPED by user decision after 19 valid runs** (block
 1 9/9, block 2 9/9, block 3 1/9): the frozen 0.15-quota regime lands in the
 0.28–0.69% failure envelope, so n=6 cannot produce visible QoE degradation.
-The 19 runs are retained as separate 0.15-family evidence; restart findings
-were characterized (arm-independent post-restart orphaning).
+The 19 runs are retained as archive only (`_DO_NOT_CITE`; do not cite as
+results); restart findings were characterized (arm-independent post-restart
+orphaning).
 
-### RQ3 QoE-consequence configuration discovery (pre-registered, STOPPED 2026-09-08)
+### RQ3 QoE-consequence configuration discovery (STOPPED — archive only)
 
 The QoE-consequence follow-up (Family 3) is documented in
-[`v3/rq3_qoe/experiment_plan.md`](experiment/v3/rq3_qoe/experiment_plan.md).
+[`v3/rq3_qoe_DO_NOT_CITE/experiment_plan.md`](experiment/v3/rq3_qoe_DO_NOT_CITE/experiment_plan.md).
 It descended a uniform `EDGE_CPUS` quota ladder {0.13 … 0.09} to find and lock
 a **reasonable** low-headroom configuration where total readiness-event loss
 produces visible, bounded degradation in the event-only arm while hybrid
@@ -101,17 +107,17 @@ a slow-share QoE axis was added 2026-09-08 (user-approved). **STOPPED and
 superseded 2026-09-08**: the plateau-saturation failure rate is structurally
 capped at ~1.5 % (driver patience makes timeout share bimodal), so the family
 could not produce solid RQ3 evidence; 7 runs retained as archive, superseded
-by [`rq3_timing`](experiment/v3/rq3_timing/experiment_plan.md).
+by [`rq3_timing`](experiment/v3/rq3_timing/experiment_plan.md) — archive-only
+(`_DO_NOT_CITE`; do not cite as results).
 
-### RQ3 Timing — readiness-loss relief contrast (pre-registered)
+### RQ3 Timing — readiness-loss relief contrast (completed 2026-09-09/10)
 
 The reframed QoE family (Family 4) is documented in
 [`v3/rq3_timing/experiment_plan.md`](experiment/v3/rq3_timing/experiment_plan.md).
 It keeps the three arms and both fault cells, fixes the quota at 0.12, and
-sweeps the `compute_plateau` **rate** {2.0, 2.5, 3.0} so the old static tier
-is visibly overloaded when solo while hybrid/reconcile recover into a healthy
-plateau tail. Preflight signal (P1 + P2 across 3 seeds, ≥7 pp median power
-margin) is required before the n=6 E stage launches.
+locks the `compute_plateau` **rate** at 2.0 (preflight signal 3-of-4 seeds,
+≥7 pp median power margin). The 36-run E stage completed 2026-09-09/10
+(overall pre-registered pass = false; H-T1 met — see `results.md`).
 
 ---
 

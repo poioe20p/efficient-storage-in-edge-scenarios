@@ -4,7 +4,7 @@
 # usage: bash research_q3_launch_run.sh <env_file> <label> <seed>
 #   e.g. bash research_q3_launch_run.sh arm_stabilized.env rq3rel_cal_s1 42
 # research_q3 arms: RELEASE_MECHANISM in {off, drained, immediate, stabilized}
-# (docs/operation/testing/experiment/research_q3). Resource shaping matches the
+# (docs/operation/testing/experiment/research_q3_DO_NOT_CITE). Resource shaping matches the
 # RQ3 v3 storage-constrained regime (EDGE_CPUS=0.08 / STORAGE_CPUS=0.25) so the
 # release mechanism is the only variable axis between runs.
 # Uses the canonical phases.json (no PHASES_CONFIG override).
@@ -24,7 +24,7 @@ LABEL="$2"
 SEED="${3:-42}"
 
 CANONICAL_ENV="source/scripts/testing/controller_env_overrides/current_state_integrated.env"
-ARM_ENV="docs/operation/testing/experiment/research_q3/env/$ENV_FILE"
+ARM_ENV="docs/operation/testing/experiment/research_q3_DO_NOT_CITE/env/$ENV_FILE"
 MERGED_ENV="$(mktemp /tmp/rq3rel_merged_XXXXXX.env)"
 python3 - "$CANONICAL_ENV" "$ARM_ENV" "$MERGED_ENV" <<'PYEOF'
 import sys

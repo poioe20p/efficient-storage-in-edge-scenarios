@@ -147,7 +147,7 @@ bash source/scripts/testing/research_q3_launch_run.sh arm_<x>.env research_q3_<x
 
 `<x>` ∈ {o=off, i=immediate, d=drained, s=stabilized}, timing ∈ {e=early,
 l=late}, `N` ∈ {1..6}. Arm env files live under
-`docs/operation/testing/experiment/research_q3/env/` and pin only the
+`docs/operation/testing/experiment/research_q3_DO_NOT_CITE/env/` and pin only the
 research_q3-relevant knobs; the base override
 `source/scripts/testing/controller_env_overrides/current_state_integrated.env`
 supplies everything else.

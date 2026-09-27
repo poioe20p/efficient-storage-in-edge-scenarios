@@ -7,7 +7,7 @@
 > failure envelope, so n=6 cannot produce visible QoE degradation. The QoE
 > consequence is now a separate Family-3 campaign (uniform-quota ladder, lock
 > at the first rung with visible degradation): see
-> [`../rq3_qoe/experiment_plan.md`](../rq3_qoe/experiment_plan.md). The 19 valid
+> [`../rq3_qoe_DO_NOT_CITE/experiment_plan.md`](../rq3_qoe_DO_NOT_CITE/experiment_plan.md). The 19 valid
 > runs are retained as 0.15-family evidence.
 
 **Family:** reframed RQ3, Family 2 (robustness). Family 1 (low-headroom
@@ -161,7 +161,7 @@ coordination design, not a re-emission assumption).
 5. `rq3rob_p0_01_prepare_tag.py` (manifest), `rq3rob_p0_02_analyzer_selftest.py`,
    `rq3rob_p0_03_preflight.sh`, `rq3rob_p1_01_launch_run.sh`
    (arm env + fault env + label + seed + optional restart offset).
-6. Docs: `docs/operation/testing/experiment/v3/rq3_robustness/`
+6. Docs: `docs/operation/testing/experiment/v3/rq3_robustness_DO_NOT_CITE/`
    {experiment_plan.md, run_matrix.md, preflight_campaign.md, preflight_log.md};
    update `testing_overview.md`, `v3/README.md`.
 

@@ -5,7 +5,7 @@
 # Runs on the cloud VM (cd's to the repo root, so any CWD works).
 #
 # Implements the pre-launch gate + P1 launch of the merged-design staged
-# preflight (docs/operation/testing/experiment/research_q3/preflight_campaign.md):
+# preflight (docs/operation/testing/experiment/research_q3_DO_NOT_CITE/preflight_campaign.md):
 # Stage 0 (local static checks) and Stage 1 (VM sync/harness) are
 # operator-driven per that doc; this script is the Stage 2.0 pre-launch
 # gate (canonical phases hold=480, canonical env pins off) and launches the

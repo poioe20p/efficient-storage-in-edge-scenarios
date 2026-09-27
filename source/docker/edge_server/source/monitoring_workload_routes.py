@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
+import threading
 import time
 
 from flask import Flask, jsonify, request
@@ -24,6 +26,20 @@ from vip_data_mongo_runtime import (
     run_with_request_lease,
     snapshot_normal_vip_config,
 )
+
+
+# ── service_pressure summary cache (2026-09-27) ──────────────────────────────
+# The /service_pressure summary is O(retained events) (buffer scan + per-event
+# snapshots + stats). With a full 72k-event buffer — staged by a preceding
+# content-bound episode — each call cost tens of ms of CPU, saturating the
+# 0.6-core edge under second-phase rate-15 runs (dbcb order; B-P2r/fix1 R1
+# meltdowns). This short-TTL single-flight cache amortizes the scan to at most
+# one refresh per TTL; concurrent requests serve the previous summary
+# (monitoring payload — staleness <= TTL accepted). 0 disables.
+_SP_CACHE_TTL_S = float(os.environ.get("SERVICE_PRESSURE_CACHE_TTL_S", "5.0"))
+_sp_cache: dict = {}
+_sp_refresh_lock = threading.Lock()
+_sp_refreshing: set = set()
 
 
 def register_monitoring_workload_routes(app: Flask, config, process_state) -> None:
@@ -199,28 +215,49 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
             raise BadRequest("limit must be greater than 0")
 
         limit = min(limit, 50)
-        requested_window_seconds = window_min * 60
-        now_epoch = time.time()
-        cutoff_epoch = now_epoch - requested_window_seconds
-        events, truncated = process_state.local_request_state.events_since_with_truncation(
-            cutoff_epoch
-        )
-        retained_window_seconds = requested_window_seconds
-        if truncated and events:
-            oldest_retained_epoch = min(float(ev.get("timestamp", now_epoch)) for ev in events)
-            retained_window_seconds = max(1.0, now_epoch - oldest_retained_epoch)
+        cache_key = (round(window_min, 6), limit)
+        am_refreshing = False
+        if _SP_CACHE_TTL_S > 0:
+            entry = _sp_cache.get(cache_key)
+            if entry is not None and (time.monotonic() - entry[0]) < _SP_CACHE_TTL_S:
+                return jsonify(entry[1]), 200
+            with _sp_refresh_lock:
+                if cache_key not in _sp_refreshing:
+                    _sp_refreshing.add(cache_key)
+                    am_refreshing = True
+            if not am_refreshing:
+                entry = _sp_cache.get(cache_key)
+                if entry is not None:
+                    return jsonify(entry[1]), 200
+        try:
+            requested_window_seconds = window_min * 60
+            now_epoch = time.time()
+            cutoff_epoch = now_epoch - requested_window_seconds
+            events, truncated = process_state.local_request_state.events_since_with_truncation(
+                cutoff_epoch
+            )
+            retained_window_seconds = requested_window_seconds
+            if truncated and events:
+                oldest_retained_epoch = min(float(ev.get("timestamp", now_epoch)) for ev in events)
+                retained_window_seconds = max(1.0, now_epoch - oldest_retained_epoch)
 
-        response = compute_service_pressure(
-            events,
-            limit=limit,
-            region=config.lan_id,
-            window_seconds=retained_window_seconds,
-        )
-        response["window_min"] = window_min
-        response["window_truncated"] = truncated
-        response["retained_window_seconds"] = round(retained_window_seconds, 3)
-        response["buffer_capacity_events"] = config.local_request_buffer_max_events
-        return jsonify(response), 200
+            response = compute_service_pressure(
+                events,
+                limit=limit,
+                region=config.lan_id,
+                window_seconds=retained_window_seconds,
+            )
+            response["window_min"] = window_min
+            response["window_truncated"] = truncated
+            response["retained_window_seconds"] = round(retained_window_seconds, 3)
+            response["buffer_capacity_events"] = config.local_request_buffer_max_events
+            if _SP_CACHE_TTL_S > 0:
+                _sp_cache[cache_key] = (time.monotonic(), response)
+            return jsonify(response), 200
+        finally:
+            if _SP_CACHE_TTL_S > 0 and am_refreshing:
+                with _sp_refresh_lock:
+                    _sp_refreshing.discard(cache_key)
 
     @app.route("/feed/<user_id>", methods=["GET"])
     def feed_ranking(user_id: str):

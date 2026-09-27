@@ -56,12 +56,18 @@ comments in the thesis file.
 - [ ] **B2** `ch:implementation`: replace all TODO shells with implementation
   text (testbed, OVS/Docker/MongoDB topology, telemetry pipeline, execution
   contexts, routing/admission logic, instrumentation, validation evidence).
-- [ ] **B3** `sec:experimental_setup`: one table per RQ (treatment, held
+- [X] **B3** `sec:experimental_setup`: one table per RQ (treatment, held
   constants, workload, experimental unit, replication, exclusions, statistical
-  test). Do NOT claim a common nine-phase workload.
-- [ ] **B4** `sec:results_rq1_delivery`: lead with latest-state ~9x episode p95
+  test). Do NOT claim a common nine-phase workload. APPLIED 2026-09-26:
+  section written (four subsections: testbed, demand model, metrics, campaign
+  designs); design tables `tab:rq1_design` / `tab:rq2_design` /
+  `tab:rq3_design`; workloads stated per campaign (no common phase list).
+- [X] **B4** `sec:results_rq1_delivery`: lead with latest-state ~9x episode p95
   (n=7, full separation); delayed arm significant but bimodal; no monotonic
-  four-arm order; state the LAN-asymmetry replicate.
+  four-arm order; state the LAN-asymmetry replicate. APPLIED 2026-09-26:
+  section written from the v3 campaign (28 runs, n=7 per arm); tables
+  `tab:rq1_arms` / `tab:rq1_edges`; figure `fig:rq1_episode_p95`
+  (`images/rq1_episode_latency_p95.png`).
 - [ ] **B5** `sec:results_rq2_action`: compute relief robust; storage-reserve
   CPU relief replicated; pre-registered storage p95 criterion NOT met; cf_db
   service degradation, sf_cb (corrected rerun) resource waste — label sf_cb as
@@ -73,8 +79,12 @@ comments in the thesis file.
   run-level comparison primary, per-backend stratification supporting;
   reconcile v2 fixed-image and v3 saturation campaigns explicitly (no merged
   sample sizes).
-- [ ] **B7** `sec:results_network` / `sec:results_scalability`: remove both
-  headings unless dedicated evidence exists.
+- [X] **B7** `sec:results_network` / `sec:results_scalability`: remove both
+  headings unless dedicated evidence exists. APPLIED 2026-09-26: both headings
+  removed; the salvageable control-overhead item (controller CPU/RSS from
+  `controller_stats.csv`) is carried as a TODO in `sec:discussion`; the
+  cross-LAN/WAN/telemetry-overhead and scale-behaviour items dropped (no
+  dedicated evidence; scale coverage lives in the RQ sections and Ch.6).
 - [ ] **B8** `sec:discussion`: conceptual synthesis only — no summed effect
   sizes, no universal "most important interface" claim.
 - [ ] **B9** `ch:conclusions`: per-RQ answer table (question / supported answer
@@ -93,8 +103,10 @@ comments in the thesis file.
   platform capabilities or held-constant context where unevaluated — APPLIED
   2026-09-04 (compressed tier paragraph in `sec:elastic_data`);
   re-applied 2026-09-04 after a concurrent rewrite re-expanded it.
-- [ ] **C3** RQ1 evidence: state delayed-arm bimodality and one LAN-asymmetry
-  replicate.
+- [X] **C3** RQ1 evidence: state delayed-arm bimodality and one LAN-asymmetry
+  replicate. APPLIED 2026-09-26: both stated in `sec:results_rq1_delivery`
+  (collapsed B replicates 65.3 s and 64.7 s; `delayed_3` domain asymmetry
+  21.1 s vs 4.0 s).
 - [ ] **C4** Archive the RQ1 raw dataset and statistics locally before making
   reproducibility claims.
 
@@ -129,3 +141,7 @@ comments in the thesis file.
   `sdn_load_balancing_v2` (uncommented), `architecture_overview` (Fig. 3.1),
   `vip_routing_sequence`, `telemetry_delivery_paths`; removed the Ch. 2
   `monitoring_telemetry_pipeline` figure (image dropped by author).
+- 2026-09-26: RQ1 results section written — `sec:results_rq1_delivery`
+  (§5.2) populated from the v3 campaign (staged draft applied to
+  `main.tex`); B4 and C3 closed; figure
+  `images/rq1_episode_latency_p95.png` added.

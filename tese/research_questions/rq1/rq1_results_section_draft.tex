@@ -1,0 +1,189 @@
+% ============================================================================
+% PROPOSED — RQ1 results section (STAGING DRAFT; not part of the build)
+% ============================================================================
+% Prepared 2026-09-26. Insert target in main.tex: §5.2, currently
+%   \section{Telemetry Delivery Semantics (RQ1)}\label{sec:results_rq1_delivery}
+% whose TODO comment this draft replaces (heading text and label stay as they
+% are).
+%
+% NUMBER PROVENANCE (all values re-verified 2026-09-26 against the campaign
+% record):
+%   - tese/research_questions/rq1/rq1_conclusions.md (F1--F10, verdicts)
+%   - docs/operation/testing/experiment/v3/rq1/analysis/rq1_campaign_summary.md
+%     (per-run table, pre-registered edges, non-surge table)
+%   - docs/operation/testing/experiment/v3/rq1/post_run_analysis.md §5.1
+%     (margin effect: control-loop timings, processing-time spread)
+%   - observability values (delivered fraction, information age, detection
+%     delay, window coverage) recomputed from the 28 run bundles'
+%     analysis/rq1_delivery/*.csv on cloud-vm, 2026-09-26.
+%
+% FIGURE:
+%   Source: docs/operation/testing/experiment/v3/rq1/graphs/thesis/
+%           episode_latency_p95.png
+%   Copy to: tese/images/rq1_episode_latency_p95.png
+%   (pk: copy first, then build. Do NOT use endpoint_latency_p95.png — that
+%   variant plots the run-wide pooled p95, which dilutes the episode and does
+%   not match the pre-registered metric.)
+%
+% AFTER INSERTING (verification protocol):
+%   - grep old TODO form -> zero matches; grep "usable capacity was 28.5" ->
+%     present; reload main.tex.
+%   - Update tese/Notes/purpose_evidence_map.md and
+%     tese/miscelineous/plan_claim_aligment_with_measured_evidence.md (B4, C3
+%     close on insert; C4 = archive the campaign dataset locally — still an
+%     open decision, see chat note 2026-09-26).
+%
+% OPEN DECISIONS (do not resolve in the text yet):
+%   1. Data-chart figure pipeline: the thesis figure instructions currently
+%      say "every figure is drawn in draw.io"; result charts have no drawio
+%      genre. Recommendation: codify a carve-out for source-generated result
+%      charts (analysis pipeline) once approved.
+%   2. Optional appendix material kept out of the body: per-bucket no-masking
+%      check, run-isolation/scale-down integrity closure, per-run matrices,
+%      alternate graphs (completeness_vs_infoage, missed_overload,
+%      overload_detection_delay, scale_reaction_latency, per-phase latency).
+% ============================================================================
+
+
+\section{Telemetry Delivery Semantics (RQ1)}\label{sec:results_rq1_delivery}
+
+The campaign compared the three delivery semantics named in
+Section~\ref{sec:research_questions} under the overload episode described in
+Section~\ref{sec:experimental_setup}, with the latest-state class realised in
+two lossy forms. Arm~A (event-preserving) hands every completed telemetry
+window to the decision engine exactly once and in source order; arm~B
+(delayed event-preserving) hands the same ordered windows with a fixed,
+pre-registered delay of 30~s and no burst replay; arm~C (latest-state
+polling) delivers only the most recent completed window at each 30~s poll;
+and arm~D (sampled push) delivers every third completed window immediately
+and drops the intermediate windows. The aggregation window, scaling policy,
+routing policy, and workload were held constant across arms. Each arm was run
+seven times, once in each of seven seed blocks shared by the four arms,
+giving 28 runs in total, with each run treated as an experimental unit.
+
+The delivered evidence matched this design. Arms A and B received every
+completed telemetry window (delivered fraction 1.000), while the lossy arms
+received about one third of them (C 0.325--0.336, D 0.328--0.336), missing on
+average 55.0 (C) and 49.8 (D) overload windows per run. The
+mean information age at decision rose from 3.5~s in A to 11.7~s in D, 16.2~s
+in C and 33.3~s in B, and the detection of the overload onset was delayed in
+step: a mean of 0.62~s in A, 0.64~s in D, 5.58~s in C and 30.19~s in B.
+
+Later or lossier delivery also delayed the scaling reaction. The median time
+from the start of the overload episode to usable capacity
+(Section~\ref{sec:experimental_setup}) was 28.5~s in A, 59.6~s in B, 79.6~s
+in C and 83.2~s in D (Table~\ref{tab:rq1_arms}). The first two steps of the
+pre-registered ordering (A < B < C $\approx$ D) were fully replicated:
+A < B and B < C in all seven blocks. C and D
+were not cleanly separated, with D later at the median by 3.6~s (C < D in
+five of seven blocks). Reaction claims use usable-capacity latency; the time
+to the first scale-up decision is descriptive only, because delivery timing
+confounds it by construction.
+
+The user-visible service quality tracked the reaction timing
+(Table~\ref{tab:rq1_edges}, Figure~\ref{fig:rq1_episode_p95}). Incomplete
+demand evidence degraded the episode endpoint latency p95 by about nine
+times: the median per-run p95 was 3.7~s in A against 35.0~s in C and 34.5~s
+in D, and the A--D contrast separated completely, every A replicate lying
+below every C and D replicate (Cliff's $\delta = -1.000$, exact
+$p = 0.0006$). The delayed arm degraded in aggregate --- median 10.8~s
+against A's 3.7~s ($\delta = -0.959$, exact $p = 0.0012$) --- but not
+uniformly: two of the seven B replicates collapsed to lossy-arm levels
+(65.3~s and 64.7~s) while the other five remained near A (5.0--12.6~s).
+
+A post-campaign analysis of the run artifacts attributes the spread of the
+delayed arm to the margin each semantics leaves to the base fleet rather than
+to the control loop. Across all seven delayed runs the control loop behaved
+identically: the decision evidence was 30~s old, the first scale-up decision
+fell between 52.0~s and 60.4~s, and usable capacity between 52.6~s and
+63.6~s. The user-visible outcome depends on how much of the surge the base
+fleet must absorb alone before that capacity arrives --- about 29~s in A,
+55--62~s in B, and 78--83~s in C and D --- and on the testbed's run-to-run
+variance: the episode median compute processing time varied roughly sixfold
+(16--94~ms) across runs of identical configuration, in every arm. A's short
+window absorbs this variance invisibly; the window of C and D is always
+consumed; B is conditional, its cost materialising only when the slow states
+of the platform are sampled. The delivery semantics set the margin; the
+platform state decides the outcome.
+
+Two pre-registered expectations were not reproduced and are reported as
+such. The full ordering A < B < C $\approx$ D did not hold: B does not sit
+reliably between
+A and C, because its collapsed replicates straddle C (B--C $p = 0.209$,
+direction 5/7). And the sampled-push arm was not strictly worst: C and D were
+statistically indistinguishable ($p = 0.456$), with the point estimate
+marginally against C. One delayed replicate showed a domain asymmetry above
+the campaign's threefold screening line (domain~2 p95 21.1~s against 4.0~s
+in domain~1); it was the only run above that line.
+
+Outside the overload episode the arms were indistinguishable: baseline,
+recovery and demand-drop p95 stayed at about 1.05--1.08~s in every arm. No
+run recorded a single timeout inside the episode in any arm; the only
+timeouts in the campaign were the 300~s client-cap tail timeouts during
+demand drop (0.07--0.12~\% of offered requests). Cancellation shares were
+flat across arms at roughly 5--7~\% of offered requests, and a small
+completed-without-status error class remained largest in B (2.22~\% against
+0.03--0.42~\% elsewhere). A per-bucket check (30~s buckets) confirmed that
+the episode ordering is not an artifact of aggregating the episode into a
+single percentile. The degradation is therefore confined to the overload
+episode, and no arm showed a harness-level collapse.
+
+In sum, the two failure modes of the observation interface were
+distinguishable and not interchangeable under this workload: loss of
+intermediate demand evidence was the robust driver of user-visible cost,
+while delivery delay was costly in proportion to the margin it consumes.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Delivery-semantics arms: usable capacity, episode latency, and
+    outcome classes (medians with min--max ranges over the seven replicates;
+    delivered fraction and timeouts as observed). Usable capacity is the time
+    from episode onset to first new capacity serving traffic; the episode p95
+    is the served-basis endpoint latency p95 (per-run mean of the two
+    domains).}
+    \label{tab:rq1_arms}
+    \footnotesize
+    \setlength{\tabcolsep}{2pt}
+    \begin{tabular}{l c c c c c}
+        \toprule
+        Arm & Delivered & Usable capacity (s) & Episode p95 (s) & Timeouts & Canceled (\%) \\
+        \midrule
+        A -- event-preserving & 1.000 & 28.5 (25.1--32.9) & 3.7 (2.8--5.2) & 0 & 5.6 \\
+        B -- delayed (+30~s) & 1.000 & 59.6 (55.1--61.5) & 10.8 (5.0--65.3) & 0 & 6.5 \\
+        C -- latest-state (poll 30~s) & 0.325--0.336 & 79.6 (73.7--81.8) & 35.0 (27.0--39.6) & 0 & 5.4 \\
+        D -- sampled push (/3) & 0.328--0.336 & 83.2 (75.1--88.1) & 34.5 (30.7--37.6) & 0 & 6.1 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Pre-registered primary contrasts on the episode endpoint latency
+    p95 (served basis; per-run mean of the two domains). Exact Mann--Whitney
+    $p$-values (complete enumeration, $n = 7$ per arm); Cliff's $\delta$
+    computed as $P(x > y) - P(x < y)$ with 95~\% bootstrap CI; direction =
+    blocks (of seven) consistent with the predicted order. No multiplicity
+    correction (four pre-registered edges).}
+    \label{tab:rq1_edges}
+    \begin{tabular}{l c c c c}
+        \toprule
+        Contrast & Medians (s) & Exact $p$ & Cliff's $\delta$ [95~\% CI] & Direction \\
+        \midrule
+        Delay A--B & 3.73 vs 10.77 & 0.0012 & $-0.959$ [$-$1.000, $-$0.755] & 7/7 \\
+        Delay D--C & 34.50 vs 35.04 & 0.456 & $-0.265$ [$-$0.837, 0.388] & 2/7 \\
+        Loss A--D & 3.73 vs 34.50 & 0.0006 & $-1.000$ [$-$1.000, $-$1.000] & 7/7 \\
+        Loss B--C & 10.77 vs 35.04 & 0.209 & $-0.429$ [$-$1.000, 0.429] & 5/7 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{images/rq1_episode_latency_p95.png}
+    \caption{Episode endpoint latency p95 by delivery semantics (served
+    basis; per-run mean of the two domains; seven replicates per arm). Bars
+    show the median across replicates, whiskers the min--max range, and dots
+    the individual runs; the two highest delayed points are the replicates
+    where the base fleet's absorption margin was consumed.}
+    \label{fig:rq1_episode_p95}
+\end{figure}

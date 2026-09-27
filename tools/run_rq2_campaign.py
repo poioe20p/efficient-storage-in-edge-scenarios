@@ -48,6 +48,28 @@ CELLS: dict[str, tuple[str, str, str]] = {
                "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "ba_db": ("rq2_bottleneck_aware.env", "phases_rq2_data_bound.json",
                "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    # ── RQ2 extension campaign (rq2_extension plan, 2026-09-26) ──────────
+    # nn_*: no-op arm cells (rq2_none.env). Shift cells: the six
+    # multi-episode varying-demand cells (one phases file per order), with
+    # the BETA bottleneck cap allocation (edge 0.6 / storage 0.15)
+    # [probe-finalized 2026-09-27 — frozen by the run_matrix §3 cap table
+    # at FREEZE-2].
+    "nn_cb": ("rq2_none.env", "phases_rq2_compute_bound.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "nn_db": ("rq2_none.env", "phases_rq2_data_bound.json",
+               "STORAGE_CPUS=0.15 EDGE_CPUS=1.20 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "cf_shcbdb": ("rq2_compute_first.env", "phases_rq2_varying_cbdb.json",
+               "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "sf_shcbdb": ("rq2_storage_first.env", "phases_rq2_varying_cbdb.json",
+               "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "ba_shcbdb": ("rq2_bottleneck_aware.env", "phases_rq2_varying_cbdb.json",
+               "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "cf_shdbcb": ("rq2_compute_first.env", "phases_rq2_varying_dbcb.json",
+               "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "sf_shdbcb": ("rq2_storage_first.env", "phases_rq2_varying_dbcb.json",
+               "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "ba_shdbcb": ("rq2_bottleneck_aware.env", "phases_rq2_varying_dbcb.json",
+               "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
 }
 
 REPO = "~/efficient-storage-in-edge-scenarios"

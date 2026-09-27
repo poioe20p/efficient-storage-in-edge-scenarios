@@ -213,9 +213,9 @@ New:
 - `source/scripts/testing/rq3lh_p1_01_launch_run.sh`
 - `source/scripts/testing/controller_env_overrides/rq3lh_direct_event_absent.env`
 - generated per run: `quota_snapshot.json`
-- `docs/operation/testing/experiment/v3/rq3_low_headroom/experiment_plan.md`
-- `docs/operation/testing/experiment/v3/rq3_low_headroom/rq3lh_p0_preflight.md`
-- `docs/operation/testing/experiment/v3/rq3_low_headroom/rq3lh_preflight_log.md`
+- `docs/operation/testing/experiment/v3/rq3_low_headroom_DO_NOT_CITE/experiment_plan.md`
+- `docs/operation/testing/experiment/v3/rq3_low_headroom_DO_NOT_CITE/rq3lh_p0_preflight.md`
+- `docs/operation/testing/experiment/v3/rq3_low_headroom_DO_NOT_CITE/rq3lh_preflight_log.md`
 
 Modify only:
 

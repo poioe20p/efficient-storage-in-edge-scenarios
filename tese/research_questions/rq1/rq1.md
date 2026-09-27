@@ -55,12 +55,17 @@ AdapPF shows freshness matters for a scheduler. **No reviewed paper distinguishe
 
 ## 4. Experiment design (summary)
 
-Four arms in the final (v3) campaign, everything else fixed:
+Four arms, forming a **2×2 factorial** over the two axes — completeness (complete vs ~1/3 of windows) × delivery staleness (fresh vs delayed):
+
+| | Complete (all windows) | Lossy (~1/3 of windows) |
+| --- | --- | --- |
+| **Fresh delivery** | A `ep` | D `sp` |
+| **Stale delivery** | B `delayed` (+30 s) | C `ls` (delivered window lags 0–30 s) |
 
 1. **Event-preserving reference (A `ep`)** — every completed telemetry window delivered exactly once, in source order (fresh + complete).
 2. **Delayed event-preserving (B `delayed`)** — same ordered windows, fixed pre-registered delay (+30 s), no burst replay (stale + complete).
-3. **Latest-state polling (C `ls`, poll-30)** — consumer gets only the most recent completed window; intermediate windows are not delivered (fresh + lossy, ~1/3).
-4. **Latest-state, sampled-push realization (D `sp`, /3)** — a second lossy realization of the latest-state class: periodic sampling of the window stream (fresh + lossy, ~1/3); not a fourth named delivery semantics.
+3. **Latest-state polling (C `ls`, poll-30)** — consumer gets only the most recent completed window at each 30 s poll; intermediate windows are never delivered (stale + lossy, ~1/3).
+4. **Sampled-push (D `sp`)** — every 3rd window delivered immediately (sub-second) from the same durable log (fresh + lossy, ~1/3); the factorial's fourth cell, isolating completeness from C's poll lag.
 
 The v3 campaign (4 arms × n=7 = 28 runs) ran the co-loaded 180 s overload episode on the fixed platform; verdict and design details in [`rq1_conclusions.md`](rq1_conclusions.md).
 
@@ -107,7 +112,7 @@ overview `docs/operation/telemetry/telemetry_overview.md`.
 
 ## 6. Papers to cite in related work (Ch.2)
 
-AdapPF (Huang & Pierre, 2023) · Yaseen (2025) · Zhang & Guo (2014) · Belgaum et al. (2020) · Usman et al. (2022, verify) · plus the telemetry SOTA README (`tese/literature_review/01_telemetry_rq1/README.md`).
+AdapPF (Huang & Pierre, 2023) · Yaseen (2025) · Belgaum et al. (2020) · Usman et al. (2022, verify) · plus the telemetry SOTA README (`tese/literature_review/01_telemetry_rq1/README.md`).
 
 ## 7. Cross-references
 

@@ -136,7 +136,7 @@ canonical value is `off`.
 
 Per-arm env files (research_q3 pins only; the canonical
 `current_state_integrated.env` supplies everything else) live under
-`docs/operation/testing/experiment/research_q3/env/`: `arm_off.env`,
+`docs/operation/testing/experiment/research_q3_DO_NOT_CITE/env/`: `arm_off.env`,
 `arm_immediate.env`, `arm_drained.env`, `arm_stabilized.env`.
 
 ---

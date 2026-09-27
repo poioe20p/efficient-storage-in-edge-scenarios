@@ -345,7 +345,7 @@ within these defined phase files.
 ## research_q3 canonical workload (2026-09-02)
 
 The research_q3 release-mechanism campaign (plan:
-`docs/operation/testing/experiment/research_q3/experiment_plan.md`) replaces
+`docs/operation/testing/experiment/research_q3_DO_NOT_CITE/experiment_plan.md`) replaces
 canonical `source/scripts/testing/phases.json` with a 5-phase
 recede-hold-return profile that runs the surplus-release cycle twice. This
 section supersedes the 6-phase description above for canonical runs.

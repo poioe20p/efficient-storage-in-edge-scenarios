@@ -158,7 +158,7 @@ if 2.0 under-saturates while 2.5 breaks driver-clean. No qualifying rung by
    rate at lock time).
 7. Docs: `docs/operation/testing/experiment/v3/rq3_timing/` {this file,
    `run_matrix.md`, `preflight_campaign.md`, `preflight_log.md`}; STOP note in
-   `rq3_qoe/preflight_log.md`; cross-references updated.
+   `rq3_qoe_DO_NOT_CITE/preflight_log.md`; cross-references updated.
 
 Non-goals: no controller/application changes, no new images, no new env
 files, thesis text unchanged until evidence.
@@ -220,3 +220,13 @@ during implementation.
   one reconcile late-tail transient — diagnosed, onset Δ 24.2 pp still
   passed). `rq3tim_preflight_lock.json` written. Lock interpretation amended:
   ≥3-of-≥4 independent seeds ≥5 pp (full AND onset) with medians ≥7 pp.
+- 2026-09-26 (analysis-only) — H-T2 TTR metric re-anchored and adopted in
+  `timing_relief_metrics`: the reported quantity is now "first relief-backend
+  spawn → first successful serve by an admitted backend (any phase)"; the
+  onset-anchored value is retained as `ttr_onset_s` (diagnostic) and the
+  campaign JSON gains `spawn_to_admit_s` + `ttr_onset_diagnostic_s` fields.
+  Rationale: the relief wave is spawned 27–35 s BEFORE onset (−26.9 to −35.4 s
+  vs onset), so the onset-anchored read measured the phase boundary. Outcome:
+  reconcile ahead of hybrid (spawn→admit 6/6; spawn→first serve 5/6 + tie) —
+  `analysis/timing_campaign_reanchored.json`; E-stage records unchanged; no
+  reruns.

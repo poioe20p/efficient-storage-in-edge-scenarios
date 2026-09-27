@@ -21,7 +21,7 @@ The quarantine state machine (IDLE → ACTIVE → DORMANT → IDLE) is used only
 state is guarded by a ``threading.Lock``; every method is idempotent and
 never raises.
 
-See ``docs/operation/testing/experiment/research_q3/experiment_plan.md`` for
+See ``docs/operation/testing/experiment/research_q3_DO_NOT_CITE/experiment_plan.md`` for
 the comparison design.
 """
 

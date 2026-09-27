@@ -1,6 +1,7 @@
 # Purpose Evidence Map — Why This Thesis, and the Evidence Behind Each Claim
 
-> **Status:** 2026-07-31; refreshed 2026-08-01 (corpus reorganisation).
+> **Status:** 2026-07-31; refreshed 2026-08-01 (corpus reorganisation);
+> 2026-09-26 (RQ1 results written into §5.2, `sec:results_rq1_delivery`).
 > Companion to `thesis_overview.md` (framing) and
 > `../literature_review/global_literature_review.md` (evidence ledger).
 > **Quote source:** all verbatim quotes below come from the evidence ledger
@@ -177,6 +178,12 @@ event-preserving) vs **lost intermediate evidence** (latest-state) — matters f
 *stateful service's* scaling + admission chain, and measures magnitude per mode.
 No reviewed paper distinguishes the two semantics or traces them through scaling
 and admission.
+
+**Answered (2026-09-26):** measured in the v3 RQ1 campaign (28 runs, n = 7 per
+arm) — loss of intermediate evidence was the robust driver (about 9× episode
+p95, full separation), while delivery delay was conditional on the platform's
+absorption margin. Reported in §5.2 (`sec:results_rq1_delivery`); evidence
+record: `tese/research_questions/rq1/rq1_conclusions.md`.
 
 ### I2 — Decision → capacity action (RQ2, bottleneck-aware scaling action)
 
