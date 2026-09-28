@@ -6,6 +6,19 @@
 % whose TODO comment this draft replaces (heading text and label stay as they
 % are).
 %
+% SYNC NOTE 2026-09-28: main.tex §5.2 updated — the delivery paragraph was
+% trimmed to reference the new tab:rq1_observation (delivery realisation and
+% overload observability); this draft mirrors the paragraph, the new table,
+% and the British-English alignments (artefacts, cancelled). Exhibit order in
+% both files: observation table → arms table → edges table → figure.
+%
+% SYNC NOTE 2026-09-29: the observation table and the §5.1 outcomes bullet
+% were trimmed to the two relevant metrics (delivered fraction, information
+% age at decision); the detection-delay and missed-window columns were cut
+% from reporting (the campaign record retains them; appendix graphs
+% overload_detection_delay / missed_overload still exist). This draft
+% mirrors the trim.
+%
 % NUMBER PROVENANCE (all values re-verified 2026-09-26 against the campaign
 % record):
 %   - tese/research_questions/rq1/rq1_conclusions.md (F1--F10, verdicts)
@@ -61,13 +74,10 @@ routing policy, and workload were held constant across arms. Each arm was run
 seven times, once in each of seven seed blocks shared by the four arms,
 giving 28 runs in total, with each run treated as an experimental unit.
 
-The delivered evidence matched this design. Arms A and B received every
-completed telemetry window (delivered fraction 1.000), while the lossy arms
-received about one third of them (C 0.325--0.336, D 0.328--0.336), missing on
-average 55.0 (C) and 49.8 (D) overload windows per run. The
-mean information age at decision rose from 3.5~s in A to 11.7~s in D, 16.2~s
-in C and 33.3~s in B, and the detection of the overload onset was delayed in
-step: a mean of 0.62~s in A, 0.64~s in D, 5.58~s in C and 30.19~s in B.
+The delivered evidence matched this design
+(Table~\ref{tab:rq1_observation}): arms A and B received every completed
+telemetry window, while the lossy arms received about one third of them; the
+information age at decision varied with the delivery treatment.
 
 Later or lossier delivery also delayed the scaling reaction. The median time
 from the start of the overload episode to usable capacity
@@ -91,7 +101,7 @@ against A's 3.7~s ($\delta = -0.959$, exact $p = 0.0012$) --- but not
 uniformly: two of the seven B replicates collapsed to lossy-arm levels
 (65.3~s and 64.7~s) while the other five remained near A (5.0--12.6~s).
 
-A post-campaign analysis of the run artifacts attributes the spread of the
+A post-campaign analysis of the run artefacts attributes the spread of the
 delayed arm to the margin each semantics leaves to the base fleet rather than
 to the control loop. Across all seven delayed runs the control loop behaved
 identically: the decision evidence was 30~s old, the first scale-up decision
@@ -124,7 +134,7 @@ demand drop (0.07--0.12~\% of offered requests). Cancellation shares were
 flat across arms at roughly 5--7~\% of offered requests, and a small
 completed-without-status error class remained largest in B (2.22~\% against
 0.03--0.42~\% elsewhere). A per-bucket check (30~s buckets) confirmed that
-the episode ordering is not an artifact of aggregating the episode into a
+the episode ordering is not an artefact of aggregating the episode into a
 single percentile. The degradation is therefore confined to the overload
 episode, and no arm showed a harness-level collapse.
 
@@ -132,6 +142,26 @@ In sum, the two failure modes of the observation interface were
 distinguishable and not interchangeable under this workload: loss of
 intermediate demand evidence was the robust driver of user-visible cost,
 while delivery delay was costly in proportion to the margin it consumes.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Delivery realisation and overload observability (mean over the
+    seven replicates; delivered fraction as the observed range): fraction of
+    telemetry windows delivered and mean information age at decision.}
+    \label{tab:rq1_observation}
+    \footnotesize
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{l c c}
+        \toprule
+        Arm & Delivered & Information age (s) \\
+        \midrule
+        A -- event-preserving & 1.000 & 3.5 \\
+        B -- delayed (+30~s) & 1.000 & 33.3 \\
+        C -- latest-state (poll 30~s) & 0.325--0.336 & 16.2 \\
+        D -- sampled push (/3) & 0.328--0.336 & 11.7 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \begin{table}[htbp]
     \centering
@@ -146,7 +176,7 @@ while delivery delay was costly in proportion to the margin it consumes.
     \setlength{\tabcolsep}{2pt}
     \begin{tabular}{l c c c c c}
         \toprule
-        Arm & Delivered & Usable capacity (s) & Episode p95 (s) & Timeouts & Canceled (\%) \\
+        Arm & Delivered & Usable capacity (s) & Episode p95 (s) & Timeouts & Cancelled (\%) \\
         \midrule
         A -- event-preserving & 1.000 & 28.5 (25.1--32.9) & 3.7 (2.8--5.2) & 0 & 5.6 \\
         B -- delayed (+30~s) & 1.000 & 59.6 (55.1--61.5) & 10.8 (5.0--65.3) & 0 & 6.5 \\

@@ -1,7 +1,9 @@
 # RQ1 — Results-Chapter Readiness Dossier
 
-> **Status:** 2026-09-26 · **Purpose:** one map of the complete RQ1 chain —
-> question → design/research → expectations → evaluation → results →
+> **Status:** 2026-09-29 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
+> 2026-09-28; observation table added 2026-09-28, trimmed to the two
+> observation axes 2026-09-29) · **Purpose:** one map of the complete RQ1
+> chain — question → design/research → expectations → evaluation → results →
 > conclusion — so that Chapter 5 can be written without re-deriving anything.
 > Companions: `rq1_results_section_draft.tex` (staged §5.2 text),
 > `rq1_conclusions.md` (verdict record), `rq1.md` (framing provenance).
@@ -21,7 +23,7 @@ them in order:
 
 | Question clause | §5.2 material |
 | --- | --- |
-| (a) what the controller observes about overload | exposure paragraph: delivered fraction, information age at decision, detection delay, missed overload windows |
+| (a) what the controller observes about overload | exposure paragraph: delivered fraction, information age at decision (`tab:rq1_observation`; detection-delay and missed-window outcomes cut from reporting 2026-09-29 — derivable from the two axes, retained in the campaign record / appendix graphs) |
 | (b) how it responds by scaling | usable-capacity ordering (A < B < C ≈ D) |
 | (c) quality of service during the shift | episode endpoint p95 + outcome classes (timeout / failure / canceled) |
 
@@ -41,20 +43,13 @@ use the same three-semantics wording — consistent, **no change needed**.
   summarised in `rq1.md` ("Delivery-semantics machinery"); Chapter 4's TODO
   already lists the source implementations (Zmq / Polling / EventPreserving /
   DelayedEventPreserving / **SampledPush**).
-- ⚠ **One prerequisite edit in Chapter 3 §3.4 (proposed, needs approval):**
-  the delivery-modes sentence currently lists only latest-state retrieval and
-  ordered replay, so the sampled-push treatment of §5.2 has no design
-  counterpart in prose.
-
-  *Old:* "...such as periodic retrieval of only the most recent window
-  (latest-state delivery) or ordered replay of a retained window history
-  (event-preserving delivery, immediate or delayed), so that..."
-
-  *Proposed:* "...such as periodic retrieval of only the most recent window
-  (latest-state delivery), periodic sampling of the stream (sampled push,
-  every Nth completed window delivered as it is published), or ordered
-  replay of a retained window history (event-preserving delivery, immediate
-  or delayed), so that..."
+- ✅ **Chapter 3 §3.4 sampled-push clause — APPLIED 2026-09-28:** the
+  delivery-modes sentence now lists the sampled-push realisation alongside
+  latest-state retrieval and ordered replay, closing the design-chapter
+  alignment. Same day: the §5.1 RQ1 design table now reads "four telemetry
+  delivery treatments … realising the three delivery semantics with the
+  latest-state class in two forms" (was "four telemetry delivery
+  semantics").
 
 ## 3. Expectations (pre-registered; authoritative text: v3 plan §2 and §7)
 
@@ -98,15 +93,20 @@ One row of the per-RQ setup table:
 
 ## 5. Results (§5.2) — staged and verified
 
-- **Text:** `rq1_results_section_draft.tex` — replace the existing §5.2 TODO
-  comment in `main.tex`; heading and label (`sec:results_rq1_delivery`) stay.
+- **Text:** `rq1_results_section_draft.tex` — **inserted into `main.tex`
+  §5.2 on 2026-09-26** (heading and label `sec:results_rq1_delivery`
+  unchanged); the draft file is kept in sync. The delivery paragraph was
+  trimmed on 2026-09-28 to reference the new observation table.
 - **Figure (one representative figure per RQ):** source
   `docs/operation/testing/experiment/v3/rq1/graphs/thesis/episode_latency_p95.png`
-  → copy to `tese/images/rq1_episode_latency_p95.png`.
+  → **copied to** `tese/images/rq1_episode_latency_p95.png` (2026-09-26).
   **Do NOT use `endpoint_latency_p95.png`** (run-wide pooled metric — diluted,
   not the pre-registered endpoint).
-- **Tables:** `tab:rq1_arms` (per-arm summary), `tab:rq1_edges`
-  (pre-registered contrasts).
+- **Tables:** `tab:rq1_observation` (delivery realisation and overload
+  observability; added 2026-09-28, trimmed to the two treatment axes
+  2026-09-29 — detection delay and missed windows are no longer reported;
+  campaign record / appendix graphs retain them), `tab:rq1_arms` (per-arm
+  summary), `tab:rq1_edges` (pre-registered contrasts).
 - **Numbers:** all re-verified 2026-09-26 against the campaign summary, the
   stats CSV, and the run bundles (provenance comment in the draft header).
 - **Optional appendix material** (not in the page-limited body):
@@ -148,9 +148,11 @@ One row of the per-RQ setup table:
 
 - [x] Question fixed in §1.3; three clauses map to the §5.2 structure
 - [x] Design framing settled (4-arm realisation of the three semantics)
-- [ ] Chapter 3 §3.4 sampled-push clause — **proposed edit above, awaiting approval**
+- [x] Chapter 3 §3.4 sampled-push clause — applied 2026-09-28
 - [x] Expectations pre-registered (H1–H3 + four edges) and verdicts recorded
 - [x] §5.1 evaluation facts for the RQ1 row (§4 of this dossier)
 - [x] §5.2 text staged; numbers verified; figure + tables ready
 - [x] §6.1 finding row and §6.3 limitations pointers prepared
-- [ ] At integration: copy figure, insert §5.2 text, refresh the stale §6.3 TODO note
+- [x] Integration: figure copied, §5.2 inserted into `main.tex` (2026-09-26),
+  build verified
+- [ ] §6.3 TODO refresh (stale "n = 3" note) — when Chapter 6 is written

@@ -22,7 +22,7 @@ The experimental platform is a containerized edge-service environment with:
 
 - client-generated application requests;
 - stateful edge services backed by MongoDB;
-- two network domains connected by emulated WAN latency;
+- two network domains connected by an emulated inter-domain link;
 - SDN-controlled Virtual IP routing through OpenFlow;
 - telemetry aggregation from compute and storage containers;
 - runtime compute and storage scale-out; and
@@ -41,24 +41,24 @@ The primary outcomes are offered and completed requests, latency distributions, 
 
 Tier 1 selective synchronization and other data-locality mechanisms are platform capabilities. They are not primary independent variables in this thesis. They are disabled or held constant when necessary to prevent them from confounding telemetry, scaling-action, and traffic-admission experiments.
 
-Unless an approved RQ protocol explicitly states otherwise, thesis evaluation runs disable Tier 1 selective synchronization, prepared persistent storage reserves, and cross-region storage placement. RQ2 may still use cold, same-LAN storage scale-out as an action under test.
+Unless an approved RQ protocol explicitly states otherwise, thesis evaluation runs disable Tier 1 selective synchronization, prepared persistent storage reserves, and cross-domain storage placement. RQ2 may still use cold, same-LAN storage scale-out as an action under test.
 
 The demand model varies two axes — request intensity over time and request
-mix — while the spatial axis (which region owns the requested content) is
+mix — while the spatial axis (which domain owns the requested content) is
 held constant at local. Evaluation workloads therefore reference only
-locally-owned content, so storage reads never traverse the emulated WAN: each
-request is read from the replica set of the domain that serves it, and
-cross-region storage placement is disabled. Service placement is not
+locally-owned content, so storage reads never traverse the emulated
+inter-domain link: each request is read from the replica set of the domain
+that serves it, and cross-domain storage placement is disabled. Service placement is not
 restricted to the client's domain, however: backend selection may place a
 request on a peer-domain replica at a hop-cost penalty (sweep 2026-09-26: about
 2 % of requests with a recorded serving backend in RQ1/RQ2, 0.5 % in RQ3;
 RQ2 compute-bound cell medians 4.5–8.3 %, up to 19 % in single replicates). The control
-plane is likewise WAN-free by construction: aggregator→controller telemetry
-and controller↔controller topology sync are host-local, so the emulated
-185 ms WAN carries inter-domain data traffic only. The platform is thus
-cross-site-aware in its control plane — each controller observes the peer
-site's topology and health — while the evaluated storage path remains
-single-site.
+plane is host-local by construction: aggregator→controller telemetry
+and controller↔controller topology sync never traverse the emulated link,
+so the 185 ms inter-domain link carries cross-domain data traffic only. The
+platform is thus cross-domain-aware in its control plane — each controller
+observes the peer domain's topology and health — while the evaluated storage
+path remains single-site.
 
 ---
 
@@ -224,13 +224,12 @@ The experiment compares:
 - counterbalanced compute-first and storage-first fixed-priority policies; and
 - a bottleneck-aware policy that selects compute or storage scale-out from tier-specific telemetry.
 
-Compute-bound and data-access-bound workload episodes are constructed separately and validated before comparison so that the induced bottleneck is known independently of the policy outcome. All policies have the same compute and storage action availability, per-tier resource caps, action budget, cooldowns, telemetry delivery, and backend-admission condition. Tier 1, prepared storage reserves, and cross-region storage placement remain disabled.
+Compute-bound and data-access-bound workload episodes are constructed separately and validated before comparison so that the induced bottleneck is known independently of the policy outcome. All policies have the same compute and storage action availability, per-tier resource caps, action budget, cooldowns, telemetry delivery, and backend-admission condition. Tier 1, prepared storage reserves, and cross-domain storage placement remain disabled.
 
 This RQ does not claim that multi-metric triggers are new. It asks a different question: whether telemetry should determine **which capacity action** is taken in a stateful service. A compute-only policy may be reported as a secondary engineering reference, but it is not used to attribute an effect specifically to bottleneck classification.
 
 Primary measurements include:
 
-- time to recover the bottleneck-specific pressure;
 - time to usable capacity;
 - p50, p95, and p99 latency;
 - failures and completed offered demand;

@@ -110,6 +110,27 @@ Important behavior:
 
 ---
 
+## Phase Roles
+
+The phase names form a shared vocabulary reused across the campaign
+profiles: the sequences and durations differ between profiles, but each
+phase keeps its role and its standard level, so analyses can anchor on the
+phase name across runs.
+
+| Phase | Role | Rate per client | Client fraction |
+| --- | --- | ---: | ---: |
+| `baseline` | Opens the run at a low, steady load; the healthy pre-shift reference for service quality and resource state. | 1.0 | 0.1 |
+| episode (named per profile: `compute_plateau`, `compute_bound_episode`, `data_bound_episode`) | Applies the demand shift under test; its rate and request mix are campaign-specific. | per campaign | 1.0 |
+| `recovery_gap` | Post-episode quiet period: separates the stressed window from the post-shift windows and lets the platform settle. | 0.5 | 0.05 |
+| `demand_drop` | Release window: returns the load to a low, steady level so the capacity added for the episode is scaled down and post-shift service quality is read against the baseline. | 1.0 | 0.1 |
+| `idle_tail` | Closes the run at a near-idle load so every arm reaches sustained idleness and de-escalation can complete (not used by the scaling-action workload). | 0.05 | 0.05 |
+
+The values above are those of the three campaign workloads (RQ1--RQ3);
+diagnostic and override profiles may set different levels, and durations
+live in each profile's phase file.
+
+---
+
 ## Prerequisites
 
 Before running the generator, make sure the following are ready:

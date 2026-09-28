@@ -70,6 +70,19 @@ CELLS: dict[str, tuple[str, str, str]] = {
                "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "ba_shdbcb": ("rq2_bottleneck_aware.env", "phases_rq2_varying_dbcb.json",
                "STORAGE_CPUS=0.15 EDGE_CPUS=0.6 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    # ── RQ2 Part C confirmatory campaign (rq2pc, 2026-09-28) ─────────────
+    # The four arms on the single-episode compute-bound shape at the
+    # v3-validated Series-C allocation; episode rate = the probe-locked R*
+    # (phases_rq2pc_cb.json is edited IN PLACE by the probe ladder —
+    # partc_addendum.md §4). Frozen at FREEZE-3.
+    "pc_nn_cb": ("rq2_none.env", "phases_rq2pc_cb.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "pc_cf_cb": ("rq2_compute_first.env", "phases_rq2pc_cb.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "pc_sf_cb": ("rq2_storage_first.env", "phases_rq2pc_cb.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "pc_ba_cb": ("rq2_bottleneck_aware.env", "phases_rq2pc_cb.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
 }
 
 REPO = "~/efficient-storage-in-edge-scenarios"

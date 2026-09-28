@@ -3,23 +3,27 @@
 Part of [`experiment_plan.md`](experiment_plan.md). Per-run configuration and
 provenance for the RQ2 extension campaign (Parts A/B; Part P provenance).
 
-> **Status: ✅ plan APPROVED (2026-09-26) — probes running, no campaign run;
-> steps 1–4 executed; step 5 in progress: P1 closed (Alpha INFEASIBLE) →
-> Beta switch approved (user); B-P1 PASS (pooled) → B-P1b running 2026-09-27.** Step 1 (v3-final) is executed
+> **Status: ✅ plan APPROVED (2026-09-26) — steps 1–8 executed; campaign
+> COMPLETE — 30/30 runs (Stage A1 checkpoint 6/6; Stage 2 verified — hard
+> gates clean; two instrumentation items open, analysis-side); **Part C
+> (`rq2pc`) CLOSED 2026-09-28 — probes + bounded diagnostic pair executed;
+> campaign NOT executed ("stop + record", user decision); closure + hash
+> records §6; no `-final-` tag**; ⚠ local `git bundle` mirror
+> refresh pending.** Step 1 (v3-final) is executed
 > on the VM (`rq2-v3-final` @ `5e3d29a`, tag `rq2-v3-final-20260926`); step 2
 > (extension draft) is committed on branch `rq2-extension` and tagged
 > `rq2-extension-draft-20260926` after the full VM test gate (unit check,
 > harness dry-parse, analyzer regression smokes); step 3 verified the
 > tag-to-tag diff is **restricted to the 16 enumerated additive files**
 > (arm envs + base phase files byte-identical — verification block below);
-> step 4 filled the **FREEZE-1** pre-probe hashes (launcher provisional;
-> FREEZE-2 slots remain open). The remaining `<fill>` slots below belong to
-> **FREEZE-2** (per `experiment_plan.md` §3.2/§9; FREEZE-1 filled
-> 2026-09-26). The "reference (local, 2026-09-26)" column
+> step 4 filled the **FREEZE-1** pre-probe hashes (launcher provisional);
+> steps 6–7 later finalized the launch state and recorded **FREEZE-2** (§1;
+> per `experiment_plan.md` §3.2/§9). The "reference (local, 2026-09-26)" column
 > records local hashes taken at plan time — **the `policy_gate.py` and base
 > phase-file values reflect the stale local mirror** (see the VM-reference
-> note after the table). No probe, no campaign run, and no extension run
-> folder exists yet.
+> note after the table). Probes (Stage 0) and Stage A1 (`nn_cb` × 6) are
+> executed — the probe record lives in [results.md](results.md) (probes are
+> not evidence); campaign rows accrue there.
 
 ---
 
@@ -272,7 +276,7 @@ recorded at probe time.
 | B-P2 | `rq2_ext_b_dbcb` | dbcb · edge 0.6 / storage 0.15 · `sf` arm · R2 exact-v3 first (rate 5), R1 rate 15 | storage bind + compute-quiet in R2; **P2** `G` derivation; **P3** boundary observations | ⚠ **completed (2026-09-27) — partial**: R2 ✓ (activation 1×/LAN, 05:24:06/11; storage med 41 %; edge med 75–76 % — “compute-quiet” not met at 0.6); **(P2) replenish 17.6/17.0 s → G = 120 s**; **R1 EMFILE meltdown** (149 k dropped/lane); (P3) partial |
 | B-P2r | `rq2_ext_b_dbcb_rep` | dbcb · edge 0.6 / storage 0.15 · `sf` arm · same config (**fd-fix verification rerun, user-approved 2026-09-27**) | verify EMFILE eliminated; clean R1 | ⚠ **fd fix verified (0 EMFILE) but R1 = MEMCG OOM meltdown** — thread explosion (66 596 / 68 041); both edges kernel-killed 07:14:49/50, `RestartCount=1`, no recovery; R2 ✓ (**P2 re-confirmed: replenish 17.1/16.2/17.5 s → G = 120 s**) — **dbcb R1 2/2 failed** |
 | B-P2f | `rq2_ext_b_dbcb_fix1` | dbcb · same config (**concurrency-fix verification run**, user-approved 2026-09-27) | verify no spiral/OOM; clean R1 under the bounded gate | ✅ gate **verified live** (engaged once per edge: n1 08:30:00 / n2 08:30:54); fd 0; no OOM / no restarts — **spiral-death eliminated** — ❌ **but R1 still collapsed** (edge CPU pinned ~92 %; ~22 rps/lane; 45 s waits; `time_proc` 44 972 ms; R1 paths 100 % `service_pressure`; zero R1 leases) → **root cause found (O(buffer) summary scan) → B-P2g** |
-| B-P2g | `rq2_ext_b_dbcb_fix2` | dbcb · same config (**service_pressure-cache fix verification**, user-approved 2026-09-27; image `83cf6d973afe`) | verify R1-second serves at design capacity (no jam) | ⚠ **jam fix verified on lan2** (~300–325 rps vs ~22; 0.2 ms/req; fd 0; zero errors) — **but n1 OOM-killed during the data episode** (~1024 live threads × 8 MB stacks; total-vm 8.6 GB) and **the restarted edge failed to rejoin** (Mongo ping failed 180 s → lan1 dark 23 min) → run tainted (D2); residual ~10–15 % capacity gap + early-backlog p50 inflation | → **fix3 (memory) → B-P2h** |
+| B-P2g | `rq2_ext_b_dbcb_fix2` | dbcb · same config (**service_pressure-cache fix verification**, user-approved 2026-09-27; image `83cf6d973afe`) | verify R1-second serves at design capacity (no jam) | ⚠ **jam fix verified on lan2** (~300–325 rps vs ~22; 0.2 ms/req; fd 0; zero errors) — **but n1 OOM-killed during the data episode** (~1024 live threads × 8 MB stacks; total-vm 8.6 GB) and **the restarted edge failed to rejoin** (Mongo ping failed 180 s → lan1 dark 23 min) → run tainted (D2); residual ~10–15 % capacity gap + early-backlog p50 inflation → **fix3 (memory) → B-P2h** |
 | B-P2h | `rq2_ext_b_dbcb_fix3` | dbcb · same config (**memory-hardening verification**, user-approved 2026-09-27; image `30a2c88bc1ce`) | verify no OOM/restart; both lanes' R1 ≥ ~330 rps; timeouts < 10 % (pre-stated) | ✅ **no OOM/restart (0/0; gate never blocked; mem ≤ ~86 MiB/512); timeouts 6.0/5.2 % < 10 %; fd 0** — C2 ◐ avg 307/312 rps: **head 10:14–10:18 (~170–210 rps delivered, edge idle — reserve release/reconfig burst 10:13:31–10:14:19), full 354 rps from 10:19** |
 | P2 | `rq2_ext_p2_reserve` | reserve replenishment timing — derive `replenish` = (next READY − activation) from v3 db records, **else** 1 dedicated dbcb probe (`sf` arm) | sets **G = max(120 s, replenish_p95 + 60 s)**; scale-down settle > G → increase G (record the measurement) | ✅ **done (via B-P2, 2026-09-27)**: replenish = **17.6 / 17.0 s**; settle 22 s / 42 s; **G = 120 s** (floor holds) |
 | P3 | `rq2_ext_p3_boundary` | carried-state verification across the phase boundary (**6 items**; strict-commit verified NOT engaged — excluded) — code read + probe check (≤1 dedicated run if needed) | carried-state table (plan §5.4) verified; unverifiable items recorded as limitations | ◐ code-read recorded; probe check via B-P1/B-P1r + B-P2 (2026-09-27) — B-P2 R1-side observations meltdown-contaminated; boundary-region data usable |
@@ -306,7 +310,7 @@ New md5s: `f9fc62f3…`→`da479154…` (file 1), `754c7fe6…`→`6bb54940…`
 (file 2); applies at container recreation (no image rebuild); folds into
 the probe-finalized commit + FREEZE-2. **Verification rerun
 `rq2_ext_b_dbcb_rep` launched** (same dbcb/`sf` config) — validates the fix
-+ completes P3. Root-cause remains a follow-up.
+and completes P3. Root-cause remains a follow-up.
 
 **Post-fix verification (B-P2r, 2026-09-27):** EMFILE eliminated (0 / 0), but
 the same overload spiral now terminates in **MEMCG OOM** — kernel
@@ -529,10 +533,10 @@ pre-launch anyway.
 
 ### Pre-freeze
 
-- [ ] Plan package approved (`experiment_plan.md` §9) — approval recorded in [results.md](results.md)
-- [ ] Open items (plan §8) resolved or explicitly accepted
-- [ ] Beta fallback criteria acknowledged (switch only via the P1 decision rule)
-- [ ] Dual-bind scan capture committed as an artifact (23/10,044 windows; `ba` = 3) — small CSV or recorded block in [results.md](results.md) — before FREEZE-1 (plan §8 item 5)
+- [x] Plan package approved (`experiment_plan.md` §9) — approval recorded in [results.md](results.md) (2026-09-26)
+- [x] Open items (plan §8) resolved or explicitly accepted — ratifications/deferrals in the [results.md](results.md) timeline; remainder carried as flagged analysis-side notes (2026-09-28)
+- [x] Beta fallback criteria acknowledged (switch only via the P1 decision rule) — exercised 2026-09-26 (Alpha INFEASIBLE → Beta switch; recorded)
+- [x] Dual-bind scan capture committed as an artifact — **recorded block in [results.md](results.md)** (original 23/10,044; regenerated 2026-09-28: 27/12,207 over 44 v3-marker folders; 0.22 % both times) (plan §8 item 5)
 
 ### Execution sequence (canonical — plan §3.2; keep this order)
 
@@ -548,17 +552,101 @@ pre-launch anyway.
   - commit; tag `rq2-extension-draft-20260926`
 - [x] **(3) Verify (VM):** diff `rq2-v3-final-20260926`..`rq2-extension-draft-20260926` restricted to the enumerated additive paths (existing policy branches + three arm envs unchanged); md5s recorded in §1; completed analysis-extension file list + G2 producing-script path recorded in §1 — **DONE 2026-09-26**: diff = **exactly the 16 enumerated additive files** (no deletions; +2273/−64); three arm envs + base phase files **byte-identical across tags**; `policy_gate` diff additive-only (new mode + docstrings); draft-state md5s + tag anchors recorded in the §1 verification block (`run_matrix`/`results` re-hashed at FREEZE-1 after this record)
 - [x] **(4) FREEZE-1:** pre-probe hashes recorded — code / env / launcher / plan (order CSVs as applicable); **launcher md5 marked provisional** (probe finalization can change shift-cell caps on the Beta path — FREEZE-2 supersedes; both kept) — **DONE 2026-09-26**: hashes recorded in the §1 FREEZE-1 record (launcher `036fb333…` provisional; `rq2_none.env` `c23967de…`; arm envs byte-identical ✓; `policy_gate` `a078a95d…`; base cb/db `d40f5f59…` / `06a880c5…`; plan-package hashes recorded); **full additive set re-verified stable** vs the step-3 table
-- [ ] **(5) Stage 0 probes:** P1 sweep (`rq2_ext_p1_r6/r9/r12`, direct-make probe runs; `phases_rq2_varying_cbdb.json` iterated IN PLACE); Alpha passes **or** Beta switch recorded · P2 complete; **G finalized and recorded** (`G = max(120 s, replenish_p95 + 60 s)`) · P3 complete; carried-state table (**6 items**) verified · probe record written to [results.md](results.md)
-- [ ] **(6) Probe-finalized commit (VM):** probe-determined artifacts committed on the branch (varying phases in-place edits; Beta caps/episodes if applicable); tag `rq2-extension-final-<date>`; md5s verified
-- [ ] **(7) FREEZE-2:** post-probe hashes recorded — varying phases files + shift-cell caps + order CSVs (tied to `rq2-extension-final-<date>`); **re-hashes EVERY artifact probe finalization can modify** (varying phases files, launcher, order CSVs) — the FREEZE-1 launcher md5 is provisional and superseded by the FREEZE-2 value (both kept)
-- [ ] **(8) Launch:** campaign launched from the frozen (`rq2-extension-final-<date>`) state; tag + md5s recorded in §1; VM verified (`git describe --tags` + md5s) before first launch; local mirror updated from the VM (`git bundle`)
+- [x] **(5) Stage 0 probes:** — **DONE 2026-09-26/27**: P1 sweep closed (r6/r9/r12 + contingency; Alpha INFEASIBLE → Beta pre-registered switch); B-P1/B-P1b/B-P1r/B-P2/B-P2r + fix1/fix2/fix3 platform-fix verification runs completed; **G = 120 s finalized** (P2 re-confirmed in B-P2r); probe record + incidents written to [results.md](results.md); P3 carried-state observations remain partial (analysis-side).
+- [x] **(6) Probe-finalized commit (VM):** — **DONE 2026-09-27**: commit `34cd78e` (11 files) + tag `rq2-extension-final-20260927`; md5s verified (§1).
+- [x] **(7) FREEZE-2:** — **DONE 2026-09-27** (recorded in §1 + records commit `ee62a47`; launcher `db91c566…` supersedes the FREEZE-1 provisional; both kept).
+- [x] **(8) Launch:** — **DONE 2026-09-27/28**: launched from the frozen state after VM verification; **30/30 runs completed + verified** (Stage A1 checkpoint 6/6; Stage 2 hard gates clean); ⚠ outstanding: local mirror refresh (`git bundle`) + remaining local↔VM doc reconciliations.
 
 ### Launch discipline (step 8)
 
-- [ ] Stage A1 (CSV-1: `nn_cb` × 6) launched + completed; **launcher stopped**; checkpoint analyzed + gates pass (6 passing runs)
-- [ ] CSV-2 (blocks 2–5) launched only after the checkpoint passes (per-launch folder-count checks)
-- [ ] Memory watch active (exit-137 / container crash ⇒ D2 unified rule: exclude + document + ONE relaunch; second failure halts the cell — plan §4.7)
-- [ ] Shift-cell gates evaluated per run (plan §5.10); per-run analysis + per-phase summaries; results appended to [results.md](results.md)
+- [x] Stage A1 (CSV-1: `nn_cb` × 6) launched + completed; **launcher stopped**; checkpoint analyzed + gates pass — **DONE 2026-09-27: 6/6; independent audit closed.**
+- [x] CSV-2 (blocks 2–5) launched only after the checkpoint passes — **DONE: 24/24 completed + verified (2026-09-28).**
+- [x] Memory watch active (exit-137 / container crash ⇒ D2 unified rule) — **zero D2 incidents**; two host-side orchestrator terminal deaths handled by resume (no duplicate launches).
+- [x] Shift-cell gates evaluated per run (`§5.10`) — hard gates + I1 clean; **two instrumentation items open** (G2 shift-window anchoring; M1/teardown per-phase consolidation) — analysis-side; closure rows appended to [results.md](results.md).
+
+---
+
+## 6. Part C — confirmatory compute-bound campaign (`rq2pc`)
+
+**Design + probe package: [partc_addendum.md](partc_addendum.md)**
+(pre-registration; frozen by FREEZE-3). Summary:
+
+- **Cells** (4 × 6 = 24 runs; single-episode `cb` shape at the Series-C
+  allocation, phases `phases_rq2pc_cb.json`, episode rate = probe-locked R*):
+
+| Cell (order-CSV key = orchestrator key) | Arm env | Run labels | Replicates / seeds |
+| --- | --- | --- | --- |
+| `pc_nn_cb` | `rq2_none.env` | `rq2pc_nn_cb_1..6` | `_1.._5` seed 42; `_6` seed 43 |
+| `pc_cf_cb` | `rq2_compute_first.env` | `rq2pc_cf_cb_1..6` | as above |
+| `pc_sf_cb` | `rq2_storage_first.env` | `rq2pc_sf_cb_1..6` | as above |
+| `pc_ba_cb` | `rq2_bottleneck_aware.env` | `rq2pc_ba_cb_1..6` | as above |
+
+- **Probes** (ascending lock ladder on `nn`; stop at first lock; P-4 = `cf`
+  confirmation at R*; probes are NOT evidence — addendum §4):
+
+| Probe | Label | Shape | Acceptance | Status |
+| --- | --- | --- | --- | --- |
+| P-0 | `rq2pc_p0_nn_015` | nn · rate 1.5 (as-is) | lock gate + validity (addendum §5) | ✅ executed — **NO LOCK** (slow-share 0.999 %; p50 3.3 ms) → ascending |
+| P-1 | `rq2pc_p1_nn_030` | nn · rate 3.0 (if needed) | as P-0 | ✅ executed — **LOCK** (99.0 %; p50 3.42 s) ⇒ **R* = 3.0** |
+| P-2 | `rq2pc_p2_nn_050` | nn · rate 5.0 (if needed) | as P-0 | ⏭ skipped (lock at P-1) |
+| P-3 | `rq2pc_p3_nn_070` | nn · rate 7.0 (if needed) | as P-0 | ⏭ skipped (lock at P-1) |
+| P-4 | `rq2pc_p4_cf_<R*>` | cf · rate R* | lock re-check + arm signature (addendum §7) | ✅ executed @ 3.0 — lock re-check PASS; **signature FAIL** (4 adds/LAN, zero collapse) |
+| diag | `rq2pc_pd_nn_090` | nn · rate 9.0 (only if no lock) | as P-0 | ⏭ not needed (lock found) — superseded by the approved diag pair |
+| diag pair | `rq2pc_pd_nn_025` | nn · rate 2.5 (bounded extension, user-approved) | as P-0 | ✅ executed — **LOCK** (97.0 %; p50 2.79 s) |
+| diag pair | `rq2pc_pd_cf_025` | cf · rate 2.5 | as P-0 + signature windows | ✅ executed — **partial signal** (lan2 ×21.4; lan1 ×0.76; lan2 relapse min 6; lan1 mid-episode registry cull) |
+
+- **Order CSV:** `extension_order_partc.csv` (24 rows; blocks 1–6 =
+  reps 1–6; within-block rotation; staged **3+3** — Stage 1 = blocks 1–3,
+  launcher stopped with the 12th run in flight, checkpoint battery, Stage 2
+  = blocks 4–6 resumed at `--start-at rq2pc_ba_cb_4`). Artifacts + hashes
+  recorded in §1 at the FREEZE-3 commit.
+
+### Part C checklist (executed at its own freeze/run time)
+
+- [x] Review gate passed on [partc_addendum.md](partc_addendum.md) + artifacts — **passed 2026-09-28** (4 review rounds; all 🔴/🟡 issues fixed)
+- [x] FREEZE-3 draft commit (closure sweep + artifacts; hash record; restricted diff) — **`50b694c`** (9 files; no tag)
+- [x] Pre-run sync/verification — **passed 2026-09-28** (md5s byte-identical local↔VM; phases copy VM-side `cp` = `d40f5f59…`; clean-VM 0/0/0; 77 GB free)
+- [x] Probes P-0..P-4 executed; probe record appended to [results.md](results.md) — **DONE 2026-09-28** (P-2/P-3 skipped after the 3.0 lock; + the user-approved bounded diag pair @ 2.5; 5 probe runs total ≤ 7 cap)
+- [x] ~~Probe-finalized commit + tag `rq2-extension-partc-final-<date>`~~ — **superseded by the closure decision:** records-only commit, **no tag** (closure record below)
+- [x] ~~Campaign Stage 1 (12 runs) → checkpoint battery → Stage 2 (12 runs)~~ — **NOT executed (Part C closed 2026-09-28; "stop + record")**
+- [x] Records appended ([results.md](results.md) timeline + run_matrix statuses) — **DONE 2026-09-28 (closure record)**
+
+**FREEZE-3 record (2026-09-28):** draft commit **`50b694c`** (9 files; no
+tag — the probe-finalized tag `rq2-extension-partc-final-<date>` follows
+the ladder). md5s (byte-identical local↔VM): launcher
+`34b40b5a0b31382438e58d97c6ca4d69`; probe launcher
+`79b20162c9b13b7fccd8c15fabe29204`; `phases_rq2pc_cb.json`
+`d40f5f592375360c76a1d55f4c168200` (= the base cb file, byte-identical;
+created VM-side via `cp`); order CSV `abd0f15589034e38b8842b9791a595ce`;
+addendum `409dcc3abf6d23306578aa474537ddac`. **Restricted diff (mechanical
+`git diff --cached --name-only`): exactly the 9 enumerated paths**
+(closure sweep + Part C artifacts + analyzer RUN_RE edit). Analyzer
+`(?:pc)?` verified functional (rq2 + rq2pc match; probe labels excluded);
+launcher / probe launcher / analyzer `py_compile` clean on the VM.
+
+**Part C closure record (2026-09-28) — "stop + record" (user decision).**
+The ladder locked at 3.0 and the user-approved bounded diagnostic pair ran
+@ 2.5; the focused analysis then found **no reliably treatable window**
+across 1.5–3.0. Evidence: at 3.0 the meltdown is **not capacity-bound**
+(P-4: 4 adds/LAN fired, zero benefit — PRE→POST p50 ratio 0.86 / 0.81);
+at 2.5 the treatment signal is real but unstable — `cf`@2.5 lan2 PRE→POST
+**×21.4** (minutes 3–5 at 3–4 ms) yet lan1 **×0.76** (never collapsed),
+lan2 **relapsed from minute 6**, and lan1's added nodes were **torn down
+mid-episode** by the node-registry liveness cull (`[registry] … not seen
+for N s`; 14:22:48–14:24:50). Mechanisms recorded (see [results.md](results.md)
+§ Part C): (i) **registry liveness cull** — "seen" does not track served
+traffic; systematic across the probe runs (feeds the open M1/teardown
+consolidation item); (ii) **near-capacity assignment concentration** — one
+node carries the lane's whole per-minute demand; relief appears only when
+the assignment splits load. **The 24-run campaign is NOT executed**
+(probes are not evidence; Part C contributes no evidence runs). Closure
+state: 5 probe runs total (≤ 7 budget; no relaunches); `phases_rq2pc_cb.json`
+restored to the frozen state (`d40f5f59…`; transient in-place rate edits
+1.5→3.0→2.5 documented in [partc_probe_log.txt](partc_probe_log.txt));
+closure commit `7817edf` (records-only on `rq2-extension`) — **no
+`-final-` tag** (the planned tag implied campaign readiness). Open platform
+questions registered: registry liveness semantics; compute
+assignment/concentration at near-capacity rates.
 
 ---
 
@@ -571,3 +659,5 @@ pre-launch anyway.
 | 2026-09-26 | Second review-resolution pass applied (CR1, W1′–W11′, O1–O9): canonical execution-sequence checklist; FREEZE-1/2 tags and pointers; `rq2_none.env` + varying-phases provenance notes; harness dry-parse wording; 6-item carried-state; P1-4 definition; replicated criterion Stage-2 scaling | Review gate (pre-approval) |
 | 2026-09-26 | Final corrections pass: no env archive mirror (`rq2_none.env` only in `rq2_env/`; v3 mirror untracked/informational); FREEZE-2 re-hash rule (launcher md5 provisional at FREEZE-1 — superseded at FREEZE-2, both kept); package-level `demand_drop` = 420 s decision referenced | Pre-approval corrections |
 | 2026-09-26 | Plan approved; step 1 executed (v3-final tag on the VM); step-2 additive set authored + locally validated; phase-drift reconciliation RESULT recorded (**NO DRIFT** — `nn` cells reuse the base files); VM-reference md5s recorded (local-mirror staleness caveat); implementation-recorded lists completed (analysis-extension file list, run-summary flow decision, G2 path) | Execution record |
+| 2026-09-28 | Part C (`rq2pc`) addendum + artifacts authored — §6 added (cells, probe ladder, order plan, checklist) | Part C pre-registration (user-specified) |
+| 2026-09-28 | Part C probes executed (ladder P-0/P-1/P-4 + bounded diag pair @ 2.5); **Part C CLOSED — campaign NOT executed** ("stop + record"); closure record + mechanisms in §6 (registry liveness cull; assignment concentration; no treatable window 1.5–3.0); `phases_rq2pc_cb.json` restored to the frozen state; no `-final-` tag | Part C execution + user decision |

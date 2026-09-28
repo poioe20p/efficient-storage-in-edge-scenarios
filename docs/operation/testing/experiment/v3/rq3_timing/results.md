@@ -4,6 +4,8 @@
 
 **Figures**: [graphs/](graphs/) — block contrast (H-T1 full + onset), slow-share series, relief tails, admission accounting (generated 2026-09-27 from the frozen run records; data `analysis/timing_figures_data.json`; tools `rq3/timing_figures_export.py` — VM export — and `rq3/timing_figures.py` — render)
 
+**Thesis figures**: [graphs/thesis/](graphs/thesis/) — `rq3_event_loss_outcome.png` (slow-share series + admitted backends per run) and `rq3_recovery_ordering.png` (provisioning→admission per block, re-anchored ordering), generated 2026-09-28 by `source/scripts/testing/analysis/rq3/scripts/generate_thesis_figure.py` from `analysis/timing_figures_data.json` and `analysis/timing_campaign_reanchored.json`; copied to `tese/images/` for the RQ3 results section in `tese/main.tex`
+
 ## Run Timeline
 
 | Run | Date | Status | Cumulative Analysis | Conclusions | Changes Made | Expectations for This Run |
@@ -86,3 +88,4 @@ Mechanism exact per arm/cell · quota 0.12 match · floors ≥ 5,000 pooled / �
 | 2026-09-10 | Initial results.md (E stage, 36 runs) | First campaign analysis; H-T1 pass, H-T2 ordering fail, H-T3 fail recorded |
 | 2026-09-26 | H-T2 ordering re-anchored (analysis-only, spawn-anchored) — reconcile faster (spawn→admit 6/6; spawn→first serve 5/6 + tie) | Root cause #1 resolved; overall pass remains false, gated on H-T3 (16/18). Companion: `analysis/timing_campaign_reanchored.json` |
 | 2026-09-27 | Campaign figures generated (`graphs/ht1_block_contrast.png`, `slow_share_series.png`, `relief_tails.png`, `admission_accounting.png`) + companion export `analysis/timing_figures_data.json` | Tables-only campaign now carries rendered evidence; export records relief accounting (loss_all/event_only: 0 admitted, 32–35 abandoned per block) |
+| 2026-09-28 | Thesis renders `graphs/thesis/rq3_event_loss_outcome.png` + `graphs/thesis/rq3_recovery_ordering.png` generated and wired into the RQ3 results section | House-style condensed evidence for the fault consequence (H-T1) and the re-anchored ordering (H-T2); the same generator renders the intact-source interval figure under `v2/rq3/graphs/thesis/` |

@@ -349,3 +349,56 @@ changes; deps frozen (image `83cf6d973afe` FROM `32642cda5693`). **Check
 every rebuild:** layer ages + `pip3 list` parity + in-image file md5s.
 
 Discovered on 2026-09-27 during the RQ2-extension fix2 build.
+
+## Local Orchestrator Fragility During Multi-Hour Campaigns
+
+The Windows terminal hosting `tools/run_rq2_campaign.py` **died twice mid-stage**
+(2026-09-27 Stage A1 during run 4; 2026-09-28 Stage 2 during run 18 — cause
+unknown, consistent with host sleep/power events; the launcher process dies
+with its terminal). Runs are unaffected — execution is `nohup` on the VM — and
+the launcher is **resume-safe**: relaunch with `--start-at <next-or-in-flight
+label>`; it skips completed folders and **adopts in-flight runs** (verified
+twice; no duplicate launches, no spurious retries). The only cost is a gap of
+~20 min between runs.
+
+**Practice:** for overnight campaigns, either keep the host awake/connected or
+expect to resume; after every resume, verify the first launch manually (single
+`make` chain; correct cell caps in the process args; log advancing).
+
+## Node-Registry Liveness Cull — Added Nodes Can Be Torn Down Mid-Episode
+
+The controller tears down any node it has not "seen" for a while
+(`[registry] mac=… not seen for N s — triggering removal`; observed
+N ≈ 209–690 s), and **"seen" does not track served traffic**: in
+`rq2pc_pd_cf_025` the added compute node …01:07 served 3 201 requests in
+its first minute, yet its last "seen" was its admission instant — the cull
+fired mid-episode on lan1 (warnings 14:22:48 + 14:24:48; removals executed
+14:23:31–14:24:50, demand still full) and the lane's worst minutes
+(1.5–1.7 k timeouts/min, p50 5–9 s) immediately follow. Storage dynamic
+nodes cull the same way; the same pattern appears post-episode in every
+probe run (`nn`@2.5: storage node; P-4@3.0: batches). **Consequence:**
+never assume an added node persists because it is serving; treat registry
+culls as a teardown source in PRE/POST window audits (they surface as
+`scale_down_compute` + node_registry "not seen" warnings, not as policy
+actions). Registry liveness semantics = open platform question.
+
+Discovered on 2026-09-28 during the RQ2 Part C diagnostic pair
+(`rq2pc_pd_nn_025` / `rq2pc_pd_cf_025`).
+
+## Near-Capacity Rates: Compute-Add Relief Is Assignment-Dependent
+
+When the demand rate sits at ≈ one compute node's capacity (RQ2 Series-C:
+rate 2.5 ≈ locked; demand ≈ 3.0–3.7 k req/min per lane), per-node receipts
+show the lane's whole load landing on **one node per minute**, rotating
+across nodes — and the minutes where two added nodes share the load are the
+only minutes service collapses to ms scale. Evidence: `rq2pc_pd_cf_025`
+lan2 collapsed ×21.4 (PRE 1.87 s → POST 0.087 s; minutes 3–5 at 3–4 ms)
+while lan1 — same arm, same 4 adds — never collapsed (×0.76), then lan2
+relapsed the moment load returned to a single node (minute 6). **Practice:**
+for add-mechanism experiments near the lock point, measure per-minute
+per-node concentration; do not read lane asymmetry as noise, and do not
+expect an add-count effect when demand ≈ single-node capacity.
+
+Discovered on 2026-09-28 during the RQ2 Part C probes
+(`rq2pc_pd_cf_025` windows + per-minute analysis; `rq2pc_p4_cf_030`
+zero-benefit lock run).

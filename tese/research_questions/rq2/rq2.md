@@ -71,7 +71,7 @@ Three policies, both actions always available:
 2. **Storage-first** fixed priority (counterbalanced baseline).
 3. **Bottleneck-aware** — selects the action from tier-specific telemetry.
 
-Compute-bound and data-access-bound episodes are **constructed and validated independently** of the policy outcome. A policy gate selects one action from a declared bottleneck classification and logs: induced episode label, evidence, selected action, rejected action, action budget. The v3 storage scale-up uses the **persistent reserve** (activate a pre-created `READY` standby, replenish after activation, floor-safe scale-down) — enabled in all three arm envs; Tier 1 selective sync and cross-region placement remain disabled.
+Compute-bound and data-access-bound episodes are **constructed and validated independently** of the policy outcome. A policy gate selects one action from a declared bottleneck classification and logs: induced episode label, evidence, selected action, rejected action, action budget. The v3 storage scale-up uses the **persistent reserve** (activate a pre-created `READY` standby, replenish after activation, floor-safe scale-down) — enabled in all three arm envs; Tier 1 selective sync and cross-domain storage placement remain disabled.
 
 ### What the fixed policies are (concrete semantics)
 
@@ -97,7 +97,7 @@ The middle row is the heart of the claim: a compute-only controller has **no sig
 
 ### Primary measurements
 
-Time to recover the bottleneck-specific pressure · time to usable capacity · p50/p95/p99 latency · failures and completed offered demand · compute and storage node-minutes · number of scale actions · whether the selected action produces measurable relief in the targeted tier · **cost of the action itself** (join time / time-to-usable-capacity and node-minutes; replica-sync bandwidth not metered — stated limitation).
+Time to usable capacity · p50/p95/p99 latency · failures and completed offered demand · compute and storage node-minutes · number of scale actions · whether the selected action produces measurable relief in the targeted tier · **cost of the action itself** (join time / time-to-usable-capacity and node-minutes; replica-sync bandwidth not metered — stated limitation).
 
 ### Required extension (implementation) — ✅ implemented and exercised
 

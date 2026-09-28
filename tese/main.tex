@@ -403,9 +403,11 @@ This dissertation makes the following contributions:
     compute-bound and data-access-bound demand (RQ2).
     \item An experimental characterisation of readiness admission that
     quantifies, under direct lifecycle notification versus periodic
-    discovery, the time from verified readiness to routable and usable
-    capacity, and the reliability cost the faster mechanism incurs when
-    its readiness notification is lost and spare capacity is scarce (RQ3).
+    discovery (including a bounded fallback variant), the time from
+    verified readiness to routable and usable capacity, and the reliability
+    cost the faster mechanism incurs when its readiness notification is
+    lost and no bounded re-derivation recovers it, with spare capacity
+    scarce (RQ3).
     \item A comparative synthesis of the observation, action-selection, and
     readiness-admission interfaces under their respective controlled
     workload regimes, identifying which effects were robust,
@@ -1524,11 +1526,21 @@ and request-processing latency as signals.
 
     A newly provisioned service replica is recorded through an explicit
 registration step and it becomes eligible for backend selection only
-once it is visible in the routing pool used by the selector. How readiness
-reaches that pool is itself a configurable design dimension as readiness may
+once it is visible in the selector's eligible pool. How readiness
+reaches that pool is itself a configurable design dimension: readiness may
 be propagated by a direct lifecycle notification from the replica, or
-discovered by the controller through periodic probes. This
+discovered by the controller through periodic probes, and the design may
+additionally bound the damage of a lost notification --- a fallback probe
+re-derives readiness after a configured window, between the pure
+event-coupled and pure polling styles. This
 readiness-admission mechanism is the interface examined for RQ3.
+
+    Per-backend resource quotas are configuration parameters of the compute
+tier. The fault contrast is evaluated with a deliberately reduced
+per-backend CPU quota, so that the incumbent fleet carries thin spare
+capacity --- the condition under which a lost admission, if consequential, is
+exposed rather than absorbed by slack; the evaluated values are reported in
+Section~\ref{sec:experimental_setup}.
 
     Compute scale-down removes the least disruptive eligible replica, applying
 the idle condition defined in Section~\ref{sec:scaling_policy}. 
@@ -1587,11 +1599,13 @@ by routing.
 interface. The default delivery pushes each completed window as it is
 published. Alternative delivery modes supply the same windowed evidence in
 other forms, such as periodic retrieval of only the most recent window
-(latest-state delivery) or ordered replay of a retained window history
-(event-preserving delivery, immediate or delayed), so that the effect of
-delayed
-or incomplete demand evidence can be studied while the aggregation, the
-workload, and the decision logic remain unchanged.
+(latest-state delivery), periodic sampling of the published stream in which
+every Nth completed window is delivered as it is published and the
+intermediate windows are dropped (sampled-push delivery), or ordered replay
+of a retained window history (event-preserving delivery, immediate or
+delayed), so that the effect of delayed or incomplete demand evidence can be
+studied while the aggregation, the workload, and the decision logic remain
+unchanged.
 
     Inside the controller, the summaries feed two consumers. The first is the
 routing state. Per-backend metrics update the state that backend selection
@@ -1658,8 +1672,9 @@ so the timeline from demand observation to usable capacity is recorded end to
 end (Figure~\ref{fig:control_workflow}), with registration, routing-pool
 inclusion, and the first successful request recorded as distinct events. 
 When readiness admission is enabled, a
-service replica that does not reach readiness within the configured bound is
-abandoned and torn down instead of being admitted. Without readiness admission,
+service replica that does not reach readiness within the configured bound, or
+that is never admitted within the abandonment bound, is abandoned and torn
+down instead of being admitted. Without readiness admission,
 service replicas are registered as soon as they are provisioned and no
 readiness bound applies, so a replica that never becomes usable is reclaimed
 only by the ordinary lifecycle checks.
@@ -1792,9 +1807,10 @@ a two-domain testbed on a single host. Each domain runs its own data plane,
 edge-service replicas, storage tier, telemetry aggregator, and \ac{SDN}
 controller, and the two domains are joined by an emulated wide-area link. Both
 domains are driven by the same scheduled, open-loop workload driver, described
-in Section~\ref{sec:impl_infraestructure}: the driver applies the workload's
-request schedule regardless of the responses it receives, so that the demand
-offered to the service is independent of the capacity available to serve it.
+more extensively in Section~\ref{sec:impl_infraestructure} as a driver 
+that applies the workload's request schedule regardless of the responses 
+it receives, so that the demand offered to the service is 
+independent of the capacity available to serve it.
 
 Table~\ref{tab:testbed_config} summarises the configuration common to the three
 campaigns and the per-campaign resource caps and quotas are listed in
@@ -1831,7 +1847,7 @@ Tables~\ref{tab:rq1_design} to~\ref{tab:rq3_design}.
 \end{table}
 
     The testbed runs the two domains on a single host, which keeps the control
-paths host-local: telemetry delivery and controller-to-controller topology
+paths host-local. Telemetry delivery and controller-to-controller topology
 exchange do not traverse the emulated wide-area link, which carries only
 cross-domain data traffic. The evaluation workloads reference locally owned
 content only, so storage reads remain within the replica set of the domain
@@ -1844,14 +1860,18 @@ delivery and scaling action campaigns and 0.5~\% in the readiness admission
 campaign, concentrating under compute-bound demand, where local compute is
 most loaded. It is a property of the platform's selection policy rather than
 a treatment, and the requests it affects carry the emulated inter-domain
-latency in their client-side service time. The campaigns therefore measure the coordination interfaces
-under controlled and repeatable conditions, and no geo-distributed or
-wide-area performance claim is made.
+latency in their client-side service time. 
 
-    Each run is an independent experimental unit and starts from the same baseline
-fleet and configuration. During a run, the platform records the timeline of
-the demand-to-capacity chain end to end: workload onset, telemetry window
-completion and controller observation, scaling decision and selected action,
+%The paragraph bellow needs better justification. 
+The campaigns therefore measure 
+the coordination interfaces under controlled and repeatable conditions,
+and no geo-distributed or wide-area performance claim is made.
+
+    Each run is an independent experimental unit and starts from the 
+same baseline fleet and configuration. During a run, the platform 
+records the timeline of the demand-to-capacity chain end to 
+end: workload onset, telemetry window completion and controller 
+observation, scaling decision and selected action,
 provisioning start and completion, application-readiness confirmation,
 admission to the routing pool, first routed request, and first successful
 response. The rest of this section defines the workloads that drive these
@@ -1916,23 +1936,28 @@ symmetry screen is reported.
 
 The campaign-specific outcomes are the following.
 
+% TOU AQUI
 \begin{itemize}
     \item The telemetry delivery campaign reports the delivered fraction, the
-    fraction of produced telemetry windows delivered to the decision engine;
-    the information age at decision, the time between the completion of a
-    window and its use in a decision; the delay in detecting the overload
-    onset; and the number of overload windows missed.
-    \item The scaling action campaign reports the time to recover the
-    bottleneck-specific pressure, the relief obtained in the targeted tier,
-    the compute and storage node-minutes, the integrated running time of the
-    provisioned units per tier, and the number of scaling actions.
+    fraction of produced telemetry windows delivered to the decision engine,
+    and the information age at decision, the time between the completion of a
+    window and its use in a decision.
+    \item The scaling action campaign reports, per cell, the relief
+    obtained in the targeted tier and the load spread across the replicas
+    of the tier that received the action, as each replica's share of the
+    served demand and its utilisation; the episode service quality against
+    the no-action comparator; and the resource use of the actions, as the
+    scaling actions taken and the compute and storage node-minutes of the
+    provisioned units per tier.
     \item The readiness admission campaign reports the intervals from verified
     readiness to admission, from admission to the first routed request, and
-    from the first flow to the first successful response; the useful initial
-    request share, the fraction of requests dispatched to a newly admitted
-    backend that complete successfully; the slow-share, the fraction of served
-    requests (completed or timed out) that time out or exceed one second; and
-    the latency and failure share in the transition window around admission.
+    from provisioning to the first successful response; the slow-share, the
+    fraction of served requests (completed or timed out) that time out or
+    exceed one second, over the full plateau, the onset window, and the
+    plateau tail; the relief of the incumbent fleet once the new backend
+    begins serving; and, under readiness-event loss, the number of admissions,
+    the candidates abandoned and torn down, and the requests served by the new
+    capacity.
     A backend counts as admitted when it becomes visible in the selector's
     eligible pool, not when its registration is recorded.
 \end{itemize}
@@ -1965,12 +1990,13 @@ each campaign.
         \toprule
         Item & Design \\
         \midrule
-        Treatment & Four telemetry delivery semantics over the otherwise
-        identical platform: event-preserving delivery of every completed
-        window (A); event-preserving delivery delayed by a fixed 30~s, without
-        burst replay (B); latest-state polling every 30~s, delivering about
-        one third of the windows (C); and sampled push delivering every third
-        window (D). \\
+        Treatment & Four telemetry delivery treatments over the otherwise
+        identical platform, realising the three delivery semantics with the
+        latest-state class in two forms: event-preserving delivery of every
+        completed window (A); event-preserving delivery delayed by a fixed
+        30~s, without burst replay (B); latest-state polling every 30~s,
+        delivering about one third of the windows (C); and sampled push
+        delivering every third window (D). \\
         Held constant & Aggregation window (10~s), scaling policy and
         parameters, routing policy, workload, topology, resource limits. \\
         Workload & Baseline (60~s) $\rightarrow$ overload episode (180~s, rate
@@ -2101,13 +2127,10 @@ routing policy, and workload were held constant across arms. Each arm was run
 seven times, once in each of seven seed blocks shared by the four arms,
 giving 28 runs in total, with each run treated as an experimental unit.
 
-The delivered evidence matched this design. Arms A and B received every
-completed telemetry window (delivered fraction 1.000), while the lossy arms
-received about one third of them (C 0.325--0.336, D 0.328--0.336), missing on
-average 55.0 (C) and 49.8 (D) overload windows per run. The
-mean information age at decision rose from 3.5~s in A to 11.7~s in D, 16.2~s
-in C and 33.3~s in B, and the detection of the overload onset was delayed in
-step: a mean of 0.62~s in A, 0.64~s in D, 5.58~s in C and 30.19~s in B.
+The delivered evidence matched this design
+(Table~\ref{tab:rq1_observation}): arms A and B received every completed
+telemetry window, while the lossy arms received about one third of them; the
+information age at decision varied with the delivery treatment.
 
 Later or lossier delivery also delayed the scaling reaction. The median time
 from the start of the overload episode to usable capacity
@@ -2175,6 +2198,26 @@ while delivery delay was costly in proportion to the margin it consumes.
 
 \begin{table}[htbp]
     \centering
+    \caption{Delivery realisation and overload observability (mean over the
+    seven replicates; delivered fraction as the observed range): fraction of
+    telemetry windows delivered and mean information age at decision.}
+    \label{tab:rq1_observation}
+    \footnotesize
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{l c c}
+        \toprule
+        Arm & Delivered & Information age (s) \\
+        \midrule
+        A -- event-preserving & 1.000 & 3.5 \\
+        B -- delayed (+30~s) & 1.000 & 33.3 \\
+        C -- latest-state (poll 30~s) & 0.325--0.336 & 16.2 \\
+        D -- sampled push (/3) & 0.328--0.336 & 11.7 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+    \centering
     \caption{Delivery-semantics arms: usable capacity, episode latency, and
     outcome classes (medians with min--max ranges over the seven replicates;
     delivered fraction and timeouts as observed). Usable capacity is the time
@@ -2229,16 +2272,173 @@ while delivery delay was costly in proportion to the margin it consumes.
 \end{figure}
 
 \section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
-% TODO (RQ2): time to recover bottleneck-specific pressure; time to usable capacity; p50/p95/p99
-% latency; failures and completed offered demand; compute and storage node-minutes; number of
-% scale actions; relief in the targeted tier. Structure follows matched vs mismatched selection:
-% aligned cells (cf_cb/ba_cb, sf_db) validate the mechanism; mismatched cells (sf_cb, cf_db)
-% quantify the wrong-action cost; the ba cells report the classifier's decision trace as a
-% covariate, not an assumption (thesis_overview.md §6-RQ2; v3 results: wrong-action service cost
-% small at the tested intensity, resource waste and tail-latency noise carry the signal).
-% Scope covariate (cross-domain sweep 2026-09-26): peer-domain placement concentrates in the
-% compute-bound cells (medians cf_cb 8.3 %, ba_cb 4.5 %; data-bound cells ~0-1 %); report as a
-% platform-selection behaviour/covariate, not a treatment.
+
+The campaign compared three capacity-action policies under the same demand
+shifts: a fixed compute-first policy, a fixed storage-first policy, and
+bottleneck-aware selection, each evaluated on a compute-bound episode (600~s
+of pure service pressure) and a data-access-bound episode (480~s,
+90~\% content lookups). The original six-cell campaign contributes six
+replicates per cell (five seed-matched and one cross-seed; 34 of 36 runs
+valid, with two runs excluded as documented container memory-cap incidents).
+A comparative extension contributes the two elements the original design
+lacked: no-action comparators, a policy that scales nothing, against which
+the consequence of any action can be measured, and order-shifted sequences
+in which both regimes occur within one run. Comparisons that draw on both
+campaigns carry their cap and build labels; the aligned storage side of the
+no-action contrast is such a labelled comparison. Peer-domain placement is
+carried as a platform-selection covariate rather than a treatment: it
+concentrates in the compute-bound cells (median 8.3~\% of requests with a
+recorded backend under compute-first and 4.5~\% under bottleneck-aware
+selection) and is about 0--1~\% on the data-bound episode.
+
+Service recovery is regime-concentrated (Figure~\ref{fig:rq2_map}). On the
+data-access-bound episode the tier-matched storage action delivered a large
+user-visible benefit over inaction: the episode endpoint latency p95 was
+about 0.5~s against about 1.4~s under no action, a ratio of about 0.35
+against the pre-registered benefit threshold of 0.85 (secondary: p50 about
+40~ms against about 300~ms). The same episode corrects the expected cost of
+a mismatched action: compute-first, which scales the tier that does not
+bound the episode, was worse than the matched action (about 0.8~s) but
+better than no action, so the pre-registered harm criterion (ratio
+$\ge$ 1.2 with replicate support) was not met, and the measured ordering is
+the matched storage action, then the mismatched compute action, then no
+action. On the compute-bound episode neither policy differed from no action
+in service: both served at a p50 of about 3~ms. The compute action was
+nevertheless fully engaged (Figure~\ref{fig:rq2_engagement}): in every
+aligned lane the added replicas were admitted and served a majority of the
+lane's requests (about 56--59~\%, the original backend's share falling to
+about 41~\%), per-backend utilisation fell by about 30~\% through the load
+spread, and the total lane compute spent rose roughly threefold --- the same
+service for substantially more compute. The original campaign's recorded
+recovery signature, a pre-to-post p50 collapse from 2.2--3.0~s to about
+3.3~ms, is not attributable to the action: a control run that withheld the
+compute action reproduced the same start-up transient, so the collapse is
+reported as a start-up artefact rather than as recovery. A subsequent
+pre-registered escalation attempt, which raised the episode rate until
+inaction degraded, found no regime in which the deficit was both
+capacity-bound and measurable; the platform behaviours it exposed are
+carried to the limitations in Chapter~\ref{ch:conclusions}.
+
+Targeted-tier relief (Figure~\ref{fig:rq2_relief}): where the storage tier
+bound the episode the aligned action relieved it as designed. The prepared
+reserve was activated in every aligned replicate (eleven of eleven),
+storage-member CPU fell from 66--71~\% to 42--49~\% (a post-to-pre peak
+ratio of 0.57--0.66) in every storage-first lane (twelve of twelve), and the
+bottleneck-aware cell followed the same direction with nine of ten lanes
+below the threshold. On the compute-bound episode the mirrored statement
+holds: the compute action lowered per-backend utilisation without relieving
+anything, because no compute server saturated in the evaluated range ---
+even at twice the episode rate no server exceeded about three quarters of
+its quota (a diagnostic observation from the escalation attempt, not part
+of the evidence set). The pre-registered storage tail-latency criterion was
+not met (Table~\ref{tab:rq2_criteria}): the median of the replicate
+pre-to-post p95 ratios was 0.727, but its 95~\% confidence interval,
+[0.574, 1.393], includes 1.0. The documented cause is a measurement
+asymmetry: completed requests carry a sparse tail, about 0.8~\% above
+10~s, and the short pre-activation window cannot contain it while the long
+post-activation window does. Tier relief and the user-visible storage
+benefit are therefore reported separately, and the unmet gate is carried
+as such.
+
+Resource use separates the policies where service does not. Under
+compute-bound demand the mismatched storage-first policy spent resources
+without effect --- the compute tier ran pinned near 60~\% of its cap with
+no compute action taken, and storage activations executed for no benefit
+--- while under data-bound demand the mismatched compute-first policy spent
+its budget on the tier that could not relieve the episode. The matched
+actions spent where the effect was: the reserve carried the storage serving
+load in every aligned lane. The cell-level node-minutes quantify the
+separation: on the compute-bound episode the two compute-scaling arms
+executed eight compute actions in every run and spent about 3.1
+(compute-first) and 3.2 (bottleneck-aware selection) compute node-minutes
+per thousand requests, against none provisioned by storage-first; on the
+data-bound episode the aligned storage-first arm spent about 0.20 storage
+node-minutes per thousand requests against about 0.75 compute node-minutes
+for the mismatched compute-first arm, while bottleneck-aware selection
+provisioned both tiers (about 0.19 storage and 0.74 compute).
+
+Selection correctness holds across regimes. The bottleneck-aware classifier
+committed to the detected bottleneck in every evaluated regime: on the
+data-bound episode it activated the storage reserve first and scaled
+compute only after storage relief (agreement with the episode label in
+88--93~\% of scored decisions), and on the compute-bound episode it scaled
+compute without activating storage. The order-shifted sequences show the
+same commitment in both directions, with one documented ordering wrinkle, a
+single lane whose compute alert preceded its storage alert by eleven
+seconds. Because the compute-bound leg never carried a deficit, the
+pre-registered sequence criterion, recovery in each leg of a single
+configuration, is not confirmable, and the sequence evidence is reported as
+commitment behaviour rather than as recovery.
+
+This section therefore reports no add-attributable compute recovery, no
+demonstrated advantage of bottleneck-aware selection over a policy that is
+fixed and matched to the regime, and no confirmation of recovery across
+sequential regimes. The reported effects hold for the evaluated two-domain
+testbed, its workloads, and its resource envelopes; the platform behaviours
+observed at the edges of those envelopes are carried to
+Chapter~\ref{ch:conclusions} as limitations and future work.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Pre-registered criteria of the scaling-action campaign and
+    their outcomes. Ratios are cell medians of per-replicate values, with
+    lane counts where marked; support requirements and confidence intervals
+    as pre-registered. The storage tail-latency criterion is reported unmet
+    per its own rule, and the compute-recovery criterion is reported as not
+    attributable to the action after the control run.}
+    \label{tab:rq2_criteria}
+    \footnotesize
+    \begin{tabular}{l l l}
+        \toprule
+        Criterion & Threshold & Observed \\
+        \midrule
+        Compute recovery (pre/post p50) & collapse $\ge 2\times$, aligned replicates & start-up transient (control) \\
+        Storage tail latency (pre/post p95) & 95~\% CI excluding 1.0 & 0.727 [0.574, 1.393] \\
+        Storage resource relief (post/pre CPU) & ${<}0.75$, aligned lanes & 0.57--0.66 (12/12; 9/10) \\
+        Benefit vs inaction (storage, data-bound) & ratio $\le 0.85$ & $\approx 0.35$ (labelled) \\
+        Harm vs inaction (compute, data-bound) & ratio $\ge 1.2$ & $\approx 0.6$ \\
+        Sequence recovery (one configuration) & per-leg recovery & not confirmable \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% TODO(rq2-figure): produce images/rq2_consequence_map.png from the extension
+% dataset during the final analysis-battery pass, then enable this block; the
+% in-text reference renders as (??) until then.
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.85\textwidth]{images/rq2_consequence_map.png}
+%     \caption{Episode endpoint latency p95 (served basis) for the no-action
+%     comparator and the three policies, by episode: data-access-bound (left)
+%     and compute-bound (right). Bars show cell medians across replicates and
+%     dots the individual runs; the no-action comparator is drawn from the
+%     extension campaign and carries its comparison label.}
+%     \label{fig:rq2_map}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{images/rq2_storage_relief.png}
+    \caption{Targeted-tier relief where the storage tier bound the episode:
+    post-to-pre peak storage-CPU ratio per replicate (mean of the two
+    domains) for the data-bound cells, against the pre-registered 0.75
+    threshold. The storage-first cell stays below the threshold in every
+    replicate, and the bottleneck-aware cell partially overlaps it.}
+    \label{fig:rq2_relief}
+\end{figure}
+
+% TODO(rq2-figure): produce images/rq2_compute_engagement.png from the
+% per-node engagement check during the final analysis-battery pass, then
+% enable this block; the in-text reference renders as (??) until then.
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.85\textwidth]{images/rq2_compute_engagement.png}
+%     \caption{Compute-action engagement on the compute-bound episode:
+%     request share served by the original and added backends per lane, with
+%     per-backend and total lane compute. The action engaged fully, yet the
+%     service outcome (Figure~\ref{fig:rq2_map}, right) is unchanged.}
+%     \label{fig:rq2_engagement}
+% \end{figure}
 
 \section{Readiness Admission to Traffic (RQ3)}\label{sec:results_rq3_readiness}
 % Claim guardrails while editing this section (see rq3_final.md §6): no
@@ -2269,7 +2469,8 @@ had a median of 0.001~s under direct lifecycle notification against 6.984~s
 under periodic discovery ($d = -1.000$; earlier in every backend start-up
 class, fast- and slow-binding alike), and the quantum followed the
 configured poll period, growing from 9.6~s to 15.2~s when the period grew
-from 10~s to 15~s (Table~\ref{tab:rq3_delays}). The differential propagated
+from 10~s to 15~s (Table~\ref{tab:rq3_delays} and
+Figure~\ref{fig:rq3_admission_intervals}). The differential propagated
 along the recorded chain: the interval from provisioning to the first
 successful response was about six seconds shorter (11.27~s against 17.70~s,
 exact $p = 0.0005$), and the elasticity loop closed about four seconds
@@ -2283,7 +2484,8 @@ separate (exact $p = 0.209$). No user-visible cost of the seconds-level
 delay appeared in any tested healthy regime.
 
 When the readiness event is lost under reduced headroom, the rules diverge
-in kind rather than in degree (Table~\ref{tab:rq3_fault}). Under direct
+in kind rather than in degree (Table~\ref{tab:rq3_fault} and
+Figure~\ref{fig:rq3_event_loss_outcome}). Under direct
 lifecycle notification no backend was admitted in any of the six blocks
 (zero admissions, and no request served by the new capacity, in 6/6; 32--35
 candidates per block were abandoned and torn down), while both re-deriving
@@ -2292,11 +2494,12 @@ rules recovered --- the probe fallback variant after its fallback window
 poll period, and on the re-anchored ordering test, measured from each
 backend's provisioning rather than from the plateau onset (analysis-only),
 periodic discovery recovered sooner: provisioning to admission in all six
-blocks, provisioning to first serve in five of six plus one sub-second tie.
+blocks, provisioning to first serve in five of six plus one sub-second tie
+(Figure~\ref{fig:rq3_recovery_ordering}).
 The consequence was visible to users: the direct lifecycle configuration
-degraded to 8.3--14.4~\% plateau slow share, concentrated in the transition
-window around admission (onset window 29.7--39.0~\%), a full-plateau
-contrast of 6.2--10.9~pp against the recovering configurations (median
+degraded to 8.3--14.4~\% plateau slow share, concentrated in the onset
+window (29.7--39.0~\%), a full-plateau contrast of 6.2--10.9~pp against the
+recovering configurations (median
 7.64~pp, exact $p = 0.0040$, Cliff's $\delta = 1.0$) and an onset contrast
 of 25.1--30.8~pp (median 28.0~pp), both pre-registered co-primary windows
 and both reproduced in every block entering the contrast (5/5). The
@@ -2354,6 +2557,24 @@ already low.
     \end{tabular}
 \end{table}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{images/rq3_admission_intervals.png}
+    \caption{Admission-chain intervals of the intact-source campaign.
+    (a) Verified readiness to admission per backend, on a logarithmic
+    millisecond scale: complete separation in both start-up classes
+    ($d = -1.000$; medians 0.001 and 0.000~s against 7.3 and 6.8~s); points
+    at the 0.5~ms floor differ from zero by less than the timestamp
+    resolution. (b) Provisioning to first successful response per backend
+    (medians 1.7 and 11.5~s against 9.2 and 18.3~s; exact $p = 0.0005$
+    pooled, complete separation within classes). (c) Scaling decision to
+    usable capacity per run (rate-12 cell, six runs per mechanism; medians
+    2.17 against 6.01~s; exact $p = 0.0022$, $d = -1.000$). Black dots are
+    individual backends (runs in (c)); coloured bars and marks are medians;
+    whiskers span the min--max range.}
+    \label{fig:rq3_admission_intervals}
+\end{figure}
+
 \begin{table}[htbp]
     \centering
     \caption{Readiness-admission configurations under total event loss
@@ -2365,8 +2586,8 @@ already low.
     floor.}
     \label{tab:rq3_fault}
     \footnotesize
-    \setlength{\tabcolsep}{3pt}
-    \begin{tabular}{l l c c c}
+    \setlength{\tabcolsep}{2pt}
+    \begin{tabular}{p{0.19\textwidth} p{0.15\textwidth} c c p{0.17\textwidth}}
         \toprule
         Configuration & Re-derivation & Admitted (abandoned) & Plateau slow (\%) & Plateau tail (\%) \\
         \midrule
@@ -2376,6 +2597,38 @@ already low.
         \bottomrule
     \end{tabular}
 \end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{images/rq3_event_loss_outcome.png}
+    \caption{Under total readiness-event loss with reduced headroom, only
+    the configurations that can re-derive readiness recover. (a) Slow share
+    (served requests timed out or slower than 1~s), median across the six
+    seed blocks per 10~s bin; the shaded band marks the onset window (first
+    150~s after the plateau starts). (b) Admitted backends per run (dots,
+    one per block; bars: median with min--max range). In the six
+    direct-lifecycle runs no backend was admitted and 32--35 candidates per
+    run were abandoned and torn down, while the fallback variant and
+    periodic discovery admit through their re-check paths and relief
+    completes; no-fault runs admit 4--6 backends on every configuration,
+    with zero abandoned candidates.}
+    \label{fig:rq3_event_loss_outcome}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.62\textwidth]{images/rq3_recovery_ordering.png}
+    \caption{Recovery ordering under total event loss, measured from each
+    backend's provisioning (analysis-only re-anchoring of the ordering
+    test). Dot pairs per seed block, one pair per block (medians 21.4
+    against 17.1~s): the fallback variant admits on its fallback path in
+    every block, while periodic discovery admits sooner in all six blocks
+    --- five of six also on the first-serve ordering, with one sub-second
+    tie. $^{\ast}$Block~4 is excluded from the campaign's relief
+    assessability (its no-fault control tail breached the 2~pp floor) and
+    is shown for completeness.}
+    \label{fig:rq3_recovery_ordering}
+\end{figure}
 
 \section{Discussion: Synthesis Across Interfaces}\label{sec:discussion}
 % TODO: synthesize per-interface effects (RQ1/RQ2/RQ3) measured under a common workload, resource

@@ -165,7 +165,7 @@ For this thesis, both advantages are
 directly relevant: latency drives the p95 and p99 metrics used to
 evaluate service quality, and reduced backbone traffic connects to the
 data locality trade-offs explored in the experimental workload
-(cross-region reads, tiered data placement).
+(cross-domain reads, tiered data placement).
 
 ¶6 — The Costs of Dispersal: Resource Scarcity and Management Complexity
 

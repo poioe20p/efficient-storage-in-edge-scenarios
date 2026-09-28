@@ -367,6 +367,14 @@ above the `nn_db` median; Q-A2: below it).
   where a pool spans caps (e.g. `cf_db` seed-42 {1,2,3,4}), the split is
   stated and the **512m subset is reported as a sensitivity** alongside the
   full pool.
+- **Build-delta caveat (applies to Q-A1..Q-A3; Part A cross-era
+  comparisons):** all extension runs use the probe-hardened edge build
+  (bounded concurrency + memory hardening, `EDGE_MAX_CONCURRENCY=256` /
+  1 MB stacks; `/service_pressure` TTL cache with ≤ 5 s staleness; image
+  `30a2c88bc1ce`), while the v3 comparator runs predate these fixes. Every
+  cross-era per-replicate comparison carries this **build label** alongside
+  the cap label; the ≤ 5 s cache-staleness bound is a named contract
+  difference of extension runs.
 
 ### 4.7 Execution order
 
@@ -792,4 +800,9 @@ updated **only after results**, per claim discipline.
 | 2026-09-27 | fd mitigation + log-rotation fix synced to the RQ2 VM (`--ulimit nofile=65536:65536`; `--log-opt` rotation; aggregator `INFO`); verification rerun `rq2_ext_b_dbcb_rep` launched | User decision (items 1–3) |
 | 2026-09-27 | B-P2r verified the fd fix (0 EMFILE) but exposed the underlying **overload spiral → MEMCG OOM** (both edges; thread explosion); **dbcb R1 2/2 failed**; P2 re-confirmed (G = 120 s); root-cause mitigation gates the campaign | Probe execution |
 | 2026-09-27 | **Edge-server concurrency bound implemented** (root-cause fix for the overload spiral — bounded request threads; `EDGE_MAX_CONCURRENCY=1024`); edge image rebuilt + smoked; verification run `rq2_ext_b_dbcb_fix1` launched | User decision (root-cause path) |
-| 2026-09-27 | **fix2 verified the cache** (compute episode ~300–325 rps vs ~22 jam; 0.2 ms/req) **but n1 OOM-killed** (~1024 live threads × 8 MB stacks at the 512 m cap; total-vm 8.6 GB) **and the restarted edge failed to rejoin** (Mongo ping 180 s) → run D2-tainted; **fix 3 approved (memory hardening: thread cap 256 + 1 MB stacks)**; | 2026-09-27 | **Probe finalization + FREEZE-2 executed (canonical steps 6–7):** Beta shift-cell caps finalized in the launcher (edge 0.6 / storage 0.15); probe-finalized commit `34cd78e` + tag **`rq2-extension-final-20260927`**; launch-state hashes recorded ([run_matrix.md](run_matrix.md) §1 — launcher `db91c566…`, phases `a7db82c8…`/`46fd82af…`, order CSVs unchanged, platform fixes, image `30a2c88bc1ce`); **sweep cleanup executed** (4 P1 folders → slim archive `_archived/rq2_p1_sweep_20260927.tar.gz` md5 `e96c7e77…` + deleted) | Canonical sequence (finalization) |
+| 2026-09-27 | **fix2 verified the cache** (compute episode ~300–325 rps vs ~22 jam; 0.2 ms/req) **but n1 OOM-killed** (~1024 live threads × 8 MB stacks at the 512 m cap; total-vm 8.6 GB) **and the restarted edge failed to rejoin** (Mongo ping 180 s) → run D2-tainted; **fix 3 approved (memory hardening: thread cap 256 + 1 MB stacks)** | Probe execution |
+| 2026-09-27 | **Probe finalization + FREEZE-2 executed (canonical steps 6–7):** Beta shift-cell caps finalized in the launcher (edge 0.6 / storage 0.15); probe-finalized commit `34cd78e` + tag **`rq2-extension-final-20260927`**; launch-state hashes recorded ([run_matrix.md](run_matrix.md) §1 — launcher `db91c566…`, phases `a7db82c8…`/`46fd82af…`, order CSVs unchanged, platform fixes, image `30a2c88bc1ce`); **sweep cleanup executed** (4 P1 folders → slim archive `_archived/rq2_p1_sweep_20260927.tar.gz` md5 `e96c7e77…` + deleted) | Canonical sequence (finalization) |
+| 2026-09-28 | **Stage A1 + Stage 2 executed + verified (30/30 runs); Part B execution closed**; Part C (`rq2pc`) pre-registration + FREEZE-3 draft (`50b694c`) recorded ([results.md](results.md) timeline; [run_matrix.md](run_matrix.md)) — backfilled at Part C closure | Execution record |
+| 2026-09-28 | **Part C probe ladder + bounded diagnostic pair @ 2.5 executed** (P-0 no lock; P-1 `nn`@3.0 LOCK ⇒ **R* = 3.0**; P-4 `cf`@3.0 lock re-check PASS, **signature FAIL**; diag pair: lan2 ×21.4 collapse, lan1 ×0.76, lan2 relapse min 6, lan1 mid-episode registry cull) | Probe execution |
+| 2026-09-28 | **Part C CLOSED — user decision "stop + record": campaign NOT executed** (no reliably treatable window 1.5–3.0; mechanisms: registry liveness cull + assignment concentration); closure record in [results.md](results.md) § Part C + [run_matrix.md](run_matrix.md) §6; `phases_rq2pc_cb.json` restored to the frozen state; no `-final-` tag | User decision (post-diagnostic) |
+| 2026-09-28 | **Part A/B pre-battery verification pass recorded** — read-only recompute of the Part A headline numbers from raw artifacts (v3 `latency_summary` reproduced exactly; plan-convention **Q-A1 0.680 / Q-A2 0.487** vs the draft quotes ≈0.56–0.62 / ≈0.35; Q-A3 + startup-transient/zero-add checks confirmed); pin list for the final battery (ratio conventions, ≈3× multiplier, L4 counts, build-delta/cap labels, `nn_db_3`) — [results.md](results.md) § Part A/B note | Verification (pre-battery) |

@@ -1,0 +1,51 @@
+[2026-09-28 12:06:51] preflight OK — checker deployed; starting the ladder (addendum §4)
+[2026-09-28 12:06:52]   rq2pc_p0_nn_015 attempt 1 (rate as-is)
+[2026-09-28 12:34:36]   rq2pc_p0_nn_015 completed (run_id=20260928_111224_rq2pc_p0_nn_015)
+[2026-09-28 12:34:39]   run_dir: /home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_111224_rq2pc_p0_nn_015
+[2026-09-28 12:34:39]     lan1: served=21567 completed=21566 timeout=1 canceled=0 dropped=0 slow-share=0.988% p50=0.0033
+[2026-09-28 12:34:39]     lan2: served=21566 completed=21565 timeout=1 canceled=0 dropped=0 slow-share=1.011% p50=0.0033
+[2026-09-28 12:34:39]     blended: served=43133 completed=43131 timeout=2 canceled=0 dropped=0 slow-share=0.999% p50=0.0033
+[2026-09-28 12:34:39]     LOCK: NO | I1: PASS | asymmetry: 1.0
+[2026-09-28 12:34:39]     checker_json: {"asymmetry": {"flag": false, "ratio": 1.0}, "blended": {"canceled": 0, "completed": 43131, "dropped": 0, "p50_s": 0.0033, "served": 43133, "slow": 429, "slow_share_pct": 0.999, "timeout": 2}, "i1_pass": true, "lans": {"lan1": {"canceled": 0, "completed": 21566, "dropped": 0, "other": {}, "p50_s": 0.0033, "served": 21567, "slow": 212, "slow_share_pct": 0.988, "timeout": 1}, "lan2": {"canceled": 0, "completed": 21565, "dropped": 0, "other": {}, "p50_s": 0.0033, "served": 21566, "slow": 217, "slow_share_pct": 1.011, "timeout": 1}}, "lock": false, "phase": "compute_bound_episode", "run": "20260928_111224_rq2pc_p0_nn_015", "run_dir": "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_111224_rq2pc_p0_nn_015"}
+[2026-09-28 12:34:39] no lock at rung 015 — ascending
+[2026-09-28 12:34:42]   rq2pc_p1_nn_030 attempt 1 (rate 3.0)
+[2026-09-28 13:03:31]   rq2pc_p1_nn_030 completed (run_id=20260928_114122_rq2pc_p1_nn_030)
+[2026-09-28 13:03:34]   run_dir: /home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_114122_rq2pc_p1_nn_030
+[2026-09-28 13:03:34]     lan1: served=43004 completed=30433 timeout=12571 canceled=45 dropped=0 slow-share=99.258% p50=3.4225
+[2026-09-28 13:03:34]     lan2: served=42970 completed=31524 timeout=11446 canceled=87 dropped=0 slow-share=98.743% p50=3.422
+[2026-09-28 13:03:34]     blended: served=85974 completed=61957 timeout=24017 canceled=132 dropped=0 slow-share=99.001% p50=3.4222
+[2026-09-28 13:03:34]     LOCK: YES | I1: PASS | asymmetry: 1.036
+[2026-09-28 13:03:34]     checker_json: {"asymmetry": {"flag": false, "ratio": 1.036}, "blended": {"canceled": 132, "completed": 61957, "dropped": 0, "p50_s": 3.4222, "served": 85974, "slow": 61098, "slow_share_pct": 99.001, "timeout": 24017}, "i1_pass": true, "lans": {"lan1": {"canceled": 45, "completed": 30433, "dropped": 0, "other": {}, "p50_s": 3.4225, "served": 43004, "slow": 30114, "slow_share_pct": 99.258, "timeout": 12571}, "lan2": {"canceled": 87, "completed": 31524, "dropped": 0, "other": {}, "p50_s": 3.422, "served": 42970, "slow": 30984, "slow_share_pct": 98.743, "timeout": 11446}}, "lock": true, "phase": "compute_bound_episode", "run": "20260928_114122_rq2pc_p1_nn_030", "run_dir": "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_114122_rq2pc_p1_nn_030"}
+[2026-09-28 13:03:34] LOCK at rung 030 (rate 3.0) — R* = 030; ladder stops (skipped: 050, 070)
+[2026-09-28 13:03:37]   rq2pc_p4_cf_030 attempt 1 (rate 3.0)
+[2026-09-28 13:32:29]   rq2pc_p4_cf_030 completed (run_id=20260928_121013_rq2pc_p4_cf_030)
+[2026-09-28 13:32:33]   run_dir: /home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_121013_rq2pc_p4_cf_030
+[2026-09-28 13:32:33]     lan1: served=42370 completed=29595 timeout=12775 canceled=679 dropped=0 slow-share=98.785% p50=3.3029
+[2026-09-28 13:32:33]     lan2: served=42501 completed=32831 timeout=9670 canceled=554 dropped=0 slow-share=96.68% p50=3.213
+[2026-09-28 13:32:33]     blended: served=84871 completed=62426 timeout=22445 canceled=1233 dropped=0 slow-share=97.731% p50=3.2329
+[2026-09-28 13:32:33]     LOCK: YES | I1: PASS | asymmetry: 1.109
+[2026-09-28 13:32:33]     checker_json: {"asymmetry": {"flag": false, "ratio": 1.109}, "blended": {"canceled": 1233, "completed": 62426, "dropped": 0, "p50_s": 3.2329, "served": 84871, "slow": 60500, "slow_share_pct": 97.731, "timeout": 22445}, "i1_pass": true, "lans": {"lan1": {"canceled": 679, "completed": 29595, "dropped": 0, "other": {}, "p50_s": 3.3029, "served": 42370, "slow": 29080, "slow_share_pct": 98.785, "timeout": 12775}, "lan2": {"canceled": 554, "completed": 32831, "dropped": 0, "other": {}, "p50_s": 3.213, "served": 42501, "slow": 31420, "slow_share_pct": 96.68, "timeout": 9670}}, "lock": true, "phase": "compute_bound_episode", "run": "20260928_121013_rq2pc_p4_cf_030", "run_dir": "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_121013_rq2pc_p4_cf_030"}
+[2026-09-28 13:32:33] P-4 done (rq2pc_p4_cf_030). Raw checks above; the runner completes the arm-signature pass (addendum §7: add requirement · zero pre-episode fires · B1 collapse ≥ 2× · POST slow-share ≤ 5 %) and appends the probe record to results.md.
+[2026-09-28 13:32:33] stage-probe sequence concluded — next: probe-finalized commit + tag
+[2026-09-28 14:38:27] ===== DIAG extension (user-approved): rate 2.5 — bounded pair =====
+[2026-09-28 14:38:32] preflight OK — diagnostic 1/2: nn @ 2.5 (rq2pc_pd_nn_025)
+[2026-09-28 14:38:34]   rq2pc_pd_nn_025 attempt 1 (rate 2.5)
+[2026-09-28 15:07:44]   rq2pc_pd_nn_025 completed (run_id=20260928_134455_rq2pc_pd_nn_025)
+[2026-09-28 15:07:47]   run_dir: /home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_134455_rq2pc_pd_nn_025
+[2026-09-28 15:07:47]     lan1: served=35769 completed=30923 timeout=4846 canceled=132 dropped=0 slow-share=97.596% p50=3.1433
+[2026-09-28 15:07:47]     lan2: served=35824 completed=32265 timeout=3559 canceled=85 dropped=0 slow-share=96.491% p50=2.6743
+[2026-09-28 15:07:47]     blended: served=71593 completed=63188 timeout=8405 canceled=217 dropped=0 slow-share=97.043% p50=2.7884
+[2026-09-28 15:07:47]     LOCK: YES | I1: PASS | asymmetry: 1.043
+[2026-09-28 15:07:47]     checker_json: {"asymmetry": {"flag": false, "ratio": 1.043}, "blended": {"canceled": 217, "completed": 63188, "dropped": 0, "p50_s": 2.7884, "served": 71593, "slow": 61071, "slow_share_pct": 97.043, "timeout": 8405}, "i1_pass": true, "lans": {"lan1": {"canceled": 132, "completed": 30923, "dropped": 0, "other": {}, "p50_s": 3.1433, "served": 35769, "slow": 30063, "slow_share_pct": 97.596, "timeout": 4846}, "lan2": {"canceled": 85, "completed": 32265, "dropped": 0, "other": {}, "p50_s": 2.6743, "served": 35824, "slow": 31008, "slow_share_pct": 96.491, "timeout": 3559}}, "lock": true, "phase": "compute_bound_episode", "run": "20260928_134455_rq2pc_pd_nn_025", "run_dir": "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_134455_rq2pc_pd_nn_025"}
+[2026-09-28 15:07:47] nn@2.5 LOCKED — diagnostic 2/2: cf @ 2.5 (rq2pc_pd_cf_025)
+[2026-09-28 15:07:49]   rq2pc_pd_cf_025 attempt 1 (rate 2.5)
+[2026-09-28 15:36:51]   rq2pc_pd_cf_025 completed (run_id=20260928_141410_rq2pc_pd_cf_025)
+[2026-09-28 15:36:57]   run_dir: /home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_141410_rq2pc_pd_cf_025
+[2026-09-28 15:36:57]     lan1: served=35319 completed=29407 timeout=5912 canceled=581 dropped=0 slow-share=90.798% p50=2.4333
+[2026-09-28 15:36:57]     lan2: served=35531 completed=31366 timeout=4165 canceled=374 dropped=0 slow-share=57.93% p50=1.1273
+[2026-09-28 15:36:57]     blended: served=70850 completed=60773 timeout=10077 canceled=955 dropped=0 slow-share=74.315% p50=2.0749
+[2026-09-28 15:36:57]     LOCK: YES | I1: PASS | asymmetry: 1.067
+[2026-09-28 15:36:57]     checker_json: {"asymmetry": {"flag": false, "ratio": 1.067}, "blended": {"canceled": 955, "completed": 60773, "dropped": 0, "p50_s": 2.0749, "served": 70850, "slow": 42575, "slow_share_pct": 74.315, "timeout": 10077}, "i1_pass": true, "lans": {"lan1": {"canceled": 581, "completed": 29407, "dropped": 0, "other": {}, "p50_s": 2.4333, "served": 35319, "slow": 26157, "slow_share_pct": 90.798, "timeout": 5912}, "lan2": {"canceled": 374, "completed": 31366, "dropped": 0, "other": {}, "p50_s": 1.1273, "served": 35531, "slow": 16418, "slow_share_pct": 57.93, "timeout": 4165}}, "lock": true, "phase": "compute_bound_episode", "run": "20260928_141410_rq2pc_pd_cf_025", "run_dir": "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20260928_141410_rq2pc_pd_cf_025"}
+[2026-09-28 15:36:57] cf@2.5 done — next: the signature pass (PRE/POST windows vs the adds) and the decision (treatable window found vs structural)
+[2026-09-28 15:36:57] ===== DIAG extension concluded =====
+[2026-09-28 16:26:25] ===== Part C CLOSED (user decision: stop + record) — campaign NOT executed; closure record + mechanisms appended to results.md; phases file restored to the frozen state; closure commit 7817edf =====

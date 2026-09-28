@@ -1,14 +1,19 @@
 # Results — RQ2 Extension (No-Op Arm, Varying-Demand Campaign, Provenance)
 
-**Date**: 2026-09-26 · **Status**: 📋 **STUB — NO RUNS LAUNCHED**; plan **APPROVED**; execution steps 1–2 in progress ·
+**Date**: 2026-09-28 · **Status**: ✅ **campaign COMPLETE — 30/30 runs executed and verified** (Stage A1 checkpoint 6/6; Stage 2 hard gates clean; two instrumentation items open, analysis-side); Part B execution closed; **Part C (`rq2pc`) CLOSED — probes + bounded diagnostic pair executed (2026-09-28); campaign NOT executed (user decision "stop + record"); closure record + findings below** ·
 **Plan**: [experiment_plan.md](experiment_plan.md) ·
 **Run matrix**: [run_matrix.md](run_matrix.md)
 
-> **NO runs have been launched and NO results exist.** This stub was created
-> with the plan package (2026-09-26) so the campaign has a results record from
-> day zero. It will receive, in order: the Stage-0 probe record (probes are
-> **not** evidence), the Stage-A1 checkpoint outcome, and the campaign
-> timeline as they happen.
+> **Campaign complete (2026-09-28).** All 30 runs executed and verified —
+> Stage A1 cleared its §4.7 checkpoint; Stage 2 cleared the hard gates (see
+> the timeline rows + [run_matrix.md](run_matrix.md)). Two instrumentation
+> items remain open on the analysis side (G2 shift-window anchoring;
+> M1/teardown per-phase consolidation). **Part C (`rq2pc` — genuine
+> compute-bound) passed its review gate and was frozen at the FREEZE-3
+> draft commit (`50b694c`; hash record in [run_matrix.md](run_matrix.md)
+> §6); the probe ladder + bounded diagnostic pair @ 2.5 ran 2026-09-28 and
+> the campaign was NOT executed — **Part C is CLOSED** ("stop + record",
+> user decision; see the Part C record below).**
 
 ## Approval record
 
@@ -45,6 +50,20 @@
 | 2026-09-27 | **fix2 result (`20260927_090315_rq2_ext_b_dbcb_fix2`):** cache fix **PROVEN on the surviving lane** — lan2 compute episode ~300–325 rps (vs ~22 in the fix1 jam), per-request handling 0.2 ms (max 0.3 ms), refresh duty ≈ 1.5 %, fd scan 0/0, zero ERROR lines; **but n1 OOM-killed 09:10:28 during the data episode** — memcg `CONSTRAINT_MEMCG`; total-vm 8.6 GB = ~1024 live threads × 8 MB stacks (cap fully occupied; the request buffer is only ~50 MB); restart-in-place 09:10:29 then **failed to rejoin** (`app NOT ready: MongoDB ping failed within 180s`) → **lan1 dark for R2-tail + R1 + drain (23 min)**; lan2 R1 ~300–325 rps vs healthy 348 (timeouts 8.3 % vs ~1.6 % cbdb; p50 inflated by early R2-drain backlog + lan1-death contamination) — run **D2-tainted → not evidence** | ⚠ jam fixed; memory/concurrency next (fix3) |
 | 2026-09-27 | **fix3 applied + verified build (final planned platform fix cycle, user 2026-09-27):** `app.py` memory hardening — `EDGE_MAX_CONCURRENCY` default **1024 → 256** + `EDGE_THREAD_STACK_SIZE_KB` **1024** (worker stacks 8 MB → 1 MB via `threading.stack_size`); md5 `3192e12d…` → `971dc2d5…`; image reconstructed **`FROM 83cf6d973afe` + `COPY source`** → **`30a2c88bc1ce`** (deps frozen ✓; in-image md5s `971dc2d5…` / `3d4c1538…`); **verification run `rq2_ext_b_dbcb_fix3` launched** — pre-stated pass (user-set, 2026-09-27): **no OOM/restart on either edge; both lanes' R1 ≥ ~330 rps; timeouts < 10 %** | ▶ fix3 verification running |
 | 2026-09-27 | **Probe finalization + FREEZE-2 executed:** launcher Beta shift-cell caps finalized (six shift cells → `EDGE_CPUS=0.6`; `nn_*` + Part A untouched); probe-finalized commit `34cd78e` (11 files) + tag **`rq2-extension-final-20260927`**; FREEZE-2 launch-state hashes recorded in [run_matrix.md](run_matrix.md) §1 (launcher `db91c566…`; phases `a7db82c8…` / `46fd82af…`; order CSVs unchanged; platform fixes + `app.py` `971dc2d5…` + routes `3d4c1538…`; image `30a2c88bc1ce`); **sweep cleanup executed** — 4 P1 folders (3.4 GB) slim-archived (570 KB, 76 files, md5 `e96c7e77…`) + deleted | ✅ **FINALIZED — campaign launch state frozen** |
+| 2026-09-27 | **Stage A1 executed (VM):** 6 × `nn_cb` runs (CSV-1, plan §6) completed — exit 0 ×6, ~22 min run clock each (11:16–14:01 UTC); no retries, no gate trips. Orchestration note: the host terminal hosting the launcher died once mid-stage → orchestrator resumed in adopt mode (in-flight run 4 adopted; no duplicate launches; runs unaffected — execution is VM-side). | ✅ done |
+| 2026-09-27 | **Stage-A1 checkpoint PASSED — 6/6** (§4.7 gates D1/D2/D3 + I1 + M1 zero-action + V1): D1 0× NotPrimary; D2 no restart/crash/OOM (container events clean; dmesg OOMs only pre-campaign 07:15/09:11); D3 snapshots + v3 marker present; **I1 = 21 560–21 568 completed/LAN**; **M1 `scaleups_non_none = 0` + `reserve_activates = 0`** (recovery-gap reserve rotation excluded — platform maintenance; its sole record is the documented `scale_down/reserve_loss` recycle row — no activation/action/budget); **V1 = G2 PASS both LANs (official tool) + fires well above the ≥1 requirement (18–21 fired windows/LAN, audit recount)** (edge CPU median ~61 % of the 0.15 cap vs ~14–16 % baseline medians). Health flag: max episode timeout 0.005 %. Bind note: ≥75 %/≥30 % coverage reads 0/6 — that pair is the P1 **probe** criterion, not a §4.7 gate; 0.15-cap cells pin ~61 % (same as v3). | ✅ **PASS → Stage 2 cleared** |
+| 2026-09-27 | **Analysis dry-run (checkpoint mitigation) PASSED:** extended analyzer (`rq2_bottleneck_aware_campaign.py`) runs end-to-end (exit 0) and builds the per-segment dataset (validated via a scratch alias on `rq2_ext_b_dbcb_fix3`: both episodes segmented; 16 graphs incl. `shift_recovery.png`). **Finding:** `RUN_RE` does not parse legacy `*_rq2_ext_*` labels (silently skipped) — probe-era re-analysis needs an alias/mapping. Pending (analyzer job): VM-side rollups + summary columns; flagged: `testing_requirements.md` absent from the `rq2-extension` branch. | ✅ done |
+| 2026-09-27 | **Part A build-delta caveat recorded (plan §4.6):** extension runs use the probe-hardened edge build (concurrency gate + memory hardening; `/service_pressure` TTL cache ≤ 5 s staleness; image `30a2c88bc1ce`) vs the v3 comparator builds — carried as a labeled caveat on Part A cross-era comparisons (Q-A1..Q-A3). | ✅ recorded |
+| 2026-09-27 | **Independent Stage-A1 gate audit (pre-Stage-2)** — all §4.7 gates re-verified from raw artifacts: G2 official tool re-run (PASS, all 6 runs); I1/timeout recount matches (21 560–21 568 completed/LAN; ~5 episode timeouts total; episode outcome classes = completed/timeout/canceled only); M1 recount (0 non-`none` scale_up actions; 0 `reserve_activate`; sole nonstandard row = `scale_down,reserve_loss` recycle record); D2/D3/D4 re-confirmed (1 service start per edge; 0 EMFILE; v3 marker present). Minor parsing note: aggregate `client_requests.csv` last field carries CRLF — parse robustly. | ✅ **all gates properly passed — audit closed** |
+| 2026-09-28 | **Stage 2 executed (VM):** 24 runs (CSV-2) completed — exit 0 ×24 (~38 min two-episode / ~24 min single-episode wall); zero retries, zero gate trips; **campaign COMPLETE** 08:04. Orchestration note: two host-side terminal deaths mid-stage → launcher resumed in adopt mode both times (no duplicate launches; runs unaffected — execution is VM-side). | ✅ done |
+| 2026-09-28 | **Stage-2 verification:** hard gates clean (0 restart/crash/OOM; 0 EMFILE; 0 NotPrimary; snapshots + markers ×24); I1 = 36/36 episode segments ≥ 5000/LAN (min ≈ 38.9 k, max ≈ 212 k); max episode timeout 22.4 % (no collapsed-run flags); arm signatures as designed (nn inert; cf compute-only; sf storage-only; ba both; both segments per shift run; storage adds served traffic). | ✅ verified |
+| 2026-09-28 | **Open instrumentation items (analysis-side; do not affect run validity):** (i) G2 shift-window anchoring — official per-segment tool 60/84 vs as-run re-anchored 84/84 (tool fix pending); (ii) M1/teardown per-phase consolidation + `demand_drop` teardown-timing interpretation (pending). | ⚠ recorded |
+| 2026-09-28 | **Closure + VM cleanup:** post-campaign teardown (containers 12→0; clients 48→0; netns 0; veths 63→0; transient dyn volumes removed; static seeds + images kept; all 30 run folders retained, 46 GB archive; 77 GB free). **Part B execution closed**; **Part C (`rq2pc` — genuine compute-bound) pre-registration in preparation** (analysis-side items carried forward). | ✅ closed |
+| 2026-09-28 | **Part C review gate + FREEZE-3 draft committed** (`50b694c`, 9 files, no tag — the probe-finalized tag follows the ladder): all review 🔴/🟡 issues fixed; artifacts byte-identical local↔VM; `phases_rq2pc_cb.json` = byte copy of the base cb file (`d40f5f59…`); analyzer RUN_RE updated (`(?:pc)?` — rq2 + rq2pc match, probes excluded); restricted diff = exactly the enumerated paths; pre-run verification passed (clean-VM 0/0/0; 77 GB free); md5 record in [run_matrix.md](run_matrix.md) §6. | ✅ frozen (draft) |
+| 2026-09-28 | **Part C probe ladder executed (VM):** P-0 `nn`@1.5 → no lock (slow-share 0.999 %, p50 3.3 ms); P-1 `nn`@3.0 → **LOCK** (99.0 %, p50 3.42 s) ⇒ **R* = 3.0** (P-2/P-3 skipped); P-4 `cf`@3.0 → lock re-check PASS but **signature FAIL** — 4 adds/LAN with **zero collapse** (PRE→POST p50 ratio 0.86 / 0.81; POST slow-share 99.2 / 96.7 %; completions ≈ the `nn` lock run) — log: [partc_probe_log.txt](partc_probe_log.txt) | ⚠ probes — 3.0 not treatable |
+| 2026-09-28 | **Part C diagnostic pair @ 2.5 executed (user-approved, bounded):** `nn`@2.5 LOCK (97.0 %, p50 2.79 s); `cf`@2.5 first treatment signal — **lan2 PRE→POST ×21.4** (min 3–5 at 3–4 ms) — but **unstable**: lan1 ×0.76 (never collapsed), lan2 **relapse from min 6**, lan1's added nodes **torn down mid-episode** by the registry liveness cull (14:22:48–14:24:50) | ⚠ partial + contaminated |
+| 2026-09-28 | **Part C CLOSED — "stop + record" (user decision):** focused analysis (registry liveness cull; near-capacity assignment concentration; no clean treatable window 1.5–3.0) → **campaign NOT executed**; closure record appended below; `phases_rq2pc_cb.json` restored to the frozen state; closure records committed (records-only; no `-final-` tag) | ⏹ closed (no campaign) |
+| 2026-09-28 | **Part A/B pre-battery verification pass (read-only):** Part A headline numbers recomputed from raw artifacts — v3 `latency_summary` reproduced exactly; plan-convention recompute **Q-A1 0.680** / **Q-A2 0.487** (draft quotes ≈0.56–0.62 / ≈0.35 are convention-sensitive); Q-A3 + startup-transient (zero-add `sf_cb`: minute-0 3.9–4.4 s → 3 ms) confirmed; pin list + label caveats appended below | ⚠ recorded (pre-battery) |
 
 ## Probe Record — Stage 0
 
@@ -206,12 +225,193 @@ table (6 items) will reference back to
 
 | Artifact | Status |
 | --- | --- |
-| Dual-bind scan capture (v3 decision-log scan, 2026-09-26: **23 / 10,044** scale-up windows; `ba` = 3) — small CSV or a recorded block in this file; committed before FREEZE-1 ([experiment_plan.md](experiment_plan.md) §8 item 5; [run_matrix.md](run_matrix.md) §5) | ⬜ pending |
+| Dual-bind scan capture (v3 decision-log scan) — **recorded block below** (original 2026-09-26: **23 / 10,044** scale-up windows, `ba` = 3; regenerated 2026-09-28: **27 / 12,207** over 44 v3-marker folders, `ba` = 2 — wider population; 0.22 % both times) ([experiment_plan.md](experiment_plan.md) §8 item 5; [run_matrix.md](run_matrix.md) §5) | ✅ recorded (2026-09-28) |
+
+**Dual-bind scan — recorded block (closed 2026-09-28).** Scan definition: decision-log rows with `action_type=scale_up`; "both tiers fired" = `compute_fired=1 AND storage_fired=1` in the same window. Original 2026-09-26 scan: **23 / 10,044** windows (0.23 %), `ba` = 3. Regeneration 2026-09-28 over all v3-marker `cf/sf/ba × cb/db` folders (44 runs; includes reruns/exclusions): **27 / 12,207** windows (0.22 %), `ba`-family = 2. Rarity conclusion unchanged; simultaneous dual-bind stays out of scope (plan §2.1).
 
 ## Campaign Runs
 
-**TBD — none.** Planned cells, order CSVs and checklist: [run_matrix.md](run_matrix.md).
-No run folders exist for `nn_cb`, `nn_db`, or the shift cells.
+**Executed — 30 run folders** (Stage A1: `nn_cb` × 6; Stage 2: `nn_db` × 6 + 18 shift runs). Cells, order CSVs and the checklist: [run_matrix.md](run_matrix.md). Verification + closure: timeline rows above; two instrumentation items remain open on the analysis side; a **pre-battery verification pass** (read-only recompute + pin list) is recorded immediately below.
+
+## Part A/B — Pre-Battery Verification Note (2026-09-28)
+
+**Status: ⚠ PRE-BATTERY reference — NOT frozen.** Independent read-only
+recomputation of the Part A headline numbers from raw run artifacts, ahead
+of the **final battery** (the two open analysis-side items — G2 shift-window
+fix; M1/teardown consolidation — remain pending; extension numbers freeze
+only after it). Purpose: reconcile the draft RQ2 fact base (2026-09-28)
+against what the files actually support. Method: per-run
+`client_requests.csv` → episode-phase rows, completed-only latency, **both
+lanes pooled per replicate**, median-of-replicates / available-pool
+conventions (plan §4.6, seed-42). Scripts (read-only, kept for the battery):
+`temp/qa_verify.py`, `temp/qa_sfcb.py` (VM copies in `/tmp/`).
+
+### Recomputed values (plan convention)
+
+| Quantity | Recomputed |
+| --- | --- |
+| `cf_db` episode p95 — available seed-42 (`_1.._4`), s | 0.706 · 0.763 · 0.923 · 1.135 → **median 0.923** |
+| `nn_db` episode p95 — seed-42 (`_1.._5`), s | 1.357 · 1.130 · 49.059 · 1.820 · 0.970 → **median 1.357** |
+| **Q-A1 ratio / support** | **0.680** / **0/4** replicates above the `nn_db` median |
+| `sf_db` episode p95 — seed-42 (`_1.._5`), s | 0.502 · 0.502 · 0.661 · 0.756 · 0.737 → **median 0.661** |
+| **Q-A2 ratio / support** | **0.487** / **5/5** replicates below the `nn_db` median |
+| Q-A3 episode p50 | `nn_cb` **3.20 ms** (all six) · `cf_cb` **3.3–4.8 ms** (median 3.50 ms; ratio 1.094) |
+| Startup-transient check (per-minute p50) | v3 `cf_cb`: slow in **minute 0 only** (0.4–2.2 s) → minute 1+ ≈ 3 ms; **zero-compute-add** `sf_cb` reruns: minute 0 **3.9–4.4 s** → minute 1+ ≈ 3 ms; extension `nn_cb`: flat 3.2–3.4 ms (no slow phase) |
+
+Convention sensitivity (same data, alternative cuts): Q-A1 ≈ 0.57–0.74
+(lane ratios 0.690 / 0.870); Q-A2 ≈ 0.37–0.54 (lane ratios 0.546 / 0.477);
+exploratory 512m-subset cut for `sf_db` (`_5` only): 0.543.
+
+### Cross-checks (read-only; no contradictions)
+
+- The v3-era `latency_summary.csv` reproduces **exactly** under this
+  pipeline (`cf_db_1` 0.7059 vs archived 0.705865; `cf_db_2` 0.7627 vs
+  0.762670; `sf_db_1` 0.5023 vs 0.502275) — differences below are convention
+  choices, not pipeline error.
+- Storage block (11/11 activations = sf 6 + ba 5; CPU relief 0.57–0.66× in
+  12/12 LANs; B2 median 0.727 [0.574, 1.393]; floor-safe scale-down),
+  cf-on-data band (706–1135 ms vs aligned 502–756 ms), classifier 88–93 %,
+  36/34 pools and the `ba_db_2`/`cf_db_5` exclusions: consistent with the
+  frozen v3 record ([rq2_conclusions.md](../../../../../tese/research_questions/rq2/rq2_conclusions.md) §§2–3); `cf_db` rep-5 folder absent ✓.
+- Part C values: verified in the closure audit (§ Part C above) — not restated here.
+
+### Flags for the final battery (pin before freezing)
+
+1. **Ratio conventions.** The draft fact-base quotes (Q-A1 ≈0.56–0.62;
+   Q-A2 ≈0.35) do not reproduce under the plan convention (**0.680** /
+   **0.487**; bands above). The battery must pin the convention (seed-42 /
+   available pool; lane pooling) and restate. Conclusions unaffected —
+   Q-A1 ≪ 1.2 with support 0/4; Q-A2 ≤ 0.85 with support 5/5.
+2. **"≈3× at p95"** follows the Q-A2 ratio → ≈2× at 0.487 (≈2–2.8× across
+   variants). Quote with the frozen ratio.
+3. **Point values.** Use medians/ranges — cf_db **0.92** (0.71–1.13);
+   sf_db **0.66** (0.50–0.76); nn_db **1.36** (0.97–1.82; one degraded run
+   at 49.1) — rather than band-interior figures (0.84 / 0.5).
+4. **L4 collapse counts** (cf 0/6; ba ≈1/5): hold for the battery. The
+   anchored collapse definition must classify the final-minute fast tails
+   observed in `cf_shdbcb_1/2` and `ba_shdbcb_1/3` and state the ba
+   denominator. Context: shift compute episodes run at rate 15; several runs
+   never bind (`cf_shdbcb_3`, `ba_shcbdb_1`), others jam to p50 16–126 s —
+   "recovery almost nowhere to measure" is qualitatively supported.
+5. **Labels.** Apply the **build-delta** caveat (extension = probe-hardened
+   edge build; v3 comparators predate it) to **all** Part A comparisons; the
+   cross-era label applies to **all** Part A comparisons (Q-A1 included),
+   not only the storage pair; state the 256/512 cap split per replicate
+   where a pool spans caps (plan §4.6).
+6. **`nn_db_3` handling.** Degraded run (p95 49.06 s; ≈19 % non-completed vs
+   ≈0.1–1.6 % peers; I1 still passed). Keep-with-documentation; its
+   inclusion shifts the exact Q-A1 ratio (**0.680** incl / ≈0.74 excl) —
+   decide and document in the battery.
+7. **Wording.** The zero-add controls are the **extension-era** `nn_cb`
+   runs (testing a v3-era claim) — "within-era" is misleading.
+
+**Nothing in this note is frozen.** The final battery supersedes it and
+writes the frozen numbers; until then the extension numbers are provisional.
+
+## Part C — Record (rq2pc)
+
+**Pre-registration:** [partc_addendum.md](partc_addendum.md) (frozen by
+FREEZE-3, `50b694c`; hash record [run_matrix.md](run_matrix.md) §6).
+**Part C is CLOSED — the campaign was NOT executed** (user decision
+"stop + record", 2026-09-28). Probes are not evidence: the ladder and the
+diagnostic pair below close the probe question (is there a rate regime
+where compute adds demonstrably relieve the compute-bound meltdown?).
+Full execution log: [partc_probe_log.txt](partc_probe_log.txt).
+
+### Measurements — probe ladder (P-0 → P-4, 2026-09-28)
+
+5 probe runs total (≤ 7-run cap; the 2-run diagnostic pair as the
+user-approved extension; no relaunches). Blended `compute_bound_episode`
+numbers (per-client CSVs; lower-median p50):
+
+| Probe | Label (run folder) | Config | completed · timeouts · canceled · slow-share · p50 | Verdict |
+| --- | --- | --- | --- | --- |
+| P-0 | `rq2pc_p0_nn_015` (`20260928_111224…`) | `nn` · rate 1.5 | 43 131 · 2 · 0 · 0.999 % · 3.3 ms | **NO LOCK** — ascending |
+| P-1 | `rq2pc_p1_nn_030` (`20260928_114122…`) | `nn` · rate 3.0 | 61 957 · 24 017 · 132 · 99.0 % · 3.42 s | **LOCK** ⇒ **R\* = 3.0** (P-2/P-3 skipped) |
+| P-4 | `rq2pc_p4_cf_030` (`20260928_121013…`) | `cf` · rate 3.0 | 62 426 · 22 445 · 1 233 · 97.7 % · 3.23 s | lock re-check PASS; **signature FAIL** |
+
+P-4 signature pass (window defs, addendum §7: PRE = episode start → first
+compute `node_add`; POST = first compute `node_ready` + 120 s → episode
+end): **4 compute adds fired per LAN** (budget cap), nodes admitted and
+served — yet PRE→POST p50 ratio **0.86** (lan1) / **0.81** (lan2) — **no
+collapse (slightly worse)**; POST slow-share **99.2 / 96.7 %**; blended
+completions ≈ the `nn` lock run (62 426 vs 61 957). **At 3.0 the meltdown
+is not capacity-bound: added servers do not relieve it.**
+
+### Measurements — diagnostic pair @ 2.5 (user-approved bounded extension)
+
+| Run | Label (run folder) | completed · timeouts · canceled · slow-share · p50 | Verdict |
+| --- | --- | --- | --- |
+| 1/2 | `rq2pc_pd_nn_025` (`20260928_134455…`) | 63 188 · 8 405 · 217 · 97.0 % · 2.79 s | **LOCK** (reference) |
+| 2/2 | `rq2pc_pd_cf_025` (`20260928_141410…`) | 60 773 · 10 077 · 955 · 74.3 % · 2.07 s (lan2: 57.9 % · 1.13 s) | treatment signal — **unstable** |
+
+`cf`@2.5 window + per-minute observations (client CSVs + `per_node_stats.csv`):
+
+- **lan2 collapse is real:** PRE p50 ≈ 1.87 s → POST ≈ 0.087 s (≈ **×21.4**);
+  minutes 3–5 run at 3–4 ms with 0–71 timeouts/min.
+- **Neither lane sustains it:** lan2 **relapses from minute 6** (p50 back
+  to 2.3–3.9 s; 1.1–1.4 k timeouts/min in minutes 6 / 8 / 9); **lan1 never
+  collapses** (PRE→POST ratio 0.76; p50 ≥ 1.8 s in every minute) and its
+  worst minutes (6 / 8 / 9; 1.5–1.7 k timeouts, p50 5.0–9.1 s) follow the
+  mid-episode teardown below.
+- **Per-minute concentration:** in the healthy minutes each lane's
+  ≈ 3.0–3.7 k req/min (the full demand) land on **one compute node at a
+  time**, rotating across the fixed server and the added nodes (e.g., lan1:
+  main → dyn2 → dyn3 → dyn4 → main → dyn5); lan2's ms-scale minutes are the
+  only minutes where **two added nodes share** the lane's load. `nn`@2.5
+  reference: steady 2.4–3.8 s p50 every minute, both lanes.
+- **Mid-episode teardown (lan1):** the `controller_lan1.log` node-registry
+  liveness cull (`[registry] mac=… not seen for N s — triggering removal`,
+  N = 238–440 s) fired 14:22:48 for macs …01:06 (storage) / …01:07 / …01:08
+  / …01:09 and 14:24:48 for …01:0a; removals executed 14:23:31–14:24:50 —
+  **inside the episode**. The "seen" timestamps do not track served traffic
+  (…01:07 served 3 201 requests in its first minute yet its last "seen" ≈
+  its admission instant). lan2's cull batch fired only at 14:26:48+ (≈ 1 min
+  after episode end). The same cull pattern appears post-episode in
+  `nn`@2.5 (storage node, 13:57:30) and in P-4@3.0 (batches 12:14:52 /
+  12:19:52 / 12:21:52) — **systematic platform behavior, not a one-off.**
+
+### Judgment
+
+1. **Probe question answered (ladder):** no clean treatable window exists
+   in the tested range **1.5 → 3.0** at the Series-C allocation. 1.5 =
+   cruise (no lock); **3.0 = locked but not capacity-bound** (P-4: adds
+   with zero benefit — the constraint is elsewhere); 2.5 = treatable *in
+   principle* (lan2 ×21.4) but the effect is **assignment-dependent and
+   unstable** (lane asymmetry, minute-6 relapse, mid-episode cull
+   contamination).
+2. **First confirmed mechanism — node-registry liveness cull (systematic;
+   all probe runs).** Added nodes are torn down `N` s after their last
+   "seen" event (N ≈ 209–690 s observed), and "seen" does not renew on
+   served traffic. Consequence: a treatment's added capacity can be
+   dismantled mid-measurement by the platform (lan1 minutes 8–9), and
+   POST-window audits must treat registry culls as a teardown source, not a
+   policy action. Feeds the open **M1/teardown consolidation** item.
+3. **Second confirmed mechanism — near-capacity assignment concentration.**
+   At 2.5 the lane demand ≈ one node's capacity and per-minute load sits on
+   a single node; relief appears only when the assignment splits load across
+   two added nodes. This makes the "≥ 2× collapse on both LANs" acceptance a
+   function of the routing regime, not of the add count — exactly what the
+   diagnostic showed (one lane ×21.4, the other ×0.76 on the same arm, same
+   adds).
+4. **Campaign decision ("stop + record", user 2026-09-28).** The 24-run
+   campaign is **not executed**: at 3.0 the treatment cannot express, at 2.5
+   its expression is (a) a routing lottery and (b) intersected by the
+   liveness cull — a 24-run dataset would be dominated by these two
+   platform behaviors rather than by the treatment. **Part C contributes no
+   evidence runs** (probes are not evidence); its output is this diagnostic
+   record + the two mechanisms above.
+5. **Open platform questions (registered, not probed):** (i) node-registry
+   liveness semantics — what refreshes "seen", and why added nodes expire
+   mid-load; (ii) compute assignment/concentration at near-capacity rates —
+   what drives which node receives each minute's load. Any future
+   compute-bound campaign should start from these.
+
+**Closure state:** `phases_rq2pc_cb.json` restored to the frozen state
+(`d40f5f59…`; transient in-place rate edits 1.5→3.0→2.5 documented in
+[partc_probe_log.txt](partc_probe_log.txt)); closure commit `7817edf`
+(records-only on `rq2-extension`) — **no `-final-` tag** (the planned tag
+implied campaign readiness that the stop decision obviates).
 
 ## Changelog
 
@@ -238,3 +438,9 @@ No run folders exist for `nn_cb`, `nn_db`, or the shift cells.
 | 2026-09-27 | Platform fixes applied (`--ulimit nofile=65536` on edge containers; log-rotation fix synced — `build_network_{1,2}.sh`, md5 `da479154` / `6bb54940`); verification rerun `rq2_ext_b_dbcb_rep` launched | User decision (items 1–3) |
 | 2026-09-27 | B-P2r recorded: fd fix verified (0 EMFILE); **R1 MEMCG OOM incident** (thread explosion; both edges restarted; no recovery); P2 re-confirmed (G = 120 s); **dbcb R1 2/2 failed** — root-cause decision re-opened | Probe execution |
 | 2026-09-27 | Edge-server concurrency bound implemented (root-cause fix — unbounded thread-per-connection → gated accept); image rebuilt + smoked (dependency parity via layer cache); verification run `rq2_ext_b_dbcb_fix1` launched | User decision (root-cause path) |
+| 2026-09-28 | Campaign executed + verified (Stage A1 + Stage 2, 30/30); Stage-2 verification + open instrumentation items + closure sweep recorded | Execution record |
+| 2026-09-28 | Part C addendum + artifacts drafted (`rq2pc` pre-registration) — awaiting review + FREEZE-3 | Part C pre-registration |
+| 2026-09-28 | Part C review gate passed + FREEZE-3 draft committed (`50b694c`); hash record + statuses updated | Execution record |
+| 2026-09-28 | Part C probe ladder executed (P-0 no lock; P-1 lock @ 3.0 → R* = 3.0; P-4 `cf`@3.0 lock PASS, signature FAIL — zero benefit); bounded diagnostic pair @ 2.5 executed (`nn` LOCK; `cf`: lan2 ×21.4, lan1 ×0.76, lan2 relapse min 6, lan1 mid-episode registry cull) | Probe execution |
+| 2026-09-28 | **Part C CLOSED — "stop + record" (user decision):** campaign NOT executed (no clean treatable window 1.5–3.0; cull + assignment concentration dominate); Part C record + findings appended; `phases_rq2pc_cb.json` restored to the frozen state; closure records committed (records-only; no `-final-` tag) | User decision (post-diagnostic) |
+| 2026-09-28 | Part A/B pre-battery verification note appended — recomputed values (Q-A1 0.680 / Q-A2 0.487), convention bands, cross-checks (v3 summaries reproduced exactly), pin list (ratio conventions, ≈3×, L4 counts, build-delta/cap labels, `nn_db_3`) | Verification pass (read-only; ahead of the final battery) |

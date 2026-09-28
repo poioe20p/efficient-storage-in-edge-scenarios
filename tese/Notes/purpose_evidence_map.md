@@ -62,7 +62,7 @@ papers, verbatim quotes, where each quote lives, and its **evidence strength**.
 
 ## P1 — Edge services are stateful, latency-sensitive, and face varying demand
 
-**Claim:** geo-distributed stateful services live at the edge, their users feel
+**Claim:** distributed stateful services live at the edge, their users feel
 latency, and their demand varies over time.
 
 | Evidence | Quote / source | Where | Strength |
@@ -199,6 +199,17 @@ record: `tese/research_questions/rq1/rq1_conclusions.md`.
 1. Compute auto-scaling scales edge servers and leaves the DB tier out of the runtime control loop.
 2. Edge-DB research treats database scalability as a **static/design-time** replication–sharding–placement decision — not as runtime capacity control.
 3. **No surveyed system makes a closed-loop, telemetry-driven decision of which tier — compute or storage — to scale from an observed bottleneck, and none co-locates monitoring + scaling + routing over both tiers with shared state.**
+
+**Answered (2026-09-28):** measured in the scaling-action campaign (34/36
+valid runs) together with its comparative extension (no-action comparators
+and order-shifted sequences, 30 runs). The consequences are
+regime-concentrated: a large user-visible benefit for the aligned storage
+action over inaction (labelled comparison), a resource-side rather than
+service-level wrong-action cost, and a bounded compute axis — no
+add-attributable compute recovery (the v3 recovery signature is a start-up
+transient), with the escalation attempt recorded as a diagnostic. Reported
+in §5.3 (`sec:results_rq2_action`); records:
+`tese/research_questions/rq2/rq2_conclusions.md` (re-sync pending).
 
 **The cost of the scaling action itself (the honest claim):** scaling the data
 tier is not "just more replicas". In this apparatus the storage action is a

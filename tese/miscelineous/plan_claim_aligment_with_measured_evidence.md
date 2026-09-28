@@ -68,11 +68,16 @@ comments in the thesis file.
   section written from the v3 campaign (28 runs, n=7 per arm); tables
   `tab:rq1_arms` / `tab:rq1_edges`; figure `fig:rq1_episode_p95`
   (`images/rq1_episode_latency_p95.png`).
-- [ ] **B5** `sec:results_rq2_action`: compute relief robust; storage-reserve
-  CPU relief replicated; pre-registered storage p95 criterion NOT met; cf_db
-  service degradation, sf_cb (corrected rerun) resource waste — label sf_cb as
-  follow-up/config-correction; state the 2 OOM exclusions and unmetered
-  replica-sync bandwidth.
+- [X] **B5** `sec:results_rq2_action`: REWRITTEN to the measured shape and
+  APPLIED 2026-09-28: consequence map (aligned storage benefit vs inaction,
+  labelled cross-era comparison; resource-side wrong-action cost; bounded
+  compute axis, with the start-up-transient correction replacing the v3
+  "compute relief robust" claim); storage tail-latency gate reported not met
+  (window-asymmetry cause); the 2 OOM exclusions stated; classifier
+  commitment; sequence not confirmable. Figure `fig:rq2_relief` staged; two
+  figures pending production (`fig:rq2_map`, `fig:rq2_engagement`).
+  Follow-ups: re-sync `rq2_conclusions.md`; the unmetered replica-sync
+  bandwidth caveat is carried to the Ch6 limitations.
 - [ ] **B6** `sec:results_rq3_readiness`: readiness-to-routing admission
   quantization; lead with ~6-7 s timing difference, then end-to-end
   first-success; transition-window timeout/failure harm null; n=7-per-arm
@@ -145,3 +150,7 @@ comments in the thesis file.
   (§5.2) populated from the v3 campaign (staged draft applied to
   `main.tex`); B4 and C3 closed; figure
   `images/rq1_episode_latency_p95.png` added.
+- 2026-09-28: RQ1 design-chapter alignment — Chapter 3 delivery-modes
+  sentence now lists the sampled-push realisation; §5.1 RQ1 design table
+  reworded to "four telemetry delivery treatments … realising the three
+  delivery semantics with the latest-state class in two forms".
