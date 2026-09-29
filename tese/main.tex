@@ -148,17 +148,16 @@ mobile devices, which have become the main gateway to internet access
 therefore generated and consumed at the network edge, far from
 centralised cloud data centres. Edge computing brings the computational
 resources to the network edge, therefore closer to the end-users, allowing
-for much lower latency in delivering services and applications to users by
-leveraging its geo-distributed nature
+for much lower latency in delivering services and applications.
 \parencite{Cao2020OverviewEdgeComputingResearch,Satyanarayanan2017EmergenceEdgeComputing}.
-Beyond lower latency, edge computing's inherent
-geo-distributed servers dispersed geographically and close to users relieves bandwidth
-pressure on the core network, since data can be processed and stored locally,
+Beyond lower latency, edge computing's inherent dispersion of servers
+close to users relieves bandwidth pressure on the core network, since data
+can be processed and stored locally,
 at the edge, for quicker responses, only a subset of it is sent to the cloud
 \parencite{Cao2020OverviewEdgeComputingResearch},
 freeing up backbone available bandwidth. 
 
-    Despite these advantages, this geographical distribution also translates into
+    Despite these advantages, this dispersion also translates into
 less capacity per location and greater complexity in managing the distributed
 edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
 edge computing raises the complexity of management considerably}
@@ -176,7 +175,7 @@ fluctuation of user demand.
     The resource management problem gains more relevance when the services
 themselves are stateful. Unlike stateless microservices, which can be
 replicated freely and absorb traffic immediately, stateful services in a
-geo-distributed edge deployment depend on data held close to the compute.
+distributed edge deployment depend on data held close to the compute.
 A content item ingested at one site is served from the database of that
 site. In distributed deployments, such data is routinely replicated
 across sites for locality and robustness, but replication is neither
@@ -248,7 +247,7 @@ traffic admission, this arrangement allows each selected interface to be
 measured under controlled conditions.
 
     Along this chain, three interfaces are studied in a stateful service
-deployed across two geo-distributed sites: how demand evidence is
+deployed across two network domains: how demand evidence is
 delivered to the controller (telemetry delivery semantics), which
 capacity action the controller hands over to the infrastructure in
 response to the observed bottleneck (compute or storage scale-up),
@@ -363,7 +362,7 @@ Docker enables fast provisioning and teardown of service backends, and MongoDB f
 replica-set replication and concurrent access.
 
 \item \textit{Demonstration.} The artefact was deployed as a running system in
-an emulated edge environment with two simulated sites, and was driven with
+an emulated edge environment with two network domains, and was driven with
 scheduled workload phases reproducing demand shifts in order to demonstrate that
 the platform operates end-to-end from demand
 observation through scaling action to traffic admission, with the tested
@@ -589,7 +588,7 @@ data locally reduces the ingress bandwidth into the cloud
 \parencite{Satyanarayanan2017EmergenceEdgeComputing}.
 
     Despite the advantages of edge computing, as mentioned previously in
-Section~\ref{sec:context_motivation}, the inherent geo-distribution of resources
+Section~\ref{sec:context_motivation}, the inherent dispersion of edge resources
 increases their management and orchestration complexity.
 Resource heterogeneity, scarcity, and demand varying over time are all 
 aspects that can degrade resource orchestration efficiency, making it a 
@@ -1289,15 +1288,15 @@ presented in the remainder of the chapter.
     \caption{Architecture of the proposed platform: two network domains whose
     clients, data planes, edge servers, storage tiers, and aggregators are
     coordinated by peer SDN controllers, with host-local control paths and an
-    emulated wide-area data link between the domains.}
+    emulated inter-domain data link between the domains.}
     \label{fig:architecture_overview}
 \end{figure}
 
 \subsection{Two-Domain Organisation}
 
 The platform is organised as two network domains connected by an emulated
-wide-area data link. The two domains represent the two geo-distributed
-sites of the deployment scenario evaluated in this dissertation. Each domain
+inter-domain data link. The two domains represent the two sites of the
+deployment scenario evaluated in this dissertation. Each domain
 contains
 client workloads, an \ac{OVS}
 data plane, a pool of containerised edge servers, a MongoDB replica-set
@@ -1307,7 +1306,7 @@ summaries published by the aggregators of both domains. Each controller runs
 traffic steering, telemetry consumption, and elasticity coordination in the
 same process for its own domain.
 
-    The emulated wide-area link represents cross-domain data traffic. In contrast,
+    The emulated inter-domain link models the cross-domain data path. In contrast,
 telemetry delivery and controller-to-controller topology exchange use
 host-local control channels in the experimental environment. This distinction
 separates data-path delay from control-path communication.
@@ -1327,7 +1326,7 @@ the flow. Subsequent matching packets are handled in the data plane without
 requiring repeated controller intervention. Service backend selection can
 include eligible backends in either domain when the topology permits.
 Cross-domain service placement is a platform capability held constant in the
-evaluation, while cross-region storage placement is disabled.
+evaluation, while cross-domain storage placement is disabled.
 
     Backend and storage-member selection are cost-based. The controller
 computes a \ac{WSM} cost from each eligible backend's cached resource
@@ -1373,12 +1372,12 @@ their coordination within each domain's controller process. The concrete
 implementation of these paths is described in Chapter~\ref{ch:implementation}.
 
     The deployment evaluated in this dissertation runs the two domains on a
-single host, with an emulated wide-area link. The evaluation targets the
-coordination interfaces between the control functions rather than wide-area
-transport performance, and the emulated link provides the controlled,
-repeatable conditions that these interface measurements require. No
-performance claim is therefore made for a real geo-distributed wide-area
-deployment. The testbed is described in Section~\ref{sec:experimental_setup}.
+single host, and only cross-domain data traffic traverses the emulated
+inter-domain link between them. The evaluation targets the coordination
+interfaces between the control functions under controlled, repeatable
+conditions. The testbed configuration is described in
+Section~\ref{sec:experimental_setup}, and the limitations of the evaluated
+environment are discussed in Section~\ref{sec:limitations}.
 
 \section{Distributed Elastic Allocation of Resources}\label{sec:elastic_allocation}
 The platform scales capacity along two dimensions: edge-service replicas (also
@@ -1729,8 +1728,9 @@ Chapter~\ref{ch:results}.
 % Aqui dizer coisas como tu utilizas o docker container, ta tudo a correr em vms e cenas do 
 % genero.
 \section{Experimental infraestructure}\label{sec:impl_infraestructure}
-% TODO: two emulated domains on a single cloud-VM host; Docker containers;
-% OVS topology (two LANs + WAN bridge, tc-netem); WAN emulation profiles.
+% TODO: two network domains on a single cloud-VM host; Docker containers;
+% OVS topology (two LANs + inter-domain link, tc-netem); inter-domain
+% link latency profile (fixed symmetric RTT).
 % TODO: workload driver and harness — open-loop client agents executing the
 % phase schedule (per-client rate, active-client fraction, request mix,
 % duration); bounded in-flight window; client-side request cap (300 s);
@@ -1805,7 +1805,7 @@ The evaluation was performed on the platform of
 Chapters~\ref{ch:system_architecture} and~\ref{ch:implementation}, deployed as
 a two-domain testbed on a single host. Each domain runs its own data plane,
 edge-service replicas, storage tier, telemetry aggregator, and \ac{SDN}
-controller, and the two domains are joined by an emulated wide-area link. Both
+controller, and the two domains are joined by an emulated inter-domain link. Both
 domains are driven by the same scheduled, open-loop workload driver, described
 more extensively in Section~\ref{sec:impl_infraestructure} as a driver 
 that applies the workload's request schedule regardless of the responses 
@@ -1827,8 +1827,8 @@ Tables~\ref{tab:rq1_design} to~\ref{tab:rq3_design}.
         \midrule
         Host & both domains on a single cloud virtual machine; all components
         run as CPU-capped containers \\
-        Wide-area link & emulated inter-domain link with a fixed symmetric
-        round-trip latency of 185~ms (tc-netem) \\
+        Inter-domain link (emulated) & fixed symmetric round-trip latency of
+        185~ms (tc-netem) \\
         Data plane & one Open vSwitch per domain, programmed over OpenFlow \\
         Controllers & one OS-Ken controller per domain; traffic steering,
         telemetry consumption, and elasticity decisions run in the controller
@@ -1848,35 +1848,29 @@ Tables~\ref{tab:rq1_design} to~\ref{tab:rq3_design}.
 
     The testbed runs the two domains on a single host, which keeps the control
 paths host-local. Telemetry delivery and controller-to-controller topology
-exchange do not traverse the emulated wide-area link, which carries only
-cross-domain data traffic. The evaluation workloads reference locally owned
+exchange do not traverse the inter-domain link, which carries
+cross-domain data traffic only. The evaluation workloads reference locally owned
 content only, so storage reads remain within the replica set of the domain
-that serves each request, and cross-region storage placement is disabled.
-Backend selection may also place a request on a peer-domain replica at a
-hop-cost penalty, so the evaluated service path is not confined to the
-client's own domain. Cross-domain placement occurred in all three campaigns:
-about 2~\% of requests with a recorded serving backend in the telemetry
-delivery and scaling action campaigns and 0.5~\% in the readiness admission
-campaign, concentrating under compute-bound demand, where local compute is
-most loaded. It is a property of the platform's selection policy rather than
-a treatment, and the requests it affects carry the emulated inter-domain
-latency in their client-side service time. 
-
-%The paragraph bellow needs better justification. 
-The campaigns therefore measure 
-the coordination interfaces under controlled and repeatable conditions,
-and no geo-distributed or wide-area performance claim is made.
+that serves each request, and cross-domain storage placement is disabled.
+Backend selection may place a request on a peer-domain replica at a
+hop-cost penalty. This occurred in about 2~\% of requests 
+with a recorded serving backend in the telemetry delivery and 
+scaling action campaigns and 0.5~\% in the readiness admission
+campaign, and it is a property of the platform's selection policy rather than
+a treatment. The campaigns therefore measure the coordination 
+interfaces under controlled and repeatable conditions.
 
     Each run is an independent experimental unit and starts from the 
 same baseline fleet and configuration. During a run, the platform 
 records the timeline of the demand-to-capacity chain end to 
-end: workload onset, telemetry window completion and controller 
+end: demand episode onset, telemetry window completion and controller 
 observation, scaling decision and selected action,
 provisioning start and completion, application-readiness confirmation,
 admission to the routing pool, first routed request, and first successful
-response. The rest of this section defines the workloads that drive these
-timelines, the outcomes extracted from them, and the design under which each
-campaign varied exactly one interface.
+response, load distribution of the served demand across the
+replicas is also recorded. The rest of this section defines the 
+workloads that drive these timelines, the outcomes extracted from them, 
+and the design under which each campaign varied exactly one interface.
 
 \subsection{Demand Model and Campaign Workloads}
 The demand model varies two axes: the request intensity over time, and the
@@ -1884,49 +1878,99 @@ request mix, which determines whether an episode binds the compute tier or the
 storage tier. The spatial axis, that is, which domain owns the requested
 content, is held constant in the evaluation, as described above.
 
+    The request mix is a weighted distribution over five request kinds
+defined in Table~\ref{tab:request_kinds}.
+
+\begin{table}[H]
+    \centering
+    \caption{The five request kinds that make up the workload mixes, and
+    the tier each loads.}
+    \label{tab:request_kinds}
+    \footnotesize
+    \begin{tabular}{p{0.20\textwidth} p{0.58\textwidth} p{0.12\textwidth}}
+        \toprule
+        Request kind & What it does & Tier loaded \\
+        \midrule
+        Content lookup & Reads a single content item (a point read). & Storage \\
+        Feed ranking & Assembles a ranked feed for a user from candidate
+        content. & Compute \\
+        Service pressure & Introspects the edge server's recent request
+        activity. & Compute \\
+        Content update & Writes an update to a content item. & Storage \\
+        Content aggregation & Computes a collection-level aggregation over
+        content items. & Storage \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
 A workload is a timed sequence of demand phases. Each phase fixes, for its
 duration, the offered request intensity, as a per-client request rate and an
-active-client fraction, and the request mix; the phase that applies the demand
+active-client fraction, and the request mix. The phase that applies the demand
 shift under test is referred to as the demand episode. Each campaign defined
 its own workload, calibrated and locked before the campaign started and
-captured in every run, so that the campaigns do not share a single common
-workload.
+captured in every run, so that the campaigns execute with adequate load configurations.
 
-\begin{itemize}
-    \item The telemetry delivery campaign (RQ1) ran a five-phase workload: a
-    60~s baseline, a 180~s overload episode at a per-client rate of 1.2
-    requests per second with a co-loaded mix (30~\% service pressure, 35~\%
-    content lookups, 15~\% ranking, and 10~\% each of updates and
-    aggregations), a 120~s recovery gap, a 420~s demand drop, and a 420~s idle
-    tail.
-    \item The scaling action campaign (RQ2) ran two separately constructed
-    episodes: a compute-bound episode (600~s at a per-client rate of 1.5, pure
-    service pressure) and a data-access-bound episode (480~s at a per-client
-    rate of 5.0, 90~\% content lookups), each with baseline, recovery, and
-    demand-drop phases.
-    \item The readiness admission campaign (RQ3) comprised two parts. The
-    admission timing was measured with an intact readiness-event source, and
-    the consequence of event loss was measured on a baseline followed by a
-    600~s compute-bound plateau at a per-client rate of 2.0 with pure service
-    pressure, under a fixed and deliberately reduced per-backend CPU quota
-    (0.12) that constrains the headroom of the incumbent fleet.
-\end{itemize}
+    The phases around the episode have fixed roles across the campaigns. A
+baseline window opens every run at a low, steady load (rate 1.0 per client,
+10~\% of clients active) and establishes the healthy pre-shift operating
+point. A recovery gap follows the episode at the lowest issuing load (rate
+0.5, 5~\% of clients) and acts as a post-episode quiet period that lets the platform
+settle and separates the stressed window from the post-shift windows. 
+A demand drop returns the load to a low, steady level (rate 1.0, 10~\%) and is
+the release window, in which the capacity the episode required is scaled
+down and post-shift service quality is compared with the baseline. An idle
+tail closes the run at a near-idle load (rate 0.05, 5~\%), so that every
+configuration reaches sustained idleness and the release of surplus
+capacity can complete. Table~\ref{tab:campaign_workloads} summarises the workload of each
+campaign.
+
+\begin{table}[H]
+    \centering
+    \caption{Campaign workloads. Each campaign defines its own phase
+    sequence, run in the order shown. The demand episode is the phase that
+    applies the demand shift under test.}
+    \label{tab:campaign_workloads}
+    \footnotesize
+    \begin{tabular}{p{0.20\textwidth} p{0.34\textwidth} p{0.38\textwidth}}
+        \toprule
+        Campaign & Phase sequence & Demand episode \\
+        \midrule
+        Telemetry delivery (RQ1) & Baseline (60~s) $\rightarrow$ overload
+        episode (180~s) $\rightarrow$ recovery gap (120~s) $\rightarrow$
+        demand drop (420~s) $\rightarrow$ idle tail (420~s) & Rate 1.2 per
+        client, all clients active; co-loaded mix: 30~\% service pressure,
+        35~\% content lookups, 15~\% ranking, 10~\% each of updates and
+        aggregations \\
+        Scaling action (RQ2) & Baseline (30 or 60~s) $\rightarrow$ one of two
+        episodes $\rightarrow$ recovery gap (60 or 120~s) $\rightarrow$
+        demand drop (360 or 420~s) & Compute-bound: 600~s at rate 1.5 per
+        client, pure service pressure. Data-access-bound: 480~s at rate 5.0
+        per client, 90~\% content lookups \\
+        Readiness admission (RQ3) & Baseline (60~s) $\rightarrow$
+        compute-bound plateau (600~s) $\rightarrow$ recovery gap (120~s)
+        $\rightarrow$ demand drop (420~s) $\rightarrow$ idle tail (420~s) &
+        Rate 2.0 per client, pure service pressure; per-backend CPU quota
+        0.12 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \subsection{Metrics and Outcome Definitions}
-The primary reaction outcome is usable-capacity latency: the time from the
-onset of the demand episode to the first new capacity serving traffic,
-reconstructed from the recorded timeline. The time to the first scaling
-decision is reported as a descriptive outcome only, because the delivery
-treatment itself shifts when a decision can be taken. The readiness admission
-campaign additionally reports the segment from the scaling decision to usable
-capacity, which isolates the admission path.
+For the telemetry delivery campaign, the primary reaction outcome is
+usable-capacity latency: the time from the onset of the demand episode to the
+first new capacity serving traffic, reconstructed from the recorded timeline.
+The time to the first scaling decision is reported as a descriptive outcome
+only, because the delivery treatment itself shifts when a decision can be
+taken. 
 
+    The readiness admission campaign reports the segment of the chain from
+the scaling decision to usable capacity, which isolates the admission path.
 Service quality is summarised per run through percentiles (p50, p95, p99) of
 the endpoint latency over the demand episode. Latency percentiles are computed
 on the served basis, over completed requests, and, where an offered-basis
 figure is needed, over completed requests and timeouts together, with a
 timeout counted at the client-side cap of 300~s. Outcome classes are reported
-distinctly and never merged: offered requests, completed requests, failed
+distinctly as: offered requests, completed requests, failed
 requests, timeouts, and client-side cancellations and drops at phase end.
 Completion is reported on the served basis, completed requests over
 non-abandoned requests, and on the offered basis, completed requests over
@@ -2036,7 +2080,7 @@ each campaign.
         prepared reserve in the same domain. \\
         Held constant & Telemetry delivery, routing policy, per-tier resource
         caps, action budget, cooldowns, backend-admission condition;
-        Tier~1 selective synchronisation and cross-region storage
+        Tier~1 selective synchronisation and cross-domain storage
         placement disabled. \\
         Workload & Compute-bound episode (600~s, rate 1.5 per client, pure
         service pressure) or data-access-bound episode (480~s, rate 5.0 per
@@ -2130,7 +2174,8 @@ giving 28 runs in total, with each run treated as an experimental unit.
 The delivered evidence matched this design
 (Table~\ref{tab:rq1_observation}): arms A and B received every completed
 telemetry window, while the lossy arms received about one third of them; the
-information age at decision varied with the delivery treatment.
+information age at decision and the delay in detecting the overload onset
+varied with the delivery treatment.
 
 Later or lossier delivery also delayed the scaling reaction. The median time
 from the start of the overload episode to usable capacity
@@ -2183,8 +2228,8 @@ Outside the overload episode the arms were indistinguishable: baseline,
 recovery and demand-drop p95 stayed at about 1.05--1.08~s in every arm. No
 run recorded a single timeout inside the episode in any arm; the only
 timeouts in the campaign were the 300~s client-cap tail timeouts during
-demand drop (0.07--0.12~\% of offered requests). Cancellation shares were
-flat across arms at roughly 5--7~\% of offered requests, and a small
+demand drop (0.07--0.12~\% of offered requests). Cancellation and dropped 
+shares were flat across arms at roughly 5--7~\% of offered requests, and a small
 completed-without-status error class remained largest in B (2.22~\% against
 0.03--0.42~\% elsewhere). A per-bucket check (30~s buckets) confirmed that
 the episode ordering is not an artefact of aggregating the episode into a
@@ -2200,18 +2245,20 @@ while delivery delay was costly in proportion to the margin it consumes.
     \centering
     \caption{Delivery realisation and overload observability (mean over the
     seven replicates; delivered fraction as the observed range): fraction of
-    telemetry windows delivered and mean information age at decision.}
+    telemetry windows delivered, mean information age at decision, mean delay
+    in detecting the overload onset, and missed overload windows per run
+    (zero in the complete arms).}
     \label{tab:rq1_observation}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
-    \begin{tabular}{l c c}
+    \begin{tabular}{l c c c c}
         \toprule
-        Arm & Delivered & Information age (s) \\
+        Arm & Delivered & Information age (s) & Detection delay (s) & Missed windows \\
         \midrule
-        A -- event-preserving & 1.000 & 3.5 \\
-        B -- delayed (+30~s) & 1.000 & 33.3 \\
-        C -- latest-state (poll 30~s) & 0.325--0.336 & 16.2 \\
-        D -- sampled push (/3) & 0.328--0.336 & 11.7 \\
+        A -- event-preserving & 1.000 & 3.5 & 0.62 & 0 \\
+        B -- delayed (+30~s) & 1.000 & 33.3 & 30.19 & 0 \\
+        C -- latest-state (poll 30~s) & 0.325--0.336 & 16.2 & 5.58 & 55.0 \\
+        D -- sampled push (/3) & 0.328--0.336 & 11.7 & 0.64 & 49.8 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2347,15 +2394,8 @@ no compute action taken, and storage activations executed for no benefit
 --- while under data-bound demand the mismatched compute-first policy spent
 its budget on the tier that could not relieve the episode. The matched
 actions spent where the effect was: the reserve carried the storage serving
-load in every aligned lane. The cell-level node-minutes quantify the
-separation: on the compute-bound episode the two compute-scaling arms
-executed eight compute actions in every run and spent about 3.1
-(compute-first) and 3.2 (bottleneck-aware selection) compute node-minutes
-per thousand requests, against none provisioned by storage-first; on the
-data-bound episode the aligned storage-first arm spent about 0.20 storage
-node-minutes per thousand requests against about 0.75 compute node-minutes
-for the mismatched compute-first arm, while bottleneck-aware selection
-provisioned both tiers (about 0.19 storage and 0.74 compute).
+load in every aligned lane, and resource use is reported as node-minutes
+per cell alongside the action counts.
 
 Selection correctness holds across regimes. The bottleneck-aware classifier
 committed to the detected bottleneck in every evaluated regime: on the
@@ -2497,9 +2537,9 @@ periodic discovery recovered sooner: provisioning to admission in all six
 blocks, provisioning to first serve in five of six plus one sub-second tie
 (Figure~\ref{fig:rq3_recovery_ordering}).
 The consequence was visible to users: the direct lifecycle configuration
-degraded to 8.3--14.4~\% plateau slow share, concentrated in the onset
-window (29.7--39.0~\%), a full-plateau contrast of 6.2--10.9~pp against the
-recovering configurations (median
+degraded to 8.3--14.4~\% plateau slow share, concentrated in the transition
+window around admission (onset window 29.7--39.0~\%), a full-plateau
+contrast of 6.2--10.9~pp against the recovering configurations (median
 7.64~pp, exact $p = 0.0040$, Cliff's $\delta = 1.0$) and an onset contrast
 of 25.1--30.8~pp (median 28.0~pp), both pre-registered co-primary windows
 and both reproduced in every block entering the contrast (5/5). The
@@ -2660,7 +2700,9 @@ already low.
 % two-domain testbed and workload families").
 
 \section{Limitations}\label{sec:limitations}
-% TODO: Controlled testbed; emulated (not real) WAN; single host; single window size;
+% TODO: Controlled testbed — two domains on a single host; emulated
+% inter-domain link; evaluated data path single-site; no geo-distributed or
+% wide-area performance claim. Single window size;
 % statistical power (n=3 per condition); RQ1/RQ2/RQ3 rely on required extensions and are
 % designed, not fully measured (thesis_overview.md §6); the old RQ2 slowstart result (~31 s,
 % n=9) is supporting calibration evidence for RQ3's periodic-discovery condition, not final
