@@ -985,7 +985,7 @@ ready capacity into the eligible set affects load balancing and resource
 management --- the admission interval from verified readiness to routing
 eligibility, the time until the new capacity serves traffic, and how
 quickly that membership change reaches the load distribution and the
-incumbent tier. Direct lifecycle notification and periodic discovery are
+existing fleet. Direct lifecycle notification and periodic discovery are
 the two operational mechanisms of that coordination interface.
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration} %DONE
@@ -1536,7 +1536,7 @@ readiness-admission mechanism is the interface examined for RQ3.
 
     Per-backend resource quotas are configuration parameters of the compute
 tier. The fault contrast is evaluated with a deliberately reduced
-per-backend CPU quota, so that the incumbent fleet carries thin spare
+per-backend CPU quota, so that the existing fleet carries thin spare
 capacity --- the condition under which a lost admission, if consequential, is
 exposed rather than absorbed by slack; the evaluated values are reported in
 Section~\ref{sec:experimental_setup}.
@@ -1892,8 +1892,8 @@ defined in Table~\ref{tab:request_kinds}.
         Request kind & What it does & Tier loaded \\
         \midrule
         Content lookup & Reads a single content item (a point read). & Storage \\
-        Feed ranking & Assembles a ranked feed for a user from candidate
-        content. & Compute \\
+        Feed ranking & Performs a filtered item retrieval of candidate
+        content, then ranks the candidates in the edge server. & Compute \\
         Service pressure & Introspects the edge server's recent request
         activity. & Compute \\
         Content update & Writes an update to a content item. & Storage \\
@@ -1913,7 +1913,7 @@ captured in every run, so that the campaigns execute with adequate load configur
     The phases around the episode have fixed roles across the campaigns. A
 baseline window opens every run at a low, steady load (rate 1.0 per client,
 10~\% of clients active) and establishes the healthy pre-shift operating
-point. A recovery gap follows the episode at the lowest issuing load (rate
+point. A recovery gap is an episode with the lowest issuing load (rate
 0.5, 5~\% of clients) and acts as a post-episode quiet period that lets the platform
 settle and separates the stressed window from the post-shift windows. 
 A demand drop returns the load to a low, steady level (rate 1.0, 10~\%) and is
@@ -1939,7 +1939,7 @@ campaign.
         episode (180~s) $\rightarrow$ recovery gap (120~s) $\rightarrow$
         demand drop (420~s) $\rightarrow$ idle tail (420~s) & Rate 1.2 per
         client, all clients active; co-loaded mix: 30~\% service pressure,
-        35~\% content lookups, 15~\% ranking, 10~\% each of updates and
+        35~\% content lookups, 15~\% feed ranking, 10~\% each of updates and
         aggregations \\
         Scaling action (RQ2) & Baseline (30 or 60~s) $\rightarrow$ one of two
         episodes $\rightarrow$ recovery gap (60 or 120~s) $\rightarrow$
@@ -1960,54 +1960,62 @@ For the telemetry delivery campaign, the primary reaction outcome is
 usable-capacity latency: the time from the onset of the demand episode to the
 first new capacity serving traffic, reconstructed from the recorded timeline.
 The time to the first scaling decision is reported as a descriptive outcome
-only, because the delivery treatment itself shifts when a decision can be
-taken. 
+only, because the delivery treatment determines when the evidence that
+triggers a decision reaches the controller, and a decision cannot be taken
+before that evidence arrives.
 
     The readiness admission campaign reports the segment of the chain from
 the scaling decision to usable capacity, which isolates the admission path.
 Service quality is summarised per run through percentiles (p50, p95, p99) of
 the endpoint latency over the demand episode. Latency percentiles are computed
-on the served basis, over completed requests, and, where an offered-basis
-figure is needed, over completed requests and timeouts together, with a
-timeout counted at the client-side cap of 300~s. Outcome classes are reported
+on the served basis, over completed requests. Outcome classes are reported
 distinctly as: offered requests, completed requests, failed
-requests, timeouts, and client-side cancellations and drops at phase end.
+requests, timeouts (each recorded at the client-side cap of 300~s), and
+client-side cancellations and drops at phase end.
 Completion is reported on the served basis, completed requests over
 non-abandoned requests, and on the offered basis, completed requests over
 offered requests. Unless stated otherwise, each run contributes the mean of
 its two domains, and any cross-domain asymmetry above the pre-registered
 symmetry screen is reported.
 
-The campaign-specific outcomes are the following.
+The outcomes each campaign reports follow the facets of its research
+question.
 
-% TOU AQUI
 \begin{itemize}
-    \item The telemetry delivery campaign reports the delivered fraction, the
-    fraction of produced telemetry windows delivered to the decision engine,
-    and the information age at decision, the time between the completion of a
-    window and its use in a decision.
-    \item The scaling action campaign reports, per cell, the relief
-    obtained in the targeted tier and the load spread across the replicas
-    of the tier that received the action, as each replica's share of the
-    served demand and its utilisation; the episode service quality against
-    the no-action comparator; and the resource use of the actions, as the
+    \item \textit{The telemetry delivery campaign} answers the observation part of its
+    question directly: the delivered fraction states how much of the produced
+    window stream reached the decision engine, and the information age at
+    decision states how fresh the evidence it received was. How the
+    controller responded is read on its primary reaction outcome, the
+    usable-capacity latency, and what users experienced is read on the
+    episode latency percentiles, both defined at the start of this
+    subsection.
+    \item \textit{The scaling action campaign} answers its question along its three
+    axes, per cell: targeted-tier relief, as the relief obtained in the tier
+    that received the action; service recovery, as the episode service
+    quality against the no-action comparator; and resource use, as the
     scaling actions taken and the compute and storage node-minutes of the
-    provisioned units per tier.
-    \item The readiness admission campaign reports the intervals from verified
-    readiness to admission, from admission to the first routed request, and
-    from provisioning to the first successful response; the slow-share, the
-    fraction of served requests (completed or timed out) that time out or
-    exceed one second, over the full plateau, the onset window, and the
-    plateau tail; the relief of the incumbent fleet once the new backend
-    begins serving; and, under readiness-event loss, the number of admissions,
-    the candidates abandoned and torn down, and the requests served by the new
-    capacity.
-    A backend counts as admitted when it becomes visible in the selector's
-    eligible pool, not when its registration is recorded.
+    provisioned units per tier. The load spread across the replicas of the
+    receiving tier, as each replica's share of the served demand and its
+    utilisation, reports the mechanism through which the action engaged.
+    \item \textit{The readiness admission campaign} answers its question in two parts.
+    When the new backend serves is analyzed along the admission chain: the
+    intervals from verified readiness to admission, from admission to the
+    first routed request, and from provisioning to the first successful
+    response, and the relief of the existing fleet once the new backend
+    begins serving. How much a lost notification costs is measured under
+    readiness-event loss: the slow-share, the fraction of served requests
+    that time out or exceed one second, over the full plateau (the
+    campaign's demand episode), the onset window (the first 150~s of the
+    plateau), and the plateau tail (the last 300~s of the plateau); and the
+    number of admissions, the candidates abandoned and
+    torn down, and the requests served by the new capacity. A backend counts
+    as admitted when it becomes visible in the selector's eligible pool, not
+    when its registration is recorded.
 \end{itemize}
 
 Control overhead is reported as the CPU utilisation and resident memory of the
-controller and telemetry processes.
+controller and telemetry processes along the each camapaign.
 
 \subsection{Campaign Designs and Analysis}
 All three campaigns follow the same discipline of single-variable
@@ -2016,12 +2024,15 @@ demand-to-capacity chain and holds the other two constant, so that the
 measured differences are attributable to the interface under test. The
 policies compared within a campaign are baselines that encode architectural
 properties, such as a fixed single-tier scaling policy or a periodic discovery
-mechanism, and not competing products. Each campaign was pre-registered: the
+mechanism, and not competing aspects. Each campaign was pre-registered: the
 treatments, primary outcomes, screening rules, and analysis tests were fixed
-before data collection. No results are pooled across campaigns; every contrast
+before data collection. 
+
+No results are pooled across campaigns. Every contrast
 is computed within its own campaign's design, and where a research question
 draws on more than one campaign the campaigns are reported separately.
 
+% TOU AQUI
 Tables~\ref{tab:rq1_design} to~\ref{tab:rq3_design} summarise the design of
 each campaign.
 
@@ -2499,7 +2510,7 @@ the event-loss part of the campaign, the controller drops every readiness
 event. Two evidence lines feed this section: the intact-source measurements
 quantify the admission delay and its propagation, and the event-loss part
 prices the loss of the readiness event under a fixed per-backend CPU quota
-(0.12), deliberately reduced so that the incumbent fleet carries the thin
+(0.12), deliberately reduced so that the existing fleet carries the thin
 spare capacity that the research question conditions on (36~runs in six
 seed blocks, per-client rate 2.0).
 
@@ -2519,9 +2530,9 @@ $p = 0.0022$). The handover itself was not the treatment: once admitted,
 the interval from admission to the first routed request measured 0.4--1.2~s
 on both mechanisms (a pre-fix servability defect had produced a lag of
 about ten seconds; the reported values are post-fix), the useful initial
-request share was 1.000, and the incumbent relief magnitudes did not
-separate (exact $p = 0.209$). No user-visible cost of the seconds-level
-delay appeared in any tested healthy regime.
+request share was 1.000, and the relief magnitudes on the existing fleet
+did not separate (exact $p = 0.209$). No user-visible cost of the
+seconds-level delay appeared in any tested healthy regime.
 
 When the readiness event is lost under reduced headroom, the rules diverge
 in kind rather than in degree (Table~\ref{tab:rq3_fault} and
@@ -2592,7 +2603,7 @@ already low.
         Provisioning$\to$first successful response (s) & 11.27 & 17.70 & exact $p = 0.0005$, $\delta = -0.594$ \\
         Scaling decision$\to$usable capacity (s) & 2.17 & 6.01 & exact $p = 0.0022$, $d = -1.000$ \\
         Admission$\to$first routed request (s) & 0.4--1.2 & 0.4--1.2 & confirmatory; not separated \\
-        Incumbent relief (per-run median, pp) & 16.0 & 19.3 & exact $p = 0.209$; not separated \\
+        Existing-fleet relief (per-run median, pp) & 16.0 & 19.3 & exact $p = 0.209$; not separated \\
         \bottomrule
     \end{tabular}
 \end{table}
