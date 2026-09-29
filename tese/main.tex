@@ -1736,6 +1736,46 @@ Chapter~\ref{ch:results}.
 % duration); bounded in-flight window; client-side request cap (300 s);
 % phase-end drain; per-run phase snapshot and request artefacts. The phase
 % model is defined in Section~\ref{sec:experimental_setup}.
+%
+% CANDIDATE TEXT for the workload-driver part of this section — uncomment
+% and adapt when writing Chapter 4; also check Chapter 3 for applicability.
+% Grounded in source/scripts/testing/traffic_generator.py and
+% docs/operation/testing/traffic_generator.md.
+%
+% The load on the platform is exerted by a scheduled workload driver that
+% runs on the experiment host beside the testbed. Each client is a Linux
+% network namespace attached to its domain's client LAN, and the driver
+% issues requests from a namespace as HTTP calls against the domain's
+% virtual service address, so that the controller observes the namespace's
+% source address and steers the request through the double-VIP data path of
+% Chapter~\ref{ch:system_architecture}. A run instantiates 24 clients per
+% domain, 48 in total.
+%
+% The driver executes the run's phase schedule
+% (Section~\ref{sec:experimental_setup}): each phase fixes its duration, a
+% per-client issuing rate, the fraction of clients that are active during
+% it, and its request mix from Table~\ref{tab:request_kinds}. Active
+% clients issue requests continuously at the phase rate, each request being
+% one HTTP call of a kind drawn from the phase mix and aimed at users and
+% content items taken from a snapshot of the seeded data set, so that
+% traffic generation does not depend on a live database. The run's seed
+% fixes which clients are active and the per-client request streams
+% (Section~\ref{sec:experimental_setup}).
+%
+% The delivery of the load is open-loop: a client issues its requests on
+% schedule regardless of whether earlier requests have completed, so the
+% offered demand is preserved when the service slows down and the load
+% accumulates as latency rather than thinning out. Three client-side
+% bounds make the resulting failure modes explicit and finite: each client
+% keeps at most 1024 requests in flight, and a request that arrives when
+% the window is full is not dispatched and is recorded as dropped; every
+% request carries a client-side cap of 300~s, and a request that reaches
+% the cap is recorded as a timeout; and in-flight requests that outlast
+% the 30~s phase-end drain are abandoned and recorded as cancelled. Each
+% issued request is written to the run's request record, carrying its
+% phase, kind, target identifiers, issue time, outcome class and latency;
+% the record, together with the phase snapshot captured per run, is the
+% raw material of the per-run analyses of Chapter~\ref{ch:results}.
 
 \section{Distributed Elastic Allocation of Resources}\label{sec:impl_elastic}
 
@@ -2032,11 +2072,89 @@ No results are pooled across campaigns. Every contrast
 is computed within its own campaign's design, and where a research question
 draws on more than one campaign the campaigns are reported separately.
 
-% TOU AQUI
-Tables~\ref{tab:rq1_design} to~\ref{tab:rq3_design} summarise the design of
-each campaign.
+    Each campaign organises its runs so that every planned contrast is measured
+over matched demand. A run is assigned a seed that fixes the randomised
+content of its demand: which clients are active in each phase and, for each
+client, the sequence of request kinds it issues, the users and content
+items it targets, the payload values it sends, and the jitter on its
+request timing. Runs that share a seed are therefore exposed to the same
+demand by construction, given the campaign's phase profile and client set.
+The runs of each campaign are organised into blocks: a block contains one
+run of every treatment the campaign compares, its arms or its cells, and
+the runs of a block share one seed, so that the treatments entering a
+contrast are measured under identical demand.
+The order in which a block's treatments are executed is counterbalanced
+across blocks, so that slow drift in the testbed over the campaign cannot
+align with a single treatment.
 
-\begin{table}[htbp]
+    The number of replicates per campaign was fixed before data collection so
+that a fully separated contrast remains resolvable under the pre-registered
+test. Under complete separation between two treatment sets of $n$ runs, the
+exact Mann--Whitney $U$ test has a $p$-value floor of $2/\binom{2n}{n}$:
+0.0022 at six per treatment and 0.0006 at seven. The campaigns use these
+sizes, six per cell in the scaling action and readiness admission campaigns
+and seven per arm in the telemetry delivery campaign, which takes the extra
+replicate because identical repeats of its runs showed a real run-to-run
+spread under the same configuration and seed.
+
+    The reported contrasts follow the test pre-registered for each campaign, with
+effect sizes reported with confidence intervals and direction counts over
+matched replicates. Screening rules are applied before the contrasts: runs
+entering a contrast must pass the campaign's per-run checks on data-path
+integrity, harness behaviour, delivery fidelity, and cross-domain symmetry,
+and the defined exclusions are removed and reported. Pre-registered criteria
+that are not met are reported as such, together with the observed evidence and
+its documented causes. The full design of each campaign, its treatments, 
+held constants, workload, replication, exclusions, and pre-registered test, 
+is summarised in a table at the start of its results section.
+
+\section{Telemetry Delivery Semantics (RQ1)}\label{sec:results_rq1_delivery}
+
+The campaign compared the three delivery semantics named in
+Section~\ref{sec:research_questions} under the overload episode described in
+Section~\ref{sec:experimental_setup}, with the latest-state class realised in
+two lossy forms. 
+Arm~A (event-preserving) hands every completed telemetry
+window to the decision engine exactly once and in source order.
+Arm~B (delayed event-preserving) hands the same ordered windows with a fixed,
+pre-registered delay of 30~s and no burst replay.
+Arm~C (latest-state polling) delivers only the most recent
+completed window at each 30~s poll.
+And arm~D (sampled push) delivers every third completed window immediately
+and drops the intermediate windows.
+
+    Each arm stands for a behaviour of the telemetry path 
+as it can occur in practice. Arm~A is the best 
+event-driven case where every completed window is 
+delivered promptly and in order, losing nothing. 
+Arm~B is the case of a path that carries a delay 
+while losing nothing as every window still arrives, in
+order, after a fixed lag, and the backlog is never replayed. 
+Arm~C is the regular polling mode, the conventional monitoring 
+practice reviewed in Section~\ref{sec:lit_monitoring} and here the 
+consumer reads the current window at a fixed cadence, 
+so everything produced between two reads goes unseen and
+what is read can already be one interval old.
+Arm~D is the case of a path that loses evidence without 
+delaying it, most windows never arrive, and the ones that 
+do are delivered promptly. The four arms change one property
+of the path at a time: arm~B removes freshness from arm~A,
+arm~D removes completeness from arm~A, and arm~C removes
+both, so that the cost of late evidence is separated from the
+cost of missing evidence. The pre-registered expectation was
+the ordering A < B < C $\approx$ D on both the reaction 
+and the per-episode service-quality outcomes.
+
+    The aggregation window, scaling policy,
+routing policy, and workload were held constant across arms. Each arm was run
+seven times, once in each of seven seed-matched blocks, with the four arms
+of a block sharing the block's seed and the seed changing between blocks
+(seeds 3001--3007, giving 28 runs in total), so that the four treatments are
+re-tested under a different demand realisation in each block. Each run is
+treated as an experimental unit. Table~\ref{tab:rq1_design} summarises the
+design of the campaign.
+
+\begin{table}[H]
     \centering
     \caption{Design of the telemetry delivery campaign (RQ1).}
     \label{tab:rq1_design}
@@ -2075,119 +2193,13 @@ each campaign.
     \end{tabular}
 \end{table}
 
-\begin{table}[htbp]
-    \centering
-    \caption{Design of the scaling action campaign (RQ2).}
-    \label{tab:rq2_design}
-    \footnotesize
-    \begin{tabular}{p{0.16\textwidth} p{0.76\textwidth}}
-        \toprule
-        Item & Design \\
-        \midrule
-        Treatment & Three scaling policies (compute-first, storage-first, and
-        bottleneck-aware selection) each under two demand regimes
-        (compute-bound and data-access-bound), giving six cells. Compute
-        scale-up adds an edge-service replica; storage scale-up activates a
-        prepared reserve in the same domain. \\
-        Held constant & Telemetry delivery, routing policy, per-tier resource
-        caps, action budget, cooldowns, backend-admission condition;
-        Tier~1 selective synchronisation and cross-domain storage
-        placement disabled. \\
-        Workload & Compute-bound episode (600~s, rate 1.5 per client, pure
-        service pressure) or data-access-bound episode (480~s, rate 5.0 per
-        client, 90~\% content lookups); each with baseline, recovery, and
-        demand-drop phases. \\
-        Experimental unit & Run; per-cell criterion over replicates. \\
-        Replication & Six cells and six replicates in six counterbalanced
-        blocks (36 runs; five seed-matched replicates and one cross-seed
-        replicate per cell); 34 valid. \\
-        Exclusions & Two runs excluded as documented container memory-cap
-        incidents (kills under the 256~MB and 512~MB caps); per-run screens as
-        above. \\
-        Test & Pre-registered cell-level criterion: median of the replicate
-        p95 ratios between the pre-registered pre-activation and
-        post-activation windows, with a 95~\% CI excluding 1.0, computed on
-        the seed-matched replicates (five per cell, or fewer where an
-        exclusion applies); the cross-seed replicate reported separately;
-        tier-relief and resource-use outcomes alongside. \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-\begin{table}[htbp]
-    \centering
-    \caption{Design of the readiness admission campaign (RQ3).}
-    \label{tab:rq3_design}
-    \footnotesize
-    \begin{tabular}{p{0.16\textwidth} p{0.76\textwidth}}
-        \toprule
-        Item & Design \\
-        \midrule
-        Treatment & Readiness-admission coordination: direct lifecycle
-        notification versus periodic discovery (10~s poll), with a probe
-        fallback variant, each measured with an intact readiness-event source
-        and under total event loss. \\
-        Held constant & Readiness criterion (same probe), backend-selection
-        function, routing weights, pool state, workload shape, per-backend CPU
-        quota. \\
-        Workload & Admission timing with an intact event source; fault
-        contrast on a baseline followed by a 600~s compute-bound plateau (rate
-        2.0 per client, pure service pressure) under fixed reduced headroom
-        (per-backend CPU quota 0.12). \\
-        Experimental unit & Run; the fault contrast contrasted per block,
-        admission intervals additionally analysed per backend within runs. \\
-        Replication & Three admission configurations and two fault cells in
-        six blocks (36 runs, seeds 5201--5206), arm order rotated per block;
-        the admission timing is characterised on separate intact-source
-        campaigns; a supporting robustness set exercises event loss and
-        controller restart (19 runs). Samples are never pooled across these
-        sets. \\
-        Exclusions & One block excluded from the fault contrast (no-fault
-        control tail breach); pre-registered health floors on the no-fault
-        cell. \\
-        Test & Admission timing: exact Mann--Whitney U on the per-backend
-        admission intervals, stratified by the backend's start-up class
-        (fast- vs slow-binding). Fault
-        contrast: co-primary pre-registered slow-share contrasts over the full
-        plateau and the onset window (at least 5~pp; medians at least 7~pp),
-        exact Mann--Whitney U of the block contrasts, relief completion on the
-        plateau tail, and boundedness of the lifecycle-only degradation (at
-        most 25~\%). \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-The reported contrasts follow the test pre-registered for each campaign, with
-effect sizes reported with confidence intervals and direction counts over
-matched replicates. Screening rules are applied before the contrasts: runs
-entering a contrast must pass the campaign's per-run checks on data-path
-integrity, harness behaviour, delivery fidelity, and cross-domain symmetry,
-and the defined exclusions are removed and reported. Pre-registered criteria
-that are not met are reported as such, together with the observed evidence and
-its documented causes.
-
-\section{Telemetry Delivery Semantics (RQ1)}\label{sec:results_rq1_delivery}
-
-The campaign compared the three delivery semantics named in
-Section~\ref{sec:research_questions} under the overload episode described in
-Section~\ref{sec:experimental_setup}, with the latest-state class realised in
-two lossy forms. Arm~A (event-preserving) hands every completed telemetry
-window to the decision engine exactly once and in source order; arm~B
-(delayed event-preserving) hands the same ordered windows with a fixed,
-pre-registered delay of 30~s and no burst replay; arm~C (latest-state
-polling) delivers only the most recent completed window at each 30~s poll;
-and arm~D (sampled push) delivers every third completed window immediately
-and drops the intermediate windows. The aggregation window, scaling policy,
-routing policy, and workload were held constant across arms. Each arm was run
-seven times, once in each of seven seed blocks shared by the four arms,
-giving 28 runs in total, with each run treated as an experimental unit.
-
 The delivered evidence matched this design
 (Table~\ref{tab:rq1_observation}): arms A and B received every completed
 telemetry window, while the lossy arms received about one third of them; the
 information age at decision and the delay in detecting the overload onset
 varied with the delivery treatment.
 
+%TOU AQUI
 Later or lossier delivery also delayed the scaling reaction. The median time
 from the start of the overload episode to usable capacity
 (Section~\ref{sec:experimental_setup}) was 28.5~s in A, 59.6~s in B, 79.6~s
@@ -2336,8 +2348,11 @@ shifts: a fixed compute-first policy, a fixed storage-first policy, and
 bottleneck-aware selection, each evaluated on a compute-bound episode (600~s
 of pure service pressure) and a data-access-bound episode (480~s,
 90~\% content lookups). The original six-cell campaign contributes six
-replicates per cell (five seed-matched and one cross-seed; 34 of 36 runs
-valid, with two runs excluded as documented container memory-cap incidents).
+replicates per cell (five seed-matched replicates, sharing one seed across
+all cells so that the cells are contrasted under identical demand, and one
+cross-seed replicate, which uses a different seed and tests sensitivity to
+the demand realisation; 34 of 36 runs valid, with two runs excluded as
+documented container memory-cap incidents).
 A comparative extension contributes the two elements the original design
 lacked: no-action comparators, a policy that scales nothing, against which
 the consequence of any action can be measured, and order-shifted sequences
@@ -2348,6 +2363,46 @@ carried as a platform-selection covariate rather than a treatment: it
 concentrates in the compute-bound cells (median 8.3~\% of requests with a
 recorded backend under compute-first and 4.5~\% under bottleneck-aware
 selection) and is about 0--1~\% on the data-bound episode.
+Table~\ref{tab:rq2_design} summarises the design of the original campaign.
+
+\begin{table}[H]
+    \centering
+    \caption{Design of the scaling action campaign (RQ2).}
+    \label{tab:rq2_design}
+    \footnotesize
+    \begin{tabular}{p{0.16\textwidth} p{0.76\textwidth}}
+        \toprule
+        Item & Design \\
+        \midrule
+        Treatment & Three scaling policies (compute-first, storage-first, and
+        bottleneck-aware selection) each under two demand regimes
+        (compute-bound and data-access-bound), giving six cells. Compute
+        scale-up adds an edge-service replica; storage scale-up activates a
+        prepared reserve in the same domain. \\
+        Held constant & Telemetry delivery, routing policy, per-tier resource
+        caps, action budget, cooldowns, backend-admission condition;
+        Tier~1 selective synchronisation and cross-domain storage
+        placement disabled. \\
+        Workload & Compute-bound episode (600~s, rate 1.5 per client, pure
+        service pressure) or data-access-bound episode (480~s, rate 5.0 per
+        client, 90~\% content lookups); each with baseline, recovery, and
+        demand-drop phases. \\
+        Experimental unit & Run; per-cell criterion over replicates. \\
+        Replication & Six cells and six replicates in six counterbalanced
+        blocks (36 runs; five seed-matched replicates and one cross-seed
+        replicate per cell); 34 valid. \\
+        Exclusions & Two runs excluded as documented container memory-cap
+        incidents (kills under the 256~MB and 512~MB caps); per-run screens as
+        above. \\
+        Test & Pre-registered cell-level criterion: median of the replicate
+        p95 ratios between the pre-registered pre-activation and
+        post-activation windows, with a 95~\% CI excluding 1.0, computed on
+        the seed-matched replicates (five per cell, or fewer where an
+        exclusion applies); the cross-seed replicate reported separately;
+        tier-relief and resource-use outcomes alongside. \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 Service recovery is regime-concentrated (Figure~\ref{fig:rq2_map}). On the
 data-access-bound episode the tier-matched storage action delivered a large
@@ -2512,7 +2567,52 @@ quantify the admission delay and its propagation, and the event-loss part
 prices the loss of the readiness event under a fixed per-backend CPU quota
 (0.12), deliberately reduced so that the existing fleet carries the thin
 spare capacity that the research question conditions on (36~runs in six
-seed blocks, per-client rate 2.0).
+seed-matched blocks, seeds 5201--5206, with the cells of a block sharing
+the block's seed and the order rotated between blocks; per-client rate
+2.0).
+
+\begin{table}[H]
+    \centering
+    \caption{Design of the readiness admission campaign (RQ3).}
+    \label{tab:rq3_design}
+    \footnotesize
+    \begin{tabular}{p{0.16\textwidth} p{0.76\textwidth}}
+        \toprule
+        Item & Design \\
+        \midrule
+        Treatment & Readiness-admission coordination: direct lifecycle
+        notification versus periodic discovery (10~s poll), with a probe
+        fallback variant, each measured with an intact readiness-event source
+        and under total event loss. \\
+        Held constant & Readiness criterion (same probe), backend-selection
+        function, routing weights, pool state, workload shape, per-backend CPU
+        quota. \\
+        Workload & Admission timing with an intact event source; fault
+        contrast on a baseline followed by a 600~s compute-bound plateau (rate
+        2.0 per client, pure service pressure) under fixed reduced headroom
+        (per-backend CPU quota 0.12). \\
+        Experimental unit & Run; the fault contrast contrasted per block,
+        admission intervals additionally analysed per backend within runs. \\
+        Replication & Three admission configurations and two fault cells in
+        six blocks (36 runs, seeds 5201--5206), arm order rotated per block;
+        the admission timing is characterised on separate intact-source
+        campaigns; a supporting robustness set exercises event loss and
+        controller restart (19 runs). Samples are never pooled across these
+        sets. \\
+        Exclusions & One block excluded from the fault contrast (no-fault
+        control tail breach); pre-registered health floors on the no-fault
+        cell. \\
+        Test & Admission timing: exact Mann--Whitney U on the per-backend
+        admission intervals, stratified by the backend's start-up class
+        (fast- vs slow-binding). Fault
+        contrast: co-primary pre-registered slow-share contrasts over the full
+        plateau and the onset window (at least 5~pp; medians at least 7~pp),
+        exact Mann--Whitney U of the block contrasts, relief completion on the
+        plateau tail, and boundedness of the lifecycle-only degradation (at
+        most 25~\%). \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 Under an intact event source the two mechanisms differed by a bounded
 quantization. The per-backend interval from verified readiness to admission
