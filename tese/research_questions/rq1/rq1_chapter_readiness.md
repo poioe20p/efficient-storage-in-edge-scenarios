@@ -2,7 +2,7 @@
 
 > **Status:** 2026-09-29 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
 > 2026-09-28; observation table added 2026-09-28, trimmed to the two
-> observation axes 2026-09-29) · **Purpose:** one map of the complete RQ1
+> observation axes; results narrative interpretation pass) · **Purpose:** one map of the complete RQ1
 > chain — question → design/research → expectations → evaluation → results →
 > conclusion — so that Chapter 5 can be written without re-deriving anything.
 > Companions: `rq1_results_section_draft.tex` (staged §5.2 text),
@@ -96,7 +96,11 @@ One row of the per-RQ setup table:
 - **Text:** `rq1_results_section_draft.tex` — **inserted into `main.tex`
   §5.2 on 2026-09-26** (heading and label `sec:results_rq1_delivery`
   unchanged); the draft file is kept in sync. The delivery paragraph was
-  trimmed on 2026-09-28 to reference the new observation table.
+  trimmed on 2026-09-28 to reference the new observation table. On
+  2026-09-29 the results narrative received an interpretation pass (aim-first
+  framing sentence, per-result interpretation, reframed expectation
+  deviations, answer-shaped closing; all numbers unchanged), and the
+  two-column observation table was restored in `main.tex`.
 - **Figure (one representative figure per RQ):** source
   `docs/operation/testing/experiment/v3/rq1/graphs/thesis/episode_latency_p95.png`
   → **copied to** `tese/images/rq1_episode_latency_p95.png` (2026-09-26).

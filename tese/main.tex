@@ -2009,7 +2009,7 @@ the scaling decision to usable capacity, which isolates the admission path.
 Service quality is summarised per run through percentiles (p50, p95, p99) of
 the endpoint latency over the demand episode. Latency percentiles are computed
 on the served basis, over completed requests. Outcome classes are reported
-distinctly as: offered requests, completed requests, failed
+distinctly as offered requests, completed requests, failed
 requests, timeouts (each recorded at the client-side cap of 300~s), and
 client-side cancellations and drops at phase end.
 Completion is reported on the served basis, completed requests over
@@ -2055,7 +2055,7 @@ question.
 \end{itemize}
 
 Control overhead is reported as the CPU utilisation and resident memory of the
-controller and telemetry processes along the each camapaign.
+controller and telemetry processes along each camapaign.
 
 \subsection{Campaign Designs and Analysis}
 All three campaigns follow the same discipline of single-variable
@@ -2193,34 +2193,48 @@ design of the campaign.
     \end{tabular}
 \end{table}
 
+The results are presented in the order of the research question: what the
+controller observed about the overload, how it responded by scaling, and the
+quality of service users experienced during the demand shift.
+
 The delivered evidence matched this design
 (Table~\ref{tab:rq1_observation}): arms A and B received every completed
-telemetry window, while the lossy arms received about one third of them; the
-information age at decision and the delay in detecting the overload onset
-varied with the delivery treatment.
+telemetry window, while the lossy arms received about one third of them. 
+The information age at decision varied with the delivery treatment. 
+In effect, the same overload reached the controller through 
+four different views: A observed every window as it closed; B observed
+the same stream one fixed delay behind; C obtained only the window 
+current at each poll; and D received one window in three as it was published.
 
 %TOU AQUI
-Later or lossier delivery also delayed the scaling reaction. The median time
-from the start of the overload episode to usable capacity
-(Section~\ref{sec:experimental_setup}) was 28.5~s in A, 59.6~s in B, 79.6~s
-in C and 83.2~s in D (Table~\ref{tab:rq1_arms}). The first two steps of the
-pre-registered ordering (A < B < C $\approx$ D) were fully replicated:
-A < B and B < C in all seven blocks. C and D
-were not cleanly separated, with D later at the median by 3.6~s (C < D in
-five of seven blocks). Reaction claims use usable-capacity latency; the time
-to the first scale-up decision is descriptive only, because delivery timing
-confounds it by construction.
+The scaling response followed the order in which the evidence reached the
+controller. Every arm detected the overload and scaled, what differed is when
+the response became usable capacity. The median time from the onset of the
+episode to the first new capacity serving traffic was 28.5~s in A, 59.6~s in
+B, 79.6~s in C and 83.2~s in D (Table~\ref{tab:rq1_arms}). 
+Capacity became usable first under A, and about 31~s later under B, 
+close to the 30~s lag the treatment applies to every delivered window. 
+Under C and D it took nearly three times as long. Because the scaling policy,
+routing policy, and workload were identical across arms, the differences 
+in this column are attributable to the delivery treatment. The first two 
+steps of the pre-registered ordering were fully replicated: 
+A < B and B < C in all seven blocks. C and D were not
+cleanly separated, with D later at the median by 3.6~s (C < D in five of
+seven blocks). Reaction claims use usable-capacity latency and 
+in that regard the time to the first scale-up decision is descriptive only,
+because delivery timing determines it by construction.
 
-The user-visible service quality tracked the reaction timing
-(Table~\ref{tab:rq1_edges}, Figure~\ref{fig:rq1_episode_p95}). Incomplete
-demand evidence degraded the episode endpoint latency p95 by about nine
-times: the median per-run p95 was 3.7~s in A against 35.0~s in C and 34.5~s
-in D, and the A--D contrast separated completely, every A replicate lying
-below every C and D replicate (Cliff's $\delta = -1.000$, exact
-$p = 0.0006$). The delayed arm degraded in aggregate --- median 10.8~s
-against A's 3.7~s ($\delta = -0.959$, exact $p = 0.0012$) --- but not
-uniformly: two of the seven B replicates collapsed to lossy-arm levels
-(65.3~s and 64.7~s) while the other five remained near A (5.0--12.6~s).
+The user-visible cost tracked the reaction, and here the two failure modes
+separated (Table~\ref{tab:rq1_edges}, Figure~\ref{fig:rq1_episode_p95}).
+Loss of intermediate evidence was the heavier and more robust cost: with
+about two thirds of the windows absent, the episode endpoint p95 reached
+35.0~s in C and 34.5~s in D against 3.7~s in A, roughly a ninefold penalty,
+and the contrast separated completely, every A replicate lay below every
+C and D replicate (Cliff's $\delta = -1.000$, exact $p = 0.0006$). 
+Delivery delay alone also degraded the outcome in aggregate, to 10.8~s against A's
+3.7~s ($\delta = -0.959$, exact $p = 0.0012$), but not uniformly. As two of the
+seven delayed replicates collapsed to lossy-arm levels (65.3~s and 64.7~s),
+while the other five remained close to the reference (5.0--12.6~s).
 
 A post-campaign analysis of the run artefacts attributes the spread of the
 delayed arm to the margin each semantics leaves to the base fleet rather than
@@ -2228,39 +2242,57 @@ to the control loop. Across all seven delayed runs the control loop behaved
 identically: the decision evidence was 30~s old, the first scale-up decision
 fell between 52.0~s and 60.4~s, and usable capacity between 52.6~s and
 63.6~s. The user-visible outcome depends on how much of the surge the base
-fleet must absorb alone before that capacity arrives --- about 29~s in A,
-55--62~s in B, and 78--83~s in C and D --- and on the testbed's run-to-run
-variance: the episode median compute processing time varied roughly sixfold
-(16--94~ms) across runs of identical configuration, in every arm. A's short
-window absorbs this variance invisibly; the window of C and D is always
-consumed; B is conditional, its cost materialising only when the slow states
-of the platform are sampled. The delivery semantics set the margin; the
-platform state decides the outcome.
+fleet must absorb alone before that capacity arrives, about 29~s in A,
+55--62~s in B, and 78--83~s in C and D. 
 
-Two pre-registered expectations were not reproduced and are reported as
-such. The full ordering A < B < C $\approx$ D did not hold: B does not sit
-reliably between A and C, because its collapsed replicates straddle C
-(B--C $p = 0.209$, direction 5/7). And the sampled-push arm was not strictly
-worst: C and D were
-statistically indistinguishable ($p = 0.456$), with the point estimate
-marginally against C. One delayed replicate showed a domain asymmetry above
-the campaign's threefold screening line (domain~2 p95 21.1~s against 4.0~s
-in domain~1); it was the only run above that line.
+For the testbed's run-to-run variance: the episode median compute processing
+time varied roughly sixfold (16--94~ms) across runs of identical configuration,
+in every arm. A's short window absorbs this variance invisibly, the window
+of C and D is always consumed. And B is conditional, its cost materialising
+only when the slow states of the platform are sampled. The delivery semantics
+set the margin and the platform state decides the outcome.
 
-Outside the overload episode the arms were indistinguishable: baseline,
-recovery and demand-drop p95 stayed at about 1.05--1.08~s in every arm. No
-run recorded a single timeout inside the episode in any arm; the only
-timeouts in the campaign were the 300~s client-cap tail timeouts during
-demand drop (0.07--0.12~\% of offered requests). Cancellation and dropped 
-shares were flat across arms at roughly 5--7~\% of offered requests, and a small
-completed-without-status error class remained largest in B (2.22~\% against
+Two pre-registered expectations were not reproduced, and both are reported
+as such. The full ordering A < B < C $\approx$ D did not hold, because B
+does not sit reliably between A and C: its collapsed replicates straddle C
+(B--C $p = 0.209$, direction 5/7). The sampled-push arm was also not strictly
+worst: C and D were statistically indistinguishable ($p = 0.456$), with the
+point estimate marginally against C. Read together with the margin effect
+described above, both deviations are informative rather than negative. The
+collapsed delayed replicates show that the cost of delay is conditional on
+the platform state that the arm samples, and the equivalence of C and D
+shows that, once the intermediate windows are gone, whether the loss arises
+from polling or from sampling leaves the cost unchanged. The expectation of
+a single severity ordering across the two failure modes therefore did not
+hold in full. What the campaign measured instead is two failure modes that
+differ in kind, for one the loss of intermediate evidence acts robustly, 
+while for the other delivery delay acts conditionally on the margin it consumes. 
+One delayed replicate also showed a domain asymmetry above the campaign's
+threefold screening line (domain~2 p95 21.1~s against 4.0~s in domain~1). 
+It was the only run above that line.
+
+The cost is confined to the overload episode. Outside it the arms were
+indistinguishable, with baseline, recovery and demand-drop p95 at about
+1.05--1.08~s in every arm, and no run recorded a single timeout inside the
+episode. The only timeouts in the campaign were the client-cap tail timeouts
+during the demand drop (0.07--0.12~\% of offered requests). Cancellation and dropped 
+shares were flat across arms at roughly 5--7~\%, with the small
+completed-without-status class remaining largest in B (2.22~\% against
 0.03--0.42~\% elsewhere). A per-bucket check (30~s buckets) confirmed that
 the episode ordering is not an artefact of aggregating the episode into a
-single percentile. The degradation is therefore confined to the overload
-episode, and no arm showed a harness-level collapse.
+single percentile. On the evaluated testbed, the observation interface
+therefore shapes the transient response to a demand shift, while leaving
+steady-state quality untouched.
 
-In sum, the two failure modes of the observation interface were
-distinguishable and not interchangeable under this workload: loss of
+In sum, the results answer the question in the order it was posed: the
+delivery semantics changed what the controller observed about the overload,
+they changed when the response became usable capacity, with the lossy arms
+taking nearly three times as long as the reference and they changed the
+quality of service users experienced, with an approximately ninefold penalty
+in the episode endpoint p95 where intermediate evidence was lost, and a
+delay cost that scales with the margin the semantics leave to the base
+fleet. Under this workload, the two failure modes of the observation
+interface were therefore distinguishable and not interchangeable: loss of
 intermediate demand evidence was the robust driver of user-visible cost,
 while delivery delay was costly in proportion to the margin it consumes.
 
@@ -2268,20 +2300,18 @@ while delivery delay was costly in proportion to the margin it consumes.
     \centering
     \caption{Delivery realisation and overload observability (mean over the
     seven replicates; delivered fraction as the observed range): fraction of
-    telemetry windows delivered, mean information age at decision, mean delay
-    in detecting the overload onset, and missed overload windows per run
-    (zero in the complete arms).}
+    telemetry windows delivered and mean information age at decision.}
     \label{tab:rq1_observation}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
-    \begin{tabular}{l c c c c}
+    \begin{tabular}{l c c}
         \toprule
-        Arm & Delivered & Information age (s) & Detection delay (s) & Missed windows \\
+        Arm & Delivered & Information age (s) \\
         \midrule
-        A -- event-preserving & 1.000 & 3.5 & 0.62 & 0 \\
-        B -- delayed (+30~s) & 1.000 & 33.3 & 30.19 & 0 \\
-        C -- latest-state (poll 30~s) & 0.325--0.336 & 16.2 & 5.58 & 55.0 \\
-        D -- sampled push (/3) & 0.328--0.336 & 11.7 & 0.64 & 49.8 \\
+        A -- event-preserving & 1.000 & 3.5 \\
+        B -- delayed (+30~s) & 1.000 & 33.3 \\
+        C -- latest-state (poll 30~s) & 0.325--0.336 & 16.2 \\
+        D -- sampled push (/3) & 0.328--0.336 & 11.7 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2341,6 +2371,7 @@ while delivery delay was costly in proportion to the margin it consumes.
     \label{fig:rq1_episode_p95}
 \end{figure}
 
+%TOU AQUI
 \section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
 
 The campaign compared three capacity-action policies under the same demand
@@ -2455,13 +2486,20 @@ as such.
 
 Resource use separates the policies where service does not. Under
 compute-bound demand the mismatched storage-first policy spent resources
-without effect --- the compute tier ran pinned near 60~\% of its cap with
-no compute action taken, and storage activations executed for no benefit
---- while under data-bound demand the mismatched compute-first policy spent
+without effect. The compute tier ran pinned near 60~\% of its cap with
+no compute action taken, and storage activations executed for no benefit, 
+while under data-bound demand the mismatched compute-first policy spent
 its budget on the tier that could not relieve the episode. The matched
 actions spent where the effect was: the reserve carried the storage serving
-load in every aligned lane, and resource use is reported as node-minutes
-per cell alongside the action counts.
+load in every aligned lane. The cell-level node-minutes quantify the
+separation: on the compute-bound episode the two compute-scaling arms
+executed eight compute actions in every run and spent about 3.1
+(compute-first) and 3.2 (bottleneck-aware selection) compute node-minutes
+per thousand requests, against none provisioned by storage-first; on the
+data-bound episode the aligned storage-first arm spent about 0.20 storage
+node-minutes per thousand requests against about 0.75 compute node-minutes
+for the mismatched compute-first arm, while bottleneck-aware selection
+provisioned both tiers (about 0.19 storage and 0.74 compute).
 
 Selection correctness holds across regimes. The bottleneck-aware classifier
 committed to the detected bottleneck in every evaluated regime: on the

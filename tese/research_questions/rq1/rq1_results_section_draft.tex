@@ -19,6 +19,11 @@
 % overload_detection_delay / missed_overload still exist). This draft
 % mirrors the trim.
 %
+% SYNC NOTE 2026-09-29 (narrative pass): the results narrative received an
+% interpretation pass in both files — aim-first framing, per-result
+% interpretation, reframed expectation deviations, answer-shaped closing;
+% all numbers unchanged.
+%
 % NUMBER PROVENANCE (all values re-verified 2026-09-26 against the campaign
 % record):
 %   - tese/research_questions/rq1/rq1_conclusions.md (F1--F10, verdicts)
@@ -74,32 +79,46 @@ routing policy, and workload were held constant across arms. Each arm was run
 seven times, once in each of seven seed blocks shared by the four arms,
 giving 28 runs in total, with each run treated as an experimental unit.
 
+The results are presented in the order of the research question: what the
+controller observed about the overload, how it responded by scaling, and the
+quality of service users experienced during the demand shift.
+
 The delivered evidence matched this design
 (Table~\ref{tab:rq1_observation}): arms A and B received every completed
 telemetry window, while the lossy arms received about one third of them; the
-information age at decision varied with the delivery treatment.
+information age at decision varied with the delivery treatment. In effect,
+the same overload reached the controller through four different views: A
+observed every window as it closed; B observed the same stream one fixed
+delay behind; C obtained only the window current at each poll; and D
+received one window in three as it was published.
 
-Later or lossier delivery also delayed the scaling reaction. The median time
-from the start of the overload episode to usable capacity
-(Section~\ref{sec:experimental_setup}) was 28.5~s in A, 59.6~s in B, 79.6~s
-in C and 83.2~s in D (Table~\ref{tab:rq1_arms}). The first two steps of the
-pre-registered ordering (A < B < C $\approx$ D) were fully replicated:
-A < B and B < C in all seven blocks. C and D
-were not cleanly separated, with D later at the median by 3.6~s (C < D in
-five of seven blocks). Reaction claims use usable-capacity latency; the time
-to the first scale-up decision is descriptive only, because delivery timing
-confounds it by construction.
+The scaling response followed the order in which the evidence reached the
+controller. Every arm detected the overload and scaled; what differed is when
+the response became usable capacity. The median time from the onset of the
+episode to the first new capacity serving traffic was 28.5~s in A, 59.6~s in
+B, 79.6~s in C and 83.2~s in D (Table~\ref{tab:rq1_arms}). Capacity became
+usable first under A, and about 31~s later under B --- close to the 30~s lag
+the treatment applies to every delivered window. Under C and D it took nearly
+three times as long. Because the scaling policy, routing policy, and workload
+were identical across arms, the differences in this column are attributable
+to the delivery treatment. The first two steps of the pre-registered ordering
+were fully replicated: A < B and B < C in all seven blocks. C and D were not
+cleanly separated, with D later at the median by 3.6~s (C < D in five of
+seven blocks). Reaction claims use usable-capacity latency; the time to the
+first scale-up decision is reported as descriptive only, because delivery
+timing confounds it by construction.
 
-The user-visible service quality tracked the reaction timing
-(Table~\ref{tab:rq1_edges}, Figure~\ref{fig:rq1_episode_p95}). Incomplete
-demand evidence degraded the episode endpoint latency p95 by about nine
-times: the median per-run p95 was 3.7~s in A against 35.0~s in C and 34.5~s
-in D, and the A--D contrast separated completely, every A replicate lying
-below every C and D replicate (Cliff's $\delta = -1.000$, exact
-$p = 0.0006$). The delayed arm degraded in aggregate --- median 10.8~s
-against A's 3.7~s ($\delta = -0.959$, exact $p = 0.0012$) --- but not
-uniformly: two of the seven B replicates collapsed to lossy-arm levels
-(65.3~s and 64.7~s) while the other five remained near A (5.0--12.6~s).
+The user-visible cost tracked the reaction, and here the two failure modes
+separated (Table~\ref{tab:rq1_edges}, Figure~\ref{fig:rq1_episode_p95}).
+Loss of intermediate evidence was the heavier and more robust cost: with
+about two thirds of the windows absent, the episode endpoint p95 reached
+35.0~s in C and 34.5~s in D against 3.7~s in A, roughly a ninefold penalty,
+and the contrast separated completely --- every A replicate lay below every
+C and D replicate (Cliff's $\delta = -1.000$, exact $p = 0.0006$). Delivery
+delay alone also degraded the outcome in aggregate, to 10.8~s against A's
+3.7~s ($\delta = -0.959$, exact $p = 0.0012$), but not uniformly: two of the
+seven delayed replicates collapsed to lossy-arm levels (65.3~s and 64.7~s),
+while the other five remained close to the reference (5.0--12.6~s).
 
 A post-campaign analysis of the run artefacts attributes the spread of the
 delayed arm to the margin each semantics leaves to the base fleet rather than
@@ -116,30 +135,47 @@ consumed; B is conditional, its cost materialising only when the slow states
 of the platform are sampled. The delivery semantics set the margin; the
 platform state decides the outcome.
 
-Two pre-registered expectations were not reproduced and are reported as
-such. The full ordering A < B < C $\approx$ D did not hold: B does not sit
-reliably between
-A and C, because its collapsed replicates straddle C (B--C $p = 0.209$,
-direction 5/7). And the sampled-push arm was not strictly worst: C and D were
-statistically indistinguishable ($p = 0.456$), with the point estimate
-marginally against C. One delayed replicate showed a domain asymmetry above
-the campaign's threefold screening line (domain~2 p95 21.1~s against 4.0~s
-in domain~1); it was the only run above that line.
+Two pre-registered expectations were not reproduced, and both are reported
+as such. The full ordering A < B < C $\approx$ D did not hold, because B
+does not sit reliably between A and C: its collapsed replicates straddle C
+(B--C $p = 0.209$, direction 5/7). The sampled-push arm was also not strictly
+worst: C and D were statistically indistinguishable ($p = 0.456$), with the
+point estimate marginally against C. Read together with the margin effect
+described above, both deviations are informative rather than negative. The
+collapsed delayed replicates show that the cost of delay is conditional on
+the platform state that the arm samples, and the equivalence of C and D
+shows that, once the intermediate windows are gone, whether the loss arises
+from polling or from sampling leaves the cost unchanged. The expectation of
+a single severity ordering across the two failure modes therefore did not
+hold in full; what the campaign measured instead is two failure modes that
+differ in kind: loss of intermediate evidence acts robustly, while delivery
+delay acts conditionally on the margin it consumes. One delayed replicate
+also showed a domain asymmetry above the campaign's threefold screening line
+(domain~2 p95 21.1~s against 4.0~s in domain~1); it was the only run above
+that line.
 
-Outside the overload episode the arms were indistinguishable: baseline,
-recovery and demand-drop p95 stayed at about 1.05--1.08~s in every arm. No
-run recorded a single timeout inside the episode in any arm; the only
-timeouts in the campaign were the 300~s client-cap tail timeouts during
-demand drop (0.07--0.12~\% of offered requests). Cancellation shares were
-flat across arms at roughly 5--7~\% of offered requests, and a small
-completed-without-status error class remained largest in B (2.22~\% against
+The cost is confined to the overload episode. Outside it the arms were
+indistinguishable, with baseline, recovery and demand-drop p95 at about
+1.05--1.08~s in every arm, and no run recorded a single timeout inside the
+episode. The only timeouts in the campaign were the client-cap tail timeouts
+during the demand drop (0.07--0.12~\% of offered requests); cancellation and
+dropped shares were flat across arms at roughly 5--7~\%, with the small
+completed-without-status class remaining largest in B (2.22~\% against
 0.03--0.42~\% elsewhere). A per-bucket check (30~s buckets) confirmed that
 the episode ordering is not an artefact of aggregating the episode into a
-single percentile. The degradation is therefore confined to the overload
-episode, and no arm showed a harness-level collapse.
+single percentile. On the evaluated testbed, the observation interface
+therefore shapes the transient response to a demand shift, while leaving
+steady-state quality untouched.
 
-In sum, the two failure modes of the observation interface were
-distinguishable and not interchangeable under this workload: loss of
+In sum, the results answer the question in the order it was posed: the
+delivery semantics changed what the controller observed about the overload;
+they changed when the response became usable capacity, with the lossy arms
+taking nearly three times as long as the reference; and they changed the
+quality of service users experienced, with an approximately ninefold penalty
+in the episode endpoint p95 where intermediate evidence was lost, and a
+delay cost that scales with the margin the semantics leave to the base
+fleet. Under this workload, the two failure modes of the observation
+interface were therefore distinguishable and not interchangeable: loss of
 intermediate demand evidence was the robust driver of user-visible cost,
 while delivery delay was costly in proportion to the margin it consumes.
 
