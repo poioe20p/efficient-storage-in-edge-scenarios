@@ -2242,15 +2242,24 @@ to the control loop. Across all seven delayed runs the control loop behaved
 identically: the decision evidence was 30~s old, the first scale-up decision
 fell between 52.0~s and 60.4~s, and usable capacity between 52.6~s and
 63.6~s. The user-visible outcome depends on how much of the surge the base
-fleet must absorb alone before that capacity arrives, about 29~s in A,
-55--62~s in B, and 78--83~s in C and D. 
+fleet must absorb alone before the new capacity serves traffic.
+That window is about 29~s in A, 55--62~s in B, and 78--83~s in C and D. 
 
-For the testbed's run-to-run variance: the episode median compute processing
-time varied roughly sixfold (16--94~ms) across runs of identical configuration,
-in every arm. A's short window absorbs this variance invisibly, the window
-of C and D is always consumed. And B is conditional, its cost materialising
-only when the slow states of the platform are sampled. The delivery semantics
-set the margin and the platform state decides the outcome.
+% Depende de run to run variance or existe run to run variance associada?
+Whether that window is survived also depends on the testbed's run-to-run
+variance, which is present in every arm and is not attributable to the
+delivery treatment: the episode median compute processing time varied
+roughly sixfold (16--94~ms) across runs of identical configuration. The
+base fleet has only a limited absorption margin against the surge, and a
+slow platform state exhausts it sooner than a fast one. A's exposure window
+is short enough that the margin covers it in every run, so the variance
+leaves no visible trace in its outcome. The window of C and D is long
+enough that the margin is exhausted in every run, so both arms degrade in
+all seven replicates. B sits at the boundary: the margin covers its window
+in five of the seven replicates, while in the two that sample a slow state
+the margin runs out and the arm collapses to lossy-arm levels. The delivery
+semantics set the exposure window, and the platform state decides whether
+the base fleet's absorption margin covers it.
 
 Two pre-registered expectations were not reproduced, and both are reported
 as such. The full ordering A < B < C $\approx$ D did not hold, because B
