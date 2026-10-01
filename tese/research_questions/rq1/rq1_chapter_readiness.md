@@ -1,8 +1,10 @@
 # RQ1 — Results-Chapter Readiness Dossier
 
-> **Status:** 2026-09-29 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
+> **Status:** 2026-10-01 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
 > 2026-09-28; observation table added 2026-09-28, trimmed to the two
-> observation axes; results narrative interpretation pass) · **Purpose:** one map of the complete RQ1
+> observation axes; results narrative interpretation pass; 2026-10-01:
+> pre-registered expectations row added to `tab:rq1_design`; §5.2 exhibits
+> re-ordered to sit after their invoking paragraphs) · **Purpose:** one map of the complete RQ1
 > chain — question → design/research → expectations → evaluation → results →
 > conclusion — so that Chapter 5 can be written without re-deriving anything.
 > Companions: `rq1_results_section_draft.tex` (staged §5.2 text),
@@ -111,6 +113,7 @@ One row of the per-RQ setup table:
   2026-09-29 — detection delay and missed windows are no longer reported;
   campaign record / appendix graphs retain them), `tab:rq1_arms` (per-arm
   summary), `tab:rq1_edges` (pre-registered contrasts).
+- **2026-10-01:** `tab:rq1_design` gained a pre-registered expectations row (ordering A < B < C ≈ D on usable capacity and the served-basis episode p95; the sampled-push arm permitted to be strictly worst; non-surge quality clean in every arm). The four §5.2 result exhibits were re-ordered to sit after the paragraphs that invoke them (ISCTE near-invocation rule), in `main.tex` and in the staged draft.
 - **Numbers:** all re-verified 2026-09-26 against the campaign summary, the
   stats CSV, and the run bundles (provenance comment in the draft header).
 - **Optional appendix material** (not in the page-limited body):
