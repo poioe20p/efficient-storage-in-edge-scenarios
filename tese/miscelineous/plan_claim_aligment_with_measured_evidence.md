@@ -154,3 +154,10 @@ comments in the thesis file.
   sentence now lists the sampled-push realisation; §5.1 RQ1 design table
   reworded to "four telemetry delivery treatments … realising the three
   delivery semantics with the latest-state class in two forms".
+- 2026-10-01: RQ1-completion alignment pass — §2.4: 'delay or blindness' →
+  'delay or degradation'; 'scaling and traffic-admission path' → 'from
+  observation to user-visible consequence'. §2.6: 'the freshness of demand
+  evidence' → 'the delivery of demand evidence (its freshness and
+  completeness)'. §5.2: expectations row ('permitted' → 'expected' for the
+  sampled-push worst case) and the 'on usable capacity' gloss on the
+  replicated-ordering sentence. Ch1 and Ch3 audited clean (no changes).

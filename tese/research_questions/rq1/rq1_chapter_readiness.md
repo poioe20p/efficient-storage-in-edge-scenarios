@@ -113,7 +113,7 @@ One row of the per-RQ setup table:
   2026-09-29 — detection delay and missed windows are no longer reported;
   campaign record / appendix graphs retain them), `tab:rq1_arms` (per-arm
   summary), `tab:rq1_edges` (pre-registered contrasts).
-- **2026-10-01:** `tab:rq1_design` gained a pre-registered expectations row (ordering A < B < C ≈ D on usable capacity and the served-basis episode p95; the sampled-push arm permitted to be strictly worst; non-surge quality clean in every arm). The four §5.2 result exhibits were re-ordered to sit after the paragraphs that invoke them (ISCTE near-invocation rule), in `main.tex` and in the staged draft.
+- **2026-10-01:** `tab:rq1_design` gained a pre-registered expectations row (ordering A < B < C ≈ D on usable capacity and the served-basis episode p95; the sampled-push arm expected to be strictly worst; non-surge quality clean in every arm). The four §5.2 result exhibits were re-ordered to sit after the paragraphs that invoke them (ISCTE near-invocation rule), in `main.tex` and in the staged draft. A same-day follow-up added an 'on usable capacity' gloss to the replicated-ordering sentence (both files); the row change 'permitted' → 'expected' is main-only.
 - **Numbers:** all re-verified 2026-09-26 against the campaign summary, the
   stats CSV, and the run bundles (provenance comment in the draft header).
 - **Optional appendix material** (not in the page-limited body):

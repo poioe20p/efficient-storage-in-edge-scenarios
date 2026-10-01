@@ -702,7 +702,7 @@ at the time it delivers it, and with whatever intermediate observations
 the delivery process preserves.
     In edge deployments the link matters even more, because the
 evidence must travel from many dispersed nodes to the decision point,
-so any delay or gap in its delivery becomes delay or blindness in the
+so any delay or gap in its delivery becomes delay or degradation in the
 orchestration response. 
 
     The state of the art in this area is built around a pipeline in which
@@ -779,7 +779,7 @@ delivery question appear separately. AdapPF varies the interval that
 produces delay, and Yaseen documents the gaps that polling leaves, yet
 no reviewed work distinguishes delayed event-preserving delivery from
 latest-state delivery, and none traces either regime through a stateful
-service's scaling and traffic-admission path. This distinction is the gap
+service from observation to user-visible consequence. This distinction is the gap
 this dissertation isolates and measures.
 
 \section{Auto Scaling}\label{sec:lit_auto_scaling} %DONE
@@ -1203,8 +1203,8 @@ measured interfaces, whose aggregate cost this dissertation
 deliberately does not claim.
 
     Read together, the reviewed works provide evidence of the topics
-studied in this thesis: the freshness of demand evidence and its effect
-on the link between monitoring and decision, the cost of scaling the
+studied in this thesis: the delivery of demand evidence (its freshness and
+completeness) and its effect on the link between monitoring and decision, the cost of scaling the
 wrong resource when the bottleneck lies elsewhere, and the interval
 between provisioning and usable capacity. They also show that
 coordinating these functions at an SDN control point is an established
@@ -2202,7 +2202,7 @@ design of the campaign.
         correction. \\
         Expectations & Pre-registered ordering A $<$ B $<$ C $\approx$ D on
         both usable capacity latency and the served-basis episode p95, with the
-        sampled-push arm permitted to be strictly worst, and non-surge
+        sampled-push arm expected to be strictly worst, and non-surge
         quality clean in every arm. \\
         \bottomrule
     \end{tabular}
@@ -2251,7 +2251,7 @@ close to the 30~s lag the treatment applies to every delivered window.
 Under C and D it took nearly three times as long. Because the scaling policy,
 routing policy, and workload were identical across arms, the differences 
 in this column are attributable to the delivery treatment. The first two 
-steps of the pre-registered ordering were fully replicated: 
+steps of the pre-registered ordering were fully replicated on usable capacity: 
 A < B and B < C in all seven blocks. C and D were not
 cleanly separated, with D later at the median by 3.6~s (C < D in five of
 seven blocks). Reaction claims use usable-capacity latency and 
