@@ -80,9 +80,13 @@ comments in the thesis file.
   `source/scripts/testing/analysis/rq2/scripts/generate_thesis_figures.py`);
   section numbers reconciled to the figures. Section cut pass applied
   2026-10-01 (redundancy removal: single home for the start-up transient,
-  the window definitions, the expectations recap and the node-minutes
-  numbers; saturation definition moved to §5.1 with
-  `sec:metrics_definitions`).
+  the window definitions, the expectations recap, the node-minutes numbers
+  and the escalation diagnostic, which now carries the raised-rate
+  distinction between a capacity shortage and a failure mode of another
+  kind; saturation definition moved to §5.1 with
+  `sec:metrics_definitions`; the §5.3 close now states the conditional
+  rule, the benefit appearing where the served tier bounds the episode
+  and absent where no capacity-bound queue forms).
   Follow-ups: re-sync `rq2_conclusions.md`; the unmetered replica-sync
   bandwidth caveat is carried to the Ch6 limitations.
 - [ ] **B6** `sec:results_rq3_readiness`: readiness-to-routing admission

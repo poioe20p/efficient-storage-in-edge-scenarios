@@ -2522,7 +2522,6 @@ harm criterion (ratio $\ge$ 1.2 with replicate support) was not met, and the
 measured ordering is the matched storage action, then the mismatched compute
 action, then no action.
 
-% JA REVI E TOU A REVER O PARAGRAFO ABAIXO
 On the compute-bound episode neither policy differed from no action
 in service as both served at a p50 of about 3~ms. The compute action was
 nevertheless fully engaged (Figure~\ref{fig:rq2_engagement}). In every
@@ -2537,8 +2536,12 @@ collapse from 2.2--3.0~s to about 3.3~ms, is reported as a start-up
 transient rather than as recovery, since a control run that withheld the
 compute action reproduced it (Table~\ref{tab:rq2_criteria}). A later
 pre-registered escalation of the episode rate found no regime in which the
-deficit was both capacity-bound and measurable, and its platform
-behaviours are carried to the limitations in Chapter~\ref{ch:conclusions}.
+deficit was both capacity-bound and measurable (at twice the episode
+rate, no server exceeded about three quarters of its quota, a diagnostic
+observation, not part of the evidence set). At the raised rates what
+appeared was not a simple shortage of tier capacity but a failure mode of
+another kind, and the escalation's platform behaviours are carried to the
+limitations in Chapter~\ref{ch:conclusions}.
 
 \begin{figure}[H]
     \centering
@@ -2564,18 +2567,19 @@ behaviours are carried to the limitations in Chapter~\ref{ch:conclusions}.
     \label{fig:rq2_engagement}
 \end{figure}
 
-Read together, the two episodes give one account of where the service
+Read together, the two modes give one account of where the service
 outcome comes from. The data-access-bound episode builds its queue at the
 storage members and with no action the serving member carries the full read
 load alone for the whole episode, therefore the user-visible wait sits on that
-unrelieved member. The matched action removes that queue: the reserve
+unrelieved member. The matched action removes that queue as the reserve
 takes a share of the reads, the serving member falls away from its bound,
 and the user-visible benefit measured over inaction reflects that relief.
 The mismatched action leaves the queue standing (in those replicates the
 reserve never activates), so its distance from the matched action is read
 above the median, where the un-drained queue shows, rather than at the
 median, where the two actions meet. The compute-bound episode builds no
-such queue, so no action changes what users experience there.
+such queue, since its pure service-pressure load never approaches the
+tier's capacity, so no action changes what users experience there.
 
 The relief check asked whether the aligned action relieved the tier that
 bound the episode (Figure~\ref{fig:rq2_relief}). Where the storage tier
@@ -2588,10 +2592,7 @@ below the threshold. On the compute-bound episode, relief and recovery
 separate. The compute action did relieve the receiving tier, through the
 load spread described above, but none of that relief reaches the service,
 because the compute tier never entered the capacity-bound state defined in
-Section~\ref{sec:metrics_definitions} within the evaluated range. Even at
-twice the episode rate no server exceeded about three quarters of its
-quota (a diagnostic observation from the escalation attempt, not part of
-the evidence set).
+Section~\ref{sec:metrics_definitions} within the evaluated range.
 
 \begin{figure}[H]
     \centering
@@ -2608,16 +2609,17 @@ The pre-registered storage tail-latency criterion was
 not met (Table~\ref{tab:rq2_criteria}): the median of the replicate
 pre-to-post p95 ratios was 0.727, but its 95~\% confidence interval,
 [0.574, 1.393], includes 1.0. The cell-level criterion was pre-registered
-on the p95, a tail quantile rather than a central one, because the
-reserve activates early and pre-empts deep saturation of the serving
-member. The median latency therefore has little room to fall, and the
-expected benefit was tail relief and peak-CPU relief. The documented
-cause is a measurement asymmetry between the two pre-registered windows
-(Table~\ref{tab:rq2_design}). Completed requests carry a
-sparse tail, about 0.8~\% above 10~s, which the short pre-activation
-window cannot contain while the long post-activation window does. Tier
-relief and the user-visible storage benefit are therefore reported
-separately, and the unmet gate is carried as such.
+on the p95, because the reserve activates early and pre-empts deep 
+saturation of the serving member. The median latency therefore has little
+room to fall, and the expected benefit was tail relief and peak-CPU relief.
+The documented cause of the unmet criterion is a measurement asymmetry
+between the two pre-registered windows (Table~\ref{tab:rq2_design}).
+Completed requests carry a sparse tail, about 0.8~\% above 10~s, which
+the long post-activation window always contains and the short
+pre-activation window rarely does. The asymmetry inflates the
+post-window p95 independently of the action. Tier relief and the
+user-visible storage benefit are therefore reported separately, and the
+unmet gate is carried as such.
 
 \begin{table}[H]
     \centering
@@ -2629,7 +2631,8 @@ separately, and the unmet gate is carried as such.
     attributable to the action after the control run.}
     \label{tab:rq2_criteria}
     \footnotesize
-    \begin{tabular}{l l l}
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{p{0.30\textwidth} p{0.29\textwidth} p{0.32\textwidth}}
         \toprule
         Criterion & Threshold & Observed \\
         \midrule
@@ -2704,12 +2707,15 @@ In sum, the results answer the question in the order it was posed: the
 aligned action relieved the tier that bound the episode as designed and, in
 the labelled data-access-bound comparison, delivered the user-visible
 benefit over inaction. 
-The resource account matches that reading, and the selector committed to
-the detected bottleneck in every
-evaluated regime. The campaign reports no add-attributable compute recovery,
-no demonstrated advantage of bottleneck-aware selection over a policy that
-is fixed and matched to the regime, and no confirmation of recovery across
-sequential regimes. The reported effects hold for the evaluated two-domain
+Read across the two regimes, the user-visible result is conditional. The
+benefit appears where the action serves the tier that bounds the episode,
+and is absent where no capacity-bound queue forms, however fully the
+action engages. The resource account matches that reading, and the
+selector committed to the detected bottleneck in every evaluated regime.
+The campaign reports no add-attributable compute recovery, no
+demonstrated advantage of bottleneck-aware selection over a policy that
+is fixed and matched to the regime, and no confirmation of recovery
+across sequential regimes. The reported effects hold for the evaluated two-domain
 testbed, its workloads, and its resource envelopes. 
 The platform behaviours observed at the edges of those envelopes are carried to
 Chapter~\ref{ch:conclusions} as limitations and future work.
