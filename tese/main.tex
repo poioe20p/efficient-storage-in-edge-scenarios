@@ -1835,8 +1835,8 @@ Chapter~\ref{ch:results}.
 % Section order follows the demand-to-capacity chain: RQ1 → RQ2 → RQ3 → Synthesis.
 
 \section{Experimental Setup}\label{sec:experimental_setup}
-This section defines the conditions under which the three experimental
-campaigns of this chapter were run: the testbed and its instrumentation, the
+This section defines the conditions under which the three research questions
+experimental evaluations were executed: the testbed and its instrumentation, the
 demand model and the workload of each campaign, the measured outcomes, and the
 design of each campaign.
 
@@ -1948,7 +1948,10 @@ duration, the offered request intensity, as a per-client request rate and an
 active-client fraction, and the request mix. The phase that applies the demand
 shift under test is referred to as the demand episode. Each campaign defined
 its own workload, calibrated and locked before the campaign started and
-captured in every run, so that the campaigns execute with adequate load configurations.
+captured in every run, so that the campaigns execute with adequate 
+load configurations. This construct therefore gives each campaign a clear
+and recorded demand design in which the phase sequence states what load is
+offered over time, and every run stores the phase schedule it executed.
 
     The phases around the episode have fixed roles across the campaigns. A
 baseline window opens every run at a low, steady load (rate 1.0 per client,
@@ -1961,8 +1964,8 @@ the release window, in which the capacity the episode required is scaled
 down and post-shift service quality is compared with the baseline. An idle
 tail closes the run at a near-idle load (rate 0.05, 5~\%), so that every
 configuration reaches sustained idleness and the release of surplus
-capacity can complete. Table~\ref{tab:campaign_workloads} summarises the workload of each
-campaign.
+capacity can complete. Table~\ref{tab:campaign_workloads} summarises 
+the workload of each campaign.
 
 \begin{table}[H]
     \centering
@@ -2004,6 +2007,13 @@ only, because the delivery treatment determines when the evidence that
 triggers a decision reaches the controller, and a decision cannot be taken
 before that evidence arrives.
 
+    For the scaling action campaign, the outcomes are read per cell, each
+cell being one scaling policy under one demand regime: the targeted-tier
+relief, as the change in the receiving tier's utilisation and latency
+between the pre-registered windows before and after the action, and the
+service recovery, as the episode service quality against the no-action
+comparator, with the resource use reported alongside.
+
     The readiness admission campaign reports the segment of the chain from
 the scaling decision to usable capacity, which isolates the admission path.
 Service quality is summarised per run through percentiles (p50, p95, p99) of
@@ -2022,14 +2032,14 @@ The outcomes each campaign reports follow the facets of its research
 question.
 
 \begin{itemize}
-    \item \textit{The telemetry delivery campaign} answers the observation part of its
-    question directly: the delivered fraction states how much of the produced
-    window stream reached the decision engine, and the information age at
-    decision states how fresh the evidence it received was. How the
-    controller responded is read on its primary reaction outcome, the
-    usable-capacity latency, and what users experienced is read on the
-    episode latency percentiles, both defined at the start of this
-    subsection.
+    \item \textit{The telemetry delivery campaign} answers the observation 
+    part of its question directly through the delivered fraction states 
+    how much of the produced window stream reached the decision engine, 
+    and the information age at decision states how fresh the evidence 
+    it received was. How the controller responded is read on its primary
+    reaction outcome, the usable-capacity latency, and what users 
+    experienced is read on the episode latency percentiles, both defined
+    at the start of this subsection.
     \item \textit{The scaling action campaign} answers its question along its three
     axes, per cell: targeted-tier relief, as the relief obtained in the tier
     that received the action; service recovery, as the episode service
@@ -2092,10 +2102,11 @@ that a fully separated contrast remains resolvable under the pre-registered
 test. Under complete separation between two treatment sets of $n$ runs, the
 exact Mann--Whitney $U$ test has a $p$-value floor of $2/\binom{2n}{n}$:
 0.0022 at six per treatment and 0.0006 at seven. The campaigns use these
-sizes, six per cell in the scaling action and readiness admission campaigns
-and seven per arm in the telemetry delivery campaign, which takes the extra
-replicate because identical repeats of its runs showed a real run-to-run
-spread under the same configuration and seed.
+sizes: six per cell in the scaling action and readiness admission campaigns,
+with the readiness-admission relief contrast drawn from a separate set at seven
+runs per arm, and seven per arm in the telemetry delivery campaign. That campaign
+takes an extra replicate because its runs showed a real run-to-run spread even
+when repeated under the same configuration and seed.
 
     The reported contrasts follow the test pre-registered for each campaign, with
 effect sizes reported with confidence intervals and direction counts over
@@ -2113,7 +2124,7 @@ is summarised in a table at the start of its results section.
 The campaign compared the three delivery semantics named in
 Section~\ref{sec:research_questions} under the overload episode described in
 Section~\ref{sec:experimental_setup}, with the latest-state class realised in
-two lossy forms. 
+two lossy forms (arms~C and~D).
 Arm~A (event-preserving) hands every completed telemetry
 window to the decision engine exactly once and in source order.
 Arm~B (delayed event-preserving) hands the same ordered windows with a fixed,
