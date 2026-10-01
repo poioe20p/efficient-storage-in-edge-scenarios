@@ -35,6 +35,11 @@ whenever a figure is created, revised, referenced, or moved.
 
 ## Naming and placement
 
+- Floats are placed adjacent to the paragraph that first references them:
+  each figure and table sits immediately after its referencing paragraph,
+  and floats are distributed through the section, never clustered at its
+  end. `main.tex` uses `[H]` for figures, so source order is rendered order;
+  tables that should not drift use `[H]` as well.
 - Never overwrite an existing render: a revised figure gets a new versioned
   name (`_v2`, `_v3`, …) and `main.tex` (or the generator script) is updated.
 - `tese/images/` holds only images referenced by the build (`main.tex`,

@@ -72,7 +72,10 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
   justified. Writing rules: **bold only for headings; italics for
   emphasis**; no underline; the first paragraph after a heading is not
   indented.
-- **Quadros e figuras**: placed near their invocation; chapter-indexed
+- **Quadros e figuras**: placed near their invocation — each float (figure
+  or table) sits immediately after the paragraph that first references it,
+  and floats are distributed through the section, never clustered at its
+  end; chapter-indexed
   numbering; **table captions on top (justified); figure captions below,
   centred, self-explanatory**. `main.tex` currently complies — keep it so.
 - **Equations**: displayed, centred, numbered in parentheses with arabic
@@ -127,6 +130,7 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
 | **degradation score, adaptive threshold, telemetry window, idle condition** | — | equations and `where:` lists in `sec:scaling_policy` |
 | **the reviewed state of the art / within the reviewed literature** | universal claims | corpus-bounded qualifiers |
 | British English: organised, characterisation, utilisation, normalised, behaviour | US spellings in prose | comments may lag |
+| **compute-only / storage-only** (fixed RQ2 policies) | compute-first, storage-first (retired from prose) | the fixed scaling policies scale a single tier only; introduced with the bottleneck gloss in §5.3 |
 
 Hyphenation: attributive hyphen — "replica-set primary/membership/
 extension", "edge-service capacity/replicas"; open as nouns — "MongoDB

@@ -74,8 +74,15 @@ comments in the thesis file.
   compute axis, with the start-up-transient correction replacing the v3
   "compute relief robust" claim); storage tail-latency gate reported not met
   (window-asymmetry cause); the 2 OOM exclusions stated; classifier
-  commitment; sequence not confirmable. Figure `fig:rq2_relief` staged; two
-  figures pending production (`fig:rq2_map`, `fig:rq2_engagement`).
+  commitment; sequence not confirmable. All three figures produced
+  2026-10-01 (`fig:rq2_map`, `fig:rq2_engagement`, and the restyled
+  `fig:rq2_relief` v2 render; generator
+  `source/scripts/testing/analysis/rq2/scripts/generate_thesis_figures.py`);
+  section numbers reconciled to the figures. Section cut pass applied
+  2026-10-01 (redundancy removal: single home for the start-up transient,
+  the window definitions, the expectations recap and the node-minutes
+  numbers; saturation definition moved to §5.1 with
+  `sec:metrics_definitions`).
   Follow-ups: re-sync `rq2_conclusions.md`; the unmetered replica-sync
   bandwidth caveat is carried to the Ch6 limitations.
 - [ ] **B6** `sec:results_rq3_readiness`: readiness-to-routing admission
