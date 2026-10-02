@@ -1185,8 +1185,8 @@ three interfaces and the question each leaves open.
         policies, and where do the effects concentrate? \\
         Ready backend to traffic (RQ3) &
         How does readiness-admission coordination affect the delay from
-        verified readiness to usable capacity and its transition-window
-        service consequence? \\
+        verified readiness to usable capacity, when the new capacity begins
+        to carry load, and the transition-window service consequence? \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -1531,7 +1531,10 @@ be propagated by a direct lifecycle notification from the replica, or
 discovered by the controller through periodic probes, and the design may
 additionally bound the damage of a lost notification --- a fallback probe
 re-derives readiness after a configured window, between the pure
-event-coupled and pure polling styles. This
+event-coupled and pure polling styles. Because the selector steers new
+flows while installed flows remain where they were placed
+(Section~\ref{sec:control_workflow}), admission also marks the point at
+which the new backend can begin to share the fleet's load. This
 readiness-admission mechanism is the interface examined for RQ3.
 
     Per-backend resource quotas are configuration parameters of the compute
@@ -2430,7 +2433,7 @@ Each policy stands for an operator choice about which tier the action
 serves: scale only the tier that runs the requests, scale only the tier
 that stores and serves the data, or scale the tier the episode presses on. 
 That tier is the bottleneck, and bottleneck-aware selection is the policy that
-identifies it: it reads the per-tier telemetry, classifies the episode as
+identifies it. It reads the per-tier telemetry, classifies the episode as
 compute-bound or data-access-bound, and scales the matching tier. 
 The two fixed policies have no classification step as each acts on 
 its single tier alone.
@@ -2744,12 +2747,15 @@ the push is lost. A backend counts as admitted when it becomes visible in the
 selector's eligible pool, and in the event-loss part of the campaign, the
 controller drops every readiness event.
 
-The pre-registered expectation was that, while the readiness event is
-intact, the admission interval would be bounded by the discovery quantum,
-with the direct lifecycle notification admitting first in every start-up
-class and that, under total event loss with reduced headroom, the direct
-lifecycle configuration would carry a decisive but bounded service-quality
-cost, while both re-deriving rules recover. The campaign ran 36~runs in
+The pre-registered expectation was that,
+while the readiness event was intact, the admission interval would be
+bounded by the discovery interval, with the
+direct lifecycle notification admitting first in every start-up class and
+the redistribution inheriting that difference only in when it begins.
+In addition, under total event loss with reduced headroom, the direct
+lifecycle configuration would carry a decisive but bounded service-quality cost, its ready
+capacity never becoming selectable, while both re-deriving rules recover
+and the redistribution completes. The campaign ran 36~runs in
 six seed-matched blocks (seeds 5201--5206), with the cells of a block
 sharing the block's seed and the order rotated between blocks, at a
 per-client rate of 2.0.
@@ -2793,14 +2799,17 @@ per-client rate of 2.0.
         exact Mann--Whitney U of the block contrasts, relief completion on the
         plateau tail, and boundedness of the lifecycle-only degradation (at
         most 25~\%). \\
-        Expectations & While the readiness event is intact, the lifecycle
-        notification admits earlier in every start-up class, and the
-        admission interval is bounded by the configured poll period. Under
-        total event loss with reduced headroom, a decisive slow-share
-        contrast for the lifecycle-only configuration (at least 5~pp,
-        medians at least 7~pp), bounded overall (at most 25~\%), recovery by
-        both re-deriving rules with relief completing on the plateau tail,
-        and the no-fault cell holding the pre-registered health floors. \\
+        Expectations & While the readiness event is intact, the direct
+        lifecycle configuration admits earlier in every start-up class, the
+        admission interval is bounded by the configured poll period, and the
+        new-backend load and existing-fleet relief are unchanged between the
+        rules once admission occurs. Under total event loss with reduced
+        headroom, a decisive slow-share contrast for the lifecycle-only
+        configuration over the full plateau and the onset window (at least
+        5~pp; medians at least 7~pp), bounded overall (at most 25~\%), no
+        redistribution by the lifecycle-only configuration, recovery by both
+        re-deriving rules with relief completing on the plateau tail, and the
+        no-fault cell holding the pre-registered health floors. \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2809,11 +2818,11 @@ The results are presented in the order of the research question: when the
 new backend actually serves, and whether a lost readiness notification
 becomes a service-quality cost when spare capacity is already low.
 
-Under an intact event source the two mechanisms differed by a bounded
-quantization. The per-backend interval from verified readiness to admission
-had a median of 0.001~s under direct lifecycle notification against 6.984~s
+Under an intact event source the two mechanisms differed only in when
+admission occurred. The per-backend interval from verified readiness to
+admission had a median of 0.001~s under direct lifecycle notification against 6.984~s
 under periodic discovery ($d = -1.000$; earlier in every backend start-up
-class, fast and slow-binding alike), and the quantum followed the
+class, fast and slow-binding alike), and it tracked the
 configured poll period, growing from 9.6~s to 15.2~s when the period grew
 from 10~s to 15~s (Table~\ref{tab:rq3_delays} and
 Figure~\ref{fig:rq3_admission_intervals}). 
@@ -2825,9 +2834,13 @@ closed about four seconds sooner (scaling decision to usable capacity
 2.17~s against 6.01~s, exact $p = 0.0022$). The handover itself was not
 the treatment and once admitted, the interval from admission to the first routed
 request measured 0.4--1.2~s on both mechanisms (a pre-fix servability
-defect had produced a lag of about ten seconds; the reported values are
-post-fix), the useful initial request share was 1.000, and the relief
-magnitudes on the existing fleet did not separate (exact $p = 0.209$).
+defect had produced a lag of about ten seconds, and the reported values
+are post-fix), and the useful initial request share was 1.000. The load then
+left the existing fleet by the same amount under both rules, as the design
+expects once admission has occurred. The relief magnitudes did not
+separate (exact $p = 0.209$), and the difference the mechanism makes is
+when the redistribution begins, visible in the shorter
+provisioning-to-first-success interval above.
 No user-visible cost of the seconds-level delay appeared in any
 tested healthy regime and the interval stayed inside the fleet's spare
 capacity as the margin that the event-loss part of the campaign
@@ -2877,33 +2890,59 @@ When the readiness event is lost under reduced headroom, the rules diverge
 in kind rather than in degree (Table~\ref{tab:rq3_fault} and
 Figure~\ref{fig:rq3_event_loss_outcome}). Under direct
 lifecycle notification no backend was admitted in any of the six blocks
-(zero admissions, and no request served by the new capacity, in 6/6; 32--35
-candidates per block were abandoned and torn down), while both re-deriving
-rules recovered. The probe fallback variant admitted after its fallback
-window (about 21~s after provisioning), and periodic discovery admitted
-within one poll period. On the re-anchored ordering test, measured from
-each backend's provisioning rather than from the plateau onset
-(analysis-only), periodic discovery recovered sooner, with provisioning to
-admission in all six blocks and provisioning to first serve in five of six
-plus one sub-second tie (Figure~\ref{fig:rq3_recovery_ordering}).
+(zero admissions, with no request served by the new capacity in 6/6, and
+32--35 candidates per block abandoned and torn down), while both
+re-deriving rules recovered. The probe fallback variant admitted after its
+fallback window (about 21~s after provisioning), and periodic discovery
+admitted within one poll period. The divergence follows from where each
+rule draws its readiness evidence. The direct rule admits on the event
+alone, so a dropped event removes its only path into the pool and leaves
+the provisioned capacity ready and not selectable until the abandonment
+bound reclaims it. The re-deriving rules observe readiness again through
+their own probes, so the same loss becomes a bounded delay instead of a
+lost admission. On the re-anchored ordering test, measured from each
+backend's provisioning rather than from the plateau onset (analysis-only),
+periodic discovery recovered sooner, with provisioning to admission in all
+six blocks and provisioning to first serve in five of six plus one
+sub-second tie (Figure~\ref{fig:rq3_recovery_ordering}).
+
 The consequence was visible to users. The direct lifecycle configuration
 degraded to 8.3--14.4~\% plateau slow share, concentrated in the onset
-window (29.7--39.0~\%), a full-plateau
-contrast of 6.2--10.9~pp against the recovering configurations (median
-7.64~pp, exact $p = 0.0040$, Cliff's $\delta = 1.0$) and an onset contrast
-of 25.1--30.8~pp (median 28.0~pp), both pre-registered co-primary windows
-and both reproduced in every block entering the contrast (5/5). The
-degradation was bounded and predominantly onset-concentrated, with the
-lifecycle-only configuration's plateau slow median at 10.6~\% under a
-pre-registered ceiling of 25~\%, the recovering configurations completing
-relief on the plateau tail in five of the six blocks (tails of at most
-2~pp; the sixth block was excluded from the fault contrast, its no-fault
-control tail breaching the 2~pp floor at 4.08~\%), and one block retaining
-an 11.4~\% residual tail, so the transient is not uniform across blocks.
-What the contrast isolates is lost admission, not delay. Under direct
-lifecycle notification the capacity was provisioned, ready, and not
-selectable, whereas the delayed admissions of the recovering configurations
-sufficed for relief to complete.
+window (29.7--39.0~\%), a full-plateau contrast of 6.2--10.9~pp against
+the recovering configurations (median 7.64~pp, exact $p = 0.0040$, Cliff's
+$\delta = 1.0$) and an onset contrast of 25.1--30.8~pp (median 28.0~pp),
+both pre-registered co-primary windows and both reproduced in every block
+entering the contrast (5/5). The separation is sharpest at the transition,
+where the demand step meets a fleet that nothing will relieve, and it
+persists across the plateau, where the fleet carries the load without the
+relief the new capacity would have provided and settles at the level it
+can hold alone. The degradation stayed bounded, with the lifecycle-only
+configuration's plateau slow median at 10.6~\% under a pre-registered
+ceiling of 25~\%. The existing fleet kept serving the episode throughout,
+so what the failure removed was the fleet's margin rather than the
+service. The recovering configurations show the other side of the same
+mechanism, completing relief on the plateau tail in five of the six
+blocks, while one direct-lifecycle block did not fully recover, so the
+transient is not uniform across blocks.
+
+At the routing plane, the fault separates the two forms the membership
+change can take. In the recovering configurations the redistribution
+arrives late, with admissions landing inside the plateau and the admitted
+backends serving from then on. Under direct lifecycle notification it
+never arrives, and the load stays entirely on the existing fleet although
+the capacity is ready and running. This is the same gate that, while the
+readiness signal is intact, shifts only when the redistribution begins,
+which is why the intact-source part found no difference in how much load
+moves. What the contrast isolates is lost admission, not delay. Under
+direct lifecycle notification the capacity was provisioned, ready, and not
+selectable, whereas the delayed admissions of the recovering
+configurations sufficed for relief to complete. For the research question,
+this is what the event-loss part adds to the intact-source one. The
+interface's reliability does not rest on how fast each rule carries
+readiness, but on whether readiness evidence has a path that survives the
+loss of the primary signal, and on this testbed both bounded re-derivation
+paths sufficed to turn an all-or-nothing dependence into a transient the
+fleet absorbs.
 
 \begin{table}[H]
     \centering
@@ -2976,11 +3015,11 @@ claim is made about them.
 
 In sum, the results answer the question in the order it was posed: while
 the readiness event was intact, the admission interval was bounded by the
-discovery quantum and passed without user-visible cost. When the event was
+discovery interval and passed without user-visible cost. When the event was
 lost under reduced headroom, the lifecycle-only configuration paid a
 bounded service-quality cost while both re-deriving rules recovered.
 Readiness-admission coordination is therefore at once a latency choice
-(about seven seconds of quantization while everything works) and a
+(about seven seconds of added delay while everything works) and a
 reliability choice, deciding whether a ready backend's capacity is
 delayed or lost when a readiness notification is lost and spare capacity is
 already low. The reported effects hold for the evaluated two-domain

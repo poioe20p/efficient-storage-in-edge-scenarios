@@ -186,10 +186,17 @@ replica set", "edge servers/services".
 ## Prose style
 
 - British English throughout.
-- Prefer "." or "and" over ";" when splitting scope statements; keep
-  sentences bounded; avoid absolutes ("always", "none") unless
-  corpus-bounded; hedge unevaluated capabilities ("may be propagated");
-  prefer operational verbs (routed through, admitted, withdrawn, drains).
+- Semicolons are reserved for separating items within a list (including
+  table cells). Never join independent clauses with a semicolon. Use a
+  full stop or rephrase instead.
+- Prefer minimal, simpler terminology. Use the shortest word or
+  construction that keeps the claim exact, and replace formal or inflated
+  variants with plain ones wherever nothing is lost (for example, "starts
+  later" over "inherits the difference in onset"). Keep established metric
+  names as they are.
+- Keep sentences bounded. Avoid absolutes ("always", "none") unless
+  corpus-bounded. Hedge unevaluated capabilities ("may be propagated").
+  Prefer operational verbs (routed through, admitted, withdrawn, drains).
 - Formatting: `Tier~0`, `Section~\ref`, `Figure~\ref`, `Chapter~\ref` with
   non-breaking `~`; quotes via `\enquote{}`; en-dash as `--`.
 
