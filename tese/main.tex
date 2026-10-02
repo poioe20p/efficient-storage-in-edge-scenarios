@@ -3029,18 +3029,143 @@ already low. The reported effects hold for the evaluated two-domain
 testbed, its workloads, and its resource envelopes.
 
 \section{Discussion: Synthesis Across Interfaces}\label{sec:discussion}
-% TODO: synthesize per-interface effects (RQ1/RQ2/RQ3) measured under a common workload, resource
-% configuration, and event schema. Which interface matters most under which conditions? Sharpest
-% trade-offs? What is negligible? Implications for stateful edge-service designers.
-% Data-placement strategies (Tier 0/1/2) remain held-constant platform context; experimental
-% characterization of data-locality trade-offs is deferred to future work.
-% Scope discipline for every RQ section and this synthesis: observation +
-% measured magnitude + qualifier ("on the evaluated two-domain testbed",
-% "under the tested workloads"); never a generic subject ("edge deployments",
-% "microservices"); null and negative results carry the same qualifiers.
-% TODO: platform overhead — controller CPU/RSS by phase and campaign from
-% controller_stats.csv (analysis pending); carried here after the removal of
-% the Network Performance and Scalability Analysis headings (2026-09-26).
+
+This section reads the three campaigns together. The campaigns ran on the same
+platform, used the same metric definitions and instrumentation, and followed
+the same discipline of varying one interface while holding the others fixed.
+Each campaign, however, drove its own workload under its own demand regime, so
+the three sets of results are not pooled and no quantity is combined across
+them, consistent with the commitment in Section~\ref{sec:lit_synthesis} that
+no aggregate coordination cost is claimed. What can be compared is the pattern
+each campaign revealed: which effects held for every replicate, which depended
+on a condition the campaign varied or sampled, and which the campaign could
+not establish. This classification is the comparative synthesis promised in
+Section~\ref{sec:contributions}, stated per interface in
+Table~\ref{tab:synthesis}, and it prepares the answers summarised in
+Chapter~\ref{ch:conclusions}.
+
+\begin{table}[H]
+    \centering
+    \caption{Synthesis of the three campaigns, classified by whether a
+    finding held for every replicate entering the contrast (robust),
+    depended on a condition the campaign varied or sampled (conditional), or
+    could not be confirmed (not established). Every entry remains within its
+    own campaign, and no quantity is combined across campaigns.}
+    \label{tab:synthesis}
+    \footnotesize
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{p{0.13\textwidth} p{0.29\textwidth} p{0.28\textwidth} p{0.24\textwidth}}
+        \toprule
+        Interface & Robust & Conditional & Not established \\
+        \midrule
+        Telemetry delivery (RQ1) & Loss of intermediate evidence: about a
+        ninefold episode p95 penalty, with complete separation & Delivery
+        delay: costly in proportion to the absorption margin the base fleet
+        has left, with two of seven delayed replicates collapsing to lossy
+        levels & The full ordering A $<$ B $<$ C $\approx$ D, and polling
+        versus sampling not separated (C $\approx$ D) \\
+        Scaling action (RQ2) & Storage action under data-access-bound
+        demand: tier relief in every aligned lane and user-visible benefit
+        over inaction (labelled comparison) & A capacity-bound queue in the
+        served tier as the condition for benefit, and full compute
+        engagement with no service change where no queue formed & Compute-side
+        recovery attributable to the action, no demonstrated advantage of
+        bottleneck-aware selection over a fixed matched policy, and no
+        confirmation of sequence recovery \\
+        Readiness admission (RQ3) & Event loss without re-derivation: zero
+        admissions in six of six blocks, with bounded service cost, while
+        both re-deriving rules recovered & Reduced headroom as the condition
+        for the service cost, and no user-visible cost while the fleet held
+        spare capacity & The campaign's full pre-registered conjunction (two
+        marginal no-fault window breaches), and selective loss, reordering,
+        and restart outside the tested scope \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Read across the campaigns, the measured effects share a shape. They appear
+at the edge of the operating envelope, where a margin is consumed, and not
+in the steady state. The delivery arms were indistinguishable outside the
+overload episode, and the cost of delay appeared only when the base fleet's
+absorption margin ran out. The loss of evidence stretched the window in
+which the fleet had to cope alone, and the margin was exhausted in every
+replicate. The action changed user-visible quality only where the episode
+built a capacity-bound queue in the served tier, and neither the compute
+action nor its relief reached users where no queue formed. The admission
+delay cost nothing while the fleet held spare capacity, and the lost
+notification cost the fleet's margin only when headroom was already low. On
+the evaluated testbed, the three interfaces decide how a demand shift is
+weathered, not how the service performs once the shift has passed.
+
+The campaigns also separate failure modes that monitoring and scaling are
+often discussed as one. In the delivery interface, missing evidence and
+late evidence are different faults. Missing windows cost about nine times
+the episode tail in every replicate, while late windows cost in proportion
+to the margin they consume. Delay was harmless in five delayed replicates
+and decisive in the two that sampled a slow platform state. In the action
+interface, engagement and benefit are separate. The compute action spread
+the load and relieved its tier, yet users saw no change because no
+capacity-bound queue existed to drain, and the storage action delivered
+benefit precisely where the queue existed. The action also carried a cost
+of its own: the second-tier compute additions in the bottleneck-aware cell
+coincided with that cell's worst timeout shares in two of the five valid
+replicates, so provisioning is not invisible to users while an episode is
+live. In the admission interface, latency and reliability are separate. The
+faster mechanism saved about seven seconds while the fleet was healthy, and
+the same mechanism lost the admission entirely when its single notification
+was dropped, while the re-deriving rules turned the same loss into a
+bounded delay.
+
+Chapter~\ref{ch:literature_review} left the three questions of
+Table~\ref{tab:interface_gaps} open, and the campaigns are their
+experimental form. Read back against those questions, the results answer
+them within the reviewed scope. On delivery, the reviewed works do not
+trace an individual delivery semantic through a stateful service's
+scaling path, and the closest precedent varies freshness for a single
+consumer. The campaign distinguishes the two ways evidence can be
+incomplete: missing intermediate windows is the robust driver of
+user-visible cost, while a complete but delayed path costs in proportion
+to the absorption margin it consumes. On the action, the reviewed
+auto-scaling works fix the action type or evaluate coordination in
+composite. The campaign shows that user-visible value follows the tier
+that binds the episode, and that classification had no demonstrated
+advantage over a fixed policy matched to the regime in the evaluated
+envelope, which bounds the expected value of choosing the action at
+runtime. On admission, the reviewed placement work names readiness but
+leaves the step to traffic outside its scope. The campaign measures that
+step as a bounded delay while the fleet is healthy, and as an
+all-or-nothing loss under a dropped notification without re-derivation,
+which the re-deriving rules convert into a bounded delay. These
+statements characterise, within the reviewed literature, the interfaces
+that the reviewed works leave open. They do not assert that the
+coordination gap is universal.
+
+Three considerations follow for the design of stateful edge services, all
+bounded to the evaluated testbed. First, when an evidence path must survive
+overload transients, completeness is the property to protect: dropping
+intermediate windows was the robust driver of user-visible cost, while a
+complete but delayed path degraded only where the absorbing margin was
+thin. Second, a capacity action should be gated on the tier that actually
+binds the episode: full engagement of a non-binding action spent
+node-minutes without changing the service, and the provisioning work itself
+perturbed the tail in the bottleneck-aware cell. Third, readiness admission
+is a reliability path as much as a latency path: a bounded re-derivation
+cost a few seconds while the fleet was healthy, and preserved the
+provisioned capacity when the primary notification was lost. On the
+evaluation side, the campaigns show that these interfaces are exercised by
+the transient and the margin.
+
+These statements inherit the scope and qualifiers of the campaigns that
+produced them: a two-domain testbed on a single host with an emulated
+inter-domain link, a stateful edge service over MongoDB replica sets, and
+the evaluated workload families and resource envelopes. Cross-domain
+storage placement remained held-constant platform context throughout, and
+its characterisation is deferred to future work. The limitations of the
+evaluation are detailed in Chapter~\ref{ch:conclusions}.
+
+% TODO(pending): control overhead — controller CPU/RSS by phase and campaign
+% from controller_stats.csv (analysis pending). Include here if extracted,
+% or otherwise remove the overhead promise in Section~\ref{sec:experimental_setup}.
 
 
 
