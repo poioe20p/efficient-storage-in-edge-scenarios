@@ -1507,7 +1507,8 @@ treated as indeterminate and do not count toward idleness.
     last $W_\downarrow$ windows.
 \end{enumerate}
     The concrete parameter values used in the
-evaluation are reported in Section~\ref{sec:experimental_setup}.
+evaluation are reported in Section~\ref{sec:experimental_setup} and listed
+per campaign in Appendix~\ref{app:campaign_config}.
 
 \subsection{Compute}\label{sec:elastic_compute}
 Compute capacity is a per-domain pool of containerised edge servers, each
@@ -1856,8 +1857,8 @@ it receives, so that the demand offered to the service is
 independent of the capacity available to serve it.
 
 Table~\ref{tab:testbed_config} summarises the configuration common to the three
-campaigns and the per-campaign resource caps and quotas are listed in
-Tables~\ref{tab:rq1_design} to~\ref{tab:rq3_design}.
+campaigns; the per-campaign resource caps, quotas, and parameter values are
+listed in Appendix~\ref{app:campaign_config}.
 
 \begin{table}[htbp]
     \centering
@@ -2127,7 +2128,9 @@ and the defined exclusions are removed and reported. Pre-registered criteria
 that are not met are reported as such, together with the observed evidence and
 its documented causes. The full design of each campaign, its treatments, 
 held constants, workload, replication, exclusions, and pre-registered test, 
-is summarised in a table at the start of its results section.
+is summarised in a table at the start of its results section. The concrete
+values of the parameters held constant are listed per campaign in
+Appendix~\ref{app:campaign_config}.
 
 \section{Telemetry Delivery Semantics (RQ1)}\label{sec:results_rq1_delivery}
 
@@ -3078,6 +3081,110 @@ testbed, its workloads, and its resource envelopes.
 % off-the-shelf observability components, e.g. an OTel collector over a message
 % broker, to test whether the measured effects are properties of the delivery
 % semantics or of this implementation).
+
+% =====================================================================
+% Annex A — Campaign Configuration Values
+% Emitted at end-of-document: the template prints the References from
+% its own end-of-document hook, so emitting the annex from the same
+% hook lands it after the References (ISCTE norm order: annexes last).
+% =====================================================================
+\AtEndDocument{%
+\appendix
+\chapter{Campaign Configuration Values}\label{app:campaign_config}
+    This appendix lists the concrete configuration values of the three
+campaigns reported in Chapter~\ref{ch:results}, complementing the design
+summaries given at the start of each results section. The values are
+transcribed from the campaign configuration records; every run additionally
+stored the effective configuration it executed
+(\texttt{controller\_env\_snapshot.env}, \texttt{aggregator\_env\_snapshot.env})
+and its phase schedule (\texttt{phases\_snapshot.json}), so the per-run values
+are recoverable from the run artefacts. Where a campaign spans several demand
+regimes or evidence sets, the cells state the value per regime or set.
+
+\begin{table}[H]
+    \centering
+    \caption{Container resource limits and client bounds per campaign.}
+    \label{tab:app_config_resources}
+    \footnotesize
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{p{0.19\textwidth} p{0.235\textwidth} p{0.235\textwidth} p{0.235\textwidth}}
+        \toprule
+        Parameter & Telemetry delivery (RQ1) & Scaling action (RQ2) & Readiness admission (RQ3) \\
+        \midrule
+        Edge-service replica CPU quota (vCPU) & 0.25 & 0.15 (compute-bound cells) / 1.20 (data-bound cells) & 0.12 (fault cells); 0.15 / 0.30 (intact-source sets) \\
+        Edge-service replica memory limit & 256~MB & 256~MB $\rightarrow$ 512~MB (from run~15; platform hardening) & 256~MB \\
+        Storage-member CPU quota (vCPU) & 0.08 & 0.08 (compute-bound cells) / 0.15 (data-bound cells) & 0.08 \\
+        Storage-member memory limit & 512~MB & 512~MB & 512~MB \\
+        Clients per domain & 24 & 24 & 24 \\
+        MongoDB connections per edge server & 6 & 12 & 6 \\
+        Dynamic-unit cap (compute / storage) & 3 / 3 & 6 / 6 & 12 / not exercised \\
+        Inter-domain link RTT (emulated) & 185~ms & 185~ms & 185~ms \\
+        Client bounds (in-flight window / request cap / phase-end drain) & 1024 / 300~s / 30~s & 1024 / 300~s / 30~s & 1024 / 300~s / 30~s \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+{\footnotesize\noindent\textit{Note.} The scaling action campaign's edge
+memory limit was raised from 256~MB to 512~MB at run~15 (platform hardening
+after the two documented memory-cap incidents; the affected runs were re-run,
+and one compute-bound cell was re-run at the binding configuration). In the
+readiness admission campaign the fault cells ran at the reduced quota of
+0.12~vCPU and the intact-source admission-timing sets at 0.15 and 0.30~vCPU;
+storage scaling is not exercised in that campaign.\par}
+
+\begin{table}[H]
+    \centering
+    \caption{Scaling-policy parameters per campaign.}
+    \label{tab:app_config_scaling}
+    \footnotesize
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{p{0.22\textwidth} p{0.215\textwidth} p{0.215\textwidth} p{0.215\textwidth}}
+        \toprule
+        Parameter & RQ1 & RQ2 & RQ3 \\
+        \midrule
+        Latency signal statistic & mean & median & mean \\
+        Compute score weights (utilisation / latency) & 0.60 / 0.40 & 0.60 / 0.40 & 0.40 / 0.60 \\
+        Compute signal floors (CPU \% / latency ms) & 10 / 25 & 10 / 25 & 4.5 / 20 \\
+        Compute scale-up threshold (base / max) & 0.18 / 0.85 & 0.18 / 0.85 & 0.25 / 0.85 \\
+        Storage score weights (utilisation / latency) & 0.00 / 1.00 & 0.60 / 0.40 & 0.60 / 0.40 \\
+        Storage signal floors (CPU \% / latency ms) & 1.5 / 60 & 35 / 10 & 1.5 / 60 \\
+        Storage scale-up threshold (base / max) & 0.35 / 0.55 & 0.35 / 0.55 & 0.20 / 0.55 \\
+        Scale-up cooldowns (compute / storage) & 45~s / 120~s & 45~s / 120~s & 45~s / 120~s \\
+        Compute scale-down (cooldown / window / below-criterion) & 180~s / 3 of 6 / 25~\% $\cdot$ 40~ms & 180~s / 3 of 6 / 25~\% $\cdot$ 40~ms & 180~s / 7 of 12 / 15~\% $\cdot$ 20~ms \\
+        Storage scale-down (cooldown / window) & 30~s / 3 of 5 & 30~s / 3 of 5 & 120~s / 9 of 15 \\
+        Action budget per tier & --- & 4 & --- \\
+        Bottleneck classification margin & --- & 0.05 & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+{\footnotesize\noindent\textit{Note.} The latency statistic is the per-window
+statistic that feeds the decision signals; the telemetry delivery campaign
+keeps the mean statistic by design, the scaling action campaign runs the
+median statistic, and the readiness admission campaign runs the platform base
+decision configuration. In the telemetry delivery column the zero utilisation
+weight makes the storage signal latency-only; the action budget and the
+classification margin apply only to bottleneck-aware selection.\par}
+
+\begin{table}[H]
+    \centering
+    \caption{Backend and storage selection weights per campaign.}
+    \label{tab:app_config_selection}
+    \footnotesize
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{p{0.24\textwidth} p{0.21\textwidth} p{0.21\textwidth} p{0.21\textwidth}}
+        \toprule
+        Parameter & RQ1 & RQ2 & RQ3 \\
+        \midrule
+        Server selection weights (CPU / RAM / requests / hops) & 0.30 / 0.10 / 0.20 / 0.28 & 0.30 / 0.10 / 0.20 / 0.28 & 0.20 / 0.20 / 0.20 / 0.28 \\
+        Storage selection weights (CPU / RAM / connections / lag / hops) & 0.20 / 0.10 / 0.20 / 0.20 / 0.30 & 0.20 / 0.10 / 0.20 / 0.20 / 0.30 & 0.20 / 0.20 / 0.10 / 0.20 / 0.30 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+{\footnotesize\noindent\textit{Note.} Weights of the weighted-sum cost
+functions that select a backend, and a storage member, for a new flow
+(Section~\ref{sec:architecture_overview}). The readiness admission campaign
+pins these weights; the other two campaigns use the platform base
+weights.\par}
+}
 
 \end{document}
 % =====================================================================
