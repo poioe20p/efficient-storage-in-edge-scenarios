@@ -1105,9 +1105,6 @@ selection, or readiness admission to the demand-to-capacity path. This
 interface-level contribution is precisely the quantity this dissertation
 highlights.
 
-% Com paper do sdn otimization podes se quiser adicionar que o SDN 
-% permitir maior agilidade para obter metodologias e tecnicas
-% para tornar orchestracao e gestao de recursos mais eficiente.
     SDN-based resource orchestration is therefore an established and
 feasible arrangement, and the coordination it rests on is a recorded
 open issue. Nain et al. record resource optimisation in SDN-based
@@ -1311,7 +1308,7 @@ telemetry delivery and controller-to-controller topology exchange use
 host-local control channels in the experimental environment. This distinction
 separates data-path delay from control-path communication.
 
-\subsection{Virtual IP Data Paths}
+\subsection{Virtual IP Data Paths}\label{sec:vip_data_paths}
 Clients access edge services through a per-domain \ac{VIP}. The virtual service
 addresses are \texttt{VIP\_SERVER\_N1} and \texttt{VIP\_SERVER\_N2}, collectively
 referred to as \texttt{VIP\_SERVER}. Edge servers route storage reads through
@@ -1346,6 +1343,21 @@ Figure~\ref{fig:vip_routing_sequence} walks through the resulting sequence.
     selection of a replica-set member.}
     \label{fig:vip_routing_sequence}
 \end{figure}
+
+A user request from start to finish is decomposed into two intervals of its
+path. The first is the \emph{pre-dispatch wait}: connection setup through the
+routing path, and any wait before the serving process handles the request.
+The second is the \emph{edge service time}: the serving process's own interval
+from request dispatch to response finalisation, which itself decomposes into a
+\emph{data-access} component (the MongoDB operations issued for the request,
+including connection acquisition) and an \emph{edge-processing} component
+(scheduling, lease and cache work, and response serialisation). The sum of the
+two intervals is the request's \emph{user-visible latency}, the client-side
+round trip. The two edge-service components are the tier-specific latency
+signals the scaling policy observes, data access for the storage tier and
+processing for the compute tier (Section~\ref{sec:scaling_policy}); the
+pre-dispatch wait is observable only as a difference and carries no separate
+instrumentation.
 
 \subsection{Control and Observation Paths}
 Edge servers and storage components emit resource and request observations to
@@ -2021,6 +2033,12 @@ campaign evaluates it, is the capacity-bound state in which a tier runs at
 its capacity limit, arriving requests queue and completion slows, rather
 than the state of an overloaded server whose own processing slows.
 
+    The scaling action results use the request-path latency quantities
+defined in Section~\ref{sec:vip_data_paths}: user-visible latency, edge
+service time, its data-access and edge-processing components, and the
+pre-dispatch wait. The edge service components are aggregated as
+per-request means over the demand episode.
+
     The readiness admission campaign reports the segment of the chain from
 the scaling decision to usable capacity, which isolates the admission path.
 Service quality is summarised per run through percentiles (p50, p95, p99) of
@@ -2406,7 +2424,6 @@ interface were therefore distinguishable and not interchangeable: loss of
 intermediate demand evidence was the robust driver of user-visible cost,
 while delivery delay was costly in proportion to the margin it consumes.
 
-%TOU AQUI
 \section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
 
 The campaign compared three capacity-action policies under the same demand
@@ -2427,10 +2444,7 @@ lacked: no-action comparators (a policy that scales nothing) against which
 the consequence of any action can be measured, and order-shifted sequences
 in which both regimes occur within one run. Comparisons that draw on both
 campaigns carry their cap and build labels. Each no-action contrast, aligned
-and mismatched alike, is such a labelled comparison. Peer-domain placement is
-carried as a platform-selection covariate rather than a treatment,
-concentrated in the compute-bound cells (in up to 8.3~\% of requests
-with a recorded backend) and at 0--1~\% on the data-access-bound episode.
+and mismatched alike, is such a labelled comparison.
 
 Each policy stands for an operator choice about which tier the action
 serves: scale only the tier that runs the requests, scale only the tier
@@ -2441,9 +2455,6 @@ compute-bound or data-access-bound, and scales the matching tier.
 The two fixed policies have no classification step as each acts on 
 its single tier alone.
 
-The policies share the same telemetry delivery, routing policy, 
-per-tier caps, action budget, cooldowns, and admission condition, so a 
-difference between them is attributable to which tier the action served. 
 The pre-registered expectation was that the aligned action would relieve 
 the tier that bound the episode and improve the user-visible service 
 against inaction on the data-access-bound side, that the mismatched action 
@@ -2517,7 +2528,7 @@ detected tier.
 The service outcome is regime-concentrated (Figure~\ref{fig:rq2_map}). 
 On the data-access-bound episode the tier-matched storage action delivered 
 a large user-visible benefit over inaction as the episode endpoint latency p95 was
-about 0.6~s against about 1.6~s under no action, a ratio of about 0.37
+about 0.6~s against about 1.5~s under no action, a ratio of about 0.39
 against the pre-registered benefit threshold of 0.85 (secondary: p50 about
 60~ms against about 280~ms). 
 
@@ -2528,26 +2539,18 @@ harm criterion (ratio $\ge$ 1.2 with replicate support) was not met, and the
 measured ordering is the matched storage action, then the mismatched compute
 action, then no action.
 
-On the compute-bound episode neither policy differed from no action
-in service as both served at a p50 of about 3~ms. The compute action was
-nevertheless fully engaged (Figure~\ref{fig:rq2_engagement}). In every
-aligned lane the added replicas were admitted and served a majority of the
-lane's requests (medians of about 64 and 67~\% in the compute-only and
-bottleneck-aware cells, the original backend's share falling to about 36
-and 33~\%). Per-backend utilisation fell by about 30~\% through the load
-spread. The total lane compute spent rose by about three and a half times,
-the same service for substantially more compute.
-The original campaign's recorded recovery signature, a pre-to-post p50
-collapse from 2.2--3.0~s to about 3.3~ms, is reported as a start-up
-transient rather than as recovery, since a control run that withheld the
-compute action reproduced it (Table~\ref{tab:rq2_criteria}). A later
-pre-registered escalation of the episode rate found no regime in which the
-deficit was both capacity-bound and measurable (at twice the episode
-rate, no server exceeded about three quarters of its quota, a diagnostic
-observation, not part of the evidence set). At the raised rates what
-appeared was not a simple shortage of tier capacity but a failure mode of
-another kind, and the escalation's platform behaviours are carried to the
-limitations in Chapter~\ref{ch:conclusions}.
+On the compute-bound episode neither policy differed from no action in
+service as both served at a p50 of about 3~ms. The action was nevertheless
+fully engaged (Figure~\ref{fig:rq2_engagement}): the added replicas served
+a majority of each lane's requests (medians of about 64 and 67~\% in the
+compute-only and bottleneck-aware cells), per-backend utilisation fell by
+about 30~\%, and the total lane compute spent rose by about three and a
+half times. The campaign's recorded recovery signature, a pre-to-post p50
+collapse (2.2--3.0~s to about 3.3~ms), is a start-up transient rather than
+recovery, since a control run that withheld the compute action reproduced
+it. A later pre-registered escalation found no regime in which the compute
+deficit was both capacity-bound and measurable. Its platform behaviours
+are carried to Chapter~\ref{ch:conclusions} outside the evidence set.
 
 \begin{figure}[H]
     \centering
@@ -2576,16 +2579,36 @@ limitations in Chapter~\ref{ch:conclusions}.
 Read together, the two modes give one account of where the service
 outcome comes from. The data-access-bound episode builds its queue at the
 storage members and with no action the serving member carries the full read
-load alone for the whole episode, therefore the user-visible wait sits on that
-unrelieved member. The matched action removes that queue as the reserve
-takes a share of the reads, the serving member falls away from its bound,
-and the user-visible benefit measured over inaction reflects that relief.
-The mismatched action leaves the queue standing (in those replicates the
-reserve never activates), so its distance from the matched action is read
-above the median, where the un-drained queue shows, rather than at the
-median, where the two actions meet. The compute-bound episode builds no
-such queue, since its pure service-pressure load never approaches the
-tier's capacity, so no action changes what users experience there.
+load alone for the whole episode, therefore the unrelieved member appears as
+the data-access component of the wait, while the larger part of the wait
+sits before dispatch, where both actions keep it small. The matched action
+removes that queue as the reserve takes a share of the reads, the serving
+member falls away from its bound, and the user-visible benefit measured over
+inaction reflects that relief. The mismatched action leaves the queue standing
+(in those replicates the reserve never activates), so its distance from the
+matched action is read above the median, where the un-drained queue shows,
+rather than at the median, where the two actions meet. The compute-bound
+episode builds no such queue, since its pure service-pressure load never
+approaches the tier's capacity, so no action changes what users experience there.
+
+Where the user-visible wait sits separates the two actions further. On the
+data-access-bound episode the client-visible mean decomposes into a
+pre-dispatch wait before the serving process handles the request, an
+edge-processing component, and a data-access component. Under no action the
+pre-dispatch wait dominates and grows, about 0.15~s of the mean over the
+episode's first minute and about 0.8~s over its last five (medians across
+replicates), while the edge service itself varies little (data access
+about 74--82~ms, edge processing about 14--19~ms). The mismatched compute
+action never built the pre-dispatch wait (about 0.08~s episode-wide) but
+left its data-access component at inaction levels. The matched storage
+action cut the data-access component (about 79~ms to 52~ms) and kept a
+small pre-dispatch wait as well. The two actions therefore peel different
+layers of the same wait: the mismatched action is a queue-side remedy that
+never reaches the data path, and only the matched action shortens the
+data-access service itself. The two components are the per-tier latency
+signals the selection observes (Section~\ref{sec:scaling_policy}), while
+the pre-dispatch wait is not among the observed quantities, so no evaluated
+policy can target it directly.
 
 The relief check asked whether the aligned action relieved the tier that
 bound the episode (Figure~\ref{fig:rq2_relief}). Where the storage tier
@@ -2594,11 +2617,10 @@ reserve was activated in every aligned replicate (eleven of eleven),
 storage-member CPU fell from 66--71~\% to 42--49~\% (a post-to-pre peak
 ratio of 0.57--0.66) in every storage-only lane (twelve of twelve), and the
 bottleneck-aware cell followed the same direction with eight of ten lanes
-below the threshold. On the compute-bound episode, relief and recovery
-separate. The compute action did relieve the receiving tier, through the
-load spread described above, but none of that relief reaches the service,
-because the compute tier never entered the capacity-bound state defined in
-Section~\ref{sec:metrics_definitions} within the evaluated range.
+below the threshold. On the compute-bound episode the action did spread load
+at the tier, but none of it reached the service because the tier never entered the
+capacity-bound state defined in Section~\ref{sec:metrics_definitions} within
+the evaluated range.
 
 \begin{figure}[H]
     \centering
@@ -2612,7 +2634,7 @@ Section~\ref{sec:metrics_definitions} within the evaluated range.
 \end{figure}
 
 The pre-registered storage tail-latency criterion was
-not met (Table~\ref{tab:rq2_criteria}): the median of the replicate
+not met (Table~\ref{tab:rq2_criteria}) because the median of the replicate
 pre-to-post p95 ratios was 0.727, but its 95~\% confidence interval,
 [0.574, 1.393], includes 1.0. The cell-level criterion was pre-registered
 on the p95, because the reserve activates early and pre-empts deep 
@@ -2645,29 +2667,24 @@ unmet gate is carried as such.
         Compute recovery (pre/post p50) & collapse $\ge 2\times$, aligned replicates & start-up transient (control) \\
         Storage tail latency (pre/post p95) & 95~\% CI excluding 1.0 & 0.727 [0.574, 1.393] \\
         Storage resource relief (post/pre CPU) & ${<}0.75$, aligned lanes & 0.57--0.66 (12/12); 0.62--1.06 (8/10) \\
-        Benefit vs inaction (storage, data-access-bound) & ratio $\le 0.85$ & $\approx 0.37$ (labelled) \\
-        Harm vs inaction (compute, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.49$ \\
+        Benefit vs inaction (storage, data-access-bound) & ratio $\le 0.85$ & $\approx 0.39$ (labelled) \\
+        Harm vs inaction (compute, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.52$ \\
         Sequence recovery (one configuration) & per-leg recovery & not confirmable \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 Resource use separates the policies where service does not. On the
-compute-bound episode the compute tier was already served, so the two
-compute-scaling arms spent their compute node-minutes for no change in
-service. The storage-only policy, which cannot act on compute, ran the
-compute tier pinned near 60~\% of its cap with no compute action, and the
-storage activations it did execute, raised after the episode had passed on
-isolated transients in the storage tier's own signals, provided no relief.
-On the data-access-bound episode the account turns. The storage-only
-policy's spend, about 0.20 storage node-minutes per thousand requests, is
-the one that converted into the user-visible benefit, since the reserve
-carried the storage serving load in every aligned lane, while the
-mismatched compute-only policy's spend, about 0.75 compute node-minutes
-per thousand requests, relieved nothing. Bottleneck-aware selection paid
-for both tiers, the compute share being the second-tier action described
-below. Read across the two episodes, what reaches users is decided by the
-tier a policy serves, not by the size of its spend.
+compute-bound episode both compute-scaling arms spent their compute
+node-minutes for no change in service, and the storage-only policy's
+activations there likewise provided no relief. On the data-access-bound
+episode the account turns: the storage-only spend, about 0.20 storage
+node-minutes per thousand requests, converted into the tier's relief and
+into the data-access component of the user-visible benefit, while the
+mismatched compute-only spend, about 0.75 compute node-minutes per
+thousand requests, relieved nothing of the tier that bound the episode.
+Read across the two episodes, what reaches users is decided by the tier
+a policy serves, not by the size of its spend.
 
 Selection correctness holds across regimes. The bottleneck-aware classifier
 committed to the detected bottleneck in every evaluated regime: on the
@@ -2675,29 +2692,23 @@ data-access-bound episode it activated the storage reserve first and scaled
 compute only after storage relief (agreement with the episode label in
 88--93~\% of scored decisions), and on the compute-bound episode it scaled
 compute without activating storage.
-The compute units that the cell adds after storage relief follow from how
-the decision is made. Each tier raises its own requests from its own
-condition, and the edge tier's condition is met under this workload too,
-since every request is still served through it and its utilisation rises
-from about 2~\% before the episode to the 25--50~\% band during it, enough
-to reach the condition's threshold, while the tier's own processing
-latency stays near a millisecond and plays no part. Once the storage score
-fell below its threshold the compute requests were the next committed,
-six adds in every valid replicate, and those units served requests without
-improving the episode's service quality. In two of the five valid
-replicates each compute add coincided with a p95 spike in the 30~s
-buckets, those two runs recording the cell's highest timeout shares (2.65
-and 4.42~\% against 0.03--1.36~\% in the storage-only cell). The spikes
-track the add events rather than the load, so the tail records the cost of
-the action itself, a replica being provisioned and admitted to the routing
-pool while the episode is live, rather than a change in demand.
+The compute units the cell adds after storage relief follow from the
+condition rather than from a compute deficit: every request is served
+through the edge, so the edge tier's utilisation rose into the 25--50~\%
+band during the episode and met its threshold. The adds that followed
+(six in each of four valid replicates, seven in the fifth) served requests
+without improving the episode's service quality, and in two replicates
+each add coincided with a p95 spike in the 30~s buckets, the runs with
+the cell's highest timeout shares; the tail records the cost of
+provisioning and admitting a replica while the episode is live, rather
+than a change in demand.
 
 The compute-bound episode shows no such mirror, because pure service pressure
 holds the storage tier near idle, so no sustained storage request arises
 to be committed after the compute action.
 The order-shifted sequences show the same commitment in both directions,
 with one documented ordering wrinkle, a single lane whose compute alert
-preceded its storage alert by eleven seconds. Because the compute-bound
+preceded its storage alert by about ten seconds. Because the compute-bound
 leg never carried a deficit, the pre-registered sequence criterion,
 recovery in each leg of a single configuration, is not confirmable,
 and the sequence evidence is reported as commitment behaviour rather
@@ -2756,9 +2767,9 @@ bounded by the discovery interval, with the
 direct lifecycle notification admitting first in every start-up class and
 the redistribution inheriting that difference only in when it begins.
 In addition, under total event loss with reduced headroom, the direct
-lifecycle configuration would carry a decisive but bounded service-quality cost, its ready
-capacity never becoming selectable, while both re-deriving rules recover
-and the redistribution completes. The campaign ran 36~runs in
+lifecycle configuration would carry a decisive but bounded service-quality
+cost, its ready capacity never becoming selectable, while both re-deriving
+rules recover and the redistribution completes. The campaign ran 36~runs in
 six seed-matched blocks (seeds 5201--5206), with the cells of a block
 sharing the block's seed and the order rotated between blocks, at a
 per-client rate of 2.0.
@@ -2823,9 +2834,9 @@ becomes a service-quality cost when spare capacity is already low.
 
 Under an intact event source the two mechanisms differed only in when
 admission occurred. The per-backend interval from verified readiness to
-admission had a median of 0.001~s under direct lifecycle notification against 6.984~s
-under periodic discovery ($d = -1.000$; earlier in every backend start-up
-class, fast and slow-binding alike), and it tracked the
+admission had a median of 0.001~s under direct lifecycle notification against
+6.984~s under periodic discovery ($d = -1.000$; earlier in every backend
+start-up class, fast and slow-binding alike), and it tracked the
 configured poll period, growing from 9.6~s to 15.2~s when the period grew
 from 10~s to 15~s (Table~\ref{tab:rq3_delays} and
 Figure~\ref{fig:rq3_admission_intervals}). 
@@ -3194,6 +3205,16 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 % Cross-domain service placement: requests can be served by the peer domain's
 % replicas at a hop-cost penalty (share reported in Section~\ref{sec:experimental_setup});
 % scope item / held-constant behaviour, not a treatment.
+% RQ2 residual benefit (recompute 2026-10-02): the mismatched compute action
+% still beat inaction on the data-access-bound episode; attributed to the
+% pre-dispatch (queue-side) layer and edge processing, with the data-access
+% component left unreduced (Section~\ref{sec:results_rq2_action}). State here:
+% deciding the advantage in general would require a serving configuration whose
+% pre-dispatch wait does not respond to serving replication, a measurable cost
+% of serving the wrong tier, and regime variation no single fixed policy covers.
+% In-place provisioning perturbs the served tail (p95 spikes tracked the add
+% events in the bottleneck-aware cell): a deploy-time property, not a demand
+% effect.
 
 \section{Future Research Directions}\label{sec:future_work}
 % TODO: Compound coordination delay injection experiment (emulate full separation
@@ -3206,6 +3227,9 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 % off-the-shelf observability components, e.g. an OTel collector over a message
 % broker, to test whether the measured effects are properties of the delivery
 % semantics or of this implementation).
+% RQ2 follow-up (residual benefit): evaluate the conditions above --- pinned
+% dispatch-side concurrency that fan-out cannot multiply, priced wrong-tier
+% service, and regime shifts beyond the evaluated envelope.
 
 % =====================================================================
 % Annex A — Campaign Configuration Values

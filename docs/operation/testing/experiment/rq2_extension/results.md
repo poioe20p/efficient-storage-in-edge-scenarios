@@ -64,6 +64,7 @@
 | 2026-09-28 | **Part C diagnostic pair @ 2.5 executed (user-approved, bounded):** `nn`@2.5 LOCK (97.0 %, p50 2.79 s); `cf`@2.5 first treatment signal — **lan2 PRE→POST ×21.4** (min 3–5 at 3–4 ms) — but **unstable**: lan1 ×0.76 (never collapsed), lan2 **relapse from min 6**, lan1's added nodes **torn down mid-episode** by the registry liveness cull (14:22:48–14:24:50) | ⚠ partial + contaminated |
 | 2026-09-28 | **Part C CLOSED — "stop + record" (user decision):** focused analysis (registry liveness cull; near-capacity assignment concentration; no clean treatable window 1.5–3.0) → **campaign NOT executed**; closure record appended below; `phases_rq2pc_cb.json` restored to the frozen state; closure records committed (records-only; no `-final-` tag) | ⏹ closed (no campaign) |
 | 2026-09-28 | **Part A/B pre-battery verification pass (read-only):** Part A headline numbers recomputed from raw artifacts — v3 `latency_summary` reproduced exactly; plan-convention recompute **Q-A1 0.680** / **Q-A2 0.487** (draft quotes ≈0.56–0.62 / ≈0.35 are convention-sensitive); Q-A3 + startup-transient (zero-add `sf_cb`: minute-0 3.9–4.4 s → 3 ms) confirmed; pin list + label caveats appended below | ⚠ recorded (pre-battery) |
+| 2026-10-02 | **Part D pre-registration drafted** ([partd_addendum.md](partd_addendum.md)): onset bracketing `nn`@2.0/2.25/2.4 → `cf` at the lowest locking rung; repeat only on a pass (2 confirmations, ≥ 2/3 rule) or a diagnosed-partial failure (one repeat); terminal `cf`@2.5 fallback; launcher `tools/run_rq2pd_probes.py` — **awaiting review gate + FREEZE-4; no runs yet** | 📋 pre-registration (no runs) |
 
 ## Probe Record — Stage 0
 
@@ -413,6 +414,14 @@ is not capacity-bound: added servers do not relieve it.**
 (records-only on `rq2-extension`) — **no `-final-` tag** (the planned tag
 implied campaign readiness that the stop decision obviates).
 
+## Part D — Record (`rq2pd`)
+
+**Status: 📋 pre-registration — NO runs yet.** Design:
+[partd_addendum.md](partd_addendum.md); stage plan: [run_matrix.md](run_matrix.md) §7.
+Probe-record target for execution time; probes are NOT evidence.
+
+---
+
 ## Changelog
 
 | Date | Change | Rationale |
@@ -445,3 +454,4 @@ implied campaign readiness that the stop decision obviates).
 | 2026-09-28 | **Part C CLOSED — "stop + record" (user decision):** campaign NOT executed (no clean treatable window 1.5–3.0; cull + assignment concentration dominate); Part C record + findings appended; `phases_rq2pc_cb.json` restored to the frozen state; closure records committed (records-only; no `-final-` tag) | User decision (post-diagnostic) |
 | 2026-09-28 | Part A/B pre-battery verification note appended — recomputed values (Q-A1 0.680 / Q-A2 0.487), convention bands, cross-checks (v3 summaries reproduced exactly), pin list (ratio conventions, ≈3×, L4 counts, build-delta/cap labels, `nn_db_3`) | Verification pass (read-only; ahead of the final battery) |
 | 2026-10-01 | **Thesis figure battery executed (read-only, VM):** RQ2 consequence map (p95 data-bound / p50 compute-bound), compute-engagement figure, and relief restyle produced from raw run folders by `source/scripts/testing/analysis/rq2/scripts/generate_thesis_figures.py` (+ per-value CSV in `graphs/thesis/`); ratio convention pinned to all available replicates, lanes pooled, median — Q-A2 ≈ 0.37 (0.487 on the seed-42 pool) and Q-A1 ≈ 0.49 (0.680 on seed-42); relief lane counts restated (sf 12/12; ba 8/10); `main.tex` §5.3 numbers and `tab:rq2_criteria` reconciled to the figures | ✅ recorded |
+| 2026-10-02 | Part D (`rq2pd`) pre-registration drafted (addendum + run-matrix §7 + this status row) — no runs; Part C remains CLOSED | Part D design (user-directed; continues the Part C closure) |

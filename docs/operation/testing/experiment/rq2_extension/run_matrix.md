@@ -650,6 +650,63 @@ assignment/concentration at near-capacity rates.
 
 ---
 
+## 7. Part D — compute-lock onset bracketing (`rq2pd`)
+
+**Design: [partd_addendum.md](partd_addendum.md)** (pre-registration;
+frozen by FREEZE-4). Summary: the Part C ladder jumped 1.5 → 3.0 and never
+bracketed the lock onset inside (1.5, 2.5); the 2.5 rung sits deep in the
+meltdown (`nn` reference 97 % slow, assignment-gated). Part D screens the
+untested shallow-lock band with `nn` rungs **2.0 → 2.25 → 2.4**, tests
+`cf` expression at the **lowest locking rung** (R_s), and repeats only for
+two pre-registered reasons — a **pass** (2 confirmation runs, ≥ 2/3 rule)
+or a **diagnosed-partial failure** (one repeat, assignment starvation
+documented) — before the terminal `cf`@2.5 fallback. Probes are NOT
+evidence.
+
+| Stage | Runs | Labels | Condition |
+| --- | --- | --- | --- |
+| bracket | `nn`@2.0 → (`cf`@2.0) → `nn`@2.25 → (`cf`@2.25) → `nn`@2.4 → (`cf`@2.4) | `rq2pd_r1_nn_200` · `rq2pd_r1_cf_200` · `rq2pd_r2_nn_225` · `rq2pd_r2_cf_225` · `rq2pd_r3_nn_240` · `rq2pd_r3_cf_240` | `cf` only at the lowest locking rung; all-no-lock → STOP (boundary ∈ (2.4, 2.5]) |
+| repeat | 1 × `cf`@R_s | `rq2pd_rp_cf_<code>` | partial fail with assignment starvation documented |
+| confirm | 2 × `cf`@R_s | `rq2pd_c1_cf_<code>` · `rq2pd_c2_cf_<code>` | screening `cf` (or its partial repeat) passed the signature |
+| fallback | 1 × `cf`@2.5 | `rq2pd_fb_cf_250` | clean fail at R_s / failed confirmations / failed repeat |
+
+Label codes are rate × 100 (Part D only; Part C used rate × 10; `250`
+exists solely as the fallback label).
+
+- **Gates:** Part C §5 validity battery + lock gate; treated-arm signature
+  (adds ≥ 1/LAN, zero pre-episode fires, B1 collapse ≥ 2× both LANs,
+  recovery slow-share ≤ 5 %, added nodes served) — addendum §5.
+- **Budget:** ≤ 8 launches in total, including the single validity relaunch
+  (reachable path maximum 7 + 1; expected ≈ 6–8 h wall clock); the launcher
+  enforces the global counts via the remote event log (`/tmp/rq2pd_events.jsonl`).
+- **Confirmed** → Part D.2 pre-registration of the 4-arm campaign at R_s
+  (the campaign is the evidence; Part D runs are selection runs);
+  **not confirmed** → STOP + record; the negative is bounded inside
+  [onset, 3.0].
+- **Launcher:** `tools/run_rq2pd_probes.py` (stages `bracket` / `repeat` /
+  `confirm` / `fallback`; `--plan` offline; same launch chain, envs, caps,
+  and checker semantics as Part C).
+
+### Part D checklist (executed at its own freeze/run time)
+
+- [ ] Review gate passed on [partd_addendum.md](partd_addendum.md) + artifacts
+- [ ] FREEZE-4 record (restricted diff + md5s — slots below)
+- [ ] Pre-run verification (local↔VM md5s; launcher `py_compile` + `--plan`; checker smoke on stored Part C folders; clean VM)
+- [ ] Bracket executed → R_s determined (or boundary reported)
+- [ ] Cross-stage gate: screening `cf` classified before `confirm` / `repeat` / `fallback` launches
+- [ ] `cf`@R_s classified (pass / partial / clean fail)
+- [ ] Repeat / confirmations / fallback executed per the decision tree
+- [ ] Global run/relaunch counts enforced (remote event log; ≤ 8 launch slots + 1 relaunch)
+- [ ] Outcome recorded in [results.md](results.md); `phases_rq2pc_cb.json` restored; records-only commit
+
+**FREEZE-4 record (fill at freeze):** commit `<hash>`; md5s — addendum
+`<md5>`, launcher `<md5>`, `phases_rq2pc_cb.json`
+`d40f5f592375360c76a1d55f4c168200` (restored Part C-frozen state);
+restricted diff = exactly the four enumerated paths of addendum §2
+(partd_addendum.md, run_matrix.md, results.md, tools/run_rq2pd_probes.py).
+
+---
+
 ## Changelog
 
 | Date | Change | Rationale |
@@ -661,3 +718,4 @@ assignment/concentration at near-capacity rates.
 | 2026-09-26 | Plan approved; step 1 executed (v3-final tag on the VM); step-2 additive set authored + locally validated; phase-drift reconciliation RESULT recorded (**NO DRIFT** — `nn` cells reuse the base files); VM-reference md5s recorded (local-mirror staleness caveat); implementation-recorded lists completed (analysis-extension file list, run-summary flow decision, G2 path) | Execution record |
 | 2026-09-28 | Part C (`rq2pc`) addendum + artifacts authored — §6 added (cells, probe ladder, order plan, checklist) | Part C pre-registration (user-specified) |
 | 2026-09-28 | Part C probes executed (ladder P-0/P-1/P-4 + bounded diag pair @ 2.5); **Part C CLOSED — campaign NOT executed** ("stop + record"); closure record + mechanisms in §6 (registry liveness cull; assignment concentration; no treatable window 1.5–3.0); `phases_rq2pc_cb.json` restored to the frozen state; no `-final-` tag | Part C execution + user decision |
+| 2026-10-02 | Part D (`rq2pd`) addendum + artifacts authored — §7 added (bracketing rungs 2.0/2.25/2.4, `cf` at the lowest locking rung, repeat/confirm/fallback rules, budget, FREEZE-4 slots) | Part D pre-registration (user-directed; continues the Part C closure) |

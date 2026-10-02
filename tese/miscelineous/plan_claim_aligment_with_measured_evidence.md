@@ -42,6 +42,17 @@ comments in the thesis file.
 - [X] **A8** Appendix promise in `sec:research_methodology` deleted. Resolved
   2026-09-03; re-add when the statistical/gate appendix exists.
 
+- [X] **A8a** Appendix A — Campaign Configuration Values written and wired
+  2026-10-02: per-campaign tables `tab:app_config_resources` /
+  `tab:app_config_scaling` / `tab:app_config_selection` under
+  `app:campaign_config`; pointer sentences added in the elasticity section
+  (§3.3) and in Chapter 5 (§§5.1.1, 5.1.4 — the latter corrects a pointer to
+  the design tables that never contained the caps/quota values); annex
+  emitted after the References via `\AtEndDocument` in `main.tex`. Values
+  verified against campaign launchers/env overrides, the RQ1/RQ3 run
+  snapshots, and the controller code defaults. The statistical/gate
+  appendix (B) remains the open part of A8.
+
 - [-] **A9** Abstract, keywords, date, acknowledgements, dedication: author
   will write at the end. (A draft abstract/keywords was applied 2026-09-03
   and later restored to placeholder by the author.)
