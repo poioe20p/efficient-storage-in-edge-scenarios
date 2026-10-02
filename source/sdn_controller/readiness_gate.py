@@ -12,6 +12,11 @@ Gates ``VIP_SERVER`` pool admission on a verified application-readiness event
                    admit when a discovery pass observes 200 (periodic
                    discovery).
 
+Optional RQ3 soundness sub-mode (``READINESS_WAKE_VERIFY_MODE=probe``, default
+off, ``direct`` only): the ``app_ready`` event wakes an immediate probe instead
+of admitting; admission happens only after a successful /ready probe
+(``admit_source="wake_verify_probe"``) — the event is a wake-up, not evidence.
+
 The gate is active only when ``READINESS_PROPAGATION != "off"`` (constructed
 in ``main_n*.py``). When off, no gate exists and Thread 3 registers backends
 immediately (pre-RQ3 behavior, byte-identical).
@@ -54,6 +59,10 @@ class PendingBackend:
     # event, direct mode), "probe_fallback" (event-absence safety net, direct
     # mode), or "probe" (discovery scan).
     admit_source: str = "probe"
+    # RQ3 soundness wake_verify (optional arm): wall-clock of the app_ready
+    # event that woke the probe; admission still requires a successful /ready
+    # probe (admit_source="wake_verify_probe").
+    wake_verify_wall_s: float | None = None
     # Set when teardown is enqueued so a late app_ready event cannot admit a
     # backend that is being abandoned.
     abandoned: bool = False
@@ -79,6 +88,7 @@ class ReadinessGate:
         on_admit: Callable[[PendingBackend], None],
         on_abandon: Callable[[PendingBackend], None],
         event_fallback_s: float = 5.0,
+        wake_verify_mode: str = "off",
     ) -> None:
         self._propagation = propagation            # "direct" | "discovery"
         self._probe_timeout_s = probe_timeout_s
@@ -90,6 +100,10 @@ class ReadinessGate:
         self._on_admit = on_admit
         self._on_abandon = on_abandon
         self._event_fallback_s = event_fallback_s
+        # RQ3 soundness (optional arm): "probe" defers event-driven admission
+        # until a successful /ready probe; "off" (default) keeps the plain
+        # event-driven contract. Unknown values fall back to off.
+        self._wake_verify_mode = wake_verify_mode == "probe"
 
         self._pending: list[PendingBackend] = []
         self._confirm: list[PendingBackend] = []   # post-admission identity check
@@ -110,10 +124,11 @@ class ReadinessGate:
         logger.info(
             "[readiness] gate started propagation=%s probe_timeout=%.1fs "
             "probe_max=%.1fs probe_retry=%.1fs discovery=%.1fs event_fallback=%.1fs "
-            "ready_port=%d",
+            "wake_verify=%s ready_port=%d",
             self._propagation, self._probe_timeout_s, self._probe_max_s,
             self._probe_retry_s, self._discovery_interval_s,
-            self._event_fallback_s, self._ready_port,
+            self._event_fallback_s, "probe" if self._wake_verify_mode else "off",
+            self._ready_port,
         )
 
     def enqueue(self, pb: PendingBackend) -> None:
@@ -150,15 +165,38 @@ class ReadinessGate:
         pending backend by MAC, records event-driven admission
         (``admit_source="event"``), and enqueues a post-admission
         identity-confirmation probe for the worker thread. Returns True if a
-        pending backend was admitted. A ``discovery`` run ignores app_ready
+        pending backend consumed the event (admitted in plain direct mode;
+        probe woken in ``wake_verify`` mode). A ``discovery`` run ignores app_ready
         events (the cadence is the treatment). If the event arrives before the
         spawn's ``enqueue`` (a startup race), the MAC is buffered for a short
         window so ``enqueue`` can replay it. ``_on_admit`` is non-blocking
         in-memory registration; all gate state mutations serialize on
-        ``_wake`` (enqueue / admit_on_event / worker scan).
+        ``_wake`` (enqueue / admit_on_event / worker scan). In
+        ``wake_verify`` mode the event only wakes the probe; admission is
+        deferred until the probe succeeds.
         """
         if self._propagation != "direct":
             return False
+        if self._wake_verify_mode:
+            # RQ3 soundness wake_verify: the event wakes a probe; admission
+            # happens only after the worker's /ready probe succeeds.
+            with self._wake:
+                for pb in self._pending:
+                    if (pb.mac == mac and pb.admitted_wall_s is None
+                            and not pb.abandoned):
+                        if pb.wake_verify_wall_s is None:
+                            pb.wake_verify_wall_s = time.time()
+                        self._wake.notify_all()
+                        logger.info(
+                            "[readiness] wake-verify: event woke probe for "
+                            "name=%s mac=%s (admission deferred to probe)",
+                            pb.name, pb.mac,
+                        )
+                        return True
+                # Event arrived before enqueue — buffer for replay on enqueue.
+                self._late_events[mac] = time.time()
+                self._prune_late_events()
+                return False
         with self._wake:
             for pb in self._pending:
                 if (pb.mac == mac and pb.admitted_wall_s is None
@@ -235,18 +273,32 @@ class ReadinessGate:
                     abandoned.append(pb)
                 continue
             if (self._propagation == "direct"
+                    and pb.wake_verify_wall_s is None
                     and now_wall - pb.spawn_complete_wall_s
                     < self._event_fallback_s):
                 # Event-absence safety net: in direct mode, give the app_ready
                 # event time to arrive before probing (no probe before
                 # admission is the event-driven contract). Beyond the grace,
-                # probing resumes as the fallback.
+                # probing resumes as the fallback. A wake_verify wake bypasses
+                # the grace: the event already arrived, the probe now verifies.
                 continue
             self._probe_one(pb)
             if pb.app_ready_wall_s is not None and pb.admitted_wall_s is None:
                 pb.admitted_wall_s = time.time()
-                pb.admit_source = ("probe_fallback" if self._propagation == "direct"
-                                   else "probe")
+                if self._wake_verify_mode and pb.wake_verify_wall_s is not None:
+                    pb.admit_source = "wake_verify_probe"
+                    logger.info(
+                        "[readiness] wake_verify=pass name=%s mac=%s",
+                        pb.name, pb.mac,
+                    )
+                else:
+                    pb.admit_source = ("probe_fallback" if self._propagation == "direct"
+                                       else "probe")
+                    if self._wake_verify_mode:
+                        logger.info(
+                            "[readiness] wake_verify=fallback name=%s mac=%s",
+                            pb.name, pb.mac,
+                        )
                 try:
                     self._on_admit(pb)
                 except Exception:

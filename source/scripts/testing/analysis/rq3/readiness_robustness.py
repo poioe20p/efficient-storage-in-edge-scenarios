@@ -10,10 +10,16 @@ Read-only artifact analysis. Subcommands:
   qoe-campaign        Family 3 (rq3_qoe) E-stage H-Q1..H-Q4 verdicts
   timing-screen       Family rq3_timing P1/P2/lock preflight gates
   timing-campaign     Family rq3_timing E-stage H-T1..H-T3 verdicts
+  soundness-damage    Family 5 (rq3_soundness) damage tables (U / D_s / D-bar)
+  soundness-preflight Family 5 (rq3_soundness) P1 gates R1-R3b and lock JSON
+  soundness-crossover Family 5 (rq3_soundness) lead-N fits, N*, H-S1..H-S4
 
 Family 3 measures the visible/bounded QoE consequence of readiness-event
 loss under a uniform EDGE_CPUS quota ladder; see
 docs/operation/testing/experiment/v3/rq3_qoe_DO_NOT_CITE/experiment_plan.md.
+Family 5 measures the soundness half of the reframed RQ3 (usable-capacity
+realization under readiness-channel faults F1/F2/F3); see
+docs/operation/testing/experiment/v3/rq3_soundness/experiment_plan.md.
 """
 from __future__ import annotations
 
@@ -22,6 +28,7 @@ import csv
 import itertools
 import json
 import math
+import random
 import re
 import statistics
 import sys
@@ -30,16 +37,20 @@ from typing import Any
 
 from .readiness_low_headroom import (
     PHASE,
+    as_float,
     capacity_summary,
     cpu_values,
     is_completed,
     is_success,
+    load_phases,
     load_window_log,
+    parse_env,
     parse_ready_epoch,
     percentile,
     phase_bounds,
     read_csv,
     request_rows,
+    run_seed,
     timestamp,
     write_csv,
     write_json,
@@ -1924,6 +1935,1349 @@ def timing_campaign_command(args: argparse.Namespace) -> int:
     return 0 if report["pass"] else 2
 
 
+# ---------------------------------------------------------------------------
+# Family 5 (rq3_soundness): readiness-admission fault soundness
+#
+# Binding contract: docs/operation/testing/experiment/v3/rq3_soundness/
+# experiment_plan.md §4 (measurement), §5 (P1 gates), §6 (hypotheses) and
+# preflight_campaign.md (R1-R3b rows). One common damage currency (§4.1/§4.2):
+#   classes, priority order (first match wins):
+#     timeout (driver status=timeout; checked FIRST so its http_status=000
+#     encoding cannot be swallowed) -> 000 (completed + http_status=000)
+#     -> fail5xx (completed, HTTP >= 500) -> slow (completed, latency > 1.0 s)
+#     -> good (completed, <= 1.0 s); canceled/dropped excluded from the
+#     offered denominator and reported separately.
+#   U = 100 * (#timeout + #000 + #fail5xx + #slow) / #offered
+#   D_s(arm, cell) = U(arm, cell, s) - U(arm, none, s), paired by seed.
+# Fault windows (§4.3): F2 = [t_bind - N - 10 s, t_bind + 30 s] per app spawn
+# (t_bind = first serve-capable timestamp, parsed from the `edge-server
+# listening` app-log line; upper bounds are exclusive, the repo's half-open
+# window convention); knob-active runs also log READINESS_CLAIM/READINESS_BIND
+# and the measured claim->bind deferral must be in [N-1, N+1] s.
+# F3 = [t_bind, min(t_bind + S, plateau_end)] (S fixed at 1200 s). F1 = full
+# plateau. Matched none-cell comparisons reuse the fault cell's N in the F2
+# formula and the fixed S in the F3 formula.
+# ---------------------------------------------------------------------------
+# The ordinal group may carry a trailing `r` on pre-registered rerun labels
+# (parallel launcher fix); it is kept as part of the ordinal.
+SOUNDNESS_LABEL_RE = re.compile(
+    r"rq3snd_(none|premature2|premature5|premature10|semantic|loss_all)_"
+    r"(event_only|hybrid|reconcile|wake_verify)_(\d+r?)$")
+SOUNDNESS_DYNAMIC_RE = re.compile(r"^edge_server_lan[12]_dyn\d+$")
+SOUNDNESS_SLOW_S = 1.0                 # §4.1 slow boundary (Family-4 definition)
+SOUNDNESS_F2_PRE_S = 10.0              # §4.3 F2 pre-roll before the claim
+SOUNDNESS_F2_POST_S = 30.0             # §4.3 F2 post-bind tail
+SOUNDNESS_F3_S_DEFAULT = 1200          # §7.3 fixed lie duration (locked by P1)
+SOUNDNESS_GRID = (2, 5, 10)            # §4.4 fixed a priori; no ladder
+SOUNDNESS_CENSORED_AS = 11.0           # raw infinity counted as 11 (just beyond)
+SOUNDNESS_E_SEEDS = (6301, 6302, 6303)  # E-stage core seeds (run_matrix.md)
+SOUNDNESS_TAIL_S = 300.0               # none-floor tail = last 300 s of plateau
+SOUNDNESS_NONE_TAIL_SLOW_MAX = 0.02    # §4.5 none plateau-tail slow ceiling
+SOUNDNESS_NONE_BAD_MAX = 0.01          # §4.5 none bad ceiling
+SOUNDNESS_CANCEL_MAX = 0.05            # §4.5 driver-clean bound
+SOUNDNESS_PLATEAU_MIN_POOLED = 5000    # §4.5 floors (reported, not gated)
+SOUNDNESS_PLATEAU_MIN_PER_LAN = 1000
+SOUNDNESS_F2_WINDOW_MIN_PER_LAN = 15
+SOUNDNESS_SEMANTIC_MIN_PP = 30.0       # §6 H-S1/H-S2/H-S4 semantic bar
+SOUNDNESS_F2_MAX_PP = 2.0              # §6 H-S2/H-S4 F2 bar
+SOUNDNESS_GROWTH_MIN_PP_S = 0.5        # §4.4 growth gate point estimate
+SOUNDNESS_GROWTH_CI_MIN_PP_S = 0.2     # §4.4 growth gate CI lower bound
+SOUNDNESS_BOOTSTRAP_B = 2000           # seed-bootstrap resamples (95 % CI)
+SOUNDNESS_BOOTSTRAP_SEED = 6300        # deterministic bootstrap RNG
+
+
+def soundness_label_parts(run_name: str) -> tuple[str, str, str] | None:
+    match = SOUNDNESS_LABEL_RE.search(run_name)
+    return (match.group(1), match.group(2), match.group(3)) if match else None
+
+
+def soundness_cell_fault(cell: str) -> str:
+    if cell == "none":
+        return "none"
+    if cell.startswith("premature"):
+        return "premature"
+    return cell
+
+
+def soundness_cell_n(cell: str) -> int | None:
+    """Lead N encoded by a premature cell name (0 for none; None otherwise)."""
+    if cell == "none":
+        return 0
+    match = re.fullmatch(r"premature(\d+)", cell)
+    return int(match.group(1)) if match else None
+
+
+def soundness_class_of(row: dict[str, Any]) -> str:
+    """§4.1 outcome class, priority order, first match wins."""
+    status = str(row.get("status") or "")
+    if status == "timeout":
+        return "timeout"
+    if status in ("canceled", "dropped"):
+        return status
+    if status != "completed":
+        return "other"
+    http = str(row.get("http_status") or "")
+    if http == "000":
+        return "000"
+    try:
+        code = int(http)
+    except ValueError:
+        code = None
+    if code is not None and code >= 500:
+        return "fail5xx"
+    latency = as_float(row.get("latency_s"))
+    if latency is not None and latency > SOUNDNESS_SLOW_S:
+        return "slow"
+    return "good"
+
+
+def soundness_u(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """§4.2 damage share for one row set (pooled)."""
+    counts = {name: 0 for name in ("timeout", "000", "fail5xx", "slow", "good")}
+    canceled = dropped = other = 0
+    for row in rows:
+        cls = soundness_class_of(row)
+        if cls in counts:
+            counts[cls] += 1
+        elif cls == "canceled":
+            canceled += 1
+        elif cls == "dropped":
+            dropped += 1
+        else:
+            other += 1
+    offered = sum(counts.values())
+    bad_n = offered - counts["good"]
+    return {
+        "offered": offered,
+        "bad_n": bad_n,
+        "u_pct": (100.0 * bad_n / offered) if offered else None,
+        "classes": counts,
+        "cancelled": canceled,
+        "dropped": dropped,
+        "other": other,
+    }
+
+
+def soundness_window_u(rows: list[dict[str, Any]],
+                       spans: list[tuple[float, float]]) -> dict[str, Any]:
+    clean = [(float(lo), float(hi)) for lo, hi in spans
+             if lo is not None and hi is not None]
+    selected = [row for row in rows
+                if any(lo <= row["_sent"] < hi for lo, hi in clean)]
+    return {**soundness_u(selected), "window_rows": len(selected)}
+
+
+def soundness_log_line_ts(line: str) -> float | None:
+    """Docker RFC3339 timestamp = first whitespace token (existing convention,
+    mirroring readiness_low_headroom.parse_ready_epoch)."""
+    parts = line.split()
+    if not parts:
+        return None
+    return timestamp(parts[0])
+
+
+def soundness_log_markers(run_dir: Path, container: str) -> dict[str, Any]:
+    path = run_dir / "service_logs" / f"{container}.log"
+    out: dict[str, Any] = {
+        "t_listen": None, "t_claim": None, "t_bind_marker": None,
+        "deferral_reported_s": None, "lie_until": None,
+        "log_present": path.exists(),
+    }
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        ts = soundness_log_line_ts(line)
+        if out["t_listen"] is None and "edge-server listening" in line and ts is not None:
+            out["t_listen"] = ts
+        if out["t_claim"] is None and "READINESS_CLAIM" in line and ts is not None:
+            out["t_claim"] = ts
+        if out["t_bind_marker"] is None and "READINESS_BIND" in line and ts is not None:
+            out["t_bind_marker"] = ts
+        if out["deferral_reported_s"] is None:
+            match = re.search(r"deferral_s=([-+0-9.eE]+)", line)
+            if match:
+                out["deferral_reported_s"] = as_float(match.group(1))
+        if out["lie_until"] is None:
+            match = re.search(r"until=([-+0-9.eE]+)", line)
+            if match:
+                out["lie_until"] = as_float(match.group(1))
+    return out
+
+
+def soundness_app_spawns(run_dir: Path) -> list[dict[str, Any]]:
+    """Per dynamic app spawn: t_bind (first serve-capable log timestamp) and
+    the optional READINESS_CLAIM marker + measured deferral (F2 runs)."""
+    logs_dir = run_dir / "service_logs"
+    spawns: list[dict[str, Any]] = []
+    if not logs_dir.is_dir():
+        return spawns
+    for path in sorted(logs_dir.glob("edge_server_lan[12]_dyn*.log")):
+        container = path.stem
+        if not SOUNDNESS_DYNAMIC_RE.match(container):
+            continue
+        markers = soundness_log_markers(run_dir, container)
+        t_bind = (markers["t_listen"] if markers["t_listen"] is not None
+                  else markers["t_bind_marker"])
+        lan = int(re.search(r"lan(\d)", container).group(1))
+        deferral = (t_bind - markers["t_claim"]
+                    if t_bind is not None and markers["t_claim"] is not None
+                    else None)
+        spawns.append({
+            "container": container, "lan": lan, "t_bind": t_bind,
+            "t_claim": markers["t_claim"],
+            "t_listen_logged": markers["t_listen"],
+            "t_bind_marker": markers["t_bind_marker"],
+            "deferral_s": deferral,
+            "deferral_reported_s": markers["deferral_reported_s"],
+            "lie_until": markers["lie_until"],
+        })
+    return spawns
+
+
+def soundness_attestation(run_dir: Path) -> dict[str, Any]:
+    path = run_dir / "rq3snd_fault_attestation.txt"
+    knobs: dict[str, int] = {}
+    present = path.exists()
+    if present:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for key in ("EDGE_READY_PREMATURE_S", "EDGE_READY_SEMANTIC_LIE_S"):
+            match = re.search(key + r"=(\d+)", text)
+            if match:
+                knobs[key] = int(match.group(1))
+    return {"path": path.name, "present": present, "knobs": knobs}
+
+
+def _soundness_int(value: Any) -> int | None:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def soundness_check_violations(run_dir: Path) -> dict[str, Any]:
+    per_lan: dict[str, int] = {}
+    for lan in (1, 2):
+        path = run_dir / f"controller_lan{lan}.log"
+        count = (path.read_text(encoding="utf-8", errors="replace").count("CHECK VIOLATION")
+                 if path.exists() else 0)
+        per_lan[f"lan{lan}"] = count
+    return {**per_lan, "total": sum(per_lan.values())}
+
+
+def soundness_run_metrics(run_dir: Path) -> dict[str, Any]:
+    """Full §4 measurement record for one soundness run folder."""
+    run_dir = Path(run_dir)
+    label = soundness_label_parts(run_dir.name)
+    if label is None:
+        raise ValueError(f"cannot parse soundness label: {run_dir.name}")
+    cell, arm, ordinal = label
+    rows = request_rows(run_dir)
+    if not rows:
+        raise ValueError(f"no client rows: {run_dir.name}")
+    bounds = phase_bounds(run_dir)
+    if PHASE not in bounds:
+        raise ValueError(f"missing {PHASE} phase: {run_dir.name}")
+    plateau_start, plateau_end = bounds[PHASE]
+    phases = load_phases(run_dir)
+    plateau_cfg = next((phase for phase in phases if phase.get("name") == PHASE), None)
+    env_path = run_dir / "controller_env_snapshot.env"
+    env = parse_env(env_path) if env_path.exists() else {}
+    attestation = soundness_attestation(run_dir)
+
+    n_env = _soundness_int(env.get("EDGE_READY_PREMATURE_S"))
+    n_att = attestation["knobs"].get("EDGE_READY_PREMATURE_S")
+    coded_n = soundness_cell_n(cell)
+    if n_env is not None:
+        n, n_source = n_env, "env"
+    elif n_att is not None:
+        n, n_source = n_att, "attestation"
+    elif coded_n is not None:
+        n, n_source = coded_n, "cell"
+    else:
+        n, n_source = 0, "default"
+    s_env = _soundness_int(env.get("EDGE_READY_SEMANTIC_LIE_S"))
+    s_att = attestation["knobs"].get("EDGE_READY_SEMANTIC_LIE_S")
+    if s_env is not None:
+        s_lie, s_source = s_env, "env"
+    elif s_att is not None:
+        s_lie, s_source = s_att, "attestation"
+    elif cell == "semantic":
+        s_lie, s_source = SOUNDNESS_F3_S_DEFAULT, "default"
+    else:
+        s_lie, s_source = 0, "default"
+
+    spawns = soundness_app_spawns(run_dir)
+    binds = [spawn["t_bind"] for spawn in spawns if spawn["t_bind"] is not None]
+    t_bind_min = min(binds) if binds else None
+    t_claim_min = min((spawn["t_claim"] for spawn in spawns
+                       if spawn["t_claim"] is not None), default=None)
+
+    plateau_rows = [row for row in rows if row.get("phase") == PHASE]
+    plateau_u = soundness_u(plateau_rows)
+    plateau_per_lan = {
+        f"lan{lan}": soundness_u([row for row in plateau_rows
+                                  if row.get("client_lan") == f"lan{lan}"])
+        for lan in (1, 2)
+    }
+    tail_rows = [row for row in plateau_rows
+                 if plateau_end - SOUNDNESS_TAIL_S <= row["_sent"] < plateau_end]
+    tail_u = soundness_u(tail_rows)
+    tail_slow_n = tail_u["classes"]["timeout"] + tail_u["classes"]["slow"]
+    tail_slow_share = (tail_slow_n / tail_u["offered"]) if tail_u["offered"] else None
+    bad_n = (plateau_u["classes"]["timeout"] + plateau_u["classes"]["000"]
+             + plateau_u["classes"]["fail5xx"])
+    bad_share = (bad_n / plateau_u["offered"]) if plateau_u["offered"] else None
+
+    # F2 windows per app spawn, for the run's own N and every grid N (matched
+    # none-cell comparisons reuse the fault cell's N in the same formula).
+    f2_u_by_n: dict[str, Any] = {}
+    f2_pre_by_n: dict[str, Any] = {}
+    f2_floor_by_n: dict[str, Any] = {}
+    for n_value in (0, *SOUNDNESS_GRID):
+        window_spans = [(spawn["t_bind"] - n_value - SOUNDNESS_F2_PRE_S,
+                         spawn["t_bind"] + SOUNDNESS_F2_POST_S)
+                        for spawn in spawns if spawn["t_bind"] is not None]
+        f2_u_by_n[str(n_value)] = soundness_window_u(rows, window_spans)
+        pre_spans = [(spawn["t_bind"] - n_value, spawn["t_bind"])
+                     for spawn in spawns if spawn["t_bind"] is not None]
+        pre: dict[str, Any] = {"http000": {"lan1": 0, "lan2": 0},
+                               "offered": {"lan1": 0, "lan2": 0}}
+        for row in rows:
+            if not any(lo <= row["_sent"] < hi for lo, hi in pre_spans):
+                continue
+            lan_key = str(row.get("client_lan") or "")
+            if lan_key not in pre["http000"]:
+                continue
+            pre["offered"][lan_key] += 1
+            # §4.1 class, not the raw field: a timeout's http_status="000"
+            # encoding must never count as a transport-000 row.
+            if soundness_class_of(row) == "000":
+                pre["http000"][lan_key] += 1
+        f2_pre_by_n[str(n_value)] = pre
+        floor: dict[str, int | None] = {"lan1": None, "lan2": None}
+        for spawn in spawns:
+            if spawn["t_bind"] is None:
+                continue
+            lo = spawn["t_bind"] - n_value - SOUNDNESS_F2_PRE_S
+            hi = spawn["t_bind"] + SOUNDNESS_F2_POST_S
+            for lan_key in ("lan1", "lan2"):
+                count = sum(1 for row in rows
+                            if row.get("client_lan") == lan_key
+                            and lo <= row["_sent"] < hi)
+                current = floor[lan_key]
+                if current is None or count < current:
+                    floor[lan_key] = count
+        f2_floor_by_n[str(n_value)] = floor
+
+    # F3 lie window (§4.3): [t_bind, min(t_bind + S, plateau_end)], clipped;
+    # attribution is per lying backend inside its own window (same clip).
+    f3 = None
+    if t_bind_min is not None:
+        s_use = s_lie if s_lie and s_lie > 0 else SOUNDNESS_F3_S_DEFAULT
+        f3_start = t_bind_min
+        f3_end = min(t_bind_min + s_use, plateau_end)
+        cov_start = max(f3_start, plateau_start)
+        coverage = max(0.0, f3_end - cov_start) / (plateau_end - plateau_start)
+        window_rows = [row for row in rows if f3_start <= row["_sent"] < f3_end]
+        u3 = soundness_u(window_rows)
+        # R3(c): §4.1 class 000 only (timeouts keep their own class).
+        http000 = sum(1 for row in window_rows
+                      if soundness_class_of(row) == "000")
+        attributed = {f"lan{lan}": {"completed": 0, "fivexx": 0} for lan in (1, 2)}
+        for spawn in spawns:
+            if spawn["t_bind"] is None:
+                continue
+            end = min(spawn["t_bind"] + s_use, plateau_end)
+            lan_key = f"lan{spawn['lan']}"
+            for row in rows:
+                if str(row.get("backend_id") or "") != spawn["container"]:
+                    continue
+                if not (spawn["t_bind"] <= row["_sent"] < end):
+                    continue
+                if not is_completed(row):
+                    continue
+                attributed[lan_key]["completed"] += 1
+                try:
+                    code = int(str(row.get("http_status") or ""))
+                except ValueError:
+                    code = None
+                if code is not None and code >= 500:
+                    attributed[lan_key]["fivexx"] += 1
+        total_completed = sum(item["completed"] for item in attributed.values())
+        total_fivexx = sum(item["fivexx"] for item in attributed.values())
+        f3 = {
+            "s_s": s_use, "start": f3_start, "end": f3_end,
+            "coverage": coverage, "u": u3, "http000": http000,
+            "http000_share": (http000 / u3["offered"]) if u3["offered"] else None,
+            "attributed": attributed,
+            "attributed_completed": total_completed,
+            "fivexx_fraction": (total_fivexx / total_completed)
+            if total_completed else None,
+        }
+
+    # Admission-log + client-row timing chain (admitted -> first successful).
+    admission = admission_rows(run_dir)
+    admitted = [row for row in admission if row.get("result") == "admitted"]
+    # Report-only spawn cross-check (service-log spawns vs admission-log
+    # dynamic spawn rows); a mismatch is surfaced as a warning field and is
+    # never gated (plan §4.4/§5 have no spawn-count gate).
+    spawns_found = len(spawns)
+    spawns_admission_rows = sum(
+        1 for row in admission
+        if SOUNDNESS_DYNAMIC_RE.match(str(row.get("container") or "")))
+    spawns_mismatch = spawns_found != spawns_admission_rows
+    sources: dict[str, int] = {}
+    for row in admitted:
+        key = str(row.get("admit_source") or "")
+        sources[key] = sources.get(key, 0) + 1
+    by_container = {spawn["container"]: spawn for spawn in spawns}
+    first_success: dict[str, float] = {}
+    pre_bind_successes = 0
+    for row in rows:
+        if not (is_completed(row) and is_success(row)):
+            continue
+        backend = str(row.get("backend_id") or "")
+        spawn = by_container.get(backend)
+        if spawn is None:
+            continue
+        if spawn["t_bind"] is not None and row["_sent"] < spawn["t_bind"]:
+            pre_bind_successes += 1
+        if backend not in first_success or row["_sent"] < first_success[backend]:
+            first_success[backend] = row["_sent"]
+    per_backend = []
+    claim_values: list[float] = []
+    admit_values: list[float] = []
+    for row in admitted:
+        container = str(row.get("container") or "")
+        spawn = by_container.get(container)
+        t_bind = spawn["t_bind"] if spawn else None
+        if spawn is not None and spawn["t_claim"] is not None:
+            t_claim = spawn["t_claim"]
+        elif t_bind is not None and n > 0:
+            t_claim = t_bind - n  # §4.3: t_claim = t_bind - N by construction
+        else:
+            t_claim = None
+        admitted_ts = row.get("_admitted_ts")
+        first = first_success.get(container)
+        claim_s = ((first - t_claim) if first is not None and t_claim is not None
+                   else None)
+        admit_s = ((first - admitted_ts)
+                   if first is not None and admitted_ts is not None else None)
+        if claim_s is not None:
+            claim_values.append(claim_s)
+        if admit_s is not None:
+            admit_values.append(admit_s)
+        per_backend.append({
+            "container": container, "lan": row.get("lan"),
+            "admitted_ts": admitted_ts, "t_bind": t_bind, "t_claim": t_claim,
+            "first_success_sent_s": first,
+            "claim_to_first_s": claim_s, "admit_to_first_s": admit_s,
+        })
+    adm_flow = {
+        "per_backend": per_backend,
+        "claim_to_first_median_s": statistics.median(claim_values)
+        if claim_values else None,
+        "admit_to_first_median_s": statistics.median(admit_values)
+        if admit_values else None,
+        "n_used": len(claim_values),
+    }
+
+    run_wide = soundness_u(rows)
+    # R1(b)/R2(a): §4.1 class 000, never the raw field (timeouts encode 000).
+    http000 = sum(1 for row in rows if soundness_class_of(row) == "000")
+    total_rows = len(rows)
+    cancel_rate = ((run_wide["cancelled"] + run_wide["dropped"]) / total_rows
+                   if total_rows else None)
+    quota = qoe_quota(run_dir)
+    restarts = len(restart_markers(run_dir))
+    provenance = {
+        "phases_snapshot": (run_dir / "phases_snapshot.json").exists(),
+        "controller_env_snapshot": env_path.exists(),
+        "fault_attestation": attestation["present"],
+        "open_loop_schedule": (run_dir / "open_loop_schedule.json").exists(),
+    }
+    validity = {
+        "provenance_ok": all(provenance.values()),
+        "driver_clean": cancel_rate is not None and cancel_rate < SOUNDNESS_CANCEL_MAX,
+        "quota_ok": (quota["present"] and quota["all_compute_containers_match"]
+                     and str(quota["requested_edge_cpus"]) == "0.12"),
+        "no_restart": restarts == 0,
+    }
+    floors = {
+        "plateau_pooled_ge_5000": plateau_u["offered"] >= SOUNDNESS_PLATEAU_MIN_POOLED,
+        "plateau_per_lan_ge_1000": all(
+            plateau_per_lan[key]["offered"] >= SOUNDNESS_PLATEAU_MIN_PER_LAN
+            for key in ("lan1", "lan2")),
+        "f2_window_min_per_lan_ge_15": (
+            all(value is not None and value >= SOUNDNESS_F2_WINDOW_MIN_PER_LAN
+                for value in f2_floor_by_n[str(n)].values())
+            if spawns and str(n) in f2_floor_by_n else None),
+    }
+    none_health = None
+    if cell == "none":
+        tail_breach = (tail_slow_share is None
+                       or tail_slow_share > SOUNDNESS_NONE_TAIL_SLOW_MAX)
+        bad_breach = (bad_share is None or bad_share > SOUNDNESS_NONE_BAD_MAX)
+        none_health = {
+            "tail_slow_share": tail_slow_share, "bad_share": bad_share,
+            "tail_slow_breach": tail_breach, "bad_breach": bad_breach,
+            "breach": tail_breach or bad_breach,
+        }
+    return {
+        "run": run_dir.name, "cell": cell, "arm": arm, "ordinal": ordinal,
+        "fault": soundness_cell_fault(cell), "n": n, "n_source": n_source,
+        "s_lie": s_lie, "s_source": s_source, "seed": run_seed(run_dir),
+        "plateau": {
+            "start": plateau_start, "end": plateau_end,
+            "config_duration_s": (plateau_cfg or {}).get("duration_s"),
+            "offered": plateau_u["offered"],
+            "offered_per_lan": {key: value["offered"]
+                                for key, value in plateau_per_lan.items()},
+            "u_pct": plateau_u["u_pct"], "classes": plateau_u["classes"],
+            "tail_slow_share": tail_slow_share, "bad_share": bad_share,
+        },
+        "spawns": spawns,
+        "spawns_found": spawns_found,
+        "spawns_admission_rows": spawns_admission_rows,
+        "spawns_mismatch": spawns_mismatch,
+        "missing_bind": [spawn["container"] for spawn in spawns
+                         if spawn["t_bind"] is None],
+        "t_bind": t_bind_min, "t_claim": t_claim_min,
+        "deferrals_s": [spawn["deferral_s"] for spawn in spawns],
+        "u": {
+            "f1_pct": plateau_u["u_pct"],
+            "f2_by_n": {key: value["u_pct"]
+                        for key, value in f2_u_by_n.items()},
+            "f3_pct": f3["u"]["u_pct"] if f3 else None,
+            "run_wide_pct": run_wide["u_pct"],
+        },
+        "f1": {"start": plateau_start, "end": plateau_end, "u": plateau_u},
+        "f2": {"u_by_n": f2_u_by_n, "pre_by_n": f2_pre_by_n,
+               "window_floor_by_n": f2_floor_by_n},
+        "f3": f3,
+        "run_wide": {
+            **run_wide, "http000": http000,
+            "http000_share": (http000 / run_wide["offered"])
+            if run_wide["offered"] else None,
+            "cancel_rate": cancel_rate,
+        },
+        "check_violations": soundness_check_violations(run_dir),
+        "adm_flow": adm_flow,
+        "pre_bind_successes": pre_bind_successes,
+        "admission_sources": sources, "admitted_total": len(admitted),
+        "floors": floors, "none_health": none_health,
+        "quota": quota, "provenance": provenance, "validity": validity,
+        "valid": all(validity.values()),
+        "attestation": attestation,
+        "env_knobs": {
+            "EDGE_READY_PREMATURE_S": env.get("EDGE_READY_PREMATURE_S"),
+            "EDGE_READY_SEMANTIC_LIE_S": env.get("EDGE_READY_SEMANTIC_LIE_S"),
+        },
+    }
+
+
+def _soundness_pair_none(record: dict[str, Any],
+                         none_records: list[dict[str, Any]]
+                         ) -> tuple[dict[str, Any] | None, str]:
+    """Same-arm none partner: seed is the §4.2 pairing key; the label
+    ordinal is only a fallback when the seed metadata is unavailable."""
+    candidates = [other for other in none_records
+                  if other.get("arm") == record.get("arm")]
+    seed = record.get("seed")
+    if seed is not None:
+        same_seed = [other for other in candidates if other.get("seed") == seed]
+        if len(same_seed) == 1:
+            return same_seed[0], "seed"
+        if len(same_seed) > 1:
+            return None, "ambiguous_seed"
+    ordinal = record.get("ordinal")
+    same_ordinal = [other for other in candidates if other.get("ordinal") == ordinal]
+    if len(same_ordinal) == 1:
+        return same_ordinal[0], "ordinal"
+    if not candidates:
+        return None, "missing"
+    return None, "unpaired"
+
+
+def _soundness_pair_u(record: dict[str, Any], partner: dict[str, Any],
+                      cell: str) -> tuple[float | None, float | None]:
+    if soundness_cell_fault(cell) == "premature":
+        key = str(record["n"])
+        return (record["f2"]["u_by_n"].get(key, {}).get("u_pct"),
+                partner["f2"]["u_by_n"].get(key, {}).get("u_pct"))
+    if cell == "semantic":
+        return record["u"]["f3_pct"], partner["u"]["f3_pct"]
+    if cell == "loss_all":
+        return record["u"]["f1_pct"], partner["u"]["f1_pct"]
+    return None, None
+
+
+def soundness_damage_command(args: argparse.Namespace) -> int:
+    """A2 damage tables: U per window, D_s per seed, D-bar medians."""
+    records: list[dict[str, Any]] = []
+    for path in args.run_dir:
+        run_dir = Path(path)
+        try:
+            records.append(soundness_run_metrics(run_dir))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            label = soundness_label_parts(run_dir.name)
+            records.append({
+                "run": run_dir.name, "error": str(exc),
+                "cell": label[0] if label else None,
+                "arm": label[1] if label else None,
+                "ordinal": label[2] if label else None,
+            })
+    label_ok = [record for record in records if "error" not in record]
+    none_records = [record for record in label_ok if record["cell"] == "none"]
+    contrasts: list[dict[str, Any]] = []
+    for record in label_ok:
+        cell = record["cell"]
+        if cell == "none":
+            continue
+        partner, pairing = _soundness_pair_none(record, none_records)
+        entry: dict[str, Any] = {
+            "run": record["run"], "arm": record["arm"], "cell": cell,
+            "seed": record["seed"], "n": record["n"], "pairing": pairing,
+            "u_cell": None, "u_none": None, "d_s": None, "status": "",
+        }
+        if partner is None:
+            entry["status"] = ("missing_none" if pairing == "missing"
+                               else f"unpaired_none_{pairing}")
+            contrasts.append(entry)
+            continue
+        entry["none_run"] = partner["run"]
+        if partner.get("none_health") and partner["none_health"]["breach"]:
+            entry["status"] = "none_breach"
+            entry["none_breach_reason"] = {
+                key: partner["none_health"][key]
+                for key in ("tail_slow_share", "bad_share")}
+            contrasts.append(entry)
+            continue
+        u_cell, u_none = _soundness_pair_u(record, partner, cell)
+        entry["u_cell"], entry["u_none"] = u_cell, u_none
+        if u_cell is None or u_none is None:
+            entry["status"] = "missing_u"
+        else:
+            entry["d_s"] = u_cell - u_none
+            entry["status"] = "ok"
+        contrasts.append(entry)
+
+    medians: dict[str, Any] = {}
+    for entry in contrasts:
+        key = f"{entry['arm']}|{entry['cell']}"
+        bucket = medians.setdefault(
+            key, {"seeds_ok": {}, "seeds_breached": [], "seeds_missing": []})
+        if entry["status"] == "ok":
+            bucket["seeds_ok"][str(entry["seed"])] = entry["d_s"]
+        elif entry["status"] == "none_breach":
+            bucket["seeds_breached"].append(entry["seed"])
+        else:
+            bucket["seeds_missing"].append(entry["seed"])
+    for bucket in medians.values():
+        values = list(bucket["seeds_ok"].values())
+        bucket["d_bar_pp"] = statistics.median(values) if values else None
+        bucket["n_usable"] = len(values)
+
+    report = {
+        "family": "rq3_soundness", "command": "soundness-damage",
+        "runs": records, "contrasts": contrasts, "medians": medians,
+        "none_breaches": [
+            {"run": record["run"], "arm": record["arm"], "seed": record["seed"],
+             **record["none_health"]}
+            for record in label_ok
+            if record.get("none_health") and record["none_health"]["breach"]],
+    }
+    write_json(Path(args.out), report)
+    print(json.dumps({
+        "runs": len(records), "contrasts": len(contrasts),
+        "medians": {key: bucket["d_bar_pp"] for key, bucket in medians.items()},
+        "errors": [record["run"] for record in records if "error" in record],
+    }, indent=2, default=str))
+    return 0
+
+
+def _soundness_gate_r1(run: dict[str, Any]) -> dict[str, Any]:
+    pre = run["f2"]["pre_by_n"][str(run["n"])]
+    measured = [value for value in run["deferrals_s"] if value is not None]
+    gates = {
+        "a_in_window_000_ge_10_per_lan": (pre["http000"]["lan1"] >= 10
+                                          and pre["http000"]["lan2"] >= 10),
+        "b_run_wide_000_ge_0.3pct_and_50": (
+            run["run_wide"]["http000"] >= 50
+            and run["run_wide"]["http000_share"] is not None
+            and run["run_wide"]["http000_share"] >= 0.003),
+        "c_median_admit_first_in_8_12": (
+            run["adm_flow"]["admit_to_first_median_s"] is not None
+            and 8.0 <= run["adm_flow"]["admit_to_first_median_s"] <= 12.0),
+        "d_check_violation_ge_1": run["check_violations"]["total"] >= 1,
+        "e_attestation_premature_s_matches": (
+            run["attestation"]["present"]
+            and run["attestation"]["knobs"].get("EDGE_READY_PREMATURE_S") == run["n"]
+            and _soundness_int(run["env_knobs"].get("EDGE_READY_PREMATURE_S"))
+            == run["n"]),
+        "f_measured_deferral_in_9_11": (
+            bool(measured) and len(measured) == len(run["deferrals_s"])
+            and all(9.0 <= value <= 11.0 for value in measured)),
+    }
+    return {"gates": gates, "pass": all(gates.values())}
+
+
+def _soundness_gate_r2(run: dict[str, Any]) -> dict[str, Any]:
+    sources = {key for key in run["admission_sources"] if key}
+    gates = {
+        "a_000_le_1_and_le_0.2pct": (
+            run["run_wide"]["http000"] <= 1
+            and run["run_wide"]["http000_share"] is not None
+            and run["run_wide"]["http000_share"] <= 0.002),
+        "b_zero_pre_bind_successes": run["pre_bind_successes"] == 0,
+        "c_zero_check_violations": run["check_violations"]["total"] == 0,
+        "d_median_claim_first_in_10_22": (
+            run["adm_flow"]["claim_to_first_median_s"] is not None
+            and 10.0 <= run["adm_flow"]["claim_to_first_median_s"] <= 22.0),
+        "e_admission_source_probe": (run["admitted_total"] >= 1
+                                     and sources == {"probe"}),
+    }
+    descriptive = {
+        "admit_to_first_median_s": run["adm_flow"]["admit_to_first_median_s"],
+        "admit_to_first_in_0_2": (
+            run["adm_flow"]["admit_to_first_median_s"] is not None
+            and 0.0 <= run["adm_flow"]["admit_to_first_median_s"] <= 2.0),
+    }
+    return {"gates": gates, "pass": all(gates.values()),
+            "descriptive": descriptive}
+
+
+def _soundness_gate_r3(run: dict[str, Any]) -> dict[str, Any]:
+    f3 = run["f3"] or {}
+    attributed = f3.get("attributed") or {}
+    gates = {
+        "a_lie_window_coverage_ge_90pct": (
+            f3.get("coverage") is not None and f3["coverage"] >= 0.9),
+        "b_attributed_5xx_ge_90pct_and_15_per_lan": (
+            f3.get("fivexx_fraction") is not None and f3["fivexx_fraction"] >= 0.9
+            and attributed.get("lan1", {}).get("completed", 0) >= 15
+            and attributed.get("lan2", {}).get("completed", 0) >= 15),
+        "c_transport_000_le_1pct_window": (
+            f3.get("http000_share") is not None and f3["http000_share"] <= 0.01),
+        "d_zero_check_violations": run["check_violations"]["total"] == 0,
+    }
+    return {"gates": gates, "pass": all(gates.values())}
+
+
+def _soundness_r1_floors(run: dict[str, Any]) -> dict[str, Any]:
+    """§4.5 measurement floors evaluated on the R1 calibration run.
+
+    §4.4: "if the floors are unmet there, STOP and re-think the regime —
+    never raise N". Raw computed values are reported alongside the checks.
+    """
+    floor_key = str(run.get("n"))
+    window_floor = dict(
+        (run.get("f2", {}).get("window_floor_by_n", {}) or {}).get(floor_key) or {})
+    pooled = run["plateau"]["offered"]
+    per_lan = dict(run["plateau"]["offered_per_lan"])
+    cancel_rate = run["run_wide"].get("cancel_rate")
+    checks = {
+        "plateau_pooled_ge_5000": pooled >= SOUNDNESS_PLATEAU_MIN_POOLED,
+        "plateau_per_lan_ge_1000": all(
+            (per_lan.get(f"lan{lan}") or 0) >= SOUNDNESS_PLATEAU_MIN_PER_LAN
+            for lan in (1, 2)),
+        "f2_window_min_per_lan_ge_15": (
+            bool(window_floor) and all(
+                value is not None and value >= SOUNDNESS_F2_WINDOW_MIN_PER_LAN
+                for value in window_floor.values())),
+        "driver_cancel_rate_lt_5pct": (
+            cancel_rate is not None and cancel_rate < SOUNDNESS_CANCEL_MAX),
+    }
+    return {
+        "pass": all(checks.values()),
+        "checks": checks,
+        "pooled_offered": pooled,
+        "per_lan_offered": per_lan,
+        "f2_window_min_per_lan": window_floor,
+        "cancel_rate": cancel_rate,
+    }
+
+
+def soundness_preflight_command(args: argparse.Namespace) -> int:
+    """P1 go/no-go gates R1-R3b -> results JSON + lock JSON (exit 0/2/3).
+
+    With ``--rerun-attempted`` (pre-registered rerun consumed), persisting
+    DIAGNOSE-only reasons become STOP (exit 3) — exit 2 is reserved for a
+    genuine (not yet re-run) DIAGNOSE verdict.
+    """
+    pairs = [(soundness_label_parts(Path(path).name), Path(path))
+             for path in args.run_dir]
+    unparsed = [str(path) for label, path in pairs if label is None]
+    if unparsed:
+        raise ValueError(f"cannot parse soundness labels for: {unparsed}")
+    by_key: dict[tuple[str, str], Path] = {}
+    for label, path in pairs:
+        key = (label[0], label[1])
+        if key in by_key:
+            raise ValueError(f"duplicate run for cell/arm {key}: {path.name}")
+        by_key[key] = path
+    roles = {
+        "R1": ("premature10", "event_only"),
+        "R2": ("premature10", "reconcile"),
+        "R3": ("semantic", "event_only"),
+        "R3b": ("semantic", "reconcile"),
+    }
+    metrics: dict[str, dict[str, Any]] = {}
+    for role, key in roles.items():
+        path = by_key.get(key)
+        if path is None:
+            continue
+        try:
+            metrics[role] = soundness_run_metrics(path)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            metrics[role] = {"run": path.name, "error": str(exc)}
+
+    def _attestation_ok(run: dict[str, Any], key: str, value: int) -> bool:
+        return (run["attestation"]["present"]
+                and run["attestation"]["knobs"].get(key) == value
+                and _soundness_int(run["env_knobs"].get(key)) == value)
+
+    results: dict[str, Any] = {}
+    for role in ("R1", "R2", "R3", "R3b"):
+        run = metrics.get(role)
+        if run is None:
+            results[role] = {"run": None, "evaluated": False,
+                             "reason": "run not provided"}
+            continue
+        if "error" in run:
+            results[role] = {"run": run["run"], "evaluated": False,
+                             "reason": f"artifact error: {run['error']}"}
+            continue
+        if not run["valid"]:
+            failed = [name for name, ok in run["validity"].items() if not ok]
+            results[role] = {"run": run["run"], "evaluated": False,
+                             "reason": "invalid run (base gates): "
+                                       + ", ".join(failed)}
+            continue
+        if role in ("R1", "R2"):
+            binds = [spawn for spawn in run["spawns"] if spawn["t_bind"] is not None]
+            claims = [spawn for spawn in run["spawns"] if spawn["t_claim"] is not None]
+            if (not binds or len(claims) != len(binds) or run["n"] != 10
+                    or not _attestation_ok(run, "EDGE_READY_PREMATURE_S", 10)):
+                results[role] = {"run": run["run"], "evaluated": False,
+                                 "reason": "t_bind/t_claim/attestation extraction "
+                                           "incomplete (P1 fail)"}
+                continue
+        if role in ("R3", "R3b"):
+            if not any(spawn["t_bind"] is not None for spawn in run["spawns"]):
+                results[role] = {"run": run["run"], "evaluated": False,
+                                 "reason": "t_bind extraction failed (P1 fail)"}
+                continue
+            if not _attestation_ok(run, "EDGE_READY_SEMANTIC_LIE_S",
+                                   SOUNDNESS_F3_S_DEFAULT):
+                results[role] = {"run": run["run"], "evaluated": False,
+                                 "reason": "semantic-lie attestation extraction "
+                                           "incomplete (P1 fail)"}
+                continue
+        gate_function = {"R1": _soundness_gate_r1, "R2": _soundness_gate_r2,
+                         "R3": _soundness_gate_r3, "R3b": _soundness_gate_r3}[role]
+        evaluated = gate_function(run)
+        results[role] = {
+            "run": run["run"], "seed": run["seed"], "evaluated": True,
+            **evaluated,
+            "check_violations": run["check_violations"]["total"],
+            "measured_deferrals_s": run["deferrals_s"],
+            "f3_coverage": run["f3"]["coverage"] if run["f3"] else None,
+            "spawns_found": run["spawns_found"],
+            "spawns_admission_rows": run["spawns_admission_rows"],
+            "spawns_mismatch": run["spawns_mismatch"],
+        }
+
+    # R1 §4.5 floors are computed whenever the record parsed (also for runs
+    # later marked invalid) so the results JSON always carries the values.
+    r1_metrics = metrics.get("R1")
+    if r1_metrics is not None and "error" not in r1_metrics:
+        results["R1"]["floors"] = _soundness_r1_floors(r1_metrics)
+
+    def _failed(role: str) -> bool:
+        item = results.get(role)
+        return bool(item and item.get("evaluated") and not item.get("pass"))
+
+    rerun_attempted = bool(getattr(args, "rerun_attempted", False))
+    stop_reasons: list[str] = []
+    diagnose_reasons: list[str] = []
+    r1_floors = results.get("R1", {}).get("floors")
+    if r1_floors is not None and not r1_floors["pass"]:
+        stop_reasons.append(
+            "R1 measurement floors unmet — calibrate regime; no N escalation")
+    if _failed("R1"):
+        stop_reasons.append(
+            "R1 F2-reproduction gates failed (kill rule: re-design before spend)")
+    if _failed("R2"):
+        stop_reasons.append(
+            "R2 F2-immunity gates failed (kill rule: structural claim broken)")
+    r3 = results.get("R3")
+    if r3 is not None and r3.get("evaluated"):
+        gates = r3["gates"]
+        if not gates["a_lie_window_coverage_ge_90pct"]:
+            diagnose_reasons.append(
+                "R3 lie-window coverage shortfall (late bind; DIAGNOSE rerun "
+                "allowance, max 1)")
+        elif not (gates["b_attributed_5xx_ge_90pct_and_15_per_lan"]
+                  and gates["c_transport_000_le_1pct_window"]
+                  and gates["d_zero_check_violations"]):
+            stop_reasons.append(
+                "R3 F3 signature gates failed (scope reduction; E blocked)")
+    for role in ("R1", "R2", "R3"):
+        item = results.get(role)
+        if item is None or not item.get("evaluated"):
+            diagnose_reasons.append(
+                f"{role} not evaluable "
+                f"({item.get('reason') if item else 'missing run'})")
+
+    if rerun_attempted and diagnose_reasons:
+        # The pre-registered same-config rerun has been consumed: a persisting
+        # DIAGNOSE becomes a STOP (exit 3), never another exit-2 allowance.
+        stop_reasons.extend(f"{reason} — persisting after permitted rerun"
+                            for reason in diagnose_reasons)
+        diagnose_reasons = []
+
+    if stop_reasons:
+        verdict = "stop"
+    elif diagnose_reasons:
+        verdict = "diagnose"
+    else:
+        verdict = "lock"
+    lock_written = False
+    if verdict == "lock":
+        lock = {
+            "family": "rq3_soundness", "stage": "P1", "locked": True,
+            "semantic_lie_s": SOUNDNESS_F3_S_DEFAULT,
+            "premature_lead_s": 10,
+            "gate_results": {role: results[role].get("gates")
+                             for role in results},
+            "runs": {role: results[role].get("run") for role in results},
+            "seeds": {role: results[role].get("seed") for role in results},
+            "r3b_informative": results.get("R3b", {}).get("pass"),
+        }
+        write_json(Path(args.lock_out), lock)
+        lock_written = True
+    report = {
+        "family": "rq3_soundness", "stage": "P1",
+        "semantic_lie_s": SOUNDNESS_F3_S_DEFAULT, "premature_lead_s": 10,
+        "verdict": verdict,
+        "stop_reasons": stop_reasons, "diagnose_reasons": diagnose_reasons,
+        "runs": results,
+        "r3b_informative": results.get("R3b", {}).get("pass"),
+        "lock_written": lock_written,
+    }
+    write_json(Path(args.out), report)
+    print(json.dumps({
+        "verdict": verdict, "stop_reasons": stop_reasons,
+        "diagnose_reasons": diagnose_reasons, "lock_written": lock_written,
+        "runs": {role: results[role].get("pass") for role in results},
+    }, indent=2, default=str))
+    return {"lock": 0, "diagnose": 2, "stop": 3}[verdict]
+
+
+def _soundness_series(damage: dict[str, Any]
+                      ) -> dict[tuple[str, str], dict[int, float]]:
+    series: dict[tuple[str, str], dict[int, float]] = {}
+    for entry in damage.get("contrasts", []):
+        if entry.get("status") != "ok" or entry.get("d_s") is None:
+            continue
+        seed = _soundness_int(entry.get("seed"))
+        if seed is None:
+            continue
+        series.setdefault((entry.get("arm"), entry.get("cell")), {})[seed] = \
+            float(entry["d_s"])
+    return series
+
+
+def _soundness_ols(points: list[tuple[float, float]]
+                   ) -> dict[str, float] | None:
+    count = len(points)
+    if count < 2:
+        return None
+    x_mean = sum(x for x, _ in points) / count
+    y_mean = sum(y for _, y in points) / count
+    denominator = sum((x - x_mean) ** 2 for x, _ in points)
+    if denominator <= 0:
+        return None
+    alpha = sum((x - x_mean) * (y - y_mean) for x, y in points) / denominator
+    return {"beta": y_mean - alpha * x_mean, "alpha": alpha, "points": count}
+
+
+def _soundness_component(values: dict[Any, Any]) -> dict[str, Any]:
+    """≥2/3-seed verdict with §4.5 NA handling (≥2 lost seeds → NA)."""
+    lost = sum(1 for value in values.values() if value is None)
+    hits = sum(1 for value in values.values() if value is True)
+    if lost >= 2:
+        verdict = "na"
+    else:
+        verdict = "pass" if hits >= 2 else "fail"
+    return {"seeds": {str(key): value for key, value in values.items()},
+            "lost": lost, "hits": hits, "verdict": verdict,
+            "pass": verdict == "pass"}
+
+
+def _soundness_run_index(damage: dict[str, Any]
+                         ) -> dict[tuple[str, str], dict[int, dict[str, Any]]]:
+    index: dict[tuple[str, str], dict[int, dict[str, Any]]] = {}
+    for run in damage.get("runs", []):
+        if run.get("error"):
+            continue
+        seed = _soundness_int(run.get("seed"))
+        if seed is None:
+            continue
+        index.setdefault((run.get("arm"), run.get("cell")), {})[seed] = run
+    return index
+
+
+def soundness_crossover_command(args: argparse.Namespace) -> int:
+    """§4.4 crossover fits + §6 H-S1..H-S4 verdict tables (damage JSON in)."""
+    damage = json.loads(Path(args.damage_json).read_text(encoding="utf-8"))
+    series = _soundness_series(damage)
+    run_index = _soundness_run_index(damage)
+    grid = list(SOUNDNESS_GRID)
+    push_arm, pull_arm = "event_only", "reconcile"
+
+    # ---- Pairwise crossover (primary push/pull, per seed) ----
+    seeds = sorted({seed for cell in grid
+                    for seed in series.get((push_arm, f"premature{cell}"), {})}
+                   | {seed for cell in grid
+                      for seed in series.get((pull_arm, f"premature{cell}"), {})})
+    per_seed: dict[int, float] = {}
+    lost_seeds: list[int] = []
+    for seed in seeds:
+        pairs: dict[int, tuple[float, float]] = {}
+        for cell in grid:
+            push = series.get((push_arm, f"premature{cell}"), {}).get(seed)
+            pull = series.get((pull_arm, f"premature{cell}"), {}).get(seed)
+            if push is None or pull is None:
+                pairs = {}
+                break
+            pairs[cell] = (push, pull)
+        if not pairs:
+            lost_seeds.append(seed)
+            continue
+        crossing = next((cell for cell in grid
+                         if pairs[cell][0] >= pairs[cell][1]), None)
+        per_seed[seed] = float(crossing) if crossing is not None else float("inf")
+    crossover_na = len(lost_seeds) >= 2 or len(per_seed) < 2
+    censored = sum(1 for value in per_seed.values() if math.isinf(value))
+    censored_fraction = (censored / len(per_seed)) if per_seed else None
+    median_n_star = (
+        statistics.median([SOUNDNESS_CENSORED_AS if math.isinf(value) else value
+                           for value in per_seed.values()])
+        if per_seed else None)
+    if crossover_na:
+        band = None
+    elif (censored * 3 >= len(per_seed) * 2   # ≥2/3 censored (∞ on the grid)
+          or (median_n_star is not None and median_n_star > 10.0)):
+        # Exact-by-value mapping (§4.4): any median beyond N=10 — including a
+        # censored seed pulling a two-seed median to 10.5 — is
+        # push-advantage-through-N10, never `crossover`.
+        band = "push-advantage-through-N10"
+    elif median_n_star is not None and median_n_star <= 2:
+        band = "pull-dominates-immediately"
+    else:
+        band = "crossover"
+    crossover = {
+        "push_arm": push_arm, "pull_arm": pull_arm,
+        "n_star_per_seed": {str(seed): ("inf" if math.isinf(value) else value)
+                            for seed, value in per_seed.items()},
+        "lost_seeds": lost_seeds, "usable_seeds": sorted(per_seed),
+        "n_star": median_n_star, "censored": censored,
+        "censored_fraction": censored_fraction, "band": band,
+        "na": crossover_na,
+    }
+
+    # ---- OLS D_bar(N) = beta + alpha*N per arm + seed-bootstrap 95 % CI ----
+    def d_bar(arm: str, cell: str) -> float | None:
+        values = list(series.get((arm, f"premature{cell}"), {}).values())
+        return statistics.median(values) if values else None
+
+    fits: dict[str, Any] = {}
+    for arm in ("event_only", "hybrid", "reconcile"):
+        points = [(float(cell), d_bar(arm, cell)) for cell in grid]
+        fits[arm] = (_soundness_ols([(x, y) for x, y in points
+                                     if y is not None])
+                     if all(y is not None for _, y in points) else None)
+    bootstrap_seeds = sorted({seed for arm in ("event_only", "hybrid", "reconcile")
+                              for cell in grid
+                              for seed in series.get((arm, f"premature{cell}"), {})})
+    rng = random.Random(SOUNDNESS_BOOTSTRAP_SEED)
+    alpha_boot: dict[str, list[float]] = {
+        arm: [] for arm in ("event_only", "hybrid", "reconcile")}
+    ratio_boot: list[float] = []
+    if len(bootstrap_seeds) >= 2:
+        for _ in range(SOUNDNESS_BOOTSTRAP_B):
+            sample = [rng.choice(bootstrap_seeds) for _ in bootstrap_seeds]
+            sample_fits: dict[str, Any] = {}
+            for arm in ("event_only", "hybrid", "reconcile"):
+                points = []
+                for cell in grid:
+                    values = [series.get((arm, f"premature{cell}"), {}).get(seed)
+                              for seed in sample]
+                    values = [value for value in values if value is not None]
+                    points.append((float(cell),
+                                   statistics.median(values) if values else None))
+                sample_fits[arm] = (_soundness_ols(points)
+                                    if all(y is not None for _, y in points)
+                                    else None)
+            for arm in ("event_only", "hybrid", "reconcile"):
+                if sample_fits[arm] is not None:
+                    alpha_boot[arm].append(sample_fits[arm]["alpha"])
+            if sample_fits["event_only"] and sample_fits["reconcile"]:
+                denominator = (sample_fits["event_only"]["alpha"]
+                               - sample_fits["reconcile"]["alpha"])
+                if denominator > 1e-12:
+                    ratio_boot.append(
+                        (sample_fits["reconcile"]["beta"]
+                         - sample_fits["event_only"]["beta"]) / denominator)
+
+    def ci(values: list[float]) -> list[float | None] | None:
+        if not values:
+            return None
+        return [percentile(values, 0.025), percentile(values, 0.975)]
+
+    n_star_fit = None
+    non_identifiable = True
+    extrapolated = None
+    if fits["event_only"] is not None and fits["reconcile"] is not None:
+        denominator = fits["event_only"]["alpha"] - fits["reconcile"]["alpha"]
+        if denominator > 1e-12:
+            non_identifiable = False
+            n_star_fit = ((fits["reconcile"]["beta"] - fits["event_only"]["beta"])
+                          / denominator)
+            extrapolated = not (2.0 <= n_star_fit <= 10.0)
+    n_star_fit_ci = (ci(ratio_boot)
+                     if ratio_boot and len(ratio_boot) >= 0.9 * SOUNDNESS_BOOTSTRAP_B
+                     else None)
+    fit_report = {
+        arm: ({"beta": fits[arm]["beta"], "alpha": fits[arm]["alpha"],
+               "ci_alpha": ci(alpha_boot[arm]), "points": fits[arm]["points"]}
+              if fits[arm] is not None else None)
+        for arm in ("event_only", "hybrid", "reconcile")
+    }
+    fit_report.update({
+        "n_star_fit": n_star_fit, "n_star_fit_ci": n_star_fit_ci,
+        "extrapolated": extrapolated, "non_identifiable": non_identifiable,
+    })
+
+    # ---- Growth gate + §4.4 decision precedence ----
+    growth_alpha = fits["event_only"]["alpha"] if fits["event_only"] else None
+    growth_ci = (fit_report["event_only"] or {}).get("ci_alpha")
+    growth_pass = (growth_alpha is not None
+                   and growth_alpha >= SOUNDNESS_GROWTH_MIN_PP_S
+                   and growth_ci is not None and growth_ci[0] is not None
+                   and growth_ci[0] > SOUNDNESS_GROWTH_CI_MIN_PP_S)
+    eo_d_bars = [d_bar(push_arm, cell) for cell in grid]
+    available = [value for value in eo_d_bars if value is not None]
+    max_d_bar = max(available) if available else None
+    if crossover_na:
+        branch = "na"
+    elif max_d_bar is not None and max_d_bar < 2.0:
+        branch = "stop_null"
+    elif not growth_pass and max_d_bar is not None and max_d_bar < 5.0:
+        branch = "sub_threshold"
+    elif not growth_pass:
+        branch = "growth_gate_failure"
+    else:
+        branch = "reported"
+    growth = {
+        "alpha_push_pp_per_s": growth_alpha, "ci_alpha": growth_ci,
+        "gate_pass": growth_pass,
+        "thresholds": {"point_min_pp_per_s": SOUNDNESS_GROWTH_MIN_PP_S,
+                       "ci_lower_min_pp_per_s": SOUNDNESS_GROWTH_CI_MIN_PP_S},
+        "max_d_bar_push_pp": max_d_bar,
+    }
+    h_s3 = {"status": branch, "pass": branch == "reported",
+            "crossover": crossover, "fit": fit_report, "growth": growth}
+
+    # ---- H-S1: every existing rule fails a fault family ----
+    def f2_counts_component(arm: str) -> dict[str, Any]:
+        # Max lead (premature10) is the canonical F2 mechanism cell: it is
+        # the P1-R1-calibrated lead and the H-S2 comparison point.
+        values: dict[Any, Any] = {}
+        for seed in SOUNDNESS_E_SEEDS:
+            run = run_index.get((arm, "premature10"), {}).get(seed)
+            if run is None or not run.get("f2"):
+                values[seed] = None
+                continue
+            pre = run["f2"]["pre_by_n"].get("10", {})
+            counts = pre.get("http000", {})
+            values[seed] = (counts.get("lan1", 0) >= 10
+                            and counts.get("lan2", 0) >= 10)
+        return _soundness_component(values)
+
+    def d_semantic_component(arm: str) -> dict[str, Any]:
+        values: dict[Any, Any] = {}
+        for seed in SOUNDNESS_E_SEEDS:
+            value = series.get((arm, "semantic"), {}).get(seed)
+            values[seed] = (value >= SOUNDNESS_SEMANTIC_MIN_PP
+                            if value is not None else None)
+        return _soundness_component(values)
+
+    h1_components = {
+        "event_only_f2_in_window_000": f2_counts_component("event_only"),
+        "hybrid_f2_in_window_000": f2_counts_component("hybrid"),
+        "event_only_semantic_ge_30pp": d_semantic_component("event_only"),
+        "reconcile_semantic_ge_30pp": d_semantic_component("reconcile"),
+        "f1_event_only_defeat": {"verdict": "pass", "pass": True,
+                                 "note": "cited from Family 4 (no re-gating)"},
+    }
+    h_s1 = {"components": h1_components,
+            "status": _combined_status(h1_components),
+            "pass": all(item["verdict"] == "pass"
+                        for item in h1_components.values())}
+
+    # ---- H-S2: veridicality is not verification (reconcile) ----
+    def reconcile_joint_values() -> dict[Any, Any]:
+        """Per-seed JOINT pattern (§6 SC-6): the SAME seed must show
+        D_s(F2) <= 2 pp AND D_s(F3) >= 30 pp AND zero CHECK VIOLATION in its
+        F3 run; the marginals below are reported descriptively alongside."""
+        values: dict[Any, Any] = {}
+        for seed in SOUNDNESS_E_SEEDS:
+            f2_value = series.get((pull_arm, "premature10"), {}).get(seed)
+            semantic_value = series.get((pull_arm, "semantic"), {}).get(seed)
+            run = run_index.get((pull_arm, "semantic"), {}).get(seed)
+            if f2_value is None or semantic_value is None or run is None:
+                values[seed] = None
+                continue
+            values[seed] = (f2_value <= SOUNDNESS_F2_MAX_PP
+                            and semantic_value >= SOUNDNESS_SEMANTIC_MIN_PP
+                            and run["check_violations"]["total"] == 0)
+        return _soundness_component(values)
+
+    def reconcile_f2_values() -> dict[Any, Any]:
+        values: dict[Any, Any] = {}
+        for seed in SOUNDNESS_E_SEEDS:
+            value = series.get((pull_arm, "premature10"), {}).get(seed)
+            values[seed] = (value <= SOUNDNESS_F2_MAX_PP
+                            if value is not None else None)
+        return _soundness_component(values)
+
+    def reconcile_semantic_values() -> dict[Any, Any]:
+        values: dict[Any, Any] = {}
+        for seed in SOUNDNESS_E_SEEDS:
+            value = series.get((pull_arm, "semantic"), {}).get(seed)
+            values[seed] = (value >= SOUNDNESS_SEMANTIC_MIN_PP
+                            if value is not None else None)
+        return _soundness_component(values)
+
+    def reconcile_violation_values() -> dict[Any, Any]:
+        values: dict[Any, Any] = {}
+        for seed in SOUNDNESS_E_SEEDS:
+            run = run_index.get((pull_arm, "semantic"), {}).get(seed)
+            values[seed] = (run["check_violations"]["total"] == 0
+                            if run is not None else None)
+        return _soundness_component(values)
+
+    joint = reconcile_joint_values()
+    gaps = []
+    for seed in SOUNDNESS_E_SEEDS:
+        f2_value = series.get((pull_arm, "premature10"), {}).get(seed)
+        semantic_value = series.get((pull_arm, "semantic"), {}).get(seed)
+        if f2_value is not None and semantic_value is not None:
+            gaps.append(semantic_value - f2_value)
+    gap_median = statistics.median(gaps) if gaps else None
+    h2_components = {}
+    h2_components[
+        "reconcile_same_seed_joint_f2_le_2pp_semantic_ge_30pp_zero_violations"
+    ] = joint
+    h2_components["reconcile_f2_le_2pp"] = reconcile_f2_values()
+    h2_components["reconcile_semantic_ge_30pp"] = reconcile_semantic_values()
+    h2_components["zero_check_violations_f3"] = reconcile_violation_values()
+    h_s2 = {
+        "components": h2_components,
+        "gap_median_pp": gap_median,
+        "gap_ge_28pp": gap_median is not None and gap_median >= 28.0,
+        "status": joint["verdict"],
+        "pass": joint["pass"],
+    }
+
+    # ---- H-S4: optional wake_verify (excluded from primary verdicts) ----
+    wake_cells = [(arm, cell) for arm, cell in series
+                  if arm == "wake_verify" and cell in ("premature10", "semantic")]
+    wake_cells += [(arm, cell) for arm, cell in run_index
+                   if arm == "wake_verify" and cell in ("none", "premature10",
+                                                        "semantic")]
+    if not any(arm == "wake_verify" for arm, _ in wake_cells):
+        h_s4 = {"status": "not_run", "pass": None,
+                "note": "optional arm absent (absence is not a campaign failure)"}
+    else:
+        def wake_component(cell: str, predicate: Any) -> dict[str, Any]:
+            values: dict[Any, Any] = {}
+            for seed in SOUNDNESS_E_SEEDS:
+                value = series.get(("wake_verify", cell), {}).get(seed)
+                values[seed] = predicate(value) if value is not None else None
+            return _soundness_component(values)
+
+        cost_values: dict[Any, Any] = {}
+        for seed in SOUNDNESS_E_SEEDS:
+            wake_none = run_index.get(("wake_verify", "none"), {}).get(seed)
+            event_none = run_index.get(("event_only", "none"), {}).get(seed)
+            if wake_none is None or event_none is None:
+                cost_values[seed] = None
+                continue
+            wake_u = wake_none.get("u", {}).get("f1_pct")
+            event_u = event_none.get("u", {}).get("f1_pct")
+            cost_values[seed] = ((wake_u - event_u) <= 2.0
+                                 if wake_u is not None and event_u is not None
+                                 else None)
+        h4_components = {
+            "wake_verify_f2_le_2pp": wake_component(
+                "premature10", lambda value: value <= SOUNDNESS_F2_MAX_PP),
+            "wake_verify_semantic_ge_30pp": wake_component(
+                "semantic", lambda value: value >= SOUNDNESS_SEMANTIC_MIN_PP),
+            "healthy_cell_cost_le_2pp": _soundness_component(cost_values),
+        }
+        h_s4 = {"components": h4_components,
+                "status": _combined_status(h4_components),
+                "pass": all(item["verdict"] == "pass"
+                            for item in h4_components.values())}
+
+    # ---- F1 anchor (descriptive, non-gated) ----
+    loss_all_d_bar = d_bar("reconcile", "loss_all")
+    lead10_d_bar = d_bar("reconcile", "premature10")
+    f1_anchor = {
+        "reconcile_loss_all_d_bar_pp": loss_all_d_bar,
+        "reconcile_premature10_d_bar_pp": lead10_d_bar,
+        "abs_diff_pp": (abs(loss_all_d_bar - lead10_d_bar)
+                        if loss_all_d_bar is not None
+                        and lead10_d_bar is not None else None),
+        "within_10pp": (abs(loss_all_d_bar - lead10_d_bar) <= 10.0
+                        if loss_all_d_bar is not None
+                        and lead10_d_bar is not None else None),
+    }
+
+    report = {
+        "family": "rq3_soundness", "command": "soundness-crossover",
+        "damage_json": args.damage_json, "grid": grid,
+        "d_bar_pp": {f"{arm}|{cell}": d_bar(arm, f"premature{cell}")
+                     for arm in ("event_only", "hybrid", "reconcile")
+                     for cell in grid},
+        "crossover": crossover, "fit": fit_report, "growth": growth,
+        "branch": branch,
+        "H-S1": h_s1, "H-S2": h_s2, "H-S3": h_s3, "H-S4": h_s4,
+        "f1_anchor": f1_anchor,
+    }
+    write_json(Path(args.out), report)
+    print(json.dumps({
+        "branch": branch, "band": band, "n_star": median_n_star,
+        "censored": censored, "growth_gate_pass": growth_pass,
+        "H-S1": h_s1["status"], "H-S2": h_s2["status"], "H-S3": h_s3["status"],
+        "H-S4": h_s4["status"],
+    }, indent=2, default=str))
+    return 0
+
+
+def _combined_status(components: dict[str, Any]) -> str:
+    verdicts = [item["verdict"] for item in components.values()]
+    if "fail" in verdicts:
+        return "fail"
+    if "na" in verdicts:
+        return "na"
+    return "pass"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1967,6 +3321,24 @@ def build_parser() -> argparse.ArgumentParser:
     timing_campaign.add_argument("--rate", required=True)
     timing_campaign.add_argument("--out", required=True)
     timing_campaign.set_defaults(func=timing_campaign_command)
+    soundness_damage = sub.add_parser("soundness-damage")
+    soundness_damage.add_argument("--run-dir", nargs="+", required=True)
+    soundness_damage.add_argument("--out", required=True)
+    soundness_damage.set_defaults(func=soundness_damage_command)
+    soundness_preflight = sub.add_parser("soundness-preflight")
+    soundness_preflight.add_argument("--run-dir", nargs="+", required=True)
+    soundness_preflight.add_argument("--out", required=True)
+    soundness_preflight.add_argument("--lock-out", required=True)
+    soundness_preflight.add_argument(
+        "--rerun-attempted", action="store_true",
+        help="the pre-registered same-config rerun has already been attempted: "
+             "persisting DIAGNOSE reasons (e.g. an R3 coverage shortfall) "
+             "become STOP (exit 3) instead of exit 2")
+    soundness_preflight.set_defaults(func=soundness_preflight_command)
+    soundness_crossover = sub.add_parser("soundness-crossover")
+    soundness_crossover.add_argument("--damage-json", required=True)
+    soundness_crossover.add_argument("--out", required=True)
+    soundness_crossover.set_defaults(func=soundness_crossover_command)
     return parser
 
 
@@ -1974,9 +3346,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (OSError, ValueError, json.JSONDecodeError, KeyError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+    except Exception as exc:  # noqa: BLE001 - analyzer error paths are STOP (3)
+        # Exit 2 is reserved for genuine DIAGNOSE verdicts: parse failures and
+        # unexpected exceptions are STOP (exit 3) with a reason on stderr.
+        print(f"ERROR: analyzer error: {exc}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

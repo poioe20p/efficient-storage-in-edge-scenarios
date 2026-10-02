@@ -52,6 +52,7 @@ from .scaling_config import (
     _READINESS_PROBE_MAX_S,
     _READINESS_PROBE_RETRY_S,
     _READINESS_EVENT_FALLBACK_S,
+    _READINESS_WAKE_VERIFY_MODE,
     _RELEASE_MECHANISM,
     _DISCOVERY_POLL_INTERVAL_S,
     _EDGE_READY_PORT,
@@ -62,7 +63,7 @@ from .scaling_config import (
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
-from .readiness_gate import ReadinessGate, PendingBackend
+from .readiness_gate import ReadinessGate
 
 import requests
 
@@ -130,6 +131,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 ready_port=_EDGE_READY_PORT,
                 admission_log_path=_ADMISSION_LOG_PATH,
                 event_fallback_s=_READINESS_EVENT_FALLBACK_S,
+                wake_verify_mode=_READINESS_WAKE_VERIFY_MODE,
                 on_admit=lambda pb: self._elasticity._admit_compute_backend(
                     pb.mac, pb.ip, pb.name, pb.lan, pb.network_id,
                     pb.spawn_started_mono_s, "readiness_gate",
@@ -1111,7 +1113,6 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                     and self._release_gate.quarantine_active()
                     and self._release_gate.quarantine_expired(time.monotonic())):
                 q_mac = self._release_gate.quarantine_mac()
-                q_name = self._release_gate.quarantine_container() or ""
                 alert = self._node_registry.build_scale_down_alert(q_mac, reason="scale_down") if q_mac else None
                 if alert:
                     logger.info("[release] stabilized quarantine expired — finalizing mac=%s", q_mac)

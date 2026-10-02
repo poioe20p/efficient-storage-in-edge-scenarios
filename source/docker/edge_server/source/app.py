@@ -3,7 +3,7 @@ import os
 import threading
 import time
 
-from flask import Flask, g, abort, request
+from flask import Flask, request
 
 from db_monitor import register as _register_db_monitor
 
@@ -33,6 +33,11 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 process_state = EdgeServerProcessState(CONFIG)
+
+# RQ3 soundness (default off): while time.time() < this value, every workload
+# request fails with a deterministic HTTP 503 (set below when
+# EDGE_READY_SEMANTIC_LIE_S > 0; 0.0 = inert).
+_RQ3_SEMANTIC_LIE_UNTIL = 0.0
 
 # Request hooks are split into pre/post telemetry phases on purpose. Flask runs
 # after_request hooks in reverse registration order, so the post-telemetry
@@ -83,6 +88,22 @@ def _add_backend_identity(response):
                 daemon=True,
             ).start()
     return response
+
+
+@app.before_request
+def _rq3_semantic_lie_gate():
+    """RQ3 soundness (default off): deterministic false-claim window.
+
+    While ``EDGE_READY_SEMANTIC_LIE_S`` > 0 and within the window set at
+    bind, every workload request — all paths except the probe paths in
+    ``SKIP_COUNTING_PATHS`` — fails with a well-formed HTTP 503 while /ready
+    keeps answering 200: the readiness predicate itself lies. Registered
+    after the telemetry hooks so request accounting still runs; the normal
+    ``after_request`` path still stamps ``X-Backend-ID``.
+    """
+    if _RQ3_SEMANTIC_LIE_UNTIL and time.time() < _RQ3_SEMANTIC_LIE_UNTIL:
+        if request.path not in SKIP_COUNTING_PATHS:
+            return "rq3_semantic_lie", 503
 
 
 def _emit_request_complete(process_state, client_ip: str, client_port: int,
@@ -224,6 +245,49 @@ if __name__ == "__main__":
     # contaminated RQ1/RQ2 runs (no readiness gate). Fix verified: bind delay
     # ~0 and event strictly after bind.
     from werkzeug.serving import make_server
+    # ── RQ3 soundness knob: premature readiness claim (default off) ───────
+    # EDGE_READY_PREMATURE_S=N > 0 deterministically re-introduces the
+    # pre-2026-08-06 ordering: the readiness claim (flag set + app_ready
+    # event, fired on the Mongo-ping predicate) precedes servability by
+    # exactly N s; the socket bind is deferred. N=0 keeps the bind-before-
+    # claim fix unchanged.
+    _premature_s = 0
+    try:
+        _premature_s = max(
+            0, int(os.environ.get("EDGE_READY_PREMATURE_S", "0") or 0)
+        )
+    except ValueError:
+        log.warning("EDGE_READY_PREMATURE_S is not an int — treating as 0")
+    if _premature_s > 0:
+        log.info(
+            "RQ3 premature claim: EDGE_READY_PREMATURE_S=%d (claim precedes bind)",
+            _premature_s,
+        )
+        # Probe starts BEFORE bind so the claim can outrun servability.
+        threading.Thread(
+            target=_run_app_ready_probe, args=(process_state, CONFIG),
+            daemon=True,
+        ).start()
+        try:
+            _claim_max_s = float(os.environ.get("READINESS_APP_MAX_S", "180"))
+        except ValueError:
+            _claim_max_s = 180.0
+            log.warning("READINESS_APP_MAX_S is not a float — using 180 s")
+        _claim_deadline = time.monotonic() + _claim_max_s
+        while not process_state.app_ready and time.monotonic() < _claim_deadline:
+            time.sleep(0.05)
+        _t_claim = time.time()
+        if not process_state.app_ready:
+            log.warning(
+                "RQ3 premature claim: no claim within %.0fs (Mongo ping did not "
+                "succeed) — binding without a premature claim",
+                _claim_max_s,
+            )
+        log.info(
+            "READINESS_CLAIM lan=%s premature_s=%d claimed=%d ts=%.3f",
+            CONFIG.lan_id, _premature_s, int(process_state.app_ready), _t_claim,
+        )
+        time.sleep(_premature_s)
     # ── bind-delay diagnostic (temp, 2026-08-06) ──────────────────────────
     # Times the make_server sub-steps so a residual ~10 s intermittent bind
     # stall (seen during active runs) can be attributed: getaddrinfo (DNS) vs
@@ -241,6 +305,7 @@ if __name__ == "__main__":
     server = make_server(
         CONFIG.bind_host, CONFIG.bind_port, app, threaded=True,
     )
+    _t_bind = time.time()
     _t3 = time.perf_counter()
     log.info(
         "bind-timing getaddrinfo=%.3fs importlib.metadata=%.3fs make_server(bind+listen)=%.3fs total=%.3fs",
@@ -249,13 +314,35 @@ if __name__ == "__main__":
     _apply_request_concurrency_bound(server)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log.info("edge-server listening: http://%s:%d", CONFIG.bind_host, CONFIG.bind_port)
-    # RQ3 readiness probe — background thread marks app_ready after a real
-    # MongoDB round-trip so the controller's /ready gate can admit this node.
-    # Started only after the server socket is bound (above), so the event
-    # cannot precede servability.
-    threading.Thread(
-        target=_run_app_ready_probe, args=(process_state, CONFIG), daemon=True,
-    ).start()
+    if _premature_s > 0:
+        log.info(
+            "READINESS_BIND lan=%s premature_s=%d bind_ts=%.3f deferral_s=%.3f",
+            CONFIG.lan_id, _premature_s, _t_bind, _t_bind - _t_claim,
+        )
+    # ── RQ3 soundness knob: semantic lie window (default off) ─────────────
+    # EDGE_READY_SEMANTIC_LIE_S=S > 0 makes every workload request fail
+    # deterministically (HTTP 503) for S s counted from bind while /ready
+    # keeps answering normally — the readiness predicate itself lies.
+    _lie_s = 0
+    try:
+        _lie_s = max(0, int(os.environ.get("EDGE_READY_SEMANTIC_LIE_S", "0") or 0))
+    except ValueError:
+        log.warning("EDGE_READY_SEMANTIC_LIE_S is not an int — treating as 0")
+    if _lie_s > 0:
+        _RQ3_SEMANTIC_LIE_UNTIL = _t_bind + _lie_s
+        log.info(
+            "RQ3 semantic lie active: EDGE_READY_SEMANTIC_LIE_S=%d until=%.3f",
+            _lie_s, _RQ3_SEMANTIC_LIE_UNTIL,
+        )
+    if _premature_s <= 0:
+        # RQ3 readiness probe — background thread marks app_ready after a real
+        # MongoDB round-trip so the controller's /ready gate can admit this
+        # node. Started only after the socket is bound so the event cannot
+        # precede servability (the default, fixed ordering).
+        threading.Thread(
+            target=_run_app_ready_probe, args=(process_state, CONFIG),
+            daemon=True,
+        ).start()
     # Keep the main thread alive; serve_forever runs in its own daemon thread.
     try:
         while True:

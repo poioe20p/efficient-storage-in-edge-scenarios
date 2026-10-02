@@ -244,6 +244,10 @@ _READINESS_PROBE_RETRY_S = float(os.environ.get("READINESS_PROBE_RETRY_S", "1.0"
 # (admit_source="probe_fallback"), which the analyzer's event-fraction gate
 # surfaces as instrumentation-degraded.
 _READINESS_EVENT_FALLBACK_S = float(os.environ.get("READINESS_EVENT_FALLBACK_S", "5.0"))
+# RQ3 soundness (optional arm): "probe" defers event-driven admission until a
+# successful /ready probe (wake_verify); "off" (default) keeps the plain
+# event-driven contract. Only consulted when READINESS_PROPAGATION=direct.
+_READINESS_WAKE_VERIFY_MODE = os.environ.get("READINESS_WAKE_VERIFY_MODE", "off")
 # discovery-mode scan cadence (seconds). Pre-registered per run.
 _DISCOVERY_POLL_INTERVAL_S = float(os.environ.get("DISCOVERY_POLL_INTERVAL_S", "10.0"))
 # Edge-server /ready port. Must equal the edge server's BIND_PORT (5000) in RQ3 runs.
