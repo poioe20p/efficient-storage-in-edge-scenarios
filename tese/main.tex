@@ -250,8 +250,9 @@ measured under controlled conditions.
 deployed across two network domains: how demand evidence is
 delivered to the controller (telemetry delivery semantics), which
 scaling action the controller hands over to the infrastructure in
-response to the observed bottleneck (compute or storage scale-up),
-and when ready capacity is admitted to traffic (readiness admission).
+response to the observed bottleneck, the resource tier the demand is
+pressing on (compute or storage scale-up), and when ready capacity is
+admitted to traffic (readiness admission).
 
     The thesis does not claim that this SDN-based architecture is superior
 to existing orchestration platforms such as Kubernetes or NFV Management
@@ -1352,11 +1353,11 @@ wait before the serving process handles the request. The second is the
 \emph{edge service time}: the interval from request dispatch to response
 finalisation in the serving process, which itself decomposes into a
 \emph{data-access} component (the MongoDB operations issued for the request,
-including connection acquisition) and an \emph{edge-processing} component
-(scheduling, lease and cache work, and response serialisation). Their sum is
-the request's \emph{user-visible latency}, the client-side round trip. 
-The two edge-service components are the tier-specific latency
-signals the scaling policy observes, data access for the storage tier and
+including connection acquisition, when applicable by the edge server) and
+an \emph{edge-processing} component (scheduling, lease and cache work, and
+response serialisation). Their sum is the request's \emph{user-visible latency},
+the client-side round trip. The two edge-service components are the tier-specific
+latency signals the scaling policy observes, data access for the storage tier and
 processing for the compute tier (Section~\ref{sec:scaling_policy}). The
 pre-dispatch wait is observable only as a difference and carries no separate
 instrumentation.
@@ -1479,14 +1480,16 @@ where:
     \item $\theta_{\max}$ -- upper bound of the adaptive threshold;
     \item $\beta_{\mathrm{peer}}$ -- peer relief added to the compute-tier threshold while the peer domain is healthy enough to absorb spillover traffic (zero otherwise).
 \end{itemize}
-    The threshold adapts upward as capacity grows, so each additional unit
-faces a higher bar. A scale-up cooldown after each committed scale-up and a
-scale-down cooldown keyed on the most recent scale-up keep the pace of actions
-bounded, together with a per-tier cap on the number of units. The window
-advances only when the tier was eligible to act (not blocked by an ongoing
-infrastructure operation, not at its cap, and not within a scale-up cooldown),
-and it is cleared when a scale-up occurs. A committed scale-up also clears the
-tier's scale-down window, so a recent scale-up is not immediately reversed.
+    The threshold follows the number of dynamic units in the tier's pool.
+Each additional unit therefore faces a higher bar, and the threshold falls
+back as units are removed. A scale-up cooldown after each committed scale-up
+and a scale-down cooldown keyed on the most recent scale-up keep the pace of
+actions bounded, together with a per-tier cap on the number of units. The
+window advances only when the tier was eligible to act (not blocked by an
+ongoing infrastructure operation, not at its cap, and not within a scale-up
+cooldown), and it is cleared when a scale-up occurs. A committed scale-up also
+clears the tier's scale-down window, so a recent scale-up is not immediately
+reversed.
 
     A window is declared idle when both signals fall below their idle
 thresholds,
@@ -1716,18 +1719,17 @@ only by the ordinary lifecycle checks.
     \label{fig:control_workflow}
 \end{figure}
 
-    State crosses these contexts through shared structures rather than
+    State crosses these contexts mostly through shared structures rather than
 through direct calls. The observation context writes the telemetry state
 and the action requests, and the action context owns the infrastructure
 changes and records the lifecycle state of each in-flight operation. The
 routing pools are updated with the lifecycle transitions: a unit enters them
 when it is admitted and leaves them on removal, while a readied member held
-in reserve remains outside them until activation. The packet context reads
-both on each flow decision.
-Because the packet context is not blocked by the action context, a
-long-running change cannot stall request steering. Because the action
-requests are queued and prioritised, detection is not blocked by
-execution. 
+in reserve remains outside them until activation. The packet context reads 
+both on each flow decision. Because the packet context is not blocked by
+the action context, a long-running change cannot stall request steering.
+Because the action requests are queued and prioritised, detection is not
+blocked by execution. 
 
     Every request that adds or preserves capacity
 precedes every request that removes capacity. The cancellation of a
@@ -1817,6 +1819,7 @@ Chapter~\ref{ch:results}.
 % per-request leases over per-LAN epochs (VIP address; rotation on VIP update;
 % AutoReconnect retry with backoff; readPreference=secondaryPreferred); write
 % path = direct-to-primary client; storage container lifecycle.
+% The way a mongodb replicaSet is built should be included and clarified.
 
 \section{Monitoring and Decision Engine}\label{sec:impl_monitoring}
 % TODO: Aggregator (ZMQ PULL→PUB + HTTP window-log/latest-summary cache;
@@ -2042,10 +2045,10 @@ than the state of an overloaded server whose own processing slows.
 defined in Section~\ref{sec:vip_data_paths}: user-visible latency, edge
 service time, its data-access and edge-processing components, and the
 pre-dispatch wait. The edge service components are aggregated as
-per-request means over the demand episode.
+per-request means over the demand episode. The readiness admission campaign 
+reports the segment of the chain from the scaling decision to usable capacity, 
+which isolates the admission path.
 
-    The readiness admission campaign reports the segment of the chain from
-the scaling decision to usable capacity, which isolates the admission path.
 Service quality is summarised per run through percentiles (p50, p95, p99) of
 the endpoint latency over the demand episode. Latency percentiles are computed
 on the served basis, over completed requests. Outcome classes are reported
@@ -2101,15 +2104,15 @@ question.
 Control overhead is reported as the CPU utilisation and resident memory of the
 controller and telemetry processes along each campaign.
 
-\subsection{Campaign Designs and Analysis}
+\subsection{Campaign Designs and Analysis}\label{sec:campaign_analysis}
 All three campaigns follow the same discipline of single-variable
 manipulation. Each campaign varies exactly one interface of the
 demand-to-capacity chain and holds the other two constant, so that the
 measured differences are attributable to the interface under test. The
 policies compared within a campaign are baselines that encode architectural
 properties, such as a fixed single-tier scaling policy or a periodic discovery
-mechanism, and not competing aspects. Each campaign was pre-registered: the
-treatments, primary outcomes, screening rules, and analysis tests were fixed
+mechanism, and not competing aspects. Each campaign was pre-registered with the
+treatments, primary outcomes, screening rules, and analysis tests all fixed
 before data collection. 
 
 No results are pooled across campaigns. Every contrast
@@ -2142,9 +2145,45 @@ runs per arm, and seven per arm in the telemetry delivery campaign. That campaig
 takes an extra replicate because its runs showed a real run-to-run spread even
 when repeated under the same configuration and seed.
 
-    The reported contrasts follow the test pre-registered for each campaign, with
-effect sizes reported with confidence intervals and direction counts over
-matched replicates. Screening rules are applied before the contrasts: runs
+    The reported contrasts follow the test pre-registered for each campaign.
+Two of the three campaigns evaluate their contrasts with the exact
+Mann--Whitney $U$ test. The test compares two sets of runs by ranking their
+values together and counting how often a value from one set exceeds a value
+from the other, so it establishes whether the two treatments differ without
+assuming that the measured outcomes follow any particular distribution. The
+exact form considers every way the observed values could be split into two
+treatment sets of the given sizes and reports the probability of a
+separation at least as strong as the observed one when the treatments are
+in fact equivalent. It is used because the replicate counts are small, six
+or seven runs per arm, which makes the complete enumeration feasible and
+avoids the normal approximation used for larger samples. Alongside each
+exact $p$-value, the campaigns report an effect size, Cliff's $\delta$,
+computed as the probability that a value from one treatment exceeds a value
+from the other minus the reverse probability. An effect size is reported
+because significance alone does not express how separated the runs are, and
+$\delta$ states that separation on a bounded scale from $-1$ to $1$, with
+$-1$ and $1$ corresponding to complete separation. Where a confidence
+interval is reported, it is a 95~\% interval, which gives the range of
+plausible values rather than a single number.
+
+Each campaign uses these tests and intervals on its own measures. The
+telemetry delivery campaign reports each $\delta$ with a 95~\% bootstrap
+confidence interval, and a direction count, the number of seed-matched
+blocks consistent with the predicted order. The scaling action campaign
+works with ratios instead of groups: for each cell it reports the median
+ratio across runs, with a 95~\% confidence interval, and compares it with
+the pre-registered threshold, because its question is whether a ratio
+passes a target, not whether two sets of runs differ. The readiness
+admission campaign reports how long each new backend takes from verified
+readiness to admission, compared separately for fast-binding and
+slow-binding backends, and reports its event-loss comparison as differences
+in the slow share, in percentage points, within each matched block. It
+reports no confidence intervals, because its pre-registered checks were
+thresholds and agreement across blocks. No correction is made for testing
+several contrasts at once, because each campaign fixed a small number of
+named contrasts in advance.
+
+Screening rules are applied before the contrasts as runs
 entering a contrast must pass the campaign's per-run checks on data-path
 integrity, test-harness behaviour, delivery fidelity, and cross-domain symmetry,
 and the defined exclusions are removed and reported. Pre-registered criteria
@@ -2232,10 +2271,9 @@ design of the campaign.
         sampled-push arm; a residual completed-without-status class
         concentrated in the delayed arm. \\
         Test & Four pre-registered contrasts on the served-basis episode
-        latency p95 (delay A--B, delay D--C, loss A--D, loss B--C): exact
-        Mann--Whitney U (complete enumeration, seven against seven), Cliff's
-        $\delta$ with 95~\% bootstrap CI, direction counts; no multiplicity
-        correction. \\
+        latency p95 (delay A--B, delay D--C, loss A--D, loss B--C), with the
+        tests, effect sizes, and direction counts defined in
+        Section~\ref{sec:campaign_analysis}. \\
         Expectations & Pre-registered ordering A $<$ B $<$ C $\approx$ D on
         both usable capacity latency and the served-basis episode p95, with the
         sampled-push arm expected to be strictly worst, and non-surge
@@ -2332,11 +2370,11 @@ while the other five remained close to the reference (5.0--12.6~s).
 \begin{table}[htbp]
     \centering
     \caption{Pre-registered primary contrasts on the episode endpoint latency
-    p95 (served basis; per-run mean of the two domains). Exact Mann--Whitney
-    $p$-values (complete enumeration, $n = 7$ per arm); Cliff's $\delta$
-    computed as $P(x > y) - P(x < y)$ with 95~\% bootstrap CI; direction =
-    blocks (of seven) consistent with the predicted order. No multiplicity
-    correction (four pre-registered edges).}
+    p95 (served basis, per-run mean of the two domains). Exact Mann--Whitney
+    $p$-values at $n = 7$ per arm. The effect size, its interval, and the
+    direction count are defined in Section~\ref{sec:campaign_analysis}. The
+    direction count gives how many blocks (of seven) followed the predicted
+    order.}
     \label{tab:rq1_edges}
     \begin{tabular}{l c c c c}
         \toprule
@@ -3044,6 +3082,10 @@ reliability choice, deciding whether a ready backend's capacity is
 delayed or lost when a readiness notification is lost and spare capacity is
 already low. The reported effects hold for the evaluated two-domain
 testbed, its workloads, and its resource limits.
+
+\section{Discussion: Synthesis Across Interfaces}\label{sec:discussion}
+
+This section reads the three campaigns together. The campaigns ran on the same
 platform, used the same metric definitions and instrumentation, and followed
 the same discipline of varying one interface while holding the others fixed.
 Each campaign, however, drove its own workload under its own demand regime, so
