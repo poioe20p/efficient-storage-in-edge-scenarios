@@ -142,8 +142,9 @@ correctness, not just liveliness.
   R3b (`_93`) included for completeness.
 - **E stage**: 45 core runs (3 seed-blocks × 15) + 15 optional runs
   (`wake_verify` arm ×3 cells, `loss_all` push anchor, `semantic×hybrid`
-  descriptive) = **60 runs**, ≈ 35 h of sequential VM time (user approved:
-  storage verified, time not a constraint).
+  descriptive) = **60 runs**, ≈ 42 h of sequential VM time (measured cadence
+  ≈ 42 min/run; user approved: time not a constraint; disk headroom secured
+  2026-10-03 — off-experiment VM archives cleaned, ~27 GB freed, free ≈ 70 GB).
 
 ## Status ledger
 
@@ -152,5 +153,6 @@ correctness, not just liveliness.
   `207b1f9e8f64`).
 - 2026-10-03 — P1 certified: R1r/R2/R3 pass; lock written; canonical
   `phases.json` restored; plain-language wording recorded (this file).
-- 2026-10-03 — complete campaign starting: R3b + 60 E runs; execution tracker
-  in [`e_stage_log.md`](e_stage_log.md).
+- 2026-10-03 — complete campaign running: R3b certified (all gates pass; lock
+  refreshed with all four P1 runs); **E sequence started 10:35 UTC** (60 runs,
+  ≈ 42 h; pulse monitoring every 5 min) — tracker: [`e_stage_log.md`](e_stage_log.md).

@@ -1348,8 +1348,10 @@ Figure~\ref{fig:vip_routing_sequence} walks through the resulting sequence.
 \end{figure}
 
 A request's path decomposes into two intervals. The first is the
-\emph{pre-dispatch wait}: connection setup through the routing path, and any
-wait before the serving process handles the request. The second is the
+\emph{pre-dispatch wait}: the time between the client issuing the request and
+the request's dispatch in the serving process, covering the setup of its
+connection through the routing path and any wait ahead of the
+serving process. The second is the
 \emph{edge service time}: the interval from request dispatch to response
 finalisation in the serving process, which itself decomposes into a
 \emph{data-access} component (the MongoDB operations issued for the request,
@@ -1839,6 +1841,12 @@ Chapter~\ref{ch:results}.
 % action queue, routing pools); key algorithm pseudo-code (degradation score →
 % threshold → sliding window → alert → spawn); Double-VIP ARP interception +
 % DNAT/SNAT (conntrack); release/admission log instrumentation.
+% TODO: pre-dispatch wait enumeration (by design: contents live here, not in
+% Ch3): connection setup through the double-VIP path (ARP interception;
+% conntrack DNAT/SNAT state); the first packet of a new flow to the
+% controller (backend selection + forwarding-rule installation); and where a
+% request can wait ahead of the serving process (queue-side; its growth is
+% reported in §5.3, not restated here).
 
 \section{Implementation Validation}\label{sec:impl_validation}
 % TODO: Golden-config stability experiments (15+ runs, variance ≤0.23%);
@@ -2551,19 +2559,15 @@ Table~\ref{tab:rq2_design} summarises the design of the original campaign.
         arm, or fewer where an exclusion applies); the cross-seed
         replicate reported separately; tier-relief and resource-use
         outcomes alongside. \\
-        Expectations & On the compute-bound episode, the aligned action is
-        expected to deliver a user-visible benefit: a pre-to-post p50
-        collapse in the aligned replicates ($\ge 2\times$). On the
-        data-access-bound episode, the aligned storage action is expected to
-        deliver tier relief below the 0.75 post-to-pre CPU ratio and a
-        storage tail-latency ratio whose 95~\% confidence interval excludes
-        1.0, together with a user-visible benefit against inaction
-        (ratio $\le$ 0.85), while the mismatched compute action is expected
-        to harm relative to inaction there (ratio $\ge$ 1.2). The mismatched
-        actions are expected to bring no relief to the tier that binds the
-        episode; the aligned action's value over inaction on the compute
-        axis is carried as a descriptive measure; and recovery is expected
-        within each leg of an order-shifted sequence. \\
+        Expectations & The aligned action is expected to relieve the tier
+        that binds the episode and to benefit user-visible service over
+        inaction; the mismatched action is expected to bring no relief to
+        the binding tier and, on the data-access-bound episode, to harm
+        service; and recovery is expected within each leg of an order-shifted
+        sequence. The aligned action's value over inaction on the compute
+        axis is carried as a descriptive measure. The pre-registered
+        assessment coefficients appear with the criteria in
+        Table~\ref{tab:rq2_criteria}. \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2576,7 +2580,7 @@ detected tier.
 The service outcome is regime-concentrated (Figure~\ref{fig:rq2_map}). 
 On the data-access-bound episode the tier-matched storage action delivered 
 a large user-visible benefit over inaction as the episode endpoint latency p95 was
-about 0.6~s against about 1.6~s under no action, a ratio of about 0.37
+about 0.6~s against about 1.5~s under no action, a ratio of about 0.39
 against the pre-registered benefit threshold of 0.85 (secondary: p50 about
 60~ms against about 280~ms). 
 
@@ -2715,8 +2719,8 @@ unmet gate is carried as such.
         Compute recovery (pre/post p50) & collapse $\ge 2\times$, aligned replicates & start-up transient (control) \\
         Storage tail latency (pre/post p95) & 95~\% CI excluding 1.0 & 0.727 [0.574, 1.393] \\
         Storage resource relief (post/pre CPU) & ${<}0.75$, aligned runs & 0.57--0.66 (12/12); 0.62--1.06 (8/10) \\
-        Benefit vs inaction (storage, data-access-bound) & ratio $\le 0.85$ & $\approx 0.37$ (labelled) \\
-        Harm vs inaction (compute, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.49$ \\
+        Benefit vs inaction (storage, data-access-bound) & ratio $\le 0.85$ & $\approx 0.39$ (labelled) \\
+        Harm vs inaction (compute, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.52$ \\
         Sequence recovery (one configuration) & per-leg recovery & not confirmable \\
         \bottomrule
     \end{tabular}

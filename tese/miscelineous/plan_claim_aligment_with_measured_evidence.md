@@ -183,3 +183,99 @@ comments in the thesis file.
   completeness)'. §5.2: expectations row ('permitted' → 'expected' for the
   sampled-push worst case) and the 'on usable capacity' gloss on the
   replicated-ordering sentence. Ch1 and Ch3 audited clean (no changes).
+- 2026-10-03: Ch3 signal-model and selection-specification pass (author-requested
+  clarity review): §3.3.1 now states the window latency statistic (mean or median
+  as configured per campaign) and separates capacity signals from placement
+  evidence (selection uses cached resource metrics, Section 3.2); §3.2 specifies
+  the selection cost form (ratio-to-pool-max normalisation, round-robin
+  tie-breaking, hop distance as reach; weights pointer to App A); §3.3.2 adds the
+  compute removal rule (platform-provisioned replicas only, least request load
+  first); §3.3.3 adds the storage removal order (most recently added member
+  first). The original draft's §3.3.1 definition sentences were dropped as
+  superseded by the author's new §3.2 edge-service-time decomposition paragraph.
+  No values added (App A unchanged).
+- 2026-10-03: Ch3 em-dash sweep (author request): both `---` instances in the
+  chapter (§3.3.2) removed — the readiness-fallback aside split to a full stop,
+  and the fault-contrast apposition set with a comma, its clause-joining
+  semicolon split per the house rule. Remaining `---` in the file are outside
+  Ch3 (Ch2 §2.5 prose; a Ch6 comment; Table A.2 'not applicable' cells).
+- 2026-10-03: Ch3 liveness/freshness addition (author request): §3.4 gains an
+  observation-liveness paragraph (idle heartbeats keep nodes in the summaries;
+  summaries carry last-report time; silence beyond the absence bound = gone and
+  cleaned up; the platform does not act on capacity it cannot observe); §3.3.2
+  removal candidacy now requires recent reports. Intervals/bounds remain Ch4
+  values.
+- 2026-10-03: Ch3 lean-wording pass (author request): bottleneck-aware sentence
+  simplified ("distinguishes between compute-bound and data-access-bound demand
+  and scales the matching tier"; tie-break and action budget kept as short
+  clauses); "without burst replay" added to the delayed delivery mode (so §5.2
+  introduces no new term); ~12 tightenings across the chapter (filler removed,
+  Tier~0/1 comma splice fixed). No meaning changes.
+- 2026-10-03: Ch3 deeper redundancy pass (second lean pass, author request):
+  cross-section duplication removed — summary→consumers and topology exchange
+  stated once (trimmed from §3.2.3), compute-tier signals not repeated in
+  §3.3.2, eligibility criteria stated once (§3.3.1), the decision-engine
+  paragraph now references the §3.3.1 policy instead of re-deriving it,
+  βpeer/θmax restatement dropped from the policy prose (where-list keeps both),
+  plus merges in the intro, §3.2.1, the decomposition paragraph and the §3.5
+  instrumentation list. No claims or values changed.
+- 2026-10-03: whole-thesis terminology harmonisation (author request): "capacity
+  action" → "scaling action" (16 occurrences across 15 lines in Ch1, Ch2, Ch3,
+  the RQ2 results section and the Ch6 conclusions, including "capacity-action"
+  attributives; the RQ2 interface-table row is now "Decision to scaling action");
+  "capacity decisions" → "scaling decisions" (§3.3.1); typo "capacity Is
+  provisioned" → "capacity is provisioned" (§1.3). Rationale: the file already
+  ran on the "scaling action" family (RQ2 section heading, campaign tables,
+  Appendix A labels); "capacity action" was the residual outlier. Ledger row
+  added in the thesis-writing skill (old term retired). Working docs (Notes,
+  lit-review READMEs, research_questions, miscelineous) still carry the old term;
+  harmonisation offered as follow-up. Term-clarity audit drafted for author
+  selection (fire, mutations, servability, absorption margin, selector,
+  eligible/routing pools, lane, engagement, gated/binding).
+- 2026-10-03: terminology clarity sweep, pass 2 (author selection applied,
+  whole thesis): fire → "most recent scale-up"/"a scale-up occurs" (§3.3.1);
+  infrastructure mutations → changes (§3.5); "servability defect" → "defect
+  in the pre-fix admission path" (§5.4); "absorbing margin" → "absorption
+  margin" (§6.1); "gated on" → "conditional on" and "non-binding action"
+  expanded (§6.1, §6.3 RQ3 qualifier); engaged/engagement → executed/execution
+  (§5.1/5.3/6 and captions); "two-sided" → "can address either side" (§2.5);
+  "the selector" introduced as "backend selector" (§3.3.2); "selector's
+  eligible pool" → "routing pool" (4 spots); envelope family unified:
+  "operating envelope" + "resource limits" (§5.3, §6); "harness" →
+  "test-harness" (§5.1); lane → run (11 spots); cell → arm (~25 spots,
+  unified with the RQ1 arms vocabulary incl. Arm~A--D); "cap and build
+  labels" → "labels recording the memory cap and software build" (§5.3, per
+  the rq2_extension plan's cap/build caveats). Ledger rows added (arm, run,
+  backend selector, routing pool, absorption margin, operating envelope).
+- 2026-10-03: replica terminology unified (author request): "compute
+  replicas" adopted as the single name for the compute tier's scaled units
+  (replaces "service replicas": §3.3.2 ×2, §3.4, §3.5 ×3; and
+  "edge-service replicas": §3.3 intro, §5.1 prose and table, §5.3 design
+  table, App A rows and note). The §3.3 figure caption (already "compute
+  replicas") and the §2.4/§2.5 claims now agree; the running container
+  remains "the edge server". Ledger rows updated (compute replicas;
+  storage member vs replica note).
+- 2026-10-03: fixed two wrapped-line survivors of the capacity-action
+  retirement ("bottleneck-aware capacity action selection" in §1.5 and
+  "telemetry delivery, capacity action selection" in §2.1 — both split
+  across source line breaks, which line-based greps had missed; all
+  continuation-line beginnings were re-scanned to confirm none remain).
+- 2026-10-03: §1.3 "bottleneck" gloss added (author request): the three-
+  interfaces sentence now reads "in response to the observed bottleneck,
+  the resource tier the demand is pressing on (compute or storage
+  scale-up)", so RQ2's first-use "bottleneck-aware scale-up" reads
+  self-evidently; the fuller definitions remain in §2.4/§3.5/§5.3.
+- 2026-10-03: pre-dispatch wait plan applied (author request): Ch3 §3.2.2
+  definition rewritten as an explicit interval ("the time between the
+  client issuing the request and the request's dispatch in the serving
+  process, covering the setup of its connection through the routing path
+  and any wait ahead of the serving process"), sharing the "dispatch"
+  boundary with the edge service time; the wait's contents (ARP
+  interception, conntrack, controller flow installation, queue-side wait)
+  added to the §4.4 TODO so they are written in Ch4, not Ch3; ledger row
+  added (pre-dispatch wait: boundary at dispatch, read only as a
+  difference).
+- 2026-10-03: re-applied the two main.tex pre-dispatch edits (Ch3 §3.2.2
+  sentence; §4.4 TODO) after a stale editor-buffer save overwrote them on
+  disk; the ledger and this plan entry were unaffected. Editor buffer must
+  be reverted to disk before further saving.

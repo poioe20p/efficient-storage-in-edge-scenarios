@@ -3,7 +3,7 @@
   "family": "rq3_soundness",
   "lock_written": true,
   "premature_lead_s": 10,
-  "r3b_informative": null,
+  "r3b_informative": true,
   "runs": {
     "R1": {
       "check_violations": 4,
@@ -103,9 +103,27 @@
       "spawns_mismatch": false
     },
     "R3b": {
-      "evaluated": false,
-      "reason": "run not provided",
-      "run": null
+      "check_violations": 0,
+      "evaluated": true,
+      "f3_coverage": 1.0,
+      "gates": {
+        "a_lie_window_coverage_ge_90pct": true,
+        "b_attributed_5xx_ge_90pct_and_15_per_lan": true,
+        "c_transport_000_le_1pct_window": true,
+        "d_zero_check_violations": true
+      },
+      "measured_deferrals_s": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "pass": true,
+      "run": "20261003_093133_rq3snd_semantic_reconcile_93",
+      "seed": 6354,
+      "spawns_admission_rows": 4,
+      "spawns_found": 4,
+      "spawns_mismatch": false
     }
   },
   "semantic_lie_s": 1200,

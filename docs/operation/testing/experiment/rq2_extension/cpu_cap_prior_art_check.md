@@ -60,8 +60,81 @@ with the Part D finding that 2.5/3.0 meltdowns are not capacity-bound.
    ever needed, reuse `v3/rq3` (0.15, relief = CPU leg) and `v3/rq3_timing`
    (0.12/2.0, consequence via fault).
 
+## 4. Conditions comparison — RQ3 0.12 × 2.0 vs current RQ2 rig (2026-10-03)
+
+_Feasibility assessment only — this is **not** a pre-registration and nothing
+was launched. Purpose: document the exact conditions under which the
+(0.12 × 2.0) cell last ran and whether a future RQ2 probe at that cell could
+transfer._
+
+**The cell's last runs:** `rq3_timing` (36-run E campaign, 2026-09-09/10;
+frozen tree `852a8a3`, seeds 5201–5206, 6 blocks) and the `rq3_soundness`
+preflight (2026-10-03, tag `rq3snd-preflight-20261003`, image
+`207b1f9e8f64`, seeds 6351–6353). At this cell: **zero-admission arm
+(`event_only` + `loss_all`) degrades to 8.3–14.4 % slow-share; recovering
+arms (`hybrid` 20 s fallback / `reconcile` 10 s poll) end healthy (tail
+≤2 %)**.
+
+| Condition | RQ3 @ 0.12 × 2.0 | Current RQ2 rig (`rq2-extension`) | Impact for a transfer |
+| --- | --- | --- | --- |
+| Host VM | `cloud-vm-rq3` — 4 vCPU / 7 GB | `cloud-vm-rq2` — 4 vCPU / 7 GB; currently torn down (0 containers/clients/veths) | Same class; rq2 clean-start |
+| Build/era | `852a8a3` lineage (Sept 7); soundness image `207b1f9e8f64` (Oct 3) | image `30a2c88bc1ce` (Sept 27: concurrency bound, fd/rotation fixes) | Different builds → cell must be re-verified on RQ2 |
+| Quota | `EDGE_CPUS=0.12` fixed, attested per container | launcher hardcodes **0.15**; 0.12 needs caps parameterization (new named regime) | Required change |
+| Workload | `compute_plateau` 600 s @ 2.0, sp 1.0, 24 clients/LAN (96 rps), +`idle_tail` | `compute_bound_episode` 600 s @ 2.0, sp 1.0, 24 clients/LAN, no idle_tail | Measured window identical |
+| Driver | open loop, `CURL_MAX_TIME=300`, `INFLIGHT_WINDOW=1024`, `DRAIN_S=30` | same | Matched |
+| No-capacity arm | `event_only`: spawns occur, admission denied (churn included) | `nn`: policy inert, **no spawns** | nn is cleaner but may degrade *less* than 8–14 % |
+| Treated arm | `hybrid`/`reconcile` (20 s / 10 s) | `cf`: `READINESS_PROPAGATION=direct`, 5 s fallback | cf admission ≥ as fast as RQ3's |
+| Scale-up | `dual`, `MAX_DYNAMIC_COMPUTE=12`, budget 4 | `fixed_*` policy, `ACTION_BUDGET_PER_TIER=4`, `MAX_DYNAMIC_COMPUTE=6`, base threshold 0.18 | Not binding at budget 4 |
+| Storage | reserve OFF, pool 6 | reserve ON, pool 12 | Immaterial at pure-compute plateau |
+| Measurement | slow-share ≥1 s (incl. timeouts), Δ≥5 pp, bounded ≤25 % | Part D checker (lock gate, signature, grounding) computable on same CSVs | Reusable |
+
+**Feasibility verdict (recorded, not acted on):** the cell is the only
+untested operating point with independent priors pointing both ways (RQ3:
+no-capacity degrades; RQ3 + Part D: capacity restores/prevented). The open
+variable is the **nn premise on the RQ2 build** — expected somewhere in
+~2–12 % slow-share; a healthy nn would kill the organic-denial premise at
+0.12/2.0 and close the boundary instead (no escalation — 2.25+ is the tested
+Part D zone). Any future probe must be **screening → certification** (n=3
+screen, then ≥4/6 to certify) and pre-registered as a 0.12-cap regime.
+Operational cautions: `cloud-vm-rq3` has the soundness E stage pending
+(45 runs) — avoid concurrent campaigns if the VMs share a host; the rq2 VM
+re-setups via the launcher chain (~7 min).
+
+## 5. Worth-it assessment (2026-10-03 — recommendation, not a decision)
+
+**A certified campaign at 0.12 × 2.0: NOT recommended.** Reasons, ranked:
+
+1. **Marginal novelty.** The claim it would deliver ("capacity denial harms
+   users; restored capacity heals") is already in citable adjacent form —
+   `rq3_timing` at the same cell (8.3–14.4 % slow under `loss_all`, healthy
+   under delayed admission, 6 blocks). The organic re-frame (nn vs cf) is a
+   different lens on the same platform phenomenon.
+2. **The thesis claim slot is already filled.** RQ2's conditional structure
+   ("a capacity-bound queue in the served tier as the condition for
+   benefit") is demonstrated on the storage axis; the compute axis carries
+   the boundary. A low-quota positive would add symmetry, not a missing
+   link.
+3. **Process cost dominates run cost.** A 0.12 probe is a new configuration
+   regime → pre-registration + review gate + freeze + screening→certify
+   (≈6–12 runs) + chapter/synthesis edits ≈ 2 days of work for ~1h of runs.
+4. **Likely low-information outcome.** P(nn ≥5 % slow on the RQ2 build)
+   ≈ 40–50 %; a healthy nn closes a boundary that is already triple-closed
+   (Part C/D rate lever, RQ3 quota ladder, fault frame).
+
+**Optional micro-probe (acceptable, ~1 h):** 1 × `nn`@0.12×2.0, then
+`cf` only if nn shows ≥5 % slow — recorded as a probe, never cited,
+purely for closure of the question.
+
+**Flips toward worth-it if:** (a) the thesis narrative genuinely needs a
+compute-axis user-visible positive; (b) the RQ3 soundness E stage is not
+imminent and host time is free; (c) the author wants the question settled
+regardless of thesis use. In that case the minimum citable design stays the
+§4 screening→certify structure.
+
 ## Changelog
 
 | Date | Change | Rationale |
 | --- | --- | --- |
 | 2026-10-03 | Survey created (read-only review of all v3 RQ3 folders + `rq3_saturation` + legacy `research_q3`) | Pre-design prior-art check before any new probing runs |
+| 2026-10-03 | §4 conditions comparison added (RQ3 0.12×2.0 vs current RQ2 rig; feasibility verdict + cautions) | User-requested condition comparison; documentation only — no runs, no pre-registration |
+| 2026-10-03 | §5 worth-it assessment added (recommendation: no certified campaign; optional 2-run closure probe; flip conditions listed) | User question "is it worth it or not" — assessment recorded, decision pending |

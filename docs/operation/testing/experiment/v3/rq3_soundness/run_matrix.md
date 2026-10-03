@@ -100,3 +100,18 @@ bash source/scripts/testing/rq3snd_p1_01_launch_run.sh reconcile  semantic    rq
 - Damage tables: `readiness_robustness.py soundness-damage --run-dir <folders> --out analysis/soundness_damage.json`
 - Crossover + verdicts: `readiness_robustness.py soundness-crossover --damage-json analysis/soundness_damage.json --out analysis/soundness_crossover.json`
 - Preflight lock: `readiness_robustness.py soundness-preflight --run-dir <90–93 folders> --out rq3snd_preflight_results.json --lock-out rq3snd_preflight_lock.json` (exit 0 lock · 2 diagnose · 3 stop)
+
+## Order amendment — 2026-10-03 (user-approved)
+
+All optional `wake_verify` runs execute **at the campaign tail** (after every
+other run) instead of at block tails, and only if the **pre-tail gate scan**
+passes (validity + floors + none-health + mechanism attestation over every
+preceding run; otherwise the block is skipped and recorded in the ledger as
+`pre-tail scan: SKIP …`). Relative order of every other run is unchanged
+(blocks 1–3 core, with `semantic_hybrid` / `loss_all_event_only` descriptive
+runs kept at their block-tail positions). Executed by
+`/tmp/rq3snd_e_sequence2.sh` (sequencer part 2); the part-1 sequencer was
+stopped mid-stage as a coordinator-only swap — the in-flight run
+(`rq3snd_premature2_reconcile_1`) was never interrupted (orphan-adopted by
+part 2). Ledger evidence: `ORDER-AMENDMENT` line in
+`/tmp/rq3snd_e_ledger.txt`; docs: `preflight_log.md` row 3.1.

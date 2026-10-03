@@ -307,7 +307,49 @@ exploratory 512m-subset cut for `sf_db` (`_5` only): 0.543.
    runs (testing a v3-era claim) — "within-era" is misleading.
 
 **Nothing in this note is frozen.** The final battery supersedes it and
-writes the frozen numbers; until then the extension numbers are provisional.
+writes the frozen numbers; until then the extension numbers were provisional.
+
+## Part A/B — Final Battery: Ratio Pinning (2026-10-03)
+
+**Status: ✅ FROZEN (analysis-only; no runs).** Supersedes the pre-battery
+flags 1–3 and 6 above. Source: the thesis figure battery extraction
+(`graphs/thesis/rq2_thesis_figure_data.csv` — episode p95, completed
+requests, both lanes pooled per replicate), **cross-validated against the
+independent pre-battery recompute** on the overlapping seed-42 values
+(cf_db_1 0.7059 ≡ 0.705865; sf_db_1 0.5023 ≡ 0.502275; nn_db set identical)
+and against the reproduction of the archived `latency_summary.csv`.
+
+**Pinned convention:** statistical median (average of the central pair for
+even n) over the declared pool; ratio = cell median ÷ `nn_db` median.
+
+| Pool | `nn_db` median p95 (s) | `sf_db` median (s) | `cf_db` median (s) | **Q-A2** (benefit ≤0.85) | **Q-A1** (harm ≥1.2) | Factor (`nn`/`sf`) | Support |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| **All-available (pinned for the thesis text; matches the figures)** | 1.589 | 0.594 | 0.781 | **0.374** | **0.492** | **≈2.7×** | sf 6/6 below nn median; cf 5/5 below |
+| Seed-42 pre-registered pool (sensitivity) | 1.357 | 0.661 | 0.843 | 0.487 | 0.621 | ≈2.1× | sf 5/5; cf 4/4 |
+| Sensitivity — excl. `nn_db_3` (all-available) | 1.357 | 0.594 | 0.781 | 0.438 | 0.575 | ≈2.3× | — |
+
+Per-replicate p95 (s): `nn_db` 0.970 · 1.130 · 1.357 · 1.820 · 2.398 ·
+49.059 (`_3` outlier, kept-with-documentation); `sf_db` 0.502 · 0.502 ·
+0.526 · 0.661 · 0.737 · 0.756; `cf_db` 0.706 · 0.763 · 0.781 · 0.923 ·
+1.135 (5 valid; `_5` excluded incident). Q-A3 sanity: cb p50
+`nn_cb` 3.2 ms vs `cf_cb` 3.5 ms → 1.094 (unchanged).
+
+**Flag resolutions:** (1) conventions pinned as above; (2) the "≈3×"
+phrasing is **withdrawn** — the pinned factor is ≈2.7× (≈2.1× seed-42,
+≈2.3× excl. `nn_db_3`); (3) point values pinned (ranges above);
+(4) L4 collapse counts unchanged (cf 0/6; ba ≈1/5); (5) build-delta/cap
+labels applied to all Part A comparisons; (6) `nn_db_3` kept as primary
+with the exclusion sensitivity stated; (7) zero-add controls are
+**extension-era** `nn_*` runs.
+
+**Consequence for the thesis text — ✅ APPLIED (2026-10-03):**
+`tese/main.tex` was corrected to the pinned convention: **`0.39 → 0.37`**
+(benefit; §5.3 prose + criteria table) and **`0.52 → 0.49`** (harm;
+criteria table), with **`1.5~s → 1.6~s`** in the same sentence for
+arithmetic coherence (`0.6 / 1.6 ≈ 0.37`; pinned `nn_db` median 1.589 s).
+Verification: old forms `0.39`/`0.52` absent, new forms present (lines
+2531, 2670–2671). Conclusions unchanged: benefit ≤0.85 met with 6/6
+support; harm ≥1.2 not met (5/5 below unity).
 
 ## Part C — Record (rq2pc)
 
@@ -552,3 +594,4 @@ arm test (`cf`) is in flight there._
 | 2026-10-03 | **Part D CLOSED:** phases restored (`d40f5f59…` verified); close records committed; outcome — no clean treatable compute-bound window in [1.5, 3.0]; negative bounded inside [onset (2.0, 2.25], 3.0]; exploratory prevention observation recorded at 2.25 | Close (no campaign) |
 | 2026-10-03 | **Part D cleanup (user instruction — recorded exception to the addendum §7.4 no-deletion rule):** slim archive `_archive_rq2pd_slim.tar.gz` (25 KB; per-run checker JSON + decision/lifecycle/latency/admission artifacts) + the four run folders deleted; full teardown verified (containers 12→0, clients 48→0, netns 0, veths 59→0 incl. orphan OVS ports, bridges/datapaths 0, 2 dynamic volumes removed; static seeds + images kept) | Close cleanup |
 | 2026-10-03 | **CPU-cap prior-art check recorded** ([cpu_cap_prior_art_check.md](cpu_cap_prior_art_check.md)): the quota-reduction path was explored in RQ3 (relief descent 0.25→0.20→0.15 → locked at first relief; consequence descent 0.13→0.12→0.11 → structural ~1.5 % ceiling; standing quota 0.12 at rate 2.0); RAM never shaped; demand escalation rejected/confirmed non-treatable. **Decision: no new quota-ladder probing campaign** | Pre-design check (user-requested) |
+| 2026-10-03 | **Final battery executed — ratio pinning FROZEN (analysis-only):** conventions pinned (statistical median, lanes pooled per replicate, ratio = cell ÷ `nn_db` median); primary text convention = all-available pool → **Q-A2 0.374 / Q-A1 0.492 / factor ≈2.7×** (seed-42 sensitivity 0.487 / 0.621; excl. `nn_db_3` 0.438 / 0.575); pre-battery flags 1–3, 6 resolved; "≈3×" withdrawn; thesis text correction identified (`0.39→0.37`, `0.52→0.49`, lines 2531/2670–2671 — not edited here) | Battery record |

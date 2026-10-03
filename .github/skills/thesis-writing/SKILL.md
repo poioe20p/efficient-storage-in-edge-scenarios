@@ -135,6 +135,7 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
 | **Tier~0 / Tier~1 / Tier~2** | unqualified "hot copy" | Tier 1 = capability, held constant where unevaluated |
 | **prepared reserve, peer domain, spillover** | — | fixed vocabulary |
 | **degradation score, adaptive threshold, telemetry window, idle condition** | — | equations and `where:` lists in `sec:scaling_policy` |
+| **pre-dispatch wait** | — | the first request-path interval; boundary at **dispatch** (where the edge service time starts); read only as a difference (user-visible latency minus edge service time); contents enumerated in §4.4 |
 | **the reviewed state of the art / within the reviewed literature** | universal claims | corpus-bounded qualifiers |
 | British English: organised, characterisation, utilisation, normalised, behaviour | US spellings in prose | comments may lag |
 | **compute-only / storage-only** (fixed RQ2 policies) | compute-first, storage-first (retired from prose) | the fixed scaling policies scale a single tier only; introduced with the bottleneck gloss in §5.3 |

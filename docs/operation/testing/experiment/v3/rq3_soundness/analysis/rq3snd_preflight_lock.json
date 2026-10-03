@@ -22,22 +22,27 @@
       "c_transport_000_le_1pct_window": true,
       "d_zero_check_violations": true
     },
-    "R3b": null
+    "R3b": {
+      "a_lie_window_coverage_ge_90pct": true,
+      "b_attributed_5xx_ge_90pct_and_15_per_lan": true,
+      "c_transport_000_le_1pct_window": true,
+      "d_zero_check_violations": true
+    }
   },
   "locked": true,
   "premature_lead_s": 10,
-  "r3b_informative": null,
+  "r3b_informative": true,
   "runs": {
     "R1": "20261003_003124_rq3snd_premature10_event_only_90r",
     "R2": "20261003_011345_rq3snd_premature10_reconcile_91",
     "R3": "20261003_015620_rq3snd_semantic_event_only_92",
-    "R3b": null
+    "R3b": "20261003_093133_rq3snd_semantic_reconcile_93"
   },
   "seeds": {
     "R1": 6351,
     "R2": 6352,
     "R3": 6353,
-    "R3b": null
+    "R3b": 6354
   },
   "semantic_lie_s": 1200,
   "stage": "P1"
