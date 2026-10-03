@@ -678,7 +678,9 @@ exists solely as the fallback label).
   recovery slow-share ≤ 5 %, added nodes served) — addendum §5.
 - **Budget:** ≤ 8 launches in total, including the single validity relaunch
   (reachable path maximum 7 + 1; expected ≈ 6–8 h wall clock); the launcher
-  enforces the global counts via the remote event log (`/tmp/rq2pd_events.jsonl`).
+  enforces the global counts via the durable event ledger
+  (`source/scripts/testing/metrics/rq2pd_events.jsonl`; missing ledger with
+  existing `*_rq2pd_*` folders → abort).
 - **Confirmed** → Part D.2 pre-registration of the 4-arm campaign at R_s
   (the campaign is the evidence; Part D runs are selection runs);
   **not confirmed** → STOP + record; the negative is bounded inside
@@ -689,21 +691,40 @@ exists solely as the fallback label).
 
 ### Part D checklist (executed at its own freeze/run time)
 
-- [ ] Review gate passed on [partd_addendum.md](partd_addendum.md) + artifacts
-- [ ] FREEZE-4 record (restricted diff + md5s — slots below)
-- [ ] Pre-run verification (local↔VM md5s; launcher `py_compile` + `--plan`; checker smoke on stored Part C folders; clean VM)
-- [ ] Bracket executed → R_s determined (or boundary reported)
-- [ ] Cross-stage gate: screening `cf` classified before `confirm` / `repeat` / `fallback` launches
-- [ ] `cf`@R_s classified (pass / partial / clean fail)
-- [ ] Repeat / confirmations / fallback executed per the decision tree
-- [ ] Global run/relaunch counts enforced (remote event log; ≤ 8 launch slots + 1 relaunch)
+- [x] Review gate passed on [partd_addendum.md](partd_addendum.md) + artifacts
+- [x] FREEZE-4 record (commits `4df5719` / `1aca277` / `959b5c1`; restricted diff + md5s below)
+- [x] Pre-run verification (local↔VM md5s; launcher `py_compile` + `--plan`; checker smoke on stored Part C folders — reproduced exactly; clean VM)
+- [x] Bracket executed → **R_s = 2.25** (R1 nn@2.0 NO LOCK 0.928 % / 3.4 ms; R2 nn@2.25 **LOCK** 66.098 % / 1.8325 s; R3 skipped)
+- [x] Cross-stage gate: `rq2pd_r2_cf_225` classified before downstream stages — **clean fail** (B1 one-LAN partial lan1 0.046 / lan2 0.792; recovery 12.33 % > 5 %; adds 4/LAN; pre-fires 0; no assignment starvation → no repeat)
+- [x] Repeat / confirmations / fallback executed per the decision tree — **fallback `rq2pd_fb_cf_250` = terminal diagnostic (Part C pattern reproduced); repeat/confirmations not triggered**
+- [x] Global launch/relaunch counts enforced (durable ledger; final: 4/8 launches, 0 relaunches)
+- [x] Close: phases restored (`d40f5f59…` verified); records-only commit; **Part D CLOSED — NOT CONFIRMED (STOP + record; no campaign)**
+- [x] Cleanup (user instruction): full teardown verified (containers 0, clients 0, netns 0, veths 0, OVS 0); run folders slim-archived (`_archive_rq2pd_slim.tar.gz`, 25 KB) and deleted — recorded exception to the addendum §7.4 no-deletion rule
+- [x] CPU-cap prior-art check recorded ([cpu_cap_prior_art_check.md](cpu_cap_prior_art_check.md)) — the quota-reduction path is covered by RQ3 (relief at 0.15; consequence capped ~1.5 % at 0.11–0.13; standing quota 0.12); **no new quota-ladder probing campaign**
 - [ ] Outcome recorded in [results.md](results.md); `phases_rq2pc_cb.json` restored; records-only commit
 
-**FREEZE-4 record (fill at freeze):** commit `<hash>`; md5s — addendum
-`<md5>`, launcher `<md5>`, `phases_rq2pc_cb.json`
-`d40f5f592375360c76a1d55f4c168200` (restored Part C-frozen state);
-restricted diff = exactly the four enumerated paths of addendum §2
-(partd_addendum.md, run_matrix.md, results.md, tools/run_rq2pd_probes.py).
+**FREEZE-4 record (2026-10-02):** artifacts commit **`4df5719`** (exactly
+the four enumerated paths of addendum §2 staged — restricted diff
+verified; no tag). Launcher deploy fix commit **`1aca277`** (FREEZE-4a:
+checker shipped via `scp` — the 38 KB base64 echo exceeded the Windows
+argv limit, WinError 206; chunked-append fallback kept). md5s
+(byte-identical local↔VM): addendum `b61bffc1591f47bceccd007b49a2c5bc`;
+launcher `014c690fdf4f5f6b7fdebcfd03bf3774`; `phases_rq2pc_cb.json`
+`d40f5f592375360c76a1d55f4c168200` (Part C-frozen state). Pre-run checker
+smoke on stored Part C folders reproduced the record exactly: `p1_nn_030`
+LOCK 99.001 % / 3.4222 s; `pd_nn_025` LOCK 97.043 % / 2.7884 s;
+`pd_cf_025` LOCK 74.315 % / 2.0749 s with `signature_grounded=true`
+(missing=[], notes=[]).
+
+**FREEZE-4b record (2026-10-03, instrumentation correction):** during
+execution the checker's action counts were corrected to the frozen "action
+row" semantics — actions taken = decision-log rows with a
+`selected_action` tier (`scaleups_non_none`), not `compute_fired` alert
+flags. On `rq2pd_r2_cf_225` the corrected read is **4 adds/LAN, 0
+pre-episode fires** (raw flag counts 12/31 retained as informational
+fields `decision_compute_fired_rows_episode` /
+`decision_scaleup_rows_pre_episode`). Gate definitions unchanged.
+Launcher md5 → `077a1e36e927be621207d341a5e578cc` (VM commit `acd43e9`).
 
 ---
 
@@ -719,3 +740,5 @@ restricted diff = exactly the four enumerated paths of addendum §2
 | 2026-09-28 | Part C (`rq2pc`) addendum + artifacts authored — §6 added (cells, probe ladder, order plan, checklist) | Part C pre-registration (user-specified) |
 | 2026-09-28 | Part C probes executed (ladder P-0/P-1/P-4 + bounded diag pair @ 2.5); **Part C CLOSED — campaign NOT executed** ("stop + record"); closure record + mechanisms in §6 (registry liveness cull; assignment concentration; no treatable window 1.5–3.0); `phases_rq2pc_cb.json` restored to the frozen state; no `-final-` tag | Part C execution + user decision |
 | 2026-10-02 | Part D (`rq2pd`) addendum + artifacts authored — §7 added (bracketing rungs 2.0/2.25/2.4, `cf` at the lowest locking rung, repeat/confirm/fallback rules, budget, FREEZE-4 slots) | Part D pre-registration (user-directed; continues the Part C closure) |
+| 2026-10-03 | Part D executed across FREEZE-4/4a/4b (`4df5719`/`1aca277`/`acd43e9`): 4 launches (0 relaunches); R_s = 2.25 (first lock); `cf`@2.25 clean fail → fallback `cf`@2.5 reproduced the Part C pattern; **CLOSED — NOT CONFIRMED**; phases restored; records committed | Part D execution + close |
+| 2026-10-02 | Part D review gate executed (4 rounds; verdict **non-blocking**): launcher criticals fixed (analyzer-grounded decision parsing with zero-resolution guard; restore-before-md5 ordering; durable launch ledger with missing-ledger guard) and warnings fixed (missing/notes split, lifecycle lane guards, M2 id-space discriminator, any-tier pre-episode fires, unmatched `--start-at` abort, budget wording); addendum §4/§5/§7 aligned | Review gate (pre-approval) |

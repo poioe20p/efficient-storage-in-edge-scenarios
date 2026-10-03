@@ -64,7 +64,7 @@
 | 2026-09-28 | **Part C diagnostic pair @ 2.5 executed (user-approved, bounded):** `nn`@2.5 LOCK (97.0 %, p50 2.79 s); `cf`@2.5 first treatment signal — **lan2 PRE→POST ×21.4** (min 3–5 at 3–4 ms) — but **unstable**: lan1 ×0.76 (never collapsed), lan2 **relapse from min 6**, lan1's added nodes **torn down mid-episode** by the registry liveness cull (14:22:48–14:24:50) | ⚠ partial + contaminated |
 | 2026-09-28 | **Part C CLOSED — "stop + record" (user decision):** focused analysis (registry liveness cull; near-capacity assignment concentration; no clean treatable window 1.5–3.0) → **campaign NOT executed**; closure record appended below; `phases_rq2pc_cb.json` restored to the frozen state; closure records committed (records-only; no `-final-` tag) | ⏹ closed (no campaign) |
 | 2026-09-28 | **Part A/B pre-battery verification pass (read-only):** Part A headline numbers recomputed from raw artifacts — v3 `latency_summary` reproduced exactly; plan-convention recompute **Q-A1 0.680** / **Q-A2 0.487** (draft quotes ≈0.56–0.62 / ≈0.35 are convention-sensitive); Q-A3 + startup-transient (zero-add `sf_cb`: minute-0 3.9–4.4 s → 3 ms) confirmed; pin list + label caveats appended below | ⚠ recorded (pre-battery) |
-| 2026-10-02 | **Part D pre-registration drafted** ([partd_addendum.md](partd_addendum.md)): onset bracketing `nn`@2.0/2.25/2.4 → `cf` at the lowest locking rung; repeat only on a pass (2 confirmations, ≥ 2/3 rule) or a diagnosed-partial failure (one repeat); terminal `cf`@2.5 fallback; launcher `tools/run_rq2pd_probes.py` — **awaiting review gate + FREEZE-4; no runs yet** | 📋 pre-registration (no runs) |
+| 2026-10-02 | **Part D pre-registration drafted** ([partd_addendum.md](partd_addendum.md)): onset bracketing `nn`@2.0/2.25/2.4 → `cf` at the lowest locking rung; repeat only on a pass (2 confirmations, ≥ 2/3 rule) or a diagnosed-partial failure (one repeat); terminal `cf`@2.5 fallback; launcher `tools/run_rq2pd_probes.py` — **FREEZE-4 done (`4df5719` + launcher fix `1aca277`); checker smoke passed; bracket starting** | ▶ executing |
 
 ## Probe Record — Stage 0
 
@@ -416,9 +416,99 @@ implied campaign readiness that the stop decision obviates).
 
 ## Part D — Record (`rq2pd`)
 
-**Status: 📋 pre-registration — NO runs yet.** Design:
+**Status: ⏹ CLOSED — NOT CONFIRMED (STOP + record).** Design:
 [partd_addendum.md](partd_addendum.md); stage plan: [run_matrix.md](run_matrix.md) §7.
-Probe-record target for execution time; probes are NOT evidence.
+Probes are NOT evidence. FREEZE-4 records: artifacts `4df5719`, launcher
+deploy fix `1aca277` (checker via `scp` — Windows argv limit), freeze-record
+commit `959b5c1`, action-count semantics fix `acd43e9` (FREEZE-4b).
+
+**Execution note (2026-10-03):** the local orchestration session hosting the
+launcher was discarded mid-wait after the first run; the launcher was
+resumed with `--start-at` (state lives on the VM: folders + ledger). The
+first run's `run` event was appended before the session loss, so the budget
+ledger stays truthful.
+
+### Bracket measurements (runner-classified)
+
+| Rung | Run | Arm · rate | Result | Verdict |
+| --- | --- | --- | --- | --- |
+| R1 | `rq2pd_r1_nn_200` (`20261002_230700`) | nn · 2.0 | blended slow-share **0.928 %**; p50 **3.4 ms**; 1 timeout; I1 pass (28 723 / 28 739 completed per LAN); asymmetry 1.001×; no smoke flags | **NO LOCK** → ascend |
+| R2 | `rq2pd_r2_nn_225` (`20261003_001329`) | nn · 2.25 | blended slow-share **66.098 %**; p50 **1.8325 s**; 741 timeouts; I1 pass (32 207 / 31 609 completed); asymmetry 1.019×; no smoke flags (lan1 40.1 % / 0.431 s; lan2 92.1 % / 2.372 s) | **LOCK → R_s = 2.25** |
+| cf | `rq2pd_r2_cf_225` (`20261003_004155`) | cf · 2.25 | **clean fail** — adds 4/LAN ✓; pre-episode fires 0 ✓; added nodes served 56.8 / 70.9 % ✓; **B1 one-LAN partial**: lan1 ratio 0.046 ✓ (0.457→0.021 s), lan2 0.792 ✗ (0.0048→0.0038 s — no PRE degradation to collapse); **recovery 12.33 % > 5 % ✗**; blended 28.9 % slow / p50 7.9 ms; timeouts 2737 (> nn's 741); lan2 **prevention**: 92.1 %→16.9 % slow, p50 2.37 s→0.004 s vs nn; lan1 treatment-insensitive (40.1 %→40.8 % slow); no assignment starvation (lan2: 7/10 min with ≥2 added serving); grounded ✓, no flags | **fail → fallback** |
+| fb | `rq2pd_fb_cf_250` (`20261003_011345`) | cf · 2.5 | **reproduces the Part C 2.5 pattern** — blended 62.06 % slow / p50 1.8948 s (own lock gate: **LOCK** — the treatment does not unlock 2.5); **lan2 collapse-then-relapse** (PRE 1.31 → POST 0.152 s, ratio 0.116; final-120 s p50 2.472 s / 96.1 % slow); **lan1 never collapses** (ratio 1.479; final-120 s p50 2.697 s / 90.9 % slow); timeouts 4374 (6.1 %); recovery 12.59 %; adds 4/LAN ✓; pre-episode fires 0 ✓; lan2 POST registry cull ×7; grounded ✓, no flags | **terminal diagnostic — done** |
+| R3 | `rq2pd_r3_nn_240` | nn · 2.4 | condition: R2 no-lock | ⏭ skipped (R2 locked) |
+| — | `rq2pd_r1_cf_200` | cf · 2.0 | condition: R1 lock | ⏭ skipped (R1 no-lock) |
+| — | `rq2pd_rp_cf_225` (repeat) | cf · 2.25 | condition: diagnosed-partial failure | ⏭ not triggered (clean fail, no starvation) |
+| — | `rq2pd_c1/c2_cf_225` (confirmations) | cf · 2.25 | condition: screening pass | ⏭ not triggered (fail) |
+
+### Part D verdict (2026-10-03) — NOT CONFIRMED → STOP + record
+
+- **Onset bracketed:** no lock at 2.0 (0.93 % slow); **first locking
+  rung 2.25** (R_s), a shallow lock (66.1 % blended slow vs 97 % at 2.5);
+  R3 (2.4) not needed.
+- **Treated-arm test at R_s failed the frozen signature:** B1 one-LAN
+  partial (lan1 0.046 ✓ / lan2 0.792 ✗ — no PRE-window degradation to
+  collapse), recovery 12.33 % > 5 %, timeouts above inaction (2737 vs
+  741); adds 4/LAN ✓, pre-episode fires 0 ✓, added nodes served ✓, no
+  documented assignment starvation → **clean fail** (no repeat), routed to
+  the terminal fallback.
+- **Terminal fallback at 2.5 reproduced the Part C diagnostic**: unstable
+  expression (lan2 collapse-then-relapse; lan1 no collapse) with cull
+  noise, treatment locked.
+- **No clean, sustained, both-lane treatable compute-bound window exists
+  in [1.5, 3.0]** on the evaluated platform: the negative is now bounded
+  inside **[onset (2.0, 2.25], 3.0]**. Part D contributes **no evidence
+  runs** (probes are not evidence); the campaign is NOT executed. Budget
+  used: 4 launches / 8, 0 relaunches.
+- **Cleanup (2026-10-03, user instruction — recorded exception to the
+  addendum §7.4 "run folders are never deleted" rule):** the four run
+  folders were slim-archived and deleted. Archive:
+  `source/scripts/testing/metrics/_archive_rq2pd_slim.tar.gz` (~25 KB:
+  `run_status.json`, decision logs, `node_lifecycle_timings.csv`, latency
+  summaries, admission logs, and the full checker JSON per run — the
+  classification evidence of record). Teardown verified: containers 0/0
+  (12 removed), test clients 48→0, netns 0, veths 59→0 (incl. 4 orphaned
+  OVS ports), OVS bridges/datapaths 0, 2 transient dynamic volumes removed
+  (static seeds + images kept); phases file restored to `d40f5f59…`.
+- **Exploratory observation (not evidence):** at 2.25 the compute action
+  *prevented* the lan2 meltdown (92.1 % → 16.9 % slow; p50 2.37 s →
+  0.004 s vs inaction) while lan1 was treatment-insensitive (≈40 % slow in
+  both arms); the pre-registered PRE→POST collapse contract reads
+  prevention as "no collapse" (the PRE window, 15–24 s, precedes the
+  meltdown's development), and the treated run carried more client
+  timeouts than inaction. Carried to the RQ2 boundary record as
+  mechanism context.
+- **Prior-art check (2026-10-03):** the CPU-cap reduction path for this
+  question was already explored in RQ3 (relief descent 0.25→0.20→0.15
+  stopped at first relief; consequence descent 0.13→0.12→0.11 capped
+  ~1.5 %; standing quota 0.12). **No new quota-ladder probing campaign** —
+  full survey: [cpu_cap_prior_art_check.md](cpu_cap_prior_art_check.md).
+
+_**FREEZE-4b (2026-10-03, instrumentation correction):** the checker's
+action counts were corrected to the frozen "action row" semantics —
+actions taken = decision-log rows with a `selected_action` tier
+(`scaleups_non_none`), not alert flags. On `rq2pd_r2_cf_225` this reads
+**4 adds/LAN and 0 pre-episode fires** (the raw `compute_fired` flags read
+12/31 rows — alert firings and idle decision cycles, kept as informational
+fields). Gate definitions unchanged; the launcher md5 moved to
+`077a1e36e927be621207d341a5e578cc`._
+
+_Reading of the cf@2.25 run (recorded with the freeze semantics): the
+pre-registered collapse criterion registers a one-LAN partial because the
+lan2 PRE window (24 s) precedes the meltdown's development — the treatment
+**prevented** the lan2 meltdown rather than recovering from it, and the
+run additionally carries more client timeouts than inaction and a
+non-recovered demand-drop window. No assignment starvation is documented,
+so per the frozen tree the run is a fail and routes to the terminal
+fallback; the prevention observation is exploratory (probes are not
+evidence)._
+
+_Landmarks: the onset is **strictly inside (2.0, 2.25)** — 2.0 cruises
+(0.93 % slow, 3.4 ms), the first locking rung is **2.25** at a **shallow**
+severity (66 % blended slow, p50 1.83 s; the two lanes straddle the gate at
+0.43 s vs 2.37 s), against the deep meltdowns at 2.5 (97 %) and 3.0 (99 %).
+The shallow-lock band the screening targets is therefore 2.25 — the treated
+arm test (`cf`) is in flight there._
 
 ---
 
@@ -455,3 +545,10 @@ Probe-record target for execution time; probes are NOT evidence.
 | 2026-09-28 | Part A/B pre-battery verification note appended — recomputed values (Q-A1 0.680 / Q-A2 0.487), convention bands, cross-checks (v3 summaries reproduced exactly), pin list (ratio conventions, ≈3×, L4 counts, build-delta/cap labels, `nn_db_3`) | Verification pass (read-only; ahead of the final battery) |
 | 2026-10-01 | **Thesis figure battery executed (read-only, VM):** RQ2 consequence map (p95 data-bound / p50 compute-bound), compute-engagement figure, and relief restyle produced from raw run folders by `source/scripts/testing/analysis/rq2/scripts/generate_thesis_figures.py` (+ per-value CSV in `graphs/thesis/`); ratio convention pinned to all available replicates, lanes pooled, median — Q-A2 ≈ 0.37 (0.487 on the seed-42 pool) and Q-A1 ≈ 0.49 (0.680 on seed-42); relief lane counts restated (sf 12/12; ba 8/10); `main.tex` §5.3 numbers and `tab:rq2_criteria` reconciled to the figures | ✅ recorded |
 | 2026-10-02 | Part D (`rq2pd`) pre-registration drafted (addendum + run-matrix §7 + this status row) — no runs; Part C remains CLOSED | Part D design (user-directed; continues the Part C closure) |
+| 2026-10-02 | Part D review gate executed (4 rounds; non-blocking): launcher grounding/budget fixes + doc alignment; Part D remains **no runs**; Part C remains CLOSED | Review gate (pre-approval) |
+| 2026-10-02 | **FREEZE-4 executed (VM):** artifacts commit `4df5719` (4-path restricted diff); launcher deploy fix `1aca277` (scp-based checker deploy — Windows argv limit); checker smoke on stored Part C folders reproduced the record exactly (`p1_nn_030` 99.001 % / 3.4222 s; `pd_nn_025` 97.043 % / 2.7884 s; `pd_cf_025` 74.315 % / 2.0749 s, `grounded=true`); phases md5 `d40f5f59…` verified | Freeze record (pre-run) |
+| 2026-10-03 | **Part D executed (VM) — 4 runs, 0 relaunches:** bracket `nn`@2.0 NO LOCK (0.928 %/3.4 ms) → `nn`@2.25 **LOCK** (66.098 %/1.8325 s) ⇒ R_s = 2.25 → `cf`@2.25 screening (**clean fail**: B1 one-LAN partial lan1 0.046 / lan2 0.792; recovery 12.33 % > 5 %; adds 4/LAN; pre-fires 0; no starvation) → terminal fallback `cf`@2.5 (reproduced the Part C pattern: lan2 collapse-then-relapse 0.116, lan1 no collapse 1.479, still LOCK 62.06 %) | ⏹ **NOT CONFIRMED → STOP + record** |
+| 2026-10-03 | **FREEZE-4b (instrumentation correction):** checker action counts corrected to the frozen "action row" semantics (`selected_action` tiers, not `compute_fired` alert flags; corrected read 4 adds/LAN, 0 pre-fires on the screening run; flag counts kept as informational fields); launcher md5 `077a1e36…`, commit `acd43e9` | Record correction |
+| 2026-10-03 | **Part D CLOSED:** phases restored (`d40f5f59…` verified); close records committed; outcome — no clean treatable compute-bound window in [1.5, 3.0]; negative bounded inside [onset (2.0, 2.25], 3.0]; exploratory prevention observation recorded at 2.25 | Close (no campaign) |
+| 2026-10-03 | **Part D cleanup (user instruction — recorded exception to the addendum §7.4 no-deletion rule):** slim archive `_archive_rq2pd_slim.tar.gz` (25 KB; per-run checker JSON + decision/lifecycle/latency/admission artifacts) + the four run folders deleted; full teardown verified (containers 12→0, clients 48→0, netns 0, veths 59→0 incl. orphan OVS ports, bridges/datapaths 0, 2 dynamic volumes removed; static seeds + images kept) | Close cleanup |
+| 2026-10-03 | **CPU-cap prior-art check recorded** ([cpu_cap_prior_art_check.md](cpu_cap_prior_art_check.md)): the quota-reduction path was explored in RQ3 (relief descent 0.25→0.20→0.15 → locked at first relief; consequence descent 0.13→0.12→0.11 → structural ~1.5 % ceiling; standing quota 0.12 at rate 2.0); RAM never shaped; demand escalation rejected/confirmed non-treatable. **Decision: no new quota-ladder probing campaign** | Pre-design check (user-requested) |

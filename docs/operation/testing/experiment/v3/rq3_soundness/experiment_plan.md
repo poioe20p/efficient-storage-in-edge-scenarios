@@ -492,3 +492,18 @@ manifest/tag identity · phase-profile assertion.
   exhaustion-admission; P0 commit→tag→restore→manifest order fixed;
   S=1200 locked; seeds 6304–6306 reserved (no tie-break); cost arithmetic
   corrected; Family-4 recovery magnitudes updated (21.4 s / 17.1 s).
+- 2026-10-03 — R1 attempt 1 (`rq3snd_premature10_event_only_90`, seed 6351)
+  STOP: gates R1(c)/(f) failed (claim→bind 15.3–20.2 s vs N = 10). Root
+  cause: blocking `socket.getfqdn` reverse lookup inside werkzeug's
+  `make_server` stalls 5.3–10.3 s under the lab resolver (same stall in
+  knob-off Family-4 archives). Instrument fix: scoped bind-lookup guard in
+  `app.py` (display name only — no runtime semantics change); new commit
+  `541fb22` + tag `rq3snd-preflight-20261003` + worktree `~/rq3snd_frozen2`;
+  edge_server rebuilt `207b1f9e8f64` (smoke `make_server = 0.000 s`); gates
+  unchanged; one permitted harness-invalidity rerun `_90r` (seed 6351).
+- 2026-10-03 — **P1 preflight COMPLETE (lock)**: R1 `_90r` (seed 6351,
+  6/6 gates; deferrals 10.01–10.02 s) ∧ R2 `_91` (6352, 5/5) ∧ R3 `_92`
+  (6353, 4/4; coverage 1.0) all pass under the fixed instrument;
+  `rq3snd_preflight_lock.json` written (S = 1200; seeds recorded); repo
+  canonical `phases.json` restored in place (§7.5); optional R3b not run;
+  E awaits go/no-go.

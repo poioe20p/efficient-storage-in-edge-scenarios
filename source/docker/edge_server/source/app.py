@@ -302,9 +302,27 @@ if __name__ == "__main__":
     import importlib.metadata as _im
     _im.version("werkzeug")
     _t2 = time.perf_counter()
-    server = make_server(
-        CONFIG.bind_host, CONFIG.bind_port, app, threaded=True,
-    )
+    # ── RQ3 bind-lookup guard (2026-10-03) ────────────────────────────────
+    # werkzeug's BaseWSGIServer.server_bind resolves its display name via
+    # socket.getfqdn(host); for host 0.0.0.0 Python falls back to
+    # gethostbyaddr(gethostname()), a DNS query that stalls ~5 s per
+    # unreachable resolver (lab resolv.conf 185.12.64.1/2): measured
+    # 5.3–10.3 s inside make_server on every RQ3 soundness preflight bind
+    # (R1 `_90`: claim→bind 15.3–20.2 s vs N=10 → gates R1(c)/(f) FAIL).
+    # The name is display / WSGI-environ metadata only; resolve it locally
+    # without DNS — the same value the resolver yields on its fast path.
+    _saved_getfqdn = _socket.getfqdn
+
+    def _fast_getfqdn(_name=""):
+        return _socket.gethostname()
+
+    _socket.getfqdn = _fast_getfqdn
+    try:
+        server = make_server(
+            CONFIG.bind_host, CONFIG.bind_port, app, threaded=True,
+        )
+    finally:
+        _socket.getfqdn = _saved_getfqdn
     _t_bind = time.time()
     _t3 = time.perf_counter()
     log.info(

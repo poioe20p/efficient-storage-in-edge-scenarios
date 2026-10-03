@@ -137,9 +137,10 @@ in the probe log).
 **Budget:** ≤ 8 launches in total, including the single validity relaunch
 (bracket ≤ 4 · repeat ≤ 1 · confirm ≤ 2 · fallback ≤ 1; the reachable path
 maximum is 7, so one relaunch still fits the cap; expected ≈ 6–8 h wall
-clock). The launcher enforces the global counts via the remote event log
-(`/tmp/rq2pd_events.jsonl`); exceeding the allowance → abort + user
-decision (never a silent relaunch).
+clock). The launcher enforces the global counts via the durable event
+ledger (`source/scripts/testing/metrics/rq2pd_events.jsonl` on the VM —
+untracked); exceeding the allowance → abort + user decision (never a
+silent relaunch).
 
 ## 5. Gates and acceptance criteria
 
@@ -188,7 +189,10 @@ verdict, not a gate):**
 
 An ungrounded signature extraction (missing artifact or column) is a
 **validity flag** — it takes the unified-relaunch path and is never
-recorded as a clean fail.
+recorded as a clean fail. **M2 zero matches are classified by the
+id-space discriminator:** mapping evidence present (some client
+`backend_id` matches a lifecycle node name) → genuine M2 fail (signature
+item 5 fails); no mapping evidence at all → validity flag (ungrounded).
 
 **Confirmation rule (frozen):** R_s is confirmed iff **≥ 2 of 3** `cf`
 runs (screening-or-partial-repeat + 2 confirmations) pass the signature
@@ -224,6 +228,11 @@ with clean validity.
    against stored Part C run folders (`*_rq2pc_pd_nn_025`,
    `*_rq2pc_pd_cf_025`, `*_rq2pc_p1_nn_030`) to validate parsers before
    any new run; clean-VM / free-disk checks as Part C.
+
+   **Between-stage constraint:** every launch-stage invocation must start
+   from the frozen phases file — after a stage that edited the rate, run
+   `--restore-phases` before the next stage (and before any `--start-at`
+   resume); the md5 preflight enforces this and aborts otherwise.
 4. **Execution:** stage by stage per §4; each stage is classified before
    the next stage launches (runner-side; checkpoint pattern); the probe
    record is appended to the results.md **Part D — Record (`rq2pd`)**
@@ -248,9 +257,12 @@ with clean validity.
 - **Small-n confirmation:** 3 runs at R_s cannot fully exclude a lottery;
   the campaign, if entered, carries the pre-registered ≥ 4/6 replicate
   rule, and a rate that fails there is reported as such.
-- **Run-count discipline:** the launcher enforces the global ≤ 8 launch
-  slots + 1 relaunch via the remote event log; the probe record mirrors the
-  counts.
+- **Run-count discipline:** the launcher enforces ≤ 8 launches in total,
+  including the single validity relaunch, via the durable event ledger
+  (`source/scripts/testing/metrics/rq2pd_events.jsonl`); a missing/empty
+  ledger with existing `*_rq2pd_*` run folders aborts for a manual
+  decision, so a `/tmp` clean-up or reboot cannot silently reset the
+  budget; the probe record mirrors the counts.
 
 ## Changelog
 

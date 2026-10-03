@@ -1,0 +1,115 @@
+{
+  "diagnose_reasons": [],
+  "family": "rq3_soundness",
+  "lock_written": true,
+  "premature_lead_s": 10,
+  "r3b_informative": null,
+  "runs": {
+    "R1": {
+      "check_violations": 4,
+      "evaluated": true,
+      "f3_coverage": 1.0,
+      "floors": {
+        "cancel_rate": 0.004266612914063025,
+        "checks": {
+          "driver_cancel_rate_lt_5pct": true,
+          "f2_window_min_per_lan_ge_15": true,
+          "plateau_per_lan_ge_1000": true,
+          "plateau_pooled_ge_5000": true
+        },
+        "f2_window_min_per_lan": {
+          "lan1": 699,
+          "lan2": 661
+        },
+        "pass": true,
+        "per_lan_offered": {
+          "lan1": 28651,
+          "lan2": 28632
+        },
+        "pooled_offered": 57283
+      },
+      "gates": {
+        "a_in_window_000_ge_10_per_lan": true,
+        "b_run_wide_000_ge_0.3pct_and_50": true,
+        "c_median_admit_first_in_8_12": true,
+        "d_check_violation_ge_1": true,
+        "e_attestation_premature_s_matches": true,
+        "f_measured_deferral_in_9_11": true
+      },
+      "measured_deferrals_s": [
+        10.02023696899414,
+        10.010870933532715,
+        10.012757062911987,
+        10.01905083656311
+      ],
+      "pass": true,
+      "run": "20261003_003124_rq3snd_premature10_event_only_90r",
+      "seed": 6351,
+      "spawns_admission_rows": 4,
+      "spawns_found": 4,
+      "spawns_mismatch": false
+    },
+    "R2": {
+      "check_violations": 0,
+      "descriptive": {
+        "admit_to_first_in_0_2": true,
+        "admit_to_first_median_s": 0.6986751556396484
+      },
+      "evaluated": true,
+      "f3_coverage": 1.0,
+      "gates": {
+        "a_000_le_1_and_le_0.2pct": true,
+        "b_zero_pre_bind_successes": true,
+        "c_zero_check_violations": true,
+        "d_median_claim_first_in_10_22": true,
+        "e_admission_source_probe": true
+      },
+      "measured_deferrals_s": [
+        10.011180877685547,
+        10.009948015213013,
+        10.011749982833862,
+        10.00742506980896,
+        10.014153957366943
+      ],
+      "pass": true,
+      "run": "20261003_011345_rq3snd_premature10_reconcile_91",
+      "seed": 6352,
+      "spawns_admission_rows": 5,
+      "spawns_found": 5,
+      "spawns_mismatch": false
+    },
+    "R3": {
+      "check_violations": 0,
+      "evaluated": true,
+      "f3_coverage": 1.0,
+      "gates": {
+        "a_lie_window_coverage_ge_90pct": true,
+        "b_attributed_5xx_ge_90pct_and_15_per_lan": true,
+        "c_transport_000_le_1pct_window": true,
+        "d_zero_check_violations": true
+      },
+      "measured_deferrals_s": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "pass": true,
+      "run": "20261003_015620_rq3snd_semantic_event_only_92",
+      "seed": 6353,
+      "spawns_admission_rows": 5,
+      "spawns_found": 5,
+      "spawns_mismatch": false
+    },
+    "R3b": {
+      "evaluated": false,
+      "reason": "run not provided",
+      "run": null
+    }
+  },
+  "semantic_lie_s": 1200,
+  "stage": "P1",
+  "stop_reasons": [],
+  "verdict": "lock"
+}
