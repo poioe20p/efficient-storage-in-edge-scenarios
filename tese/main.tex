@@ -2160,9 +2160,13 @@ avoids the normal approximation used for larger samples. Alongside each
 exact $p$-value, the campaigns report an effect size, Cliff's $\delta$,
 computed as the probability that a value from one treatment exceeds a value
 from the other minus the reverse probability. An effect size is reported
-because significance alone does not express how separated the runs are, and
-$\delta$ states that separation on a bounded scale from $-1$ to $1$, with
-$-1$ and $1$ corresponding to complete separation. Where a confidence
+because significance alone does not show how separated the runs are. The
+value of $\delta$ runs from $-1$ to $1$. A negative value means the runs
+of the first treatment tend to be lower than those of the second, and a
+positive value means they tend to be higher. At $-1$, every run of the
+first treatment lies below every run of the second. At $1$, the order
+reverses. The two extreme cases are called complete separation, and values
+near $0$ mean the two treatments overlap. Where a confidence
 interval is reported, it is a 95~\% interval, which gives the range of
 plausible values rather than a single number.
 
@@ -2298,19 +2302,19 @@ current at each poll; and D received one window in three as it was published.
 \begin{table}[htbp]
     \centering
     \caption{Delivery realisation and overload observability (mean over the
-    seven replicates; delivered fraction as the observed range): fraction of
+    seven replicates, delivered share as the observed range): share of
     telemetry windows delivered and mean information age at decision.}
     \label{tab:rq1_observation}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
     \begin{tabular}{l c c}
         \toprule
-        Arm & Delivered & Information age (s) \\
+        Arm & Delivered (\%) & Information age (s) \\
         \midrule
-        A -- event-preserving & 1.000 & 3.5 \\
-        B -- delayed (+30~s) & 1.000 & 33.3 \\
-        C -- latest-state (poll 30~s) & 0.325--0.336 & 16.2 \\
-        D -- sampled push (/3) & 0.328--0.336 & 11.7 \\
+        A -- event-preserving & 100.0 & 3.5 \\
+        B -- delayed (+30~s) & 100.0 & 33.3 \\
+        C -- latest-state (poll 30~s) & 32.5--33.6 & 16.2 \\
+        D -- sampled push (/3) & 32.8--33.6 & 11.7 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2336,7 +2340,7 @@ because delivery timing determines it by construction.
     \centering
     \caption{Delivery-semantics arms: usable capacity, episode latency, and
     outcome classes (medians with min--max ranges over the seven replicates;
-    delivered fraction and timeouts as observed). Usable capacity is the time
+    delivered share and timeouts as observed). Usable capacity is the time
     from episode onset to first new capacity serving traffic; the episode p95
     is the served-basis endpoint latency p95 (per-run mean of the two
     domains).}
@@ -2345,12 +2349,12 @@ because delivery timing determines it by construction.
     \setlength{\tabcolsep}{2pt}
     \begin{tabular}{l c c c c c}
         \toprule
-        Arm & Delivered & Usable capacity (s) & Episode p95 (s) & Timeouts & Cancelled (\%) \\
+        Arm & Delivered (\%) & Usable capacity (s) & Episode p95 (s) & Timeouts & Cancelled (\%) \\
         \midrule
-        A -- event-preserving & 1.000 & 28.5 (25.1--32.9) & 3.7 (2.8--5.2) & 0 & 5.6 \\
-        B -- delayed (+30~s) & 1.000 & 59.6 (55.1--61.5) & 10.8 (5.0--65.3) & 0 & 6.5 \\
-        C -- latest-state (poll 30~s) & 0.325--0.336 & 79.6 (73.7--81.8) & 35.0 (27.0--39.6) & 0 & 5.4 \\
-        D -- sampled push (/3) & 0.328--0.336 & 83.2 (75.1--88.1) & 34.5 (30.7--37.6) & 0 & 6.1 \\
+        A -- event-preserving & 100.0 & 28.5 (25.1--32.9) & 3.7 (2.8--5.2) & 0 & 5.6 \\
+        B -- delayed (+30~s) & 100.0 & 59.6 (55.1--61.5) & 10.8 (5.0--65.3) & 0 & 6.5 \\
+        C -- latest-state (poll 30~s) & 32.5--33.6 & 79.6 (73.7--81.8) & 35.0 (27.0--39.6) & 0 & 5.4 \\
+        D -- sampled push (/3) & 32.8--33.6 & 83.2 (75.1--88.1) & 34.5 (30.7--37.6) & 0 & 6.1 \\
         \bottomrule
     \end{tabular}
 \end{table}
