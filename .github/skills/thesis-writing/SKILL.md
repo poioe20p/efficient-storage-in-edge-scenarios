@@ -118,10 +118,17 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
 | Use | Never / retired | Notes |
 | --- | --- | --- |
 | **scale-up / scale-down** | scale-out (retired from prose) | defined in §2.4: adding a unit of capacity to a tier is scale-up, removing one is scale-down |
+| **scaling action** | capacity action (retired 2026-10-03) | the unit the decision point selects and hands to the infrastructure (compute or storage scale-up); decision-side counterpart: **scaling decision**; attributive: scaling-action selection |
+| **arm** | cell (retired 2026-10-03) | one tested configuration of a campaign: delivery mode (RQ1, Arm~A--D); policy × regime (RQ2, six arms); admission-configuration × fault (RQ3) |
+| **run** | lane (retired 2026-10-03) | a single campaign execution; "replicate" = run within a design block |
+| **backend selector** | — | first-use form in §3.3.2; "the selector" thereafter |
+| **routing pool** | selector's eligible pool (retired) | the set a unit enters on admission and leaves on removal |
+| **absorption margin** | absorbing margin (typo form) | the base fleet's spare capacity that absorbs delay while new capacity starts |
+| **operating envelope** | evaluated envelope (retired) | the evaluated operating conditions; resource-side bounds are "resource limits" |
 | **compute tier** | data tier, service tier | the two scaled dimensions are compute and storage |
 | **storage tier** | data tier | generic form: "resource tier" |
-| **edge-service replicas** (a.k.a. **backends** in the routing context) | — | first-use convention declared in §3.3 |
-| **storage member** vs **replica** | — | "replica" = service replica or MongoDB copy; "member" = replica-set member |
+| **compute replicas** (a.k.a. **backends** in the routing context) | edge-service replicas, service replicas (retired 2026-10-03) | the scaled units of the compute tier; the running container is the edge server; first-use convention declared in §3.3 |
+| **storage member** vs **replica** | — | "replica" = compute replica or MongoDB copy; "member" = replica-set member |
 | **domain** | site (except in the physical/geographic sense) | bridge sentence in §3.2 |
 | **readiness / readiness state → readiness-admission** | boot (for RQ3) | RQ3 = readiness → admission → first serve; boot is out of scope |
 | **activation of a prepared reserve** | cold replica creation on the reaction path | storage-action wording rule |
