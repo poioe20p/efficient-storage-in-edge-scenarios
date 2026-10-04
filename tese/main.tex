@@ -977,7 +977,13 @@ concerned, take the eligible set as given. Indeed, Neghabi et al.
 record failure management as a concern that the mechanisms their
 survey covers have not taken into account, so failure-driven changes
 to the eligible set remain unaddressed
-\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}.
+\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. The
+eligible set and the true serving state of its backends can therefore
+desynchronise in one of two directions. When a change reaches the
+routing plane late or not at all, ready capacity stays outside the set,
+and the fleet serves the demand without it. When a backend is in the
+set while it cannot serve the traffic it receives, the requests routed
+to it fail.
     
     The reviewed selection studies optimise the distribution of load over the
 eligible set, taking that set as given. This dissertation treats the set
@@ -1184,7 +1190,7 @@ three interfaces and the question each leaves open.
         Ready backend to traffic (RQ3) &
         How does readiness-admission coordination affect the delay from
         verified readiness to usable capacity, when the new capacity begins
-        to carry load, and the transition-window service consequence? \\
+        to carry load, and the onset-window service consequence? \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2057,7 +2063,7 @@ per-request means over the demand episode. The readiness admission campaign
 reports the segment of the chain from the scaling decision to usable capacity, 
 which isolates the admission path.
 
-Service quality is summarised per run through percentiles (p50, p95, p99) of
+Service quality is summarised per run through percentiles (p50, p95) of
 the endpoint latency over the demand episode. Latency percentiles are computed
 on the served basis, over completed requests. Outcome classes are reported
 distinctly as offered requests, completed requests, failed
@@ -2110,7 +2116,8 @@ question.
 \end{itemize}
 
 Control overhead is reported as the CPU utilisation and resident memory of the
-controller and telemetry processes along each campaign.
+controller processes, and as the volume of control records, along each
+campaign.
 
 \subsection{Campaign Designs and Analysis}\label{sec:campaign_analysis}
 All three campaigns follow the same discipline of single-variable
@@ -2577,10 +2584,10 @@ service consequence of acting, the targeted-tier relief that underlies it,
 the resource use of the actions, and the selector's commitment to the
 detected tier.
 
-The service outcome is regime-concentrated (Figure~\ref{fig:rq2_map}). 
+The service outcome is regime-concentrated (Figures~\ref{fig:rq2_latency_data} and~\ref{fig:rq2_latency_compute}). 
 On the data-access-bound episode the tier-matched storage action delivered 
 a large user-visible benefit over inaction as the episode endpoint latency p95 was
-about 0.6~s against about 1.5~s under no action, a ratio of about 0.39
+about 0.6~s against about 1.6~s under no action, a ratio of about 0.37
 against the pre-registered benefit threshold of 0.85 (secondary: p50 about
 60~ms against about 280~ms). 
 
@@ -2591,29 +2598,52 @@ harm criterion (ratio $\ge$ 1.2 with replicate support) was not met, and the
 measured ordering is the matched storage action, then the mismatched compute
 action, then no action.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{images/rq2_latency_data_access.png}
+    \caption{Episode endpoint latency of the data-access-bound episode at
+    the p95 (left, logarithmic axis) and the median (right) for the
+    no-action comparator and the three arms. The matched storage action
+    takes the tail and the mismatched compute action keeps the lowest
+    median while leaving a higher tail. Bars show per-arm medians across
+    replicates and dots the individual runs; the no-action comparator is
+    drawn from the extension campaign and carries its cross-era label.}
+    \label{fig:rq2_latency_data}
+\end{figure}
+
 On the compute-bound episode neither policy differed from no action in
 service as both served at a p50 of about 3~ms. The action was nevertheless
 executed in full (Figure~\ref{fig:rq2_engagement}): the added replicas served
-a majority of each run's requests (medians of about 64 and 67~\% in the
-compute-only and bottleneck-aware arms), per-backend utilisation fell by
-about 30~\%, and the total compute spent rose by about three and a
-half times. The campaign's recorded recovery signature, a pre-to-post p50
-collapse (2.2--3.0~s to about 3.3~ms), is a start-up transient rather than
-recovery, since a control run that withheld the compute action reproduced
-it. A later pre-registered escalation found no regime in which the compute
-deficit was both capacity-bound and measurable. Its platform behaviours
-are carried to Chapter~\ref{ch:conclusions} outside the evidence set.
+a majority of each run's requests (medians of about 71 and 72~\% in the
+compute-only and bottleneck-aware arms), per-backend CPU stayed below the
+storage-only single-backend load (about 46--56~\% against 61~\%), and the
+total compute spent rose to about four times that load. No recovery is attributable to the compute action: onset latency is flat
+(about 3~ms), and the only multi-second latency is a late-episode tail in
+the arms that scale up the compute tier (p95 medians of 4.6~s in the
+compute-only arm and 1.6~s in the bottleneck-aware arm), absent in the
+storage-only arm and the no-action comparator (about 7~ms). The load is
+the same in every arm and stays below the tier's capacity, so the tail is
+not a property of the load itself: it appears only where the compute tier
+was scaled mid-episode, and the no-action and storage-only arms are
+fastest because nothing in them changes mid-episode. A
+later pre-registered escalation found no regime in which the compute
+deficit was both capacity-bound and measurable. Its platform behaviours are carried to
+Chapter~\ref{ch:conclusions} outside the evidence set.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\textwidth]{images/rq2_consequence_map.png}
-    \caption{Episode endpoint latency for the no-action comparator and the
-    three policies, by episode. The left panel reports the data-access-bound
-    episode at the p95 on a logarithmic axis, and the right panel the
-    compute-bound episode at the p50. Bars show per-arm medians across replicates
-    and dots the individual runs; the no-action comparator is drawn from the
-    extension campaign and carries its cross-era label.}
-    \label{fig:rq2_map}
+    \includegraphics[width=0.85\textwidth]{images/rq2_latency_compute_bound.png}
+    \caption{Episode endpoint latency of the compute-bound episode at the
+    median (left) and the p95 (right, logarithmic axis) for the no-action
+    comparator and the three arms, all six replicates per arm on the same
+    build. The median is the null reading: every arm serves at about
+    3~ms. At the p95 the onset latency is flat (about 3~ms) and a
+    late-episode tail appears only in the arms that scale up the compute
+    tier (medians of about 4.6~s in the compute-only arm and 1.6~s in
+    the bottleneck-aware arm), absent in the storage-only arm and the
+    no-action comparator (about 7~ms). Bars show per-arm
+    medians across replicates and dots the individual runs.}
+    \label{fig:rq2_latency_compute}
 \end{figure}
 
 \begin{figure}[H]
@@ -2624,7 +2654,7 @@ are carried to Chapter~\ref{ch:conclusions} outside the evidence set.
     backends after the first addition, with the per-run values as dots, and
     the right panel the summed per-backend CPU of each run against
     the storage-only single-backend load. The action executed in full, yet the
-    service outcome (Figure~\ref{fig:rq2_map}, right) is unchanged.}
+    service outcome (Figure~\ref{fig:rq2_latency_compute}, left) is unchanged.}
     \label{fig:rq2_engagement}
 \end{figure}
 
@@ -2716,11 +2746,11 @@ unmet gate is carried as such.
         \toprule
         Criterion & Threshold & Observed \\
         \midrule
-        Compute recovery (pre/post p50) & collapse $\ge 2\times$, aligned replicates & start-up transient (control) \\
+        Compute recovery (pre/post p50) & collapse $\ge 2\times$, aligned replicates & start-up transient (control); late-episode tail in the compute-scaling arms \\
         Storage tail latency (pre/post p95) & 95~\% CI excluding 1.0 & 0.727 [0.574, 1.393] \\
         Storage resource relief (post/pre CPU) & ${<}0.75$, aligned runs & 0.57--0.66 (12/12); 0.62--1.06 (8/10) \\
-        Benefit vs inaction (storage, data-access-bound) & ratio $\le 0.85$ & $\approx 0.39$ (labelled) \\
-        Harm vs inaction (compute, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.52$ \\
+        Benefit vs inaction (storage, data-access-bound) & ratio $\le 0.85$ & $\approx 0.37$ (labelled) \\
+        Harm vs inaction (compute, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.49$ \\
         Sequence recovery (one configuration) & per-leg recovery & not confirmable \\
         \bottomrule
     \end{tabular}
@@ -3065,10 +3095,37 @@ fleet absorbs.
     \label{fig:rq3_recovery_ordering}
 \end{figure}
 
-Two qualifiers bound this reading. First, the campaign's pre-registered
-conjunction (the headline contrast, its relief-ordering component, and the
-no-fault health floors) was not fully met, with the shortfall confined to
-the no-fault health floors, and is reported as such. The headline contrast is met, the
+The readiness event carries a claim that the backend can now serve, and
+that claim can fail in three ways: it can be lost (the event-loss
+contrast above), it can arrive before the backend can serve the traffic
+routed to it, or it can hold while the backend fails the workload it
+receives. A second campaign extended the evaluation across all three,
+holding the platform, the workload, and the resource limits fixed and
+varying only the relationship between each claim and the service. The
+user-visible damage is reported in one currency across the three: the
+change in the share of requests that fail, time out, or exceed one
+second, against a matched no-fault run.
+
+The same three rules were compared, joined by a wake-and-verify variant
+in which the readiness event wakes a probe and admission follows the
+probe, with the bounded fallback kept for a claim that never arrives.
+The pre-registered expectation was that no single rule survives all
+three. A rule that admits on the claim is exposed wherever the claim is
+wrong, and the fallback variant is exposed the same way to a premature
+claim, because its fallback reacts to a missing claim rather than to a
+wrong one. The probing rule is expected to answer a lost claim with a
+bounded delay and to be unaffected by a premature one, because it
+admits only what its probe observes, and the probe cannot pass before
+the backend can serve. No rule in the evaluated design space is expected
+to answer the false claim, because both forms of evidence report the
+same readiness condition, and a false claim keeps that condition
+satisfied while the service fails.
+
+Two qualifiers bound the first campaign's reading. First, the campaign's
+pre-registered conjunction (the headline contrast, its relief-ordering
+component, and the no-fault health floors) was not fully met, with the
+shortfall confined to the no-fault health floors, and is reported as
+such. The headline contrast is met, the
 relief-ordering component is met on its re-anchored test alone (the as-run
 onset anchor measured the phase boundary), and the no-fault health floors
 were met in 16 of 18 no-fault runs, with two marginal single-window
@@ -3179,6 +3236,17 @@ the same mechanism lost the admission entirely when its single notification
 was dropped, while the re-deriving rules turned the same loss into a
 bounded delay.
 
+The interfaces also differ in the control records they leave behind, but
+not in the controller cost that carries them. Controller CPU stayed near
+14~\% in the delivery episodes, near 11~\% across the admission plateau,
+and within 2--22~\% across the action episodes depending on the regime (the
+storage-only policy at the low end, the compute-adding policies at the high
+end), with memory near 70~MB everywhere. The records differ as designed:
+about 335 deliveries per run under complete delivery against about
+105--114 under the lossy arms, probe records in place of events under
+discovery admission, and eight or six compute scale-ups per run where the
+compute policies acted (Table~\ref{tab:app_config_control_cost}).
+
 Chapter~\ref{ch:literature_review} left the three questions of
 Table~\ref{tab:interface_gaps} open, and the campaigns are their
 experimental form. Read back against those questions, the results answer
@@ -3225,11 +3293,6 @@ the evaluated workload families and resource limits. Cross-domain
 storage placement remained held-constant platform context throughout, and
 its characterisation is deferred to future work. The limitations of the
 evaluation are detailed in Chapter~\ref{ch:conclusions}.
-
-% TODO(pending): control overhead — controller CPU/RSS by phase and campaign
-% from controller_stats.csv (analysis pending). Include here if extracted,
-% or otherwise remove the overhead promise in Section~\ref{sec:experimental_setup}.
-
 
 
 \chapter{Conclusions and Future Work}\label{ch:conclusions}
@@ -3386,6 +3449,44 @@ functions that select a backend, and a storage member, for a new flow
 (Section~\ref{sec:architecture_overview}). The readiness admission campaign
 pins these weights; the other two campaigns use the platform base
 weights.\par}
+
+\begin{table}[H]
+    \centering
+    \caption{Control-plane cost per configuration (descriptive; medians
+    across the runs of each configuration). Delivery records count delivered
+    telemetry windows; action records count provisioned units; admission
+    records count events or readiness probes.}
+    \label{tab:app_config_control_cost}
+    \footnotesize
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{p{0.13\textwidth} p{0.33\textwidth} p{0.20\textwidth} p{0.12\textwidth} p{0.12\textwidth}}
+        \toprule
+        Campaign & Configuration & Control records per run & CPU & Memory \\
+        \midrule
+        Delivery & A event-preserving & 340 deliveries & 14.3~\% & 69~MB \\
+        Delivery & B delayed & 332 deliveries & 14.7~\% & 69~MB \\
+        Delivery & C latest-state & 105 deliveries & 14.5~\% & 72~MB \\
+        Delivery & D sampled push & 114 deliveries & 14.0~\% & 73~MB \\
+        Action & compute-only, compute-bound & 8 compute scale-ups & 2.7~\% & 72~MB \\
+        Action & storage-only, compute-bound & none & 2.1~\% & 66~MB \\
+        Action & bottleneck-aware, compute-bound & 8 compute scale-ups & 2.7~\% & 67~MB \\
+        Action & compute-only, data-access-bound & 6 compute scale-ups & 22.0~\% & 69~MB \\
+        Action & storage-only, data-access-bound & reserve activations & 15.6~\% & 69~MB \\
+        Action & bottleneck-aware, data-access-bound & 6 compute scale-ups and reserve activations & 22.3~\% & 70~MB \\
+        Action & no action (comparator) & none & 2.2 / 17.0~\% & 66 / 69~MB \\
+        Admission & direct lifecycle & 4 events & 10.9~\% & 67~MB \\
+        Admission & periodic discovery, 10~s & 4 probe records & 11.5~\% & 66~MB \\
+        Admission & periodic discovery, 15~s & 4 probe records & 11.0~\% & 66~MB \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+{\footnotesize\noindent\textit{Note.} Controller CPU is the mean over the
+episode phase for delivery and action, and over the plateau for admission;
+memory is the corresponding mean. Every action configuration records four
+storage adds for the run-start reserve preparation, excluded from the
+storage rows above; the no-action comparator records 2.2~\% on the
+compute-bound episode and 17.0~\% on the data-access-bound one. Counts are
+medians across that configuration's runs.\par}
 }
 
 \end{document}
