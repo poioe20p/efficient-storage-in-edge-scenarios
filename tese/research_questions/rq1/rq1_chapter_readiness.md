@@ -1,10 +1,10 @@
 # RQ1 — Results-Chapter Readiness Dossier
 
-> **Status:** 2026-10-01 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
+> **Status:** 2026-10-05 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
 > 2026-09-28; observation table added 2026-09-28, trimmed to the two
 > observation axes; results narrative interpretation pass; 2026-10-01:
 > pre-registered expectations row added to `tab:rq1_design`; §5.2 exhibits
-> re-ordered to sit after their invoking paragraphs) · **Purpose:** one map of the complete RQ1
+> re-ordered to sit after their invoking paragraphs; 2026-10-05: §5.2 number re-verification vs VM run artifacts (two range corrections applied)) · **Purpose:** one map of the complete RQ1
 > chain — question → design/research → expectations → evaluation → results →
 > conclusion — so that Chapter 5 can be written without re-deriving anything.
 > Companions: `rq1_results_section_draft.tex` (staged §5.2 text),
@@ -114,6 +114,7 @@ One row of the per-RQ setup table:
   campaign record / appendix graphs retain them), `tab:rq1_arms` (per-arm
   summary), `tab:rq1_edges` (pre-registered contrasts).
 - **2026-10-01:** `tab:rq1_design` gained a pre-registered expectations row (ordering A < B < C ≈ D on usable capacity and the served-basis episode p95; the sampled-push arm expected to be strictly worst; non-surge quality clean in every arm). The four §5.2 result exhibits were re-ordered to sit after the paragraphs that invoke them (ISCTE near-invocation rule), in `main.tex` and in the staged draft. A same-day follow-up added an 'on usable capacity' gloss to the replicated-ordering sentence (both files); the row change 'permitted' → 'expected' is main-only.
+- **2026-10-05:** full number re-verification of §5.2 against the `cloud-vm` run artifacts (reaction_timeline / info_age / phase_service_quality / per_node_stats, plus the campaign dataset and stats): all quoted values confirmed; two corrections applied — D-arm episode-p95 lower bound 30.7 → 31.4 (raw minimum 31.43 s, `sp_2`), and the margin-sentence usable-capacity range aligned to the per-run mean-of-domains unit (52.6–63.6 → 55.1–61.5 s; the wider figure was the pooled per-domain range, dominated by the flagged `delayed_3` run). The robustness sentence now also notes the two single-window recovery blips (C 4.2 s, D 5.8 s). No other §5.2 numbers changed.
 - **Numbers:** all re-verified 2026-09-26 against the campaign summary, the
   stats CSV, and the run bundles (provenance comment in the draft header).
 - **Optional appendix material** (not in the page-limited body):

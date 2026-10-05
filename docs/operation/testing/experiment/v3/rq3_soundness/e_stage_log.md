@@ -40,9 +40,9 @@ run_id + base-gate note when checked.
 | 15 | B1 | `rq3snd_loss_all_reconcile_1` | loss_all | reconcile | 6301 | done | run `20261003_202612` 20:19→21:01 UTC; base gates **OK**; floors PASS; loss_all (F1) — no deferrals/lies as expected; 5 spawns; viol=0; cancel 0.39% |
 | 16 | B1 | `rq3snd_semantic_hybrid_1` | semantic | hybrid | 6301 | done | run `20261003_210757` 21:01→21:42 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 48,480, 000 = 0, viol = 0**; cancel 0.30% — optional (descriptive) |
 | 17 | B1 | `rq3snd_loss_all_event_only_1` | loss_all | event_only | 6301 | done (accepted) | run `20261003_214926` 21:42→22:25 UTC; launcher rc=2 = **nested RQ3-v2 min-admissions false-positive** (0 admissions is the expected loss_all mechanism); campaign gate **valid=True**, floors PASS, **32 bind-verified spawns, 0 admitted / 32 abandoned**; accepted with audit note, no rerun — optional (F1 push anchor) |
-| 18 | B1 | `rq3snd_none_wake_verify_1` | none | wake_verify | 6301 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
-| 19 | B1 | `rq3snd_premature10_wake_verify_1` | premature10 | wake_verify | 6301 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
-| 20 | B1 | `rq3snd_semantic_wake_verify_1` | semantic | wake_verify | 6301 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
+| 18 | B1 | `rq3snd_none_wake_verify_1` | none | wake_verify | 6301 | done | run `20261004_215655` 21:50→22:32 UTC; base gates **OK**; floors PASS; clean control; cancel 0.57% |
+| 19 | B1 | `rq3snd_premature10_wake_verify_1` | premature10 | wake_verify | 6301 | done | run `20261004_223834` 22:32→23:14 UTC; base gates **OK**; floors PASS; deferral_s = 10.01; **000=0, viol=0 (wake_verify immune to F2)**; cancel 0.49% |
+| 20 | B1 | `rq3snd_semantic_wake_verify_1` | semantic | wake_verify | 6301 | done | run `20261004_232024` 23:14→23:55 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 39,693, 000 = 0, viol = 0**; cancel 0.44% |
 
 ## Block 2 — seed 6302 (arm order: hybrid → reconcile → event_only)
 
@@ -65,8 +65,8 @@ run_id + base-gate note when checked.
 | 35 | B2 | `rq3snd_semantic_event_only_2` | semantic | event_only | 6302 | done | run `20261004_081340` 08:07→08:47 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 49,581, 000 = 0, viol = 0**; cancel 0.43% |
 | 36 | B2 | `rq3snd_semantic_hybrid_2` | semantic | hybrid | 6302 | done | run `20261004_085430` 08:47→09:28 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 45,404, 000 = 0, viol = 0**; cancel 0.32% — optional (descriptive) |
 | 37 | B2 | `rq3snd_loss_all_event_only_2` | loss_all | event_only | 6302 | done (accepted, guard) | run `20261004_093448` 09:28→10:08 UTC; **nested min-admissions artifact — accepted AUTOMATICALLY by the part-3 guard (first live guard use, zero interruption)**; campaign gate **valid=True**, floors PASS, 32 spawns; cancel 0.54% — optional (F1 push anchor) |
-| 38 | B2 | `rq3snd_none_wake_verify_2` | none | wake_verify | 6302 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
-| 39 | B2 | `rq3snd_premature10_wake_verify_2` | premature10 | wake_verify | 6302 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
+| 38 | B2 | `rq3snd_none_wake_verify_2` | none | wake_verify | 6302 | done | run `20261005_000139` 23:55→00:36 UTC; base gates **OK**; floors PASS; clean control; cancel 0.56% |
+| 39 | B2 | `rq3snd_premature10_wake_verify_2` | premature10 | wake_verify | 6302 | running | started 00:36:28 UTC |
 | 40 | B2 | `rq3snd_semantic_wake_verify_2` | semantic | wake_verify | 6302 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
 
 ## Block 3 — seed 6303 (arm order: reconcile → event_only → hybrid)
@@ -87,9 +87,9 @@ run_id + base-gate note when checked.
 | 52 | B3 | `rq3snd_none_hybrid_3` | none | hybrid | 6303 | done | run `20261004_174938` 17:43→18:24 UTC; base gates **OK**; floors PASS; clean control (000=0, 5xx=0, viol=0) — **all 9/9 core `none` controls complete, all clean**; cancel 0.48% |
 | 53 | B3 | `rq3snd_premature2_hybrid_3` | premature2 | hybrid | 6303 | done | run `20261004_183105` 18:24→19:05 UTC; base gates **OK**; floors PASS; deferral_s = 2.01; **000 = 155**; viol=6; cancel 0.63% |
 | 54 | B3 | `rq3snd_premature5_hybrid_3` | premature5 | hybrid | 6303 | done | run `20261004_191218` 19:05→19:47 UTC; base gates **OK**; floors PASS; deferral_s = 5.01; **000 = 615**; viol=5; cancel 0.45% |
-| 55 | B3 | `rq3snd_premature10_hybrid_3` | premature10 | hybrid | 6303 | running | started 19:47:30 UTC |
-| 56 | B3 | `rq3snd_semantic_hybrid_3` | semantic | hybrid | 6303 | pending | optional (descriptive) |
-| 57 | B3 | `rq3snd_loss_all_event_only_3` | loss_all | event_only | 6303 | pending | optional (F1 push anchor) |
+| 55 | B3 | `rq3snd_premature10_hybrid_3` | premature10 | hybrid | 6303 | done | run `20261004_195358` 19:47→20:28 UTC; base gates **OK**; floors PASS; deferral_s = 10.01; **000 = 1264 — hybrid F2 grid complete (1228/1123/1264)**; viol=6; cancel 0.46% |
+| 56 | B3 | `rq3snd_semantic_hybrid_3` | semantic | hybrid | 6303 | done | run `20261004_203520` 20:28→21:09 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 47,861**; cancel 0.27% — optional (descriptive) |
+| 57 | B3 | `rq3snd_loss_all_event_only_3` | loss_all | event_only | 6303 | done (accepted, guard) | run `20261004_211627` 21:09→21:50 UTC; nested min-admissions artifact — **accepted automatically by the guard (third and final guarded cell)**; campaign gate **valid=True**, floors PASS, 33 spawns; cancel 0.95% — optional (F1 push anchor) |
 | 58 | B3 | `rq3snd_none_wake_verify_3` | none | wake_verify | 6303 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
 | 59 | B3 | `rq3snd_premature10_wake_verify_3` | premature10 | wake_verify | 6303 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
 | 60 | B3 | `rq3snd_semantic_wake_verify_3` | semantic | wake_verify | 6303 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
