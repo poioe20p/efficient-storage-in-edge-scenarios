@@ -1,6 +1,6 @@
 # Results — RQ2 Extension (No-Op Arm, Varying-Demand Campaign, Provenance)
 
-**Date**: 2026-09-28 · **Status**: ✅ **campaign COMPLETE — 30/30 runs executed and verified** (Stage A1 checkpoint 6/6; Stage 2 hard gates clean; two instrumentation items open, analysis-side); Part B execution closed; **Part C (`rq2pc`) CLOSED — probes + bounded diagnostic pair executed (2026-09-28); campaign NOT executed (user decision "stop + record"); closure record + findings below** ·
+**Date**: 2026-09-28 · **Status**: ✅ **campaign COMPLETE — 30/30 runs executed and verified** (Stage A1 checkpoint 6/6; Stage 2 hard gates clean; two instrumentation items open, analysis-side); Part B execution closed; **Part C (`rq2pc`) CLOSED — probes + bounded diagnostic pair executed (2026-09-28); campaign NOT executed (user decision "stop + record"); closure record + findings below**; **Part D (`rq2pd`) CLOSED — NOT CONFIRMED (2026-10-03)**; **Part E (`rq2pe`) pre-registration drafted (2026-10-03) — no runs** ·
 **Plan**: [experiment_plan.md](experiment_plan.md) ·
 **Run matrix**: [run_matrix.md](run_matrix.md)
 
@@ -554,6 +554,144 @@ arm test (`cf`) is in flight there._
 
 ---
 
+## Part E — Record (`rq2pe`)
+
+**Status**: ✅ **campaign COMPLETE (2026-10-04 09:01) — 18/18 runs, 0 retries / 0 relaunches (18/≤36 launches); final scan + extractor verdicts recorded; era-matched figures + deep battery pending (analyzer).** Design:
+[parte_addendum.md](parte_addendum.md); stage plan:
+[run_matrix.md](run_matrix.md) §8. Purpose: the thesis cb panel is
+era-mismatched (`nn_cb` extension era vs `cf/sf/ba_cb` v3 era) — Part E
+re-runs the three action arms × 6 on the frozen hardened build at the base
+compute-bound workload, making all four arms same-era, and pre-registers
+the v3-era tail-signature survival test (O1 onset / O2 tail; verdicts
+reproduced / partial / absent — addendum §4). `nn_cb` (2026-09-27) is the
+era's no-action cell (not re-run); `sf` doubles as the contemporaneous
+no-churn reference. Part E runs are **evidence** (18; never deleted).
+
+| Item | Value |
+| --- | --- |
+| Runs executed | **18 / 18** (2026-10-04 09:01; every run clean) |
+| Launches used | **18 / ≤ 36** (0 retries, 0 relaunches) |
+| Per-run validity (final scan) | completed/exit 0 · 0× NotPrimary · phase-snapshot md5 `d40f5f59…` exact · env snapshots present · I1 20 327–21 567 completed/lane · adds 4/4 per LAN on every `cf`/`ba` run (`sf` 0/0 by design) |
+| Checkpoint 9/18 (2026-10-04 04:42) | ✅ D1 0×NotPrimary · D2 completed/exit 0 · D3 snapshots present · I1 ≥ 20 907/lane · steady p50 3.1–3.5 ms; no anomaly → continuation |
+| **Per-cell verdicts (O2; min 5/6 met — 6/6 valid)** | **`pe_cf_cb` reproduced** (median ep_p95 **4.5523 s**; 0.90× v3 → broadly reproduced) · **`pe_ba_cb` reproduced** (median **1.5877 s**; 0.47× v3 → strongly attenuated) · **`pe_sf_cb` absent** (median **0.0072 s**) |
+| O1 (onset descriptor) | **absent in all three era-matched cells** (m0_p50 3.4 ms — the legacy minute-0 onset transient, o1-ratio 477–1226×, is gone on the hardened build) |
+| Tail shape (O3, informational) | surviving cf/ba tails are **in-episode** (p50 ≥ 0.25 s buckets spanning 360–600 s late-episode), not onset; per replicate: cf 5/6 runs tail-bearing (0.0071/3.05/5.93/8.50/3.17/9.24 s), ba 3/6 (3.17/0.0066/0.0067/3.39/9.03/0.0065 s), sf 0/6 (flat 0.0065–0.0074 s) |
+| Q-E3 (engagement) | cf/ba adds fired 4/4 LAN on **every** run → no divergence → the pre-registered user-decision gate is **not** triggered |
+
+### Part E post-campaign battery (analyzer, 2026-10-04) — addendum §6 items 1–3
+
+**Gate battery — 18/18 runs PASS all hard gates + G2 (0 exclusions; validity
+floor ≥ 5/6 met per cell with 6/6 valid).** Grounding (method per gate):
+
+- **D2 deep check** — `container_events.csv` event/state/status scan across
+  all 18 runs: only `initial`/`added`/`state_change`/`removed`/`final`
+  events; every `exited` transition is `Exited (0)`; **zero** restart/die/
+  kill/OOM events. `service_logs/*` scan: **0** OOM/`Killed`/Traceback
+  markers; exactly **1** `Starting edge-server` banner per edge/storage log
+  (1 service start). Controller logs: **1** `osken-entrypoint` banner per
+  LAN log (no controller restart); `run_status.json` exit 0 everywhere.
+- **D4 fd scan** — EMFILE line detector (`Errno 24` / `Too many open
+  files`, the Part B incident detector) over all `service_logs/*.log` +
+  controller logs: **0 hits in every run** (18/18 clean).
+- **D1/D3 re-verified** — 0× NotPrimary (client CSV status + controller
+  logs); `phases_snapshot.json` md5 `d40f5f59…` exact; env snapshots
+  present — all 18.
+- **I1** — episode completed **20 327–21 567 per LAN** (≥ 5 000 ✓).
+- **I2** — timeouts a distinct class everywhere; max **1 014/LAN**
+  (`ba_cb_5` lan2); worst pooled **4.62 %** (`ba_cb_5`: 1 974 timeouts /
+  42 694 offered) — **no run near the 50 % health flag**.
+- **V1-analog (G2)** — official `rq2_bottleneck_validation.py`
+  (per-segment compute episode, median signals, proc ≥ db primary axis):
+  **PASS / PASS on all 18 runs**. Nuance (reported, not a gate event): 5
+  lanes' G2 `cpu_pct` medians read 0.00 because early-episode zero windows
+  dominate the window-log median; `resource_stats.csv` confirms elevated
+  edge CPU on those lanes (episode medians 31.9–58.4 %) ⇒ edge-CPU clause
+  met independently.
+
+| Run | Cell | Rep | D2 ev/ex/OOM·killed | D4 EMFILE | I1 l1/l2 | I2 t/o l1+l2 (pool %) | G2 l1/l2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `20261003_232940_rq2pe_cf_cb_1` | `pe_cf_cb` | 1 | 0/0/0 | 0 | 21 565/21 567 | 1+0 (0.00 %) | PASS/PASS |
+| `20261003_235822_rq2pe_sf_cb_1` | `pe_sf_cb` | 1 | 0/0/0 | 0 | 21 566/21 566 | 0+0 (0.00 %) | PASS/PASS |
+| `20261004_002704_rq2pe_ba_cb_1` | `pe_ba_cb` | 1 | 0/0/0 | 0 | 21 235/21 192 | 248+266 (1.20 %) | PASS/PASS |
+| `20261004_005622_rq2pe_sf_cb_2` | `pe_sf_cb` | 2 | 0/0/0 | 0 | 21 565/21 566 | 0+0 (0.00 %) | PASS/PASS |
+| `20261004_012511_rq2pe_ba_cb_2` | `pe_ba_cb` | 2 | 0/0/0 | 0 | 21 565/21 567 | 0+0 (0.00 %) | PASS/PASS |
+| `20261004_015347_rq2pe_cf_cb_2` | `pe_cf_cb` | 2 | 0/0/0 | 0 | 21 288/21 244 | 205+234 (1.02 %) | PASS/PASS |
+| `20261004_022233_rq2pe_ba_cb_3` | `pe_ba_cb` | 3 | 0/0/0 | 0 | 21 564/21 565 | 0+1 (0.00 %) | PASS/PASS |
+| `20261004_025119_rq2pe_cf_cb_3` | `pe_cf_cb` | 3 | 0/0/0 | 0 | 20 948/20 907 | 463+502 (2.25 %) | PASS/PASS |
+| `20261004_032041_rq2pe_sf_cb_3` | `pe_sf_cb` | 3 | 0/0/0 | 0 | 21 563/21 567 | 2+0 (0.00 %) | PASS/PASS |
+| `20261004_034856_rq2pe_cf_cb_4` | `pe_cf_cb` | 4 | 0/0/0 | 0 | 20 437/20 483 | 900+856 (4.11 %) | PASS/PASS |
+| `20261004_041759_rq2pe_sf_cb_4` | `pe_sf_cb` | 4 | 0/0/0 | 0 | 21 566/21 567 | 0+0 (0.00 %) | PASS/PASS |
+| `20261004_044635_rq2pe_ba_cb_4` | `pe_ba_cb` | 4 | 0/0/0 | 0 | 21 222/21 209 | 263+272 (1.25 %) | PASS/PASS |
+| `20261004_051551_rq2pe_sf_cb_5` | `pe_sf_cb` | 5 | 0/0/0 | 0 | 21 565/21 565 | 1+0 (0.00 %) | PASS/PASS |
+| `20261004_054430_rq2pe_ba_cb_5` | `pe_ba_cb` | 5 | 0/0/0 | 0 | 20 393/20 327 | 960+1014 (**4.62 %**) | PASS/PASS |
+| `20261004_061331_rq2pe_cf_cb_5` | `pe_cf_cb` | 5 | 0/0/0 | 0 | 21 238/21 263 | 281+210 (1.14 %) | PASS/PASS |
+| `20261004_064244_rq2pe_ba_cb_6` | `pe_ba_cb` | 6 | 0/0/0 | 0 | 21 561/21 565 | 0+0 (0.00 %) | PASS/PASS |
+| `20261004_071052_rq2pe_cf_cb_6` | `pe_cf_cb` | 6 | 0/0/0 | 0 | 20 391/20 386 | 957+879 (4.31 %) | PASS/PASS |
+| `20261004_073931_rq2pe_sf_cb_6` | `pe_sf_cb` | 6 | 0/0/0 | 0 | 21 560/21 565 | 0+0 (0.00 %) | PASS/PASS |
+
+**Per-run signature table** (signature extractor, completed-only / both
+lanes pooled / nearest-rank; O3 = 30 s buckets with p50 ≥ 0.25 s; adds =
+in-episode compute node adds per LAN):
+
+| Run | Cell | Rep | ep_p50 (s) | ep_p95 (s) | O3 buckets / first / last (s) | adds l1/l2 | flags |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `20261003_232940_rq2pe_cf_cb_1` | `pe_cf_cb` | 1 | 0.0032 | 0.0071 | 0 / — / — | 4/4 | — |
+| `20261004_015347_rq2pe_cf_cb_2` | `pe_cf_cb` | 2 | 0.0033 | 3.0537 | 2 / 420 / 450 | 4/4 | — |
+| `20261004_025119_rq2pe_cf_cb_3` | `pe_cf_cb` | 3 | 0.0034 | 5.9336 | 4 / 360 / 510 | 4/4 | — |
+| `20261004_034856_rq2pe_cf_cb_4` | `pe_cf_cb` | 4 | 0.0035 | 8.5020 | 7 / 360 / 600 | 4/4 | — |
+| `20261004_061331_rq2pe_cf_cb_5` | `pe_cf_cb` | 5 | 0.0033 | 3.1710 | 3 / 540 / 600 | 4/4 | — |
+| `20261004_071052_rq2pe_cf_cb_6` | `pe_cf_cb` | 6 | 0.0036 | 9.2445 | 7 / 360 / 600 | 4/4 | — |
+| `20261003_235822_rq2pe_sf_cb_1` | `pe_sf_cb` | 1 | 0.0032 | 0.0073 | 0 / — / — | 0/0 | — |
+| `20261004_005622_rq2pe_sf_cb_2` | `pe_sf_cb` | 2 | 0.0032 | 0.0074 | 0 / — / — | 0/0 | — |
+| `20261004_032041_rq2pe_sf_cb_3` | `pe_sf_cb` | 3 | 0.0032 | 0.0071 | 0 / — / — | 0/0 | — |
+| `20261004_041759_rq2pe_sf_cb_4` | `pe_sf_cb` | 4 | 0.0032 | 0.0072 | 0 / — / — | 0/0 | — |
+| `20261004_051551_rq2pe_sf_cb_5` | `pe_sf_cb` | 5 | 0.0032 | 0.0073 | 0 / — / — | 0/0 | — |
+| `20261004_073931_rq2pe_sf_cb_6` | `pe_sf_cb` | 6 | 0.0032 | 0.0069 | 0 / — / — | 0/0 | — |
+| `20261004_002704_rq2pe_ba_cb_1` | `pe_ba_cb` | 1 | 0.0033 | 3.1688 | 2 / 480 / 510 | 4/4 | — |
+| `20261004_012511_rq2pe_ba_cb_2` | `pe_ba_cb` | 2 | 0.0032 | 0.0066 | 0 / — / — | 4/4 | — |
+| `20261004_022233_rq2pe_ba_cb_3` | `pe_ba_cb` | 3 | 0.0032 | 0.0067 | 0 / — / — | 4/4 | — |
+| `20261004_044635_rq2pe_ba_cb_4` | `pe_ba_cb` | 4 | 0.0033 | 3.3932 | 2 / 480 / 510 | 4/4 | — |
+| `20261004_054430_rq2pe_ba_cb_5` | `pe_ba_cb` | 5 | 0.0035 | 9.0259 | 7 / 360 / 600 | 4/4 | — |
+| `20261004_064244_rq2pe_ba_cb_6` | `pe_ba_cb` | 6 | 0.0032 | 0.0065 | 0 / — / — | 4/4 | — |
+
+**Q-E3 engagement evidence (per run per LAN):**
+
+- **In-episode compute `scale_up` decision rows** (`action_type=scale_up`,
+  `selected_action=compute`, episode window): **4/4 per LAN on every `cf`/
+  `ba` run** (24/24 lane-runs); `sf` **0/0 by design** (12/12 lane-runs).
+  Matches `node_lifecycle_timings.csv` compute adds (4/4 per LAN in
+  episode).
+- **Added-backend served share** (pinned `generate_thesis_figures.py`
+  `engagement_stats` convention: per-server request_count at/after the
+  lane's first compute add, `per_node_stats.csv`): per-lane medians —
+  **`cf` 71.1 %** (range 57.5–83.4) · **`ba` 71.9 %** (58.2–80.2) ·
+  **`sf` 0.0 %** (no added backends). v3-era record ≈ **64 % cf / 67 %
+  ba** ⇒ era-matched engagement is **at least as strong as v3**.
+- **`sf` storage activations**: **0 in-episode `reserve_activate` rows
+  across all 6 runs** (activation lands +112–121 s after episode end;
+  reps 3/5 also carry pre-episode reserve-release rows from prior phases);
+  0 in-episode storage adds everywhere. Descriptive (pre-registered).
+- **Divergence rule: NOT triggered** — no `cf`/`ba` run fired zero
+  in-episode compute adds; no user decision needed before thesis edits.
+
+**v3-vs-era comparison (cell median ÷ frozen comparator; informational
+secondary read, addendum §4):** `cf` **0.90×** (4.5523/5.07 s; 512m-subset
+0.83× = 4.5523/5.51) → broadly reproduced · `ba` **0.47×**
+(1.5877/3.35 s; 512m-subset 0.46× = 1.5877/3.48) → strongly attenuated ·
+`sf` **0.00×** (0.00725/3.96 s = 0.0018) → build-era artifact signature ·
+**O1 absent era-wide** (m0_p50 3.4 ms, era o1-ratio ≈ 1.0–1.1 vs legacy
+per-run 99.7–1332.6× / legacy cell-median 477–1226×) · p50 coincident
+across all four arms (3.2–3.35 ms) — the p95 spread alone separates the
+arms.
+
+Retained analysis artifacts: `analysis/rq2pe_signature.{txt,json}`
+(extractor), `analysis/rq2pe_gate_battery.{csv,json}` (this battery),
+`analysis/rq2pe_g2_validation.txt` (per-run G2 stdout; per-run copies in
+`analysis/g2_per_run/`), era-matched figures + CSV under
+`../v3/rq2/graphs/thesis/` (legacy CSV untouched).
+
+---
+
 ## Changelog
 
 | Date | Change | Rationale |
@@ -595,3 +733,13 @@ arm test (`cf`) is in flight there._
 | 2026-10-03 | **Part D cleanup (user instruction — recorded exception to the addendum §7.4 no-deletion rule):** slim archive `_archive_rq2pd_slim.tar.gz` (25 KB; per-run checker JSON + decision/lifecycle/latency/admission artifacts) + the four run folders deleted; full teardown verified (containers 12→0, clients 48→0, netns 0, veths 59→0 incl. orphan OVS ports, bridges/datapaths 0, 2 dynamic volumes removed; static seeds + images kept) | Close cleanup |
 | 2026-10-03 | **CPU-cap prior-art check recorded** ([cpu_cap_prior_art_check.md](cpu_cap_prior_art_check.md)): the quota-reduction path was explored in RQ3 (relief descent 0.25→0.20→0.15 → locked at first relief; consequence descent 0.13→0.12→0.11 → structural ~1.5 % ceiling; standing quota 0.12 at rate 2.0); RAM never shaped; demand escalation rejected/confirmed non-treatable. **Decision: no new quota-ladder probing campaign** | Pre-design check (user-requested) |
 | 2026-10-03 | **Final battery executed — ratio pinning FROZEN (analysis-only):** conventions pinned (statistical median, lanes pooled per replicate, ratio = cell ÷ `nn_db` median); primary text convention = all-available pool → **Q-A2 0.374 / Q-A1 0.492 / factor ≈2.7×** (seed-42 sensitivity 0.487 / 0.621; excl. `nn_db_3` 0.438 / 0.575); pre-battery flags 1–3, 6 resolved; "≈3×" withdrawn; thesis text correction identified (`0.39→0.37`, `0.52→0.49`, lines 2531/2670–2671 — not edited here) | Battery record |
+| 2026-10-03 | **Part E (`rq2pe`) pre-registration drafted** ([parte_addendum.md](parte_addendum.md) + [run_matrix.md](run_matrix.md) §8 + this status row + [extension_order_parte.csv](extension_order_parte.csv) + launcher CELLS diff): era-matched `cf`/`sf`/`ba` cb re-run (18 evidence runs) on the frozen hardened build; `nn` reuse; O1/O2 survival classification; review gate pending | Part E design (user decision — option (c)) |
+| 2026-10-03 | Part E review gate executed + resolution pass applied (18 findings; all critical/warnings fixed; Part E remains **no runs**) | Review gate (pre-approval) |
+| 2026-10-04 | **Part E FREEZE-5 executed (VM):** restricted diff (7 paths) synced + md5-verified; commit `9754d21` + annotated tag `rq2-extension-parte-final-20261003`; tooling auto-review gate 0 🔴 / 2 🟡 / 6 🔵 all closed; smoke evidence recorded (extractor min `cf_cb` o1-ratio 99.7 / max `nn_cb` 1.06; figure legacy rows 196/196 identical to the pinned battery CSV; preflight identity hashes matched) | Freeze record |
+| 2026-10-04 | **Part E checkpoint 9/18 passed (04:42):** runs 1–9 clean (D1/D2/D3 + I1 ≥ 20 907 completed/lane; steady p50 3.1–3.5 ms); early descriptive-only signal (cf 0.007/3.054/5.934 s · ba 3.169/0.0066/0.0067 · sf flat 0.0071–0.0074; tail-bearing runs carry ≤ 2.2 % timeouts); no anomaly → continuation (run 10 in flight) | Checkpoint (§5) |
+| 2026-10-04 | **Part E campaign COMPLETE — 18/18 runs (09:01), 0 retries / 0 relaunches:** final scan all-clean; extractor verdicts — **`pe_cf_cb` reproduced (4.5523 s; 0.90× v3)**, **`pe_ba_cb` reproduced (1.5877 s; 0.47× v3, strongly attenuated)**, **`pe_sf_cb` absent (0.0072 s)**; **O1 onset absent in all cells** — legacy minute-0 transient gone; surviving tails are in-episode (O3 360–600 s); Q-E3 no divergence (adds 4/4 every cf/ba run). Figures + deep battery per addendum §6 pending | Campaign record |
+| 2026-10-04 | **Part E analysis battery + records closed (analyzer + runner):** gate battery 18/18 PASS (D1–D4, I1/I2, G2; worst timeout 4.62 %); era-matched figures + `rq2_thesis_figure_data_era_matched.csv` archived to `../v3/rq2/graphs/thesis/`; signature + battery outputs in `analysis/`; `post_run_analysis.md` capstone written; thesis §5.3 + `tab:rq2_criteria` restated era-matched (figures swapped; `main.tex` compiles clean) | Battery + thesis record |
+| 2026-10-04 | **Part E CLOSED (VM):** close commit `20f4933` (freeze `9754d21` + tag `rq2-extension-parte-final-20261003`); run folders (18) retained on `cloud-vm-rq2`; workspace clean at close | Close record |
+| 2026-10-04 | **Figure 5.4 redesign + §5.3 condensation (post-close presentation pass, user-approved):** engagement figure right panel = per-backend CPU (original infrastructure, grey, vs added backends, arm colour) with a shared legend; `generate_thesis_figures.py` updated (era CSV extended with `orig_cpu_*` / `added_cpu_*`; legacy mode numerically unchanged; rq2pe re-run reproduces all quoted values); §5.3 condensed (~330 → ~276 lines: positives-first order, per-metric walkthroughs merged into the mechanism block, the unmet expectations summarised in one closing block, harm-vs-inaction moved there); thesis recompiles (99 pp) | Presentation refinement |
+| 2026-10-04 | **Part E post-campaign battery executed (analyzer, addendum §6 items 1–3):** 18/18 runs pass D2 deep check / D4 fd scan (0 EMFILE) / D1·D3 re-verify / I1 (20 327–21 567/lane) / I2 (max 4.62 % pooled, no health flag) / G2 (PASS×2 per run); Q-E3 engaged 4/4 per LAN every cf/ba run, added-share medians **cf 71.1 % / ba 71.9 %** (≥ v3 64/67 %), sf 0 in-episode activations; era-matched figures + era CSV generated and archived (`../v3/rq2/graphs/thesis/`); extractor + battery CSVs retained in `analysis/` | Battery record (results §Part E) |
+| 2026-10-05 | **Thesis figure pin (records audit):** `rq2_latency_data_access.png` (md5 `09eb8ed4507b4a00afffd367b98f0af3`, the render embedded by `main.tex` §5.3) added to `../v3/rq2/graphs/thesis/` so all four §5.3 figures carry pinned copies; the other three already matched their pinned copies byte-for-byte (relief `f1c553f0…`, latency-cb `0b53fb19…`, engagement `f25d4d64…`) | Records audit (read-only) |

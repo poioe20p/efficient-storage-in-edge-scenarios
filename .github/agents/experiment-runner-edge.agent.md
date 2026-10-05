@@ -4,7 +4,7 @@ name: "Edge Experiment Runner"
 tools: [read, search, execute, edit, todo, agent]
 argument-hint: "Name the experiment plan in docs/operation/testing/experiment/ and the run to execute (plus any per-run delta)."
 agents: []
-model: deepseek-v4-flash
+model: deepseek-v4-flash-4.1
 reasoning: high
 thinking-effort: high
 ---
@@ -16,9 +16,9 @@ For deep post-run interpretation, metrics comparisons, or `run_summary.md` autho
 
 Each research question runs on its own cloud VM. The target host is determined by the campaign's RQ (or named explicitly in the plan or user request):
 
-| RQ | VM host alias | Purpose |
-|----|---------------|---------|
-| RQ1 | `cloud-vm` | RQ1 campaigns |
+| RQ  | VM host alias    | Purpose       |
+| --- | ---------------- | ------------- |
+| RQ1 | `cloud-vm`     | RQ1 campaigns |
 | RQ2 | `cloud-vm-rq2` | RQ2 campaigns |
 | RQ3 | `cloud-vm-rq3` | RQ3 campaigns |
 
@@ -59,10 +59,12 @@ Follow the shared context-navigation workflow defined in `.github/skills/edge-co
 
 1. Run `git status --short` locally to list all modified (M), deleted (D), and untracked (??) files.
 2. Separate the list into:
+
    - **Source/runtime files** (anything under `source/docker/`, `source/sdn_controller/`, `source/scripts/`) — these MUST be synced and may require image rebuilds.
    - **Doc/config files** (`docs/`, `.github/`, phase JSONs, env files) — sync if the plan references them.
    - **Thesis/other** (`tese/`, `tools/`) — skip unless explicitly needed.
 3. For every modified source file, check whether the cloud VM has the same content:
+
    ```powershell
    ssh <HOST> "cd ~/efficient-storage-in-edge-scenarios && git diff -- <path>"
    ```
@@ -142,18 +144,21 @@ If any gate fails, report the specific failure and wait for the user before laun
 1. Enter the cloud host with `ssh <HOST>` and `cd ~/efficient-storage-in-edge-scenarios`.
 2. Launch the run with the command the plan specifies. For the standard prerequisite chain, use one combined `sudo -n make setup_network create_clients setup_test_data run_experiment ...` command unless the plan or user asks to split the steps.
 3. **Phase 1 — Launch the run with nohup so it survives SSH disconnection.** Use `nohup` with output redirected to a log file:
+
    ```
    ssh <HOST> "cd ~/efficient-storage-in-edge-scenarios && nohup sudo -n make ... RUN_LABEL=<label> > /tmp/<label>.log 2>&1 &"
    ```
 
    The `nohup ... &` causes the SSH command to return immediately. The run continues in the background on the VM.
 4. **Phase 2 — Launch the watchdog (mode=async).** Back on the Windows host, launch the polling watchdog in an async terminal:
+
    ```
    python3 tools/watch_run.py --host <HOST> --run-label <label> --poll-interval 15 --timeout 10800
    ```
 
    The watchdog polls the VM every 15s via short-lived SSH connections, reads `active_run.json`, and exits when the run completes. **The watchdog's terminal completion notification is the autonomous signal that the run is done.**
 5. On watchdog completion notification:
+
    - Exit code 0 → run completed → proceed to post-run analysis
    - Exit code 1 → run failed or timed out → investigate and report
 6. Detect the new run folder under `source/scripts/testing/metrics/`.

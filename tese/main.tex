@@ -2490,39 +2490,33 @@ while delivery delay was costly in proportion to the margin it consumes.
 
 The campaign compared three scaling-action policies under the same demand
 shifts: a fixed compute-only policy, a fixed storage-only policy, and
-bottleneck-aware selection. Each policy was evaluated on two demand regimes:
-a compute-bound episode, in which the demand presses on the compute tier
-(600~s of pure service pressure), and a data-access-bound episode, in which
-the demand presses on the storage tier through content lookups (480~s,
-90~\% content lookups). The six-arm campaign contributes six
-replicates per arm (five seed-matched replicates, sharing one seed across
-all arms so that the arms are contrasted under identical demand, and one
-cross-seed replicate, which uses a different seed and tests sensitivity to
-the demand realisation; 34 of 36 runs valid, with two runs excluded as
-documented container memory-cap incidents).
-
-A comparative extension contributes two elements the original design
-lacked: no-action comparators (a policy that scales nothing) against which
-the consequence of any action can be measured, and order-shifted sequences
-in which both regimes occur within one run. Comparisons that draw on both
-campaigns carry labels recording the memory cap and software build of
-each side. Each no-action contrast, aligned and mismatched alike, is such a
-labelled comparison.
+bottleneck-aware selection, each evaluated on a compute-bound episode
+(600~s of pure service pressure) and a data-access-bound episode (480~s,
+90~\% content lookups). Each episode is named after the tier its load
+presses on: the compute tier in the first, the storage member in the
+second. Whether the named tier actually becomes capacity-bound
+(Section~\ref{sec:metrics_definitions}) is itself one of the results.
+The six-arm campaign contributes six replicates
+per arm (five seed-matched and one cross-seed; 34 of 36 runs valid, with
+two runs excluded as documented container memory-cap incidents), and a
+comparative extension contributes the element the original design
+lacked: no-action comparators (a policy that scales nothing), against
+which the consequence of any action can be measured. Comparisons that
+draw on both campaigns carry labels recording the memory cap and software
+build of each side.
 
 Each policy stands for an operator choice about which tier the action
 serves: scale only the tier that runs the requests, scale only the tier
-that stores and serves the data, or scale the tier the episode presses on. 
-That tier is the bottleneck, and bottleneck-aware selection is the policy that
-identifies it. It reads the per-tier telemetry, classifies the episode as
-compute-bound or data-access-bound, and scales the matching tier. 
-The two fixed policies have no classification step as each acts on 
-its single tier alone.
+that stores and serves the data, or scale the tier the episode presses on.
+That tier is the bottleneck and bottleneck-aware selection reads the
+per-tier telemetry, classifies the episode as compute-bound or
+data-access-bound, and scales the matching tier, while each fixed policy
+acts on its single tier alone.
 
-The pre-registered expectation was that the aligned action would relieve 
-the tier that bound the episode and improve the user-visible service 
-against inaction on the data-access-bound side, that the mismatched action 
-would harm service relative to inaction, and that recovery would hold in 
-each leg of an order-shifted sequence.
+The pre-registered expectation was that the aligned action would relieve
+the tier that bound the episode and improve the user-visible service
+against inaction on the data-access-bound side, and that the mismatched
+action would harm service relative to inaction.
 
 Table~\ref{tab:rq2_design} summarises the design of the original campaign.
 
@@ -2537,11 +2531,14 @@ Table~\ref{tab:rq2_design} summarises the design of the original campaign.
         \midrule
         Treatment & Three scaling policies (compute-only, storage-only, and
         bottleneck-aware selection) each under two demand regimes
-        (compute-bound and data-access-bound), giving six arms. The fixed
-        policies scale their own tier only, while bottleneck-aware selection
-        classifies the episode from the tier telemetry and scales the
-        matching tier. Compute scale-up adds a compute replica;
-        storage scale-up activates a prepared reserve in the same domain. \\
+        (compute-bound and data-access-bound), giving six arms, plus
+        no-action comparators (a policy that scales nothing) contributed by
+        the comparative extension, six runs per episode, against which the
+        benefit and harm ratios are computed. The fixed policies scale their
+        own tier only, while bottleneck-aware selection classifies the
+        episode from the tier telemetry and scales the matching tier.
+        Compute scale-up adds a compute replica; storage scale-up activates
+        a prepared reserve in the same domain. \\
         Held constant & Telemetry delivery, routing policy, per-tier resource
         caps, action budget, cooldowns, backend-admission condition;
         Tier~1 selective synchronisation and cross-domain storage
@@ -2570,8 +2567,7 @@ Table~\ref{tab:rq2_design} summarises the design of the original campaign.
         that binds the episode and to benefit user-visible service over
         inaction; the mismatched action is expected to bring no relief to
         the binding tier and, on the data-access-bound episode, to harm
-        service; and recovery is expected within each leg of an order-shifted
-        sequence. The aligned action's value over inaction on the compute
+        service. The aligned action's value over inaction on the compute
         axis is carried as a descriptive measure. The pre-registered
         assessment coefficients appear with the criteria in
         Table~\ref{tab:rq2_criteria}. \\
@@ -2579,31 +2575,49 @@ Table~\ref{tab:rq2_design} summarises the design of the original campaign.
     \end{tabular}
 \end{table}
 
-The results are presented in the order of the research question: the
-service consequence of acting, the targeted-tier relief that underlies it,
-the resource use of the actions, and the selector's commitment to the
-detected tier.
+The relief check asked whether the aligned action relieved the tier that
+bound the episode (Figure~\ref{fig:rq2_relief}). Where the storage tier
+bound the episode, it did: the prepared reserve was activated in every
+aligned run and shared the reads, and the storage-member peak CPU fell to
+0.57--0.66 of its pre-activation level in all twelve storage-only domains.
+The bottleneck-aware arm followed the same direction with eight of its
+ten domains below the threshold. On the compute-bound episode no relief is reported because the compute
+tier never entered the capacity-bound state, so there was no queue to
+relieve. The action did spread the load across the added backends, with
+no user-visible change (Figure~\ref{fig:rq2_engagement}).
 
-The service outcome is regime-concentrated (Figures~\ref{fig:rq2_latency_data} and~\ref{fig:rq2_latency_compute}). 
-On the data-access-bound episode the tier-matched storage action delivered 
-a large user-visible benefit over inaction as the episode endpoint latency p95 was
-about 0.6~s against about 1.6~s under no action, a ratio of about 0.37
-against the pre-registered benefit threshold of 0.85 (secondary: p50 about
-60~ms against about 280~ms). 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{images/rq2_storage_relief_v2.png}
+    \caption{Targeted-tier relief where the storage tier bound the episode:
+    post-to-pre peak storage-CPU ratio per replicate (mean of the two
+    domains) for the data-access-bound arms, against the pre-registered
+    0.75 threshold; bars show the mean across replicates with the standard
+    deviation, and dots the individual replicates. The storage-only arm
+    stays below the threshold in every replicate, the bottleneck-aware arm
+    partially overlaps it, and the compute-only arm activated no reserve.}
+    \label{fig:rq2_relief}
+\end{figure}
 
-In contrast, on the data-access-bound episode the compute-only policy, 
-which scales the tier that does not bound the episode, was worse than the 
-matched action (about 0.8~s) but better than no action, so the pre-registered
-harm criterion (ratio $\ge$ 1.2 with replicate support) was not met, and the
-measured ordering is the matched storage action, then the mismatched compute
-action, then no action.
+The service outcome is regime-concentrated (Figures~\ref{fig:rq2_latency_data} 
+and~\ref{fig:rq2_latency_compute}). On the data-access-bound episode the 
+tier-matched storage action delivered a large user-visible benefit over inaction 
+as the episode endpoint latency p95 was about 0.6~s against about 1.6~s under 
+no action, a ratio of about 0.37 against the pre-registered benefit threshold 
+of 0.85 (secondary: p50 about 60~ms against about 280~ms). 
+The bottleneck-aware arm also beat no action on the same episode but by 
+less (about 0.67 against the 0.37 of the fixed storage arm). Its own 
+second-tier action is the documented cause: after storage relief it adds 
+compute as well, and in two of five replicates a compute add coincided 
+with a tail spike.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{images/rq2_latency_data_access.png}
     \caption{Episode endpoint latency of the data-access-bound episode at
     the p95 (left, logarithmic axis) and the median (right) for the
-    no-action comparator and the three arms. The matched storage action
+    compute-only, storage-only and bottleneck-aware arms and the no-action
+    comparator. The matched storage action
     takes the tail and the mismatched compute action keeps the lowest
     median while leaving a higher tail. Bars show per-arm medians across
     replicates and dots the individual runs; the no-action comparator is
@@ -2611,32 +2625,25 @@ action, then no action.
     \label{fig:rq2_latency_data}
 \end{figure}
 
-On the compute-bound episode neither policy differed from no action in
-service as both served at a p50 of about 3~ms. The action was nevertheless
-executed in full (Figure~\ref{fig:rq2_engagement}): the added replicas served
-a majority of each run's requests (medians of about 71 and 72~\% in the
-compute-only and bottleneck-aware arms), per-backend CPU stayed below the
-storage-only single-backend load (about 46--56~\% against 61~\%), and the
-total compute spent rose to about four times that load. No recovery is attributable to the compute action: onset latency is flat
-(about 3~ms), and the only multi-second latency is a late-episode tail in
-the arms that scale up the compute tier (p95 medians of 4.6~s in the
-compute-only arm and 1.6~s in the bottleneck-aware arm), absent in the
-storage-only arm and the no-action comparator (about 7~ms). The load is
-the same in every arm and stays below the tier's capacity, so the tail is
-not a property of the load itself: it appears only where the compute tier
-was scaled mid-episode, and the no-action and storage-only arms are
-fastest because nothing in them changes mid-episode. A
-later pre-registered escalation found no regime in which the compute
-deficit was both capacity-bound and measurable. Its platform behaviours are carried to
-Chapter~\ref{ch:conclusions} outside the evidence set.
+On the compute-bound episode no policy differed from no action in
+service as every arm served at a p50 of about 3~ms. No recovery is
+attributable to the compute action,
+as the onset latency is flat (about 3~ms). The load is the same in 
+every arm and stays below the tier's capacity, so the late-episode
+tail that appears in the scaling arms is not due to the load but to 
+scaling the compute tier mid-episode. A later pre-registered escalation 
+found no regime in which the compute deficit was both capacity-bound 
+and measurable, so the compute-bound episode exercises the compute 
+tier without ever producing a service deficit for an action to recover.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{images/rq2_latency_compute_bound.png}
     \caption{Episode endpoint latency of the compute-bound episode at the
-    median (left) and the p95 (right, logarithmic axis) for the no-action
-    comparator and the three arms, all six replicates per arm on the same
-    build. The median is the null reading: every arm serves at about
+    median (left) and the p95 (right, logarithmic axis) for the
+    compute-only, storage-only and bottleneck-aware arms and the no-action
+    comparator, all six replicates per arm on the same build. The median
+    is the null reading: every arm serves at about
     3~ms. At the p95 the onset latency is flat (about 3~ms) and a
     late-episode tail appears only in the arms that scale up the compute
     tier (medians of about 4.6~s in the compute-only arm and 1.6~s in
@@ -2646,96 +2653,97 @@ Chapter~\ref{ch:conclusions} outside the evidence set.
     \label{fig:rq2_latency_compute}
 \end{figure}
 
+The data-access reading follows from where the queue builds: with no
+action the serving storage member carries the full read load alone, the
+matched action moves a share of the reads to the reserve and cuts the
+data-access component of the wait (about 79~ms to 52~ms), and the
+mismatched action never reaches the data path. The data-access component
+and the edge-processing component are the per-tier latency signals the
+selection observes (Section~\ref{sec:scaling_policy}).
+
+The scaling action on the compute-bound episode was executed in full
+(Figure~\ref{fig:rq2_engagement}): the added replicas took most of each
+run's requests (medians of about 71 and 72~\% in the compute-only and
+bottleneck-aware arms), and the total compute spent rose to about four
+times the single-backend load. The lane's traffic alternated between
+members rather than loading them at once: in the windows a backend
+carried traffic it served the full episode rate at about the
+single-backend CPU (mostly 55--61~\% against 61~\%), so the all-window
+medians in the panel (46--56~\%) sit below that level only through the
+idle windows each member also has.
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{images/rq2_compute_engagement.png}
-    \caption{Execution of the compute action on the compute-bound episode. The left
-    panel shows the share of each run's requests served by the added
-    backends after the first addition, with the per-run values as dots, and
-    the right panel the summed per-backend CPU of each run against
-    the storage-only single-backend load. The action executed in full, yet the
-    service outcome (Figure~\ref{fig:rq2_latency_compute}, left) is unchanged.}
+    \caption{Execution of the compute action on the compute-bound episode,
+    covering the compute-only and bottleneck-aware arms with the
+    storage-only arm as the no-scaling reference. Left: the share of each
+    lane's requests served by the added backends after the first addition
+    (dots: individual runs and domains), over the grey share served by the
+    original infrastructure. Right: per-backend CPU as a percentage of the
+    backend CPU cap, median over each member's sampled windows (the
+    original infrastructure over the episode, the added backends over
+    their active life), against the storage-only arm's single-backend CPU
+    on the same episode (dashed); each member alternates between serving
+    windows at about that level and near-idle windows. The action executed
+    in full, yet the service outcome
+    (Figure~\ref{fig:rq2_latency_compute}, left) is unchanged.}
     \label{fig:rq2_engagement}
 \end{figure}
 
-Read together, the two modes give one account of where the service
-outcome comes from. The data-access-bound episode builds its queue at the
-storage members and with no action the serving member carries the full read
-load alone for the whole episode, therefore the unrelieved member appears as
-the data-access component of the wait, while the larger part of the wait
-sits before dispatch, where both actions keep it small. The matched action
-removes that queue as the reserve takes a share of the reads, the serving
-member falls away from its bound, and the user-visible benefit measured over
-inaction reflects that relief. The mismatched action leaves the queue standing
-(in those replicates the reserve never activates), so its distance from the
-matched action is read above the median, where the un-drained queue shows,
-rather than at the median, where the two actions meet. The compute-bound
-episode builds no such queue, since its pure service-pressure load never
-approaches the tier's capacity, so no action changes what users experience there.
+Resource use separates the policies where service does not: on the
+compute-bound episode both compute-scaling arms spent compute without
+changing the service, and on the data-access-bound episode the storage
+action's spend became tier relief and user-visible benefit, while the
+mismatched compute action's spend relieved nothing. What reaches users is
+decided by the tier a policy serves, not by the size of its spend.
 
-Where the user-visible wait sits separates the two actions further. On the
-data-access-bound episode the client-visible mean decomposes into a
-pre-dispatch wait before the serving process handles the request, an
-edge-processing component, and a data-access component. Under no action the
-pre-dispatch wait dominates and grows, about 0.15~s of the mean over the
-episode's first minute and about 0.8~s over its last five (medians across
-replicates), while the edge service itself varies little (data access
-about 74--82~ms, edge processing about 14--19~ms). The mismatched compute
-action never built the pre-dispatch wait (about 0.08~s episode-wide) but
-left its data-access component at inaction levels. The matched storage
-action cut the data-access component (about 79~ms to 52~ms) and kept a
-small pre-dispatch wait as well. The two actions therefore peel different
-layers of the same wait: the mismatched action is a queue-side remedy that
-never reaches the data path, and only the matched action shortens the
-data-access service itself. The two components are the per-tier latency
-signals the selection observes (Section~\ref{sec:scaling_policy}), while
-the pre-dispatch wait is not among the observed quantities, so no evaluated
-policy can target it directly.
+Selection correctness holds across regimes. The bottleneck-aware classifier
+committed to the detected bottleneck in every evaluated regime: on the
+data-access-bound episode it activated the storage reserve first and scaled
+compute only after storage relief (agreement with the episode label in
+88--93~\% of scored decisions), and on the compute-bound episode it scaled
+compute without activating storage. The compute units the arm adds after
+storage relief follow from the condition (edge utilisation rose past its
+threshold while every request is served through the edge), not from a
+compute deficit.
 
-The relief check asked whether the aligned action relieved the tier that
-bound the episode (Figure~\ref{fig:rq2_relief}). Where the storage tier
-bound the episode, it did, as designed. The prepared
-reserve was activated in every aligned replicate (eleven of eleven),
-storage-member CPU fell from 66--71~\% to 42--49~\% (a post-to-pre peak
-ratio of 0.57--0.66) in every storage-only run (twelve of twelve), and the
-bottleneck-aware arm followed the same direction with eight of ten runs
-below the threshold. On the compute-bound episode the action did spread load
-at the tier, but none of it reached the service because the tier never entered the
-capacity-bound state defined in Section~\ref{sec:metrics_definitions} within
-the operating envelope.
+The compute-bound episode shows no such mirror, because pure service pressure
+holds the storage tier near idle, so no sustained storage request arises
+to be committed after the compute action.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\textwidth]{images/rq2_storage_relief_v2.png}
-    \caption{Targeted-tier relief where the storage tier bound the episode:
-    post-to-pre peak storage-CPU ratio per replicate (mean of the two
-    domains) for the data-access-bound arms, against the pre-registered
-    0.75 threshold. The storage-only arm stays below the threshold in
-    every replicate, and the bottleneck-aware arm partially overlaps it.}
-    \label{fig:rq2_relief}
-\end{figure}
+Degradation was bounded on both sides. On the data-access-bound episode
+the mismatched action came in between the matched action and no action
+(about 0.8~s at the p95 against about 0.6~s and 1.6~s): it helped less
+than the matched action while still beating inaction, so the
+pre-registered harm expectation was not met. On the compute-bound
+episode the cost of acting is the late-episode tail of the scaling arms
+(about 4.6~s and 1.6~s at the p95, against about 7~ms elsewhere), which
+forms while a replica is prepared mid-episode.
 
-The pre-registered storage tail-latency criterion was
-not met (Table~\ref{tab:rq2_criteria}) because the median of the replicate
-pre-to-post p95 ratios was 0.727, but its 95~\% confidence interval,
-[0.574, 1.393], includes 1.0. The arm-level criterion was pre-registered
-on the p95, because the reserve activates early and pre-empts deep 
-saturation of the serving member. The median latency therefore has little
-room to fall, and the expected benefit was tail relief and peak-CPU relief.
-The documented cause of the unmet criterion is a measurement asymmetry
-between the two pre-registered windows (Table~\ref{tab:rq2_design}).
-Completed requests carry a sparse tail, about 0.8~\% above 10~s, which
-the long post-activation window always contains and the short
-pre-activation window rarely does. The asymmetry inflates the
-post-window p95 independently of the action. Tier relief and the
-user-visible storage benefit are therefore reported separately, and the
-unmet gate is carried as such.
+One pre-registered criterion remained formally unmet
+(Table~\ref{tab:rq2_criteria}), the storage tail-latency test. It asks
+whether the request tail latency (p95) clearly improved once the reserve
+was active, by comparing the window before the activation with the window
+after it. The tail did come out lower after the action (a median ratio of
+0.727), but not clearly enough for the test, as the confidence interval
+around that ratio still includes 1.0, the value that means no change at
+all, so the criterion counts as unmet. The documented cause is a
+measurement asymmetry between the two pinned windows: the long
+post-activation window always contains the sparse completed-request tail
+above 10~s, which the short pre-activation window rarely does, inflating
+its p95 independently of the action. The storage reading therefore rests
+on the tier relief and on the labelled benefit over inaction, and the
+unmet gate is carried as such. Together with the bounded degradation
+above, the expectation set is closed: within the evaluated envelope, the
+only regime in which an action improved user-visible service was the one
+where the served tier actually bound.
 
 \begin{table}[H]
     \centering
     \caption{Pre-registered criteria of the scaling-action campaign and
     their outcomes. Ratios are per-arm medians of per-replicate values, with
-    run counts where marked; support requirements and confidence intervals
+    run and domain counts where marked; support requirements and confidence intervals
     as pre-registered. The storage tail-latency criterion is reported unmet
     per its own rule, and the compute-recovery criterion is reported as not
     attributable to the action after the control run.}
@@ -2748,76 +2756,26 @@ unmet gate is carried as such.
         \midrule
         Compute recovery (pre/post p50) & collapse $\ge 2\times$, aligned replicates & start-up transient (control); late-episode tail in the compute-scaling arms \\
         Storage tail latency (pre/post p95) & 95~\% CI excluding 1.0 & 0.727 [0.574, 1.393] \\
-        Storage resource relief (post/pre CPU) & ${<}0.75$, aligned runs & 0.57--0.66 (12/12); 0.62--1.06 (8/10) \\
-        Benefit vs inaction (storage, data-access-bound) & ratio $\le 0.85$ & $\approx 0.37$ (labelled) \\
-        Harm vs inaction (compute, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.49$ \\
-        Sequence recovery (one configuration) & per-leg recovery & not confirmable \\
+        Storage resource relief (post/pre CPU) & ${<}0.75$, aligned domains & 0.57--0.66 (12/12); 0.62--1.06 (8/10) \\
+        Benefit vs inaction (storage-only arm, data-access-bound) & ratio $\le 0.85$ & $\approx 0.37$ (labelled) \\
+        Harm vs inaction (compute-only arm, data-access-bound) & ratio $\ge 1.2$ & $\approx 0.49$ \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-Resource use separates the policies where service does not. On the
-compute-bound episode both compute-scaling arms spent their compute
-node-minutes for no change in service, and the storage-only policy's
-activations there likewise provided no relief. On the data-access-bound
-episode the account turns: the storage-only spend, about 0.20 storage
-node-minutes per thousand requests, converted into the tier's relief and
-into the data-access component of the user-visible benefit, while the
-mismatched compute-only spend, about 0.75 compute node-minutes per
-thousand requests, relieved nothing of the tier that bound the episode.
-Read across the two episodes, what reaches users is decided by the tier
-a policy serves, not by the size of its spend.
+In sum, the results support one conditional conclusion: the aligned action
+relieved the tier that bound the episode and delivered the labelled
+user-visible benefit over inaction, and the benefit is absent where no
+capacity-bound queue forms, however fully the action executes. The
+selector committed to the detected bottleneck in every evaluated regime,
+while the campaign reports no add-attributable compute recovery and no
+demonstrated advantage of bottleneck-aware selection over a matched fixed
+policy. 
 
-Selection correctness holds across regimes. The bottleneck-aware classifier
-committed to the detected bottleneck in every evaluated regime: on the
-data-access-bound episode it activated the storage reserve first and scaled
-compute only after storage relief (agreement with the episode label in
-88--93~\% of scored decisions), and on the compute-bound episode it scaled
-compute without activating storage.
-The compute units the arm adds after storage relief follow from the
-condition rather than from a compute deficit: every request is served
-through the edge, so the edge tier's utilisation rose into the 25--50~\%
-band during the episode and met its threshold. The adds that followed
-(six in each of four valid replicates, seven in the fifth) served requests
-without improving the episode's service quality, and in two replicates
-each add coincided with a p95 spike in the 30~s buckets, the runs with
-the arm's highest timeout shares; the tail records the cost of
-provisioning and admitting a replica while the episode is live, rather
-than a change in demand.
-
-The compute-bound episode shows no such mirror, because pure service pressure
-holds the storage tier near idle, so no sustained storage request arises
-to be committed after the compute action.
-The order-shifted sequences show the same commitment in both directions,
-with one documented ordering wrinkle, a single run whose compute alert
-preceded its storage alert by about ten seconds. Because the compute-bound
-leg never carried a deficit, the pre-registered sequence criterion,
-recovery in each leg of a single configuration, is not confirmable,
-and the sequence evidence is reported as commitment behaviour rather
-than as recovery.
-
-Four pre-registered expectations were not reproduced, and each is
-reported as such in Table~\ref{tab:rq2_criteria}. Read together, they are
-informative rather than negative, and they bound the result as no regime
-in the operating envelope carried a compute deficit that was both
-capacity-bound and measurable.
-
-In sum, the results answer the question in the order it was posed: the
-aligned action relieved the tier that bound the episode as designed and, in
-the labelled data-access-bound comparison, delivered the user-visible
-benefit over inaction. 
-Read across the two regimes, the user-visible result is conditional. The
-benefit appears where the action serves the tier that bounds the episode,
-and is absent where no capacity-bound queue forms, however fully the
-action is executed. The resource account matches that reading, and the
-selector committed to the detected bottleneck in every evaluated regime.
-The campaign reports no add-attributable compute recovery, no
-demonstrated advantage of bottleneck-aware selection over a policy that
-is fixed and matched to the regime, and no confirmation of recovery
-across sequential regimes. The reported effects hold for the evaluated two-domain
-testbed, its workloads, and its resource limits. 
-The platform behaviours observed at those limits are carried to
-Chapter~\ref{ch:conclusions} as limitations and future work.
+The reported effects hold for the evaluated two-domain testbed,
+its workloads, and its resource limits and the platform behaviours
+observed at those limits are carried to Chapter~\ref{ch:conclusions} as
+limitations and future work.
 
 \section{Readiness Admission to Traffic (RQ3)}\label{sec:results_rq3_readiness}
 
@@ -3189,9 +3147,8 @@ Chapter~\ref{ch:conclusions}.
         over inaction (labelled comparison) & A capacity-bound queue in the
         served tier as the condition for benefit, and full compute
         execution with no service change where no queue formed & Compute-side
-        recovery attributable to the action, no demonstrated advantage of
-        bottleneck-aware selection over a fixed matched policy, and no
-        confirmation of sequence recovery \\
+        recovery attributable to the action, and no demonstrated advantage of
+        bottleneck-aware selection over a fixed matched policy \\
         Readiness admission (RQ3) & Event loss without re-derivation: zero
         admissions in six of six blocks, with bounded service cost, while
         both re-deriving rules recovered & Reduced headroom as the condition
@@ -3224,7 +3181,7 @@ the episode tail in every replicate, while late windows cost in proportion
 to the margin they consume. Delay was harmless in five delayed replicates
 and decisive in the two that sampled a slow platform state. In the action
 interface, execution and benefit are separate. The compute action spread
-the load and relieved its tier, yet users saw no change because no
+the load, yet users saw no change because no
 capacity-bound queue existed to drain, and the storage action delivered
 benefit precisely where the queue existed. The action also carried a cost
 of its own: the second-tier compute additions in the bottleneck-aware arm

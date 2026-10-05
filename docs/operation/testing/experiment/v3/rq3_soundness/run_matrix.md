@@ -115,3 +115,18 @@ stopped mid-stage as a coordinator-only swap — the in-flight run
 (`rq3snd_premature2_reconcile_1`) was never interrupted (orphan-adopted by
 part 2). Ledger evidence: `ORDER-AMENDMENT` line in
 `/tmp/rq3snd_e_ledger.txt`; docs: `preflight_log.md` row 3.1.
+
+## Incident amendment — 2026-10-03 (run-17 STOP)
+
+`loss_all` × `event_only` runs trip the inherited RQ3-v2 **min-admissions
+gate** in `run_experiment.sh` (requires ≥1 admitted backend per LAN)
+although **0 admissions is the expected F1 mechanism** (Family-4
+certificate: 0 admitted / 33 abandoned at this cell). Run 17
+(`rq3snd_loss_all_event_only_1`) is **accepted** on the campaign gate
+(`valid=True`, floors PASS, 32 bind-verified spawns, 0 admitted / 32
+abandoned) — no rerun; a rerun would reproduce the artifact and the
+outcome is in-spec. The part-3 sequencer
+(`/tmp/rq3snd_e_sequence3.sh`) accepts this artifact for loss_all cells
+only when the log shows the min-admissions gate and the campaign gate
+returns OK; otherwise the chain stops. Runs 37 and 57 are the remaining
+affected cells. Docs: `preflight_log.md` row 4.1; ledger `RESUME` line.

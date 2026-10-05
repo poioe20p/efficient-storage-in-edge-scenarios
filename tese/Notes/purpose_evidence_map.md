@@ -207,9 +207,12 @@ regime-concentrated: a large user-visible benefit for the aligned storage
 action over inaction (labelled comparison), a resource-side rather than
 service-level wrong-action cost, and a bounded compute axis — no
 add-attributable compute recovery (the v3 recovery signature is a start-up
-transient), with the escalation attempt recorded as a diagnostic. Reported
+transient; the same-build six-replicate re-run of 2026-10-04 separates it:
+the onset transient does not reproduce, and a surviving late-episode tail
+appears only in the compute-scaling arms, p95 medians 4.6 s and 1.6 s), with
+the escalation attempt recorded as a diagnostic. Reported
 in §5.3 (`sec:results_rq2_action`); records:
-`tese/research_questions/rq2/rq2_conclusions.md` (re-sync pending).
+`tese/research_questions/rq2/rq2_conclusions.md` (re-synced 2026-10-04).
 
 **The cost of the scaling action itself (the honest claim):** scaling the data
 tier is not "just more replicas". In this apparatus the storage action is a

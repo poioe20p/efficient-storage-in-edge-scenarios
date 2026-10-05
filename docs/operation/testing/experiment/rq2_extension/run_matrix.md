@@ -728,6 +728,74 @@ Launcher md5 → `077a1e36e927be621207d341a5e578cc` (VM commit `acd43e9`).
 
 ---
 
+## 8. Part E — era-matched compute-bound re-run (`rq2pe`)
+
+**Status**: 🔒 **FREEZE-5 executed 2026-10-03** (review gates passed;
+restricted diff synced; md5s below; VM commit + annotated tag
+`rq2-extension-parte-final-20261003`) · ✅ **campaign executed 2026-10-04 —
+18/18 runs, 0 retries / 0 relaunches (18/≤36); post-campaign battery +
+era-matched figures done (analyzer, 2026-10-04). Execution complete;
+close pending (thesis panel swap = user sign-off; close commit).**
+Design:
+[parte_addendum.md](parte_addendum.md) (the authoritative Part E document);
+this section carries the stage plan + checklist + freeze slots only.
+
+**Why (one line):** the thesis cb panel is era-mismatched (`nn_cb` =
+extension era, p95 ≈ 7 ms; `cf/sf/ba_cb` = v3 era, p95 2.9–7.3 s) — Part E
+re-runs `cf`/`sf`/`ba` × 6 on the frozen hardened build at the base
+compute-bound workload so all four arms are same-era; `nn_cb`
+(2026-09-27) is not re-run.
+
+### Part E cells
+
+| Cell | Arm env | Phases file | Caps (edge/storage) | Replicates / seeds | Labels |
+| --- | --- | --- | --- | --- | --- |
+| `pe_cf_cb` | `rq2_compute_first.env` | `phases_rq2_compute_bound.json` | 0.15 / 0.08 | 6 (reps 1–5 seed 42; rep 6 seed 43) | `rq2pe_cf_cb_1..6` |
+| `pe_sf_cb` | `rq2_storage_first.env` | `phases_rq2_compute_bound.json` | 0.15 / 0.08 | 6 (as above) | `rq2pe_sf_cb_1..6` |
+| `pe_ba_cb` | `rq2_bottleneck_aware.env` | `phases_rq2_compute_bound.json` | 0.15 / 0.08 | 6 (as above) | `rq2pe_ba_cb_1..6` |
+
+Order: [extension_order_parte.csv](extension_order_parte.csv) (18 rows, six
+3-arm blocks, rotating arm order, block 6 = seed-43 reps); launch =
+`tools/run_rq2_campaign.py --host cloud-vm-rq2 --order
+docs/operation/testing/experiment/rq2_extension/extension_order_parte.csv`;
+pre-registered classification, thresholds, pools, validity battery,
+checkpoint (9/18), launch cap (≤ 36) and relaunch labels (`<label>_r2`):
+addendum §4–§5. **No phase edits — no restore step at close.**
+
+### FREEZE-5 slots (fill at freeze; the slot reserved in partd_addendum §6 for the never-executed Part D.2)
+
+| Item | md5 / anchor |
+| --- | --- |
+| `parte_addendum.md` | `206fa840d9e275630c67f243d5aa858d` |
+| `run_matrix.md` (§8 addition) | `6b57446389acb9938ed7d6dfc24df600` *(pre-fill value — this fill changes the file; the annotated tag commit is the byte anchor)* |
+| `results.md` (status + Part E record) | `4b492ea5836acee95148d26d31af9e95` |
+| `extension_order_parte.csv` | `a2b8b6a7367d6af6e8e2d84111c1493a` |
+| `tools/run_rq2_campaign.py` (CELLS-only diff; force-added) | `ee00d01c9874b9e69177d07677cf75ca` (prior launch-state value `34b40b5a…` — FREEZE-3 record §6; the earlier FREEZE-2 value `db91c566…` retained too) |
+| `generate_thesis_figures.py` (`--cb-family`) | `b1304baea818899246ebe5d0df8ba1f9` |
+| `rq2_cb_tail_signature.py` (NEW) | `3fd037c3335dfc54e241460715b90a00` |
+| Re-verify: `phases_rq2_compute_bound.json` | `d40f5f592375360c76a1d55f4c168200` |
+| Re-verify: `rq2_compute_first.env` / `rq2_storage_first.env` / `rq2_bottleneck_aware.env` | `33ce4df766e8a6e893011486a443fcab` / `c41bd38ef309cc1dd6822757c89dbb52` / `ac54f77a4b12aebf6a5157ddc123e6f0` |
+| Re-verify: edge image | `30a2c88bc1ce` (in-image md5s verified) |
+| Re-verify: `build_network_1.sh` / `build_network_2.sh` (fd nofile + log-rotation config) | `da479154ffc67b4238267a2d54f29889` / `6bb549404d61ed9c42c18dec4aee9930` |
+| Re-verify: `controller_env_overrides/current_state_integrated.env` (launch-state override) | `68921d0a4b0f932e48d927b8b8410592` |
+| Launch-state anchor | annotated tag `rq2-extension-parte-final-20261003` at the freeze commit (extension-tag family) |
+| VM branch @ freeze commit | `rq2-extension` — freeze `9754d21` (tag `rq2-extension-parte-final-20261003`) → close `20f4933` |
+
+### Part E checklist (executed at its own freeze/run time)
+
+- [x] Review gate passed on [parte_addendum.md](parte_addendum.md) + artifacts — ✅ 2026-10-03 (docs gate 3 rounds, 0 open; tooling gate auto-review 0 🔴 / 2 🟡 / 6 🔵, all closed)
+- [x] FREEZE-5 record (restricted diff = exactly the addendum §2 paths; md5s above; VM commit; launch-state tag `rq2-extension-parte-final-20261003`) — ✅ 2026-10-03
+- [x] Pre-run verification (clean VM 0/0/0; disk ≥ 50 GB; image + in-image md5s; phase/env + `build_network_{1,2}.sh` + launch-state override (`68921d0a…`) md5s; launcher `py_compile` + dry-parse; signature-script smoke per addendum §6.2 acceptance — v3 `cf_cb` minute-0 ≫ steady, `nn_cb` flat) — ✅ 2026-10-03: 0 containers/netns/veths/bridges; 76 GB free; image `30a2c88bc1ce` + in-image `971dc2d5…`/`3d4c1538…`; phase/env/network/override md5s verified; both scripts `py_compile` OK on the VM; launcher `--help` OK; extractor smoke **min `cf_cb` o1-ratio 99.7** (≥ 10) / **max `nn_cb` 1.06** (≤ 3); figure legacy smoke cb medians nn 7.3 ms / cf 5.074 s / sf 3.959 s / ba 3.348 s with **196/196 pre-existing rows identical to the pinned battery CSV**; `rq2pe` mode prints the expected empty-set warning
+- [x] Execution: 18 runs per the order CSV (≤ 36 launches incl. the §4.7 one-relaunch allowances; same-label launcher retry; `<label>_r2` + first-valid dedup for excluded-run relaunches) — ✅ **2026-10-04: 18/18 runs, 0 retries / 0 relaunches (18/≤36 launches); no duplicate folders, no `_r2` labels** (campaign log + results.md)
+- [x] Checkpoint at 9/18 recorded (D-gates/I1 + steady-state sanity; no design change) — ✅ **2026-10-04 04:42: all clean, steady p50 3.1–3.5 ms, no anomaly → continuation** (campaign log + results.md)
+- [x] Gate battery: D1–D4 + snapshots + I1/I2 + G2 per run; valid-replicate sets per cell (≥ 5/6 to read) — ✅ **2026-10-04 (analyzer): 18/18 PASS — D2 deep check clean (no restart/crash/OOM/exit-137), D4 fd scan 0 EMFILE, D1 0× NotPrimary, D3 md5 `d40f5f59…` exact, I1 20 327–21 567 completed/lane, I2 timeouts ≤ 4.62 % pooled, G2 PASS×2; 6/6 valid per cell** (results.md Part E)
+- [x] Signature extractor run over era-matched + legacy families; per-cell verdicts (reproduced / partial / absent) recorded in [results.md](results.md) Part E record — ✅ **2026-10-04: `pe_cf_cb` reproduced (4.5523 s), `pe_ba_cb` reproduced (1.5877 s), `pe_sf_cb` absent (0.0072 s); O1 absent era-wide; outputs archived `analysis/rq2pe_signature.{txt,json}`**
+- [x] Figures regenerated era-matched (`--cb-family rq2pe`) + new era-matched CSV; legacy CSV intact — ✅ **2026-10-04: `rq2_latency_compute_bound.png`, `rq2_compute_engagement.png`, `rq2_thesis_figure_data_era_matched.csv` → `../v3/rq2/graphs/thesis/` (legacy `rq2_thesis_figure_data.csv` untouched)**
+- [ ] Thesis §5.3 update per the addendum §6.4 decision rules (user decision first if Q-E3 divergence) — **not started: Q-E3 divergence NOT triggered (adds 4/4 every cf/ba run), but the panel swap awaits user sign-off**
+- [ ] Close: teardown verified; `campaign_log_parte.log` (+ relaunch order file if any) committed; records-only commit; run folders retained (evidence) — **pending (close commit = user sign-off)**
+
+---
+
 ## Changelog
 
 | Date | Change | Rationale |
@@ -742,3 +810,7 @@ Launcher md5 → `077a1e36e927be621207d341a5e578cc` (VM commit `acd43e9`).
 | 2026-10-02 | Part D (`rq2pd`) addendum + artifacts authored — §7 added (bracketing rungs 2.0/2.25/2.4, `cf` at the lowest locking rung, repeat/confirm/fallback rules, budget, FREEZE-4 slots) | Part D pre-registration (user-directed; continues the Part C closure) |
 | 2026-10-03 | Part D executed across FREEZE-4/4a/4b (`4df5719`/`1aca277`/`acd43e9`): 4 launches (0 relaunches); R_s = 2.25 (first lock); `cf`@2.25 clean fail → fallback `cf`@2.5 reproduced the Part C pattern; **CLOSED — NOT CONFIRMED**; phases restored; records committed | Part D execution + close |
 | 2026-10-02 | Part D review gate executed (4 rounds; verdict **non-blocking**): launcher criticals fixed (analyzer-grounded decision parsing with zero-resolution guard; restore-before-md5 ordering; durable launch ledger with missing-ledger guard) and warnings fixed (missing/notes split, lifecycle lane guards, M2 id-space discriminator, any-tier pre-episode fires, unmatched `--start-at` abort, budget wording); addendum §4/§5/§7 aligned | Review gate (pre-approval) |
+| 2026-10-03 | Part E (`rq2pe`) addendum + artifacts drafted — §8 added (era-matched `cf`/`sf`/`ba` cb re-run at the frozen build; `nn` reuse; O1/O2 classification; order CSV; FREEZE-5 slots) | Part E pre-registration (user decision — option (c)) |
+| 2026-10-03 | Part E review gate executed + resolution pass applied (18 findings, 1 🔴 / 11 🟡 / 6 🔵; re-review 0 🔴; all critical/warnings fixed: Q-E3 scoping, cap labels, dedup, ≤ 36 budget, build_network + override + tag records) | Review gate (pre-approval) |
+| 2026-10-03 | Part E tooling (restricted-diff items #6–7) implemented + auto-review gate (0 🔴 / 2 🟡 / 6 🔵 — all closed) + **FREEZE-5 executed**: 7-path restricted diff synced to the VM; smoke evidence (extractor min `cf_cb` o1-ratio 99.7 / max `nn_cb` 1.06; figure legacy rows 196/196 identical to the pinned battery CSV; `rq2pe` empty-set warning OK; preflight identity hashes matched); md5 slots above filled; VM commit + tag `rq2-extension-parte-final-20261003` | FREEZE-5 execution record |
+| 2026-10-04 | **Part E executed + post-campaign battery closed (checklist items execution→figures ✅):** 18/18 runs (0 retries / 0 relaunches; 18/≤36); checkpoint 9/18 ✅ 04:42; gate battery 18/18 PASS (D1–D4 + I1/I2 + G2); extractor verdicts `cf` reproduced 4.5523 s / `ba` reproduced 1.5877 s / `sf` absent 0.0072 s (O1 absent era-wide); Q-E3 no divergence (4/4 adds every cf/ba run; added-share medians 71.1 %/71.9 % vs v3 64 %/67 %); era-matched figures + CSV archived to `../v3/rq2/graphs/thesis/`. Status → **execution complete; close pending (thesis swap = user sign-off; close commit)** | Part E execution + battery record (results.md Part E) |

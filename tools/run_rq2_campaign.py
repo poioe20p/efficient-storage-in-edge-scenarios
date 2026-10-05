@@ -83,6 +83,17 @@ CELLS: dict[str, tuple[str, str, str]] = {
                "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
     "pc_ba_cb": ("rq2_bottleneck_aware.env", "phases_rq2pc_cb.json",
                "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    # ── RQ2 Part E era-matched compute-bound re-run (rq2pe, 2026-10-03) ──
+    # The three action arms on the BASE compute-bound workload (rate 1.5,
+    # Series-C allocation) on the frozen hardened build; the era's nn cell
+    # is the existing 2026-09-27 nn_cb set — Part E adds no nn runs and
+    # edits no phase file (parte_addendum.md §2/§3). Evidence runs.
+    "pe_cf_cb": ("rq2_compute_first.env", "phases_rq2_compute_bound.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "pe_sf_cb": ("rq2_storage_first.env", "phases_rq2_compute_bound.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
+    "pe_ba_cb": ("rq2_bottleneck_aware.env", "phases_rq2_compute_bound.json",
+               "STORAGE_CPUS=0.08 EDGE_CPUS=0.15 EDGE_MONGO_MAX_POOL_SIZE=12"),
 }
 
 REPO = "~/efficient-storage-in-edge-scenarios"

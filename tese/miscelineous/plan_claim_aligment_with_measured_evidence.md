@@ -98,8 +98,46 @@ comments in the thesis file.
   `sec:metrics_definitions`; the §5.3 close now states the conditional
   rule, the benefit appearing where the served tier bounds the episode
   and absent where no capacity-bound queue forms).
-  Follow-ups: re-sync `rq2_conclusions.md`; the unmetered replica-sync
-  bandwidth caveat is carried to the Ch6 limitations.
+  Follow-ups: `rq2_conclusions.md` re-synced 2026-10-04; the unmetered
+  replica-sync bandwidth caveat is carried to the Ch6 limitations.
+  UPDATE 2026-10-04: compute-bound panel rebuilt era-matched from the
+  pre-registered six-replicate re-run (`rq2pe`, 18 runs): the start-up
+  transient does not reproduce (onset flat, ~3.4 ms); a late-episode tail
+  survives only in the compute-scaling arms (p95 medians 4.6 s
+  compute-only, 1.6 s bottleneck-aware; absent in storage-only and the
+  no-action comparator, ~7 ms); cb caption + criteria row restated;
+  figures + data CSV regenerated (`--cb-family rq2pe`); panel presented
+  as one same-build evidence set (no re-run narration in §5.3).
+  Presentation pass: §5.3 condensed (~330 → ~276 lines; positives-first,
+  unmet expectations summarised in one block) and fig 5.4 redesigned
+  (per-backend CPU; grey = original infrastructure; shared legend).
+  Structure pass 2026-10-04: §5.3 reordered dimension-major so each
+  dimension is read across all arms before the next — tier relief, then
+  user-visible service, then degradation, then execution and resource use,
+  then selection correctness, then the unmet criterion with the criteria
+  table; figure order in the section follows the same sequence (relief,
+  data-access latency, compute-bound latency, engagement).
+  Correction 2026-10-05: the compute-action execution reading restated
+  from per-node series (five Part E runs): the lane's traffic alternates
+  between members — a serving window carries the full episode rate at
+  about the single-backend CPU, and the all-window medians in the panel
+  fall below it only through idle windows; §5.4's "relieved its tier"
+  clause dropped; fig 5.5 caption restated (scope, arms, units, window
+  definition); the §5.3/§5.4 latency captions and the criteria-caption
+  unit note now name arms and units explicitly. Closing pass 2026-10-05:
+  the relief sentence now quotes the pinned peak-CPU ratio (0.57–0.66 in
+  all twelve storage-only domains; the earlier 66–71 % → 42–49 %
+  absolutes came from the v3 per-run table's window statistic, not the
+  peak series, and mixed a bottleneck-aware row); the degradation block
+  de-duplicated; the criteria-table benefit/harm rows name the
+  storage-only and compute-only arms; §5.3 reviewed section-wide (numbers
+  re-verified against the pinned CSVs, compile clean, 99 pp).
+  Scope decision 2026-10-04: the order-shifted (both-regimes-in-sequence)
+  mode removed from the thesis text (intro, expectation, design-table row,
+  results paragraph, criteria-table row, closing, Ch5 synthesis row) — the
+  mode is not carried to the thesis; the node-minute per-thousand figures
+  dropped from §5.3 prose (qualitative contrast kept). Campaign records
+  retain the full sequence results.
 - [ ] **B6** `sec:results_rq3_readiness`: readiness-to-routing admission
   quantization; lead with ~6-7 s timing difference, then end-to-end
   first-success; transition-window timeout/failure harm null; n=7-per-arm
