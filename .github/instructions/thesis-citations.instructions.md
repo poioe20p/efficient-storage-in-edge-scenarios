@@ -11,7 +11,8 @@ applyTo: "tese/**"
 
 - For `tese/main.tex` (and any thesis text), cite only papers whose PDFs are
   already stored in `tese/literature_review/`. The citable pool is the
-  39-paper RQ review corpus plus the `99_reference/` background subfolders
+  37-paper RQ review corpus plus the `99_reference/`
+  background subfolders
   (`sdn_background/`, `containers_background/`, `databases_background/`,
   `autoscaling_background/`, `scheduling_background/`, `edge_storage_background/`).
 

@@ -4,7 +4,7 @@ Full-campaign tracker (complete run set approved 2026-10-03; disk headroom secur
 2026-10-03 — off-experiment VM archives cleaned (~27 GB), free ≈ 70 GB; docker pruned;
 **order amended 2026-10-03: optional `wake_verify` runs deferred to the campaign tail,
 contingent on the pre-tail gate scan**);
-**E sequence RUNNING since 2026-10-03 10:35:45 UTC** — 60 runs, ETA ≈ 2026-10-05 early UTC). One row
+**E sequence COMPLETE — `[seq] ALL DONE` 2026-10-05T04:01:58Z; 60/60 valid (57 gate=OK + 3 guarded loss_all acceptances); pre-tail scan PASS; `wake_verify` block executed**. One row
 per run; status updated as runs execute. Runs on
 `~/rq3snd_frozen2`, fixed image `207b1f9e8f64`, launcher
 `rq3snd_p1_01_launch_run.sh`, full reset between runs (launcher make chain).
@@ -66,8 +66,8 @@ run_id + base-gate note when checked.
 | 36 | B2 | `rq3snd_semantic_hybrid_2` | semantic | hybrid | 6302 | done | run `20261004_085430` 08:47→09:28 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 45,404, 000 = 0, viol = 0**; cancel 0.32% — optional (descriptive) |
 | 37 | B2 | `rq3snd_loss_all_event_only_2` | loss_all | event_only | 6302 | done (accepted, guard) | run `20261004_093448` 09:28→10:08 UTC; **nested min-admissions artifact — accepted AUTOMATICALLY by the part-3 guard (first live guard use, zero interruption)**; campaign gate **valid=True**, floors PASS, 32 spawns; cancel 0.54% — optional (F1 push anchor) |
 | 38 | B2 | `rq3snd_none_wake_verify_2` | none | wake_verify | 6302 | done | run `20261005_000139` 23:55→00:36 UTC; base gates **OK**; floors PASS; clean control; cancel 0.56% |
-| 39 | B2 | `rq3snd_premature10_wake_verify_2` | premature10 | wake_verify | 6302 | running | started 00:36:28 UTC |
-| 40 | B2 | `rq3snd_semantic_wake_verify_2` | semantic | wake_verify | 6302 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
+| 39 | B2 | `rq3snd_premature10_wake_verify_2` | premature10 | wake_verify | 6302 | done | run `20261005_004258` 00:36→01:17 UTC; base gates **OK**; floors PASS; deferral_s = 10.01; **000=0, viol=0**; cancel 0.51% |
+| 40 | B2 | `rq3snd_semantic_wake_verify_2` | semantic | wake_verify | 6302 | done | run `20261005_012349` 01:17→01:57 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 36,145**; cancel 0.32% |
 
 ## Block 3 — seed 6303 (arm order: reconcile → event_only → hybrid)
 
@@ -90,9 +90,9 @@ run_id + base-gate note when checked.
 | 55 | B3 | `rq3snd_premature10_hybrid_3` | premature10 | hybrid | 6303 | done | run `20261004_195358` 19:47→20:28 UTC; base gates **OK**; floors PASS; deferral_s = 10.01; **000 = 1264 — hybrid F2 grid complete (1228/1123/1264)**; viol=6; cancel 0.46% |
 | 56 | B3 | `rq3snd_semantic_hybrid_3` | semantic | hybrid | 6303 | done | run `20261004_203520` 20:28→21:09 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 47,861**; cancel 0.27% — optional (descriptive) |
 | 57 | B3 | `rq3snd_loss_all_event_only_3` | loss_all | event_only | 6303 | done (accepted, guard) | run `20261004_211627` 21:09→21:50 UTC; nested min-admissions artifact — **accepted automatically by the guard (third and final guarded cell)**; campaign gate **valid=True**, floors PASS, 33 spawns; cancel 0.95% — optional (F1 push anchor) |
-| 58 | B3 | `rq3snd_none_wake_verify_3` | none | wake_verify | 6303 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
-| 59 | B3 | `rq3snd_premature10_wake_verify_3` | premature10 | wake_verify | 6303 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
-| 60 | B3 | `rq3snd_semantic_wake_verify_3` | semantic | wake_verify | 6303 | pending | optional — **tail block** (amendment 2026-10-03; contingent on pre-tail gate scan) |
+| 58 | B3 | `rq3snd_none_wake_verify_3` | none | wake_verify | 6303 | done | run `20261005_020418` 01:57→02:39 UTC; base gates **OK**; floors PASS; clean control; cancel 0.55% |
+| 59 | B3 | `rq3snd_premature10_wake_verify_3` | premature10 | wake_verify | 6303 | done | run `20261005_024604` 02:39→03:21 UTC; base gates **OK**; floors PASS; deferral_s = 10.01; **000=0, viol=0 — wake_verify 3/3 F2 zero-failure**; cancel 0.41% |
+| 60 | B3 | `rq3snd_semantic_wake_verify_3` | semantic | wake_verify | 6303 | done | run `20261005_032748` 03:21→04:01 UTC; base gates **OK**; floors PASS; **F3 signature: 5xx = 43,490**; cancel 0.31% — **campaign `ALL DONE` 04:01:58 UTC** |
 
 ## Monitoring (per run + every 5 min)
 

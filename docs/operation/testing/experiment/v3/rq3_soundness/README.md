@@ -156,3 +156,10 @@ correctness, not just liveliness.
 - 2026-10-03 — complete campaign running: R3b certified (all gates pass; lock
   refreshed with all four P1 runs); **E sequence started 10:35 UTC** (60 runs,
   ≈ 42 h; pulse monitoring every 5 min) — tracker: [`e_stage_log.md`](e_stage_log.md).
+- 2026-10-05 — **E stage complete**: ALL DONE 04:01:58 UTC; aggregate
+  **60/60 valid** (57 gate=OK + 3 guarded loss_all acceptances, guard 3/3);
+  pre-tail scan PASS → `wake_verify` block executed; **analysis complete** →
+  verdicts in [`results.md`](results.md): H-S1 ✅ · H-S2 ✅ · H-S3 ❌
+  (pre-registered growth-gate branch; descriptive band
+  `pull-dominates-immediately`) · H-S4 ✅ secondary; [`post_run_analysis.md`](post_run_analysis.md)
+  written; controller logs cleaned post-parse (≈54 GiB freed).

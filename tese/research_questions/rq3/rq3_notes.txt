@@ -22,3 +22,89 @@ E-LB3 (redistribution latency), E-LB4 (fault redistribution), E-RO1 (loop closur
 E-RO2 (usable-capacity realization), E-RO3 (relief completes); outcomes in rq3_final.md §5.
 Per-backend 30–45k volume claim removed (uncitable); boundedness kept as claim qualifier;
 controller restart excluded from scope.
+
+(2026-10-05) Soundness half (Family 5, 60 runs) integrated into main.tex §5 RQ3:
+verdict table tab:rq3_soundness + figure rq3_soundness_damage (a: damage vs claim
+lead; b: damage by claim family); RQ3 statement and contribution #3 widened to
+lost/premature/false claims; synthesis row updated. False-claim citations added
+(Flora et al. 2022; Pourreza and Narasimhan 2023, .txt extractions beside the
+PDFs). Prose style pass: no dashes, minimal colon/semicolon use; campaign-1
+expectation wording simplified and "recorded chain" phrase removed per author
+notes.
+
+(2026-10-05 b) §5 RQ3 merged into a single narrative for the thesis: readiness
+admission defined once at the top (provisioned backend -> ready -> routing
+pool), rules explained before specifics (incl. wake-and-verify and the 120 s
+abandonment window vs the inert 130 s fallback timer), one pre-registered
+expectation covering intact/lost/wrong claims, "second campaign" framing
+removed (0 occurrences) and run counts moved to tab:rq3_design (Treatment,
+Workload, Replication, Test, Expectations rows updated to cover the claim-
+failure set).
+
+(2026-10-05 c) Chapter 2 integration of the two new citations: added to
+sec:lit_sdn_lb after the two-direction desynchronisation paragraph — both
+directions observed in practice (Flora: Kubernetes probes insufficient for
+aging services; Pourreza: edge apps degrade in latency before failing);
+"A passing readiness check therefore confirms that a backend answers, not
+that it serves its workload well." Both citations now appear in Ch2 and Ch5.
+
+(2026-10-05 d) §5 RQ3 trims per author: intro compressed to one sentence
+(no readiness-criterion detail, no quota restatement), rules paragraph
+compressed (evidence-trust framing, values folded in), probe/timer
+explanation reduced to two clauses (130 s timer vs 120 s abandonment),
+repeated "counts as admitted" lines removed; gap-table RQ3 row extended
+with the claim-failure clause.
+
+(2026-10-05 e) §5 RQ3 behaviour-first restructure (author directive, one
+behaviour at a time across all rules): speed (declarative, poll-calibration
+dropped, defect anecdote removed), lost (merged across both campaigns incl.
+the former F1 tie-back; recovery-ordering figure dropped to one sentence,
+render moved to tese/images/unused/), early (clear wording then numbers,
+per-seed count ranges trimmed), false (Flora/Pourreza citations moved here).
+Qualifiers and expectation part 3 minimised. Section 466 -> 366 lines,
+7 floats; old paragraph fragments verified zero.
+
+(2026-10-05 f) House-pattern fix: results sections carry no citations
+(RQ1/RQ2 have none). Flora/Pourreza citations removed from §5 RQ3 and left
+only in Ch2 (sec:lit_sdn_lb, "Both directions are observed in practice"),
+where the sourcing belongs.
+
+(2026-10-05 g) False-claim (F3/semantic) premise removed from the thesis on
+author review (judged tautological: a responsiveness check cannot detect a
+responsive-but-failing service). Removed: §5 F3 results paragraph; the
+"two ways" bridge; the "no rule answers a false claim" expectation clause;
+the veridicality verdict; the false-claim table rows; the two-panel figure
+(replaced by single-panel v2, timing grid only); the "soundness choice"
+and channel-vs-service sentences in the In sum; the synthesis-row
+false-claim clause; the RQ3 statement and contribution #3 false clauses;
+and the Ch2 passage that grounded the direction. Flora/Pourreza removed
+from the thesis and the corpus on author review (bib entries, PDFs,
+extractions, and corpus README rows removed; index count restored to 37).
+The experiment archive (results.md, JSONs, runs) still records the full
+campaign, H-S1/H-S2/H-S4 included; the thesis reports the premature-claim
+grid and the loss anchor.
+
+(2026-10-05 h) Ch3 §3.4: added the wake-and-verify composition to the
+configurable readiness styles (the notification may serve only to wake an
+immediate probe, opening the check but not admitting on its own), aligning
+the design chapter with the four rules compared in §5. Ch4 impl TODO
+comment (ReadinessGate item list) still to receive the wake-verify
+sub-mode when Ch4 is written.
+(2026-10-05 i) Thesis polish batch on author review of §5 RQ3 and the
+figures. Micro-wording: "lost or early" (not "lost or wrong"); the seed
+range spelled out as seeds 6301--6303; verdict grammar fixed; the
+premature-claim table caption renamed from "readiness-claim timing
+grid"; "trusting rules" wording; the F2 opener now reads "Under a
+premature claim". Ch5 internals: the metrics bullet now lists three
+parts with the premature measured quantity, and the testing and
+discussion passages carry the premature-claim comparison. Ch4 impl TODO
+comment received the wake-verify sub-mode note (item h now applied).
+Figure 5.6 replaced by the two-panel rq3_admission_intervals_v2.png
+(a: provisioning -> first success per backend; b: scaling decision ->
+usable capacity per run). The log-scale verified-readiness -> admission
+panel was dropped from the figure, its values remain in tab:rq3_delays,
+and the caption defines the fast and slow binding classes. Figure 5.8
+caption defines damage (percentage points against a matched no-fault
+run) and the negative readings. Generator updated (docstring, panel
+letter parameters, interval_figure v2 render plus copy to tese/images);
+the v1 render moved to tese/images/unused/.

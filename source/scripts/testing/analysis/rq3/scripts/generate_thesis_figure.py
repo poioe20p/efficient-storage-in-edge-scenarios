@@ -1,10 +1,12 @@
 """RQ3 thesis figures --- rendered into the house thesis style.
 
 Three renders for the RQ3 results section:
-  * `rq3_admission_intervals.png` -- the intact-source interval chain:
-    (a) verified readiness -> admission per backend (log ms), (b) provisioning
-    -> first successful response per backend, (c) scaling decision -> usable
-    capacity per run (rate-12 cell). Sources (read-only):
+  * `rq3_admission_intervals_v2.png` -- the intact-source interval chain:
+    (a) provisioning -> first successful response per backend,
+    (b) scaling decision -> usable capacity per run (rate-12 cell).
+    (v1, whose first panel was the log-scale verified-readiness ->
+    admission dot plot, was superseded 2026-10-05; that interval remains
+    in `tab:rq3_delays`.) Sources (read-only):
     `docs/operation/testing/experiment/v2/rq3/graphs/campaign_fixed/
     campaign_stratified_per_backend.csv` and `.../v2/rq3/rq3_probe_summary.csv`
     (the twelve P2 + cell-12 runs per arm, listed in CELL12_RUNS).
@@ -20,7 +22,15 @@ Three renders for the RQ3 results section:
     for the two re-deriving configurations under total event loss
     (analysis-only re-anchored ordering). Source: the analysis-only companion
     `docs/operation/testing/experiment/v3/rq3_timing/analysis/
-    timing_campaign_reanchored.json`.
+    timing_campaign_reanchored.json`. Kept as an archive render; not
+    referenced by the thesis build since 2026-10-05.
+  * `rq3_soundness_damage_v2.png` -- the timing-lie grid: episode damage
+    against the claim lead per rule (seed medians as lines, individual
+    seeds as dots). Sources: `docs/operation/testing/experiment/v3/
+    rq3_soundness/analysis/rq3snd_damage_all.json` and
+    `.../rq3snd_crossover_all.json`; the render is also copied to
+    `tese/images/` for the thesis build. (v1, a two-panel version that
+    included the retired false-claim family, was superseded 2026-10-05.)
 
 Style mirrors `source/scripts/testing/analysis/rq1/scripts/generate_thesis_graphs.py`
 (house seaborn-deep palette, 150/200 dpi, black per-run dots).
@@ -34,6 +44,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -67,6 +78,13 @@ OUT_V2 = V2 / "graphs/thesis"
 OUT_V2.mkdir(parents=True, exist_ok=True)
 REANCHORED_JSON = (ROOT / "docs/operation/testing/experiment/v3/rq3_timing/"
                    "analysis/timing_campaign_reanchored.json")
+SND = ROOT / "docs/operation/testing/experiment/v3/rq3_soundness"
+SND_DAMAGE = SND / "analysis/rq3snd_damage_all.json"
+SND_CROSS = SND / "analysis/rq3snd_crossover_all.json"
+OUT_SND = SND / "graphs/thesis"
+OUT_SND.mkdir(parents=True, exist_ok=True)
+COL_SND = {**COLORS, "wake_verify": "#64B5CD"}
+LABELS_SND = {**LABELS, "wake_verify": "wake-and-verify"}
 
 # interval-figure arms: direct lifecycle vs periodic discovery (same colours
 # as the event-loss figure: direct red, discovery blue, fallback orange)
@@ -209,33 +227,7 @@ def _stylize_strata_axis(ax) -> None:
     ax.grid(axis="y", alpha=0.25, linestyle="--")
 
 
-def panel_intervals_a(ax, rows: list[dict]) -> None:
-    """Verified readiness -> admission, per backend, logarithmic ms scale."""
-    floor_ms = 0.5
-    for x, (arm, stratum) in zip(GROUP_X, GROUPS):
-        values = _group_values(rows, arm, stratum, "ready_ms")
-        vals = np.clip(values, floor_ms, None)
-        jitter = RNG.uniform(-0.15, 0.15, len(vals))
-        ax.scatter(x + jitter, vals, s=20, color="black", alpha=0.8,
-                   linewidths=0, zorder=4)
-        median = float(np.median(values))
-        y = max(median, floor_ms)
-        ax.plot([x - 0.27, x + 0.27], [y, y], color=COL_ARM[arm], lw=2.6,
-                zorder=5)
-        label = "\u2264 1 ms" if median <= 5.0 else f"{median / 1000.0:.1f} s"
-        ax.text(x, 12000, label, ha="center", va="center", fontsize=9.5,
-                color=COL_ARM[arm])
-    ax.set_yscale("log")
-    ax.set_ylim(0.4, 22000)
-    ax.set_yticks([1, 10, 100, 1000, 10000])
-    ax.set_yticklabels(["1", "10", "100", "1000", "10000"])
-    ax.set_ylabel("verified readiness \u2192 admission (ms)")
-    _stylize_strata_axis(ax)
-    ax.text(-0.18, 1.05, "(a)", transform=ax.transAxes, fontweight="bold",
-            fontsize=11)
-
-
-def panel_intervals_b(ax, rows: list[dict]) -> None:
+def panel_intervals_b(ax, rows: list[dict], letter: str = "(b)") -> None:
     """Provisioning -> first successful response, per backend."""
     for x, (arm, stratum) in zip(GROUP_X, GROUPS):
         values = _group_values(rows, arm, stratum, "first_s")
@@ -253,11 +245,12 @@ def panel_intervals_b(ax, rows: list[dict]) -> None:
     ax.set_ylim(0, 25)
     ax.set_ylabel("provisioning \u2192 first success (s)")
     _stylize_strata_axis(ax)
-    ax.text(-0.18, 1.05, "(b)", transform=ax.transAxes, fontweight="bold",
+    ax.text(-0.18, 1.05, letter, transform=ax.transAxes, fontweight="bold",
             fontsize=11)
 
 
-def panel_intervals_c(ax, probes: dict[str, list[float]]) -> None:
+def panel_intervals_c(ax, probes: dict[str, list[float]],
+                      letter: str = "(c)") -> None:
     """Scaling decision -> usable capacity, per run (rate-12 cell)."""
     for x, arm in enumerate(("direct", "discovery")):
         values = np.array(probes[arm], dtype=float)
@@ -278,28 +271,26 @@ def panel_intervals_c(ax, probes: dict[str, list[float]]) -> None:
     ax.set_ylim(0, 9.5)
     ax.set_ylabel("scaling decision \u2192 usable capacity (s)")
     ax.grid(axis="y", alpha=0.25, linestyle="--")
-    ax.text(-0.20, 1.05, "(c)", transform=ax.transAxes, fontweight="bold",
+    ax.text(-0.20, 1.05, letter, transform=ax.transAxes, fontweight="bold",
             fontsize=11)
 
 
 def interval_figure() -> None:
-    """Intact-source admission-chain intervals (three panels)."""
+    """Intact-source admission-chain intervals (two panels, v2)."""
     rows = load_stratified()
     probes = load_cell12()
-    fig, axes = plt.subplots(1, 3, figsize=(11.4, 4.4))
-    panel_intervals_a(axes[0], rows)
-    panel_intervals_b(axes[1], rows)
-    panel_intervals_c(axes[2], probes)
+    fig, axes = plt.subplots(1, 2, figsize=(8.8, 4.4))
+    panel_intervals_b(axes[0], rows, letter="(a)")
+    panel_intervals_c(axes[1], probes, letter="(b)")
     fig.tight_layout()
-    out = OUT_V2 / "rq3_admission_intervals.png"
+    out = OUT_V2 / "rq3_admission_intervals_v2.png"
     fig.savefig(out)
     plt.close(fig)
-    print(f"wrote {out}")
+    shutil.copyfile(out, ROOT / "tese/images/rq3_admission_intervals_v2.png")
+    print(f"wrote {out} and tese/images/rq3_admission_intervals_v2.png")
     for arm, stratum in GROUPS:
-        ready = _group_values(rows, arm, stratum, "ready_ms")
         first = _group_values(rows, arm, stratum, "first_s")
-        print(f"  {arm}/{stratum}: n={len(ready)} "
-              f"ready_ms med={np.median(ready):.3f} "
+        print(f"  {arm}/{stratum}: n={len(first)} "
               f"first_s med={np.median(first):.3f}")
     for arm, values in probes.items():
         print(f"  scale->usable {arm}: n={len(values)} "
@@ -364,10 +355,63 @@ def event_loss_figure(data: dict) -> None:
         print(f"  {arm}: admitted {admitted}  abandoned {abandoned}")
 
 
+def soundness_figure() -> None:
+    """Timing-lie grid: episode damage against the claim lead (single panel).
+
+    v2 (2026-10-05): the two-panel v1 included the retired false-claim
+    family; the thesis now reports the timing grid only.
+    """
+    damage = json.loads(SND_DAMAGE.read_text(encoding="utf-8"))
+    cross = json.loads(SND_CROSS.read_text(encoding="utf-8"))
+    medians = damage["medians"]
+
+    def seed_values(arm: str, cell: str) -> list[float]:
+        record = medians.get(f"{arm}|{cell}")
+        if record is None:
+            return []
+        return [record["seeds_ok"][s] for s in sorted(record["seeds_ok"])]
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+
+    leads = [2, 5, 10]
+    for arm in ("event_only", "hybrid", "reconcile"):
+        meds = [medians[f"{arm}|premature{n}"]["d_bar_pp"] for n in leads]
+        ax.plot(leads, meds, color=COLORS[arm], lw=1.9, marker="o", ms=5,
+                label=LABELS[arm])
+        for n in leads:
+            for value in seed_values(arm, f"premature{n}"):
+                ax.scatter(n + RNG.uniform(-0.09, 0.09), value, s=20,
+                           color="black", alpha=0.8, linewidths=0, zorder=4)
+    wk = medians["wake_verify|premature10"]
+    ax.scatter([10], [wk["d_bar_pp"]], s=36, color=COL_SND["wake_verify"],
+               zorder=5, label=LABELS_SND["wake_verify"])
+    for value in seed_values("wake_verify", "premature10"):
+        ax.scatter(10 + RNG.uniform(-0.09, 0.09), value, s=20,
+                   color="black", alpha=0.8, linewidths=0, zorder=4)
+    ax.axhline(0, color="#888", lw=0.9, zorder=1)
+    ax.set_xticks(leads, ["2", "5", "10"])
+    ax.set_xlabel("claim lead (s)")
+    ax.set_ylabel("episode damage (pp)")
+    ax.set_ylim(-13, 18.5)
+    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.legend(loc="upper left", frameon=False)
+
+    fig.tight_layout()
+    out = OUT_SND / "rq3_soundness_damage_v2.png"
+    fig.savefig(out)
+    plt.close(fig)
+    shutil.copyfile(out, ROOT / "tese/images/rq3_soundness_damage_v2.png")
+    print(f"wrote {out} and tese/images/rq3_soundness_damage_v2.png")
+    print(f"  band: {cross['crossover']['band']} "
+          f"n*={cross['crossover']['n_star']} "
+          f"gate_pass={cross['growth']['gate_pass']}")
+
+
 def main() -> None:
     event_loss_figure(load())
     interval_figure()
     ordering_figure()
+    soundness_figure()
 
 
 if __name__ == "__main__":

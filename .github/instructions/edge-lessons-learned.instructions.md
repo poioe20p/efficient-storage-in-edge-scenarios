@@ -107,6 +107,13 @@ Runs can take 40+ minutes. The current approach (`mode=async` terminal +
   or a lightweight watchdog script on the cloud VM that writes heartbeat
   timestamps the runner can check independently.
 
+**Update (2026-10-05):** the rq3snd E-stage campaign (60 runs, ~41 h) ran
+entirely on `nohup`-detached sequencers + local watchdogs polling every 15–30 s
+over short-lived SSH connections — no watchdog false-negatives across the whole
+campaign (every mid-sequence STOP was caught). Remaining failure mode found:
+unredirected `nohup` stdout dies on SSH-pipe break at the first write — see the
+"Detached Analysis Jobs" section below.
+
 ## Pre-Registered Zero-Admission Cells vs the Shared Min-Admissions Gate (RQ3 robustness)
 
 The shared RQ3 gate in `run_experiment.sh` hard-requires ≥1 admitted backend
@@ -126,6 +133,19 @@ first evidence run — same class as the RQ2 × RQ3 gate false-failure above.
 Diagnose from the gate's own output first; a "failed" run can hold valid data.
 
 Discovered on 2026-09-06 during `rq3rob_loss_all_event_only_0` (Stage 0.2.3).
+
+**Recurrence (2026-10-03, RQ3 soundness E stage):** the same cell false-failed
+the nested gate again in the `rq3snd` frozen tree (`rq3snd_loss_all_event_only_1`,
+run `20261003_214926`: 0 admitted / 32 abandoned = the exact pre-registered
+mechanism; campaign gate independently `valid=True`) → sequencer STOP. Recovered
+without a rerun: audit acceptance + a frozen-tree guard keyed to the gate log
+artifact, which then accepted the remaining guarded cells (runs 37/57)
+automatically — 3/3, zero interruptions (`run_matrix.md` §Incident amendment;
+`preflight_log.md` rows 4.1/5.0). **Lesson:** a cell-signature waiver written
+for one campaign's fault-knob surface may not cover a new campaign's
+implementation of the same outcome — before evidence runs in a frozen tree,
+re-verify the gate's cell handling against THIS campaign's loss_all signature,
+and keep a guarded-acceptance rule ready for the sequencer.
 
 ## osken Logging Config Suppresses sdn_controller INFO (Fault-Evidence Invisible)
 
@@ -402,3 +422,53 @@ expect an add-count effect when demand ≈ single-node capacity.
 Discovered on 2026-09-28 during the RQ2 Part C probes
 (`rq2pc_pd_cf_025` windows + per-minute analysis; `rq2pc_p4_cf_030`
 zero-benefit lock run).
+
+## Detached Analysis Jobs: Unredirected `nohup` Output Kills the Job at the First Write After an SSH Break
+
+A `nohup`-detached script survives an SSH drop only until its **first write
+to the dead pipe**. In the rq3snd campaign-wide analysis (2026-10-05) the
+silence was stage-shaped, so the gap looked harmless for ~8 minutes: bash was
+blocked in `wait` on the python child, so nothing was written; when
+`soundness-damage` finished, the script's `echo` after the python exit hit the
+broken stdout pipe, SIGPIPE killed bash, and the `soundness-crossover` stage
+**never launched**. The damage JSON survived only because the module writes
+its file output before any stdout write.
+
+**Practice:**
+- Always `nohup CMD > /tmp/<job>.log 2>&1 < /dev/null &` — the redirect both
+  prevents the SIGPIPE death and leaves an audit log.
+- Prefer job chains whose file outputs precede all stdout writes; when a
+  launcher can die between stages, make the tail stage independently runnable
+  (re-run it alone from the stage-1 artifact).
+- Watchdog the *pair* of artifacts, not the process: this failure was caught
+  by a watcher that expected both the damage JSON (`D`) and the crossover JSON
+  (`C`) and exited `DAMAGE-READY-NO-CROSSOVER` once the script was gone —
+  turning a silent gap into a one-command recovery.
+
+Discovered on 2026-10-05 during the rq3snd E-stage campaign-wide analysis.
+
+## Runner Tooling: PowerShell→ssh Quoting and `pgrep` Self-Match in Liveness Probes
+
+Two runner-tooling pitfalls hit on the same day (2026-10-05, rq3snd close-out):
+
+- **Nested quote layers through PowerShell 5.1 lose quotes.** Aiming for a
+  remote `python3 -c` with a double-quoted path inside (via PS `""` escapes:
+  `open(""/tmp/x.json"")`), the escapes are stripped when the argument reaches
+  native `ssh.exe` — the remote python received `open(/tmp/x.json)` →
+  SyntaxError. **Never nest quotes across PS→ssh→bash→python.** Use a heredoc
+  (`ssh host "python3 - <<'PYEOF' ... PYEOF"`, no `$` in the outer PS string)
+  or — most robust — write a script file, `scp` it, and run it on the VM.
+- **`pgrep -f <pattern>` in a probe command matches the probe's own shell.**
+  Any matching text on the same command line counts — the pattern itself
+  (without the bracket trick), or innocent extras like a `tail`/`ls` path of
+  the very file being checked. Two probe designs were silently always-true
+  (a watcher that could never see "script gone"; a status check that listed
+  itself as the live process). **Fix:** bracket-trick the pattern
+  (`'[r]q3snd_e_analysis'`) AND keep any other matching strings out of the
+  same command.
+- **Watchdog practice:** design every liveness watcher with three explicit
+  exits — output-complete / process-gone-without-output / timeout — and fail
+  fast on the middle one. A watcher that only polls for success converts a
+  dead stage into an hour of silence.
+
+Discovered on 2026-10-05 during the rq3snd E-stage close-out.
