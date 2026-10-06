@@ -101,7 +101,7 @@
 Edge web services that encompass routing, monitoring and auto-scaling rely
 on several control loops, and when these loops operate independently the
 handoffs between them accumulate delays. This accumulation of handoff
-delays degrades orchestration efficiency and reliability, and may reduce
+delays can degrade orchestration efficiency and reliability, and may reduce
 service quality~\parencite{Qu2018AutoScalingWebApplicationsClouds,Bogdanov2018Kurma,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 
 The remainder of this chapter is organised as follows.
@@ -131,13 +131,11 @@ which have in turn spurred the emergence of real-time interactive and
 data-intensive applications, among others. Examples include web streaming
 and cloud gaming, both services where users expect sub-second latency and
 high-resolution multimedia, highlighting the need for fast and capable
-data processing. These examples demonstrate the demand for infrastructure
-able to deliver performance with high availability and reliability at a
-global scale, regardless of where the end users are located.
+data processing.
 
 Cloud computing has been the backbone that enables these applications to
-operate at a global scale. It offers automatic scaling, both horizontally
-and vertically, a pay-per-use model and, among other aspects, a globally
+operate at scale. It offers automatic scaling, both horizontally
+and vertically, a pay-per-use model and, among other aspects, a
 distributed offering and availability that have established it as the
 foundational layer supporting modern applications and services
 \parencite{Gurung2026CloudRevolutionTracingOriginsRise}.
@@ -145,24 +143,18 @@ foundational layer supporting modern applications and services
     Yet, in parallel, a growing share of internet traffic now originates from
 mobile devices, which have become the main gateway to internet access
 \parencite{Gaudiaut2026MobileTrafficShare}. Much of this access is
-therefore generated and consumed at the network edge, far from
-centralised cloud data centres. Edge computing brings the computational
-resources to the network edge, therefore closer to the end-users, allowing
-for much lower latency in delivering services and applications.
-\parencite{Cao2020OverviewEdgeComputingResearch,Satyanarayanan2017EmergenceEdgeComputing}.
-Beyond lower latency, edge computing's inherent dispersion of servers
-close to users relieves bandwidth pressure on the core network, since data
-can be processed and stored locally,
-at the edge, for quicker responses, only a subset of it is sent to the cloud
-\parencite{Cao2020OverviewEdgeComputingResearch},
-freeing up backbone available bandwidth. 
+therefore generated and consumed at the network edge. Edge computing
+brings computational and storage resources closer to the end users,
+allowing for much lower latency in delivering services and
+applications~\parencite{Cao2020OverviewEdgeComputingResearch,Satyanarayanan2017EmergenceEdgeComputing}.
+Since data can be processed and stored locally, only a subset of it is
+sent to the cloud~\parencite{Cao2020OverviewEdgeComputingResearch}. 
 
-    Despite these advantages, this dispersion also translates into
-less capacity per location and greater complexity in managing the distributed
-edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
+    Despite these advantages, edge resources are dispersed, which translates
+into less capacity per location and greater complexity in managing the
+distributed edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
 edge computing raises the complexity of management considerably}
-\parencite[p.~37]{Satyanarayanan2017EmergenceEdgeComputing}. This management complexity stems
-from the dispersion of the edge servers across many sites,
+\parencite[p.~37]{Satyanarayanan2017EmergenceEdgeComputing}. This complexity is
 aggravated by considerable variation in user demand over time and by the
 heterogeneous resource requirements of the requests served. Luo et al. further
 highlight that, without efficient resource scheduling, this distributed nature
@@ -174,20 +166,18 @@ fluctuation of user demand.
 
     The resource management problem gains more relevance when the services
 themselves are stateful. Unlike stateless microservices, which can be
-replicated freely and absorb traffic immediately, stateful services in a
-distributed edge deployment depend on data held close to the compute.
-A content item ingested at one site is served from the database of that
-site. In distributed deployments, such data is routinely replicated
-across sites for locality and robustness, but replication is neither
-instantaneous nor free. A request reaching a server whose local copy is
-still synchronising must wait for it to catch up, and maintaining copies
-consumes storage and replication bandwidth
+replicated freely and absorb traffic immediately, a stateful edge service
+depends on data held close to the compute, so its storage tier is itself
+a live capacity that must follow demand alongside the compute tier.
+Making that capacity usable takes time, since a new storage unit must
+synchronise before it can serve reads, and maintaining the replicated
+copies consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement}.
 
     Scale-up alone does not guarantee usable capacity instantly. The
-orchestration system must detect when data must be brought closer,
-deliver that information to the decision point, provision the right
-kind of capacity, and redirect traffic to it. Each of these steps,
+orchestration system must detect the demand shift, deliver that
+information to the decision point, provision the right kind of capacity,
+and redirect traffic to it. Each of these steps,
 when executed in a system whose components must communicate with
 each other over the network, can introduce delay or data loss that
 degrades orchestration efficiency and, in turn, the quality of
@@ -242,9 +232,7 @@ controllers, one per network domain. Within each controller,
 telemetry consumption, scaling decisions, and traffic routing run in the same process.
 Telemetry production and aggregation remain external to the controller, making
 the delivery of aggregated demand evidence an explicit and configurable
-interface. Together with explicit lifecycle hooks for scaling action and
-traffic admission, this arrangement allows each selected interface to be
-measured under controlled conditions.
+interface.
 
     Along this chain, three interfaces are studied in a stateful service
 deployed across two network domains: how demand evidence is
@@ -261,6 +249,8 @@ beyond the tested infrastructure. It claims only that these three
 interfaces are measurable, that within the reviewed literature they have
 not been previously characterised in isolation, and that measurement can
 establish how they affect resource orchestration and under what conditions.
+Each interface is evaluated separately, and no aggregate cost along the
+chain is claimed.
 
 \section{Objectives}\label{sec:objectives} %DONE
 The main objective of this thesis is to study the coordination gaps that
@@ -288,7 +278,8 @@ This thesis seeks to answer the following three research questions:
 \begin{itemize}
     \item \textit{RQ1} -- How do three ways of delivering demand evidence
     to the controller, more specifically, event-preserving, delayed event-preserving, and
-    latest-state, affect what the controller observes about overload,
+    lossy delivery (latest-state polling and sampled push), affect what the
+    controller observes about overload,
     how it responds by scaling, and the quality of service users
     experience during a demand shift?
 
@@ -359,8 +350,8 @@ out through MongoDB native replication. The
 technology choices are justified by
 their utility for the platform. SDN provides a single programmable control
 plane through which routing behaviour can be re-programmed directly in a central manner, 
-Docker enables fast provisioning and teardown of service backends, and MongoDB for native
-replica-set replication and concurrent access.
+Docker enables fast provisioning and teardown of service backends, and MongoDB provides native
+replica-set replication with concurrent access.
 
 \item \textit{Demonstration.} The artefact was deployed as a running system in
 an emulated edge environment with two network domains, and was driven with
@@ -392,7 +383,7 @@ This dissertation makes the following contributions:
 
 \begin{enumerate}
     \item An experimental characterisation of telemetry delivery semantics
-    (event-preserving, delayed event-preserving, and latest-state) and of
+    (event-preserving, delayed event-preserving, and lossy delivery) and of
     their effects on overload observability, scaling response, and transient
     service quality (RQ1).
     \item An experimental characterisation of bottleneck-aware scaling
@@ -703,7 +694,8 @@ scaling or on routing, can act only on the evidence this link delivers,
 at the time it delivers it, and with whatever intermediate observations
 the delivery process preserves.
     In edge deployments the link matters even more, because the
-evidence must travel from many dispersed nodes to the decision point,
+evidence is produced across the service nodes and must reach the decision
+point,
 so any delay or gap in its delivery becomes delay or degradation in the
 orchestration response. 
 
@@ -724,9 +716,10 @@ choice alone determines much of what the consumer can know. Between two
 collection instants the monitored state is unobserved, and what the
 pipeline forwards between instants determines whether the consumer
 receives the complete history, a complete but delayed history, or only
-the latest state. These different forms are defined
+part of it. These different forms are defined
 as event-preserving delivery, delayed event-preserving delivery,
-and latest-state delivery. Their effect on resource orchestration
+and lossy delivery (latest-state polling and sampled push).
+Their effect on resource orchestration
 is part of the subject of study in this thesis.
 
     The reviewed evidence spans three contexts in which this link has
@@ -780,7 +773,7 @@ for the platform under study.
 delivery question appear separately. AdapPF varies the interval that
 produces delay, and Yaseen documents the gaps that polling leaves, yet
 no reviewed work distinguishes delayed event-preserving delivery from
-latest-state delivery, and none traces either regime through a stateful
+lossy delivery, and none traces either regime through a stateful
 service from observation to user-visible consequence. This distinction is the gap
 this dissertation isolates and measures.
 
@@ -837,7 +830,7 @@ reduces to whether and how many instances of that one function to
 activate.\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 In a stateful edge service, however, the storage tier is
 itself a live capacity. When the pressure sits in the data rather than
-in the function instances, adding instances cannot relieve it.
+in the function instances, adding instances does not relieve the storage tier.
 
     Predictive and learning-based approaches sharpen the same decision
 without widening it. Toka et al. formalise the Kubernetes horizontal
@@ -906,7 +899,7 @@ unscalable and ignored by auto-scalers}
 
     Overall, the literature demonstrates that the kind of capacity added
 under certain scenarios can have an impact,
-compute replicas cannot relieve pressure whose limiting
+compute replicas do not relieve pressure whose limiting
 resource lies in the storage tier, and database capacity can govern SLA
 violations while a compute-tier scaling decision remains unchanged.
 Scaling actions are therefore not interchangeable merely because each
@@ -1018,7 +1011,7 @@ versa.
     This dissertation studies the SDN-based form of this architectural
 layer, in which the coordination spans the SDN controller, the
 container runtime, and the data store, and the challenge is to keep
-these layers working together as demand moves across sites. The
+these layers working together as demand fluctuates. The
 platforms reviewed here bind these layers with different degrees of
 coupling, and this section examines how closely the three functions
 of the demand-to-capacity chain, monitoring, scaling, and routing,
@@ -1220,7 +1213,7 @@ deliberately does not claim.
     Read together, the reviewed works provide evidence of the topics
 studied in this thesis: the delivery of demand evidence (its freshness and
 completeness) and its effect on the link between monitoring and decision, 
-the cost of scaling the wrong resource when the bottleneck lies elsewhere,
+the consequences of serving the wrong tier when the bottleneck lies elsewhere,
 and the interval between provisioning and usable capacity. They also show that
 coordinating these functions at an SDN control point is an established
 approach.
@@ -1347,7 +1340,7 @@ among the eligible candidates, so metrics with different units contribute
 on a common scale under configurable weights (reported per campaign in
 Appendix~\ref{app:campaign_config}), and candidates that tie at the lowest
 cost are selected in round-robin. Hop distance expresses reach and in this 
-archicture a peer-domain candidate is always assigned more hops than a local
+architecture a peer-domain candidate is always assigned more hops than a local
 one, so local candidates are preferred at comparable resource state.
 For storage reads observed on the virtual data path, the same mechanism
 selects a replica-set member, using the corresponding storage metrics (CPU
@@ -1565,7 +1558,10 @@ through periodic probes, and the design may additionally bound the damage
 of a lost notification. A fallback probe re-derives readiness after a
 configured window, between the pure event-coupled and pure polling styles.
 The notification may also serve only to wake an immediate probe, so that
-it opens the check but does not admit on its own.
+it opens the check but does not admit on its own. Because the direct
+rule admits on the claim itself, a claim that arrives before the replica
+can serve would reach the routing pool unchecked, while the probe-based
+rules re-derive readiness before admitting.
 Because the backend selector steers new flows while installed flows remain
 where they were placed (Section~\ref{sec:control_workflow}), admission also
 marks the point at which the new backend can begin to share the fleet's load.
@@ -1615,8 +1611,8 @@ it, its storage utilisation).
 
     Beyond the membership change, the platform defines three data-placement
 tiers: Tier~0 provides direct remote reads over
-the virtual data path, meaning the replica-set member is deployed outside it's
-primary network domain, Tier~1 holds a partial hot copy in the consumer
+the virtual data path, meaning the replica-set member is deployed outside its
+primary network domain, Tier~1 holds a partial copy of the data in the consumer
 domain, and Tier~2 is the replica-set extension described above. Tier~0 and
 Tier~1 are platform capabilities rather than evaluated treatments. In the
 experiments, the storage action is limited to activating the prepared
@@ -1687,8 +1683,9 @@ per-window evaluation, from the eligibility check to the request emissions.
 window when several tiers signal simultaneously, which is the selection
 interface of the demand-to-capacity chain. In the bottleneck-aware
 configuration, that selection distinguishes between compute-bound and
-data-access-bound demand and scales the matching tier, resolving close
-scores towards storage. A per-tier action budget can bound its actions,
+data-access-bound demand and scales the matching tier when it leads by the
+configured classification margin (Appendix~\ref{app:campaign_config}),
+resolving close scores towards storage. A per-tier action budget can bound its actions,
 and the selected and rejected actions are recorded as evidence. Lifecycle 
 signals, such as the completion of a drain or the readiness of a storage member,
 reach the same decision path as control events, so that admission and release
@@ -2004,7 +2001,7 @@ every run stores the phase schedule it executed.
     The phases around the episode have fixed roles across the campaigns. A
 baseline window opens every run at a low, steady load (rate 1.0 per client,
 10~\% of clients active) and establishes the healthy pre-shift operating
-point. A recovery gap is a phase with the lowest issuing load (rate
+point. A recovery gap is a quiet phase with a low issuing load (rate
 0.5, 5~\% of clients) and acts as a post-episode quiet period that lets the platform
 settle and separates the stressed window from the post-shift windows. 
 A demand drop returns the load to a low, steady level (rate 1.0, 10~\%) and is
@@ -2090,7 +2087,7 @@ question.
 
 \begin{itemize}
     \item \textit{The telemetry delivery campaign} answers the observation 
-    part of its question directly through the delivered fraction states 
+    part of its question directly: the delivered fraction states 
     how much of the produced window stream reached the decision engine, 
     and the information age at decision states how fresh the evidence 
     it received was. How the controller responded is read on its primary
@@ -2201,7 +2198,7 @@ Each campaign uses these tests and intervals on its own measures. The
 telemetry delivery campaign reports each $\delta$ with a 95~\% bootstrap
 confidence interval, and a direction count, the number of seed-matched
 blocks consistent with the predicted order. The scaling action campaign
-works with ratios instead of groups: for each cell it reports the median
+works with ratios instead of groups: for each arm it reports the median
 ratio across runs, with a 95~\% confidence interval, and compares it with
 the pre-registered threshold, because its question is whether a ratio
 passes a target, not whether two sets of runs differ. The readiness
@@ -2218,8 +2215,10 @@ named contrasts in advance.
 
 Screening rules are applied before the contrasts as runs
 entering a contrast must pass the campaign's per-run checks on data-path
-integrity, test-harness behaviour, delivery fidelity, and cross-domain symmetry,
-and the defined exclusions are removed and reported. Pre-registered criteria
+integrity, test-harness behaviour, and delivery fidelity; cross-domain
+symmetry is screened, with breaches above the screening line reported as
+flags rather than exclusions, and the defined exclusions are removed and
+reported. Pre-registered criteria
 that are not met are reported as such, together with the observed evidence and
 its documented causes. The full design of each campaign, its treatments, 
 held constants, workload, replication, exclusions, and pre-registered test, 
@@ -2231,8 +2230,8 @@ Appendix~\ref{app:campaign_config}.
 
 The campaign compared the three delivery semantics named in
 Section~\ref{sec:research_questions} under the overload episode described in
-Section~\ref{sec:experimental_setup}, with the latest-state class realised in
-two lossy forms (arms~C and~D).
+Section~\ref{sec:experimental_setup}, with the lossy class realised in
+two forms (arms~C and~D).
 Arm~A (event-preserving) hands every completed telemetry
 window to the decision engine exactly once and in source order.
 Arm~B (delayed event-preserving) hands the same ordered windows with a fixed,
@@ -2283,8 +2282,8 @@ design of the campaign.
         Item & Design \\
         \midrule
         Treatment & Four telemetry delivery treatments over the otherwise
-        identical platform, realising the three delivery semantics with the
-        latest-state class in two forms: event-preserving delivery of every
+        identical platform, realising the three delivery semantics, the
+        lossy class tested in two forms: event-preserving delivery of every
         completed window (A); event-preserving delivery delayed by a fixed
         30~s, without burst replay (B); latest-state polling every 30~s,
         delivering about one third of the windows (C); and sampled push
@@ -2360,8 +2359,8 @@ routing policy, and workload were identical across arms, the differences
 in this column are attributable to the delivery treatment. The first two 
 steps of the pre-registered ordering were fully replicated on usable capacity: 
 A < B and B < C in all seven blocks. C and D were not
-cleanly separated, with D later at the median by 3.6~s (C < D in five of
-seven blocks). Reaction claims use usable-capacity latency, and 
+cleanly separated, with D later at the median by 3.6~s (on usable
+capacity, C < D in five of seven blocks). Reaction claims use usable-capacity latency, and 
 in that regard the time to the first scale-up decision is descriptive only,
 because delivery timing determines it by construction.
 
@@ -2439,14 +2438,15 @@ identically: the decision evidence was 30~s old, the first scale-up decision
 fell between 52.0~s and 60.4~s, and usable capacity between 55.1~s and
 61.5~s. The user-visible outcome depends on how much of the surge the base
 fleet must absorb alone before the new capacity serves traffic.
-That window is about 29~s in A, 55--62~s in B, and 78--83~s in C and D. 
+That window is 25--33~s in A, 55--62~s in B, 74--82~s in C and 75--88~s in D. 
 
 Whether that window is survived also depends on the testbed's run-to-run
 variance, which is present in every arm and is not attributable to the
 delivery treatment: the episode median compute processing time varied
 roughly sixfold (16--94~ms) across runs of identical configuration. The
-base fleet has only a limited absorption margin against the surge, and a
-slow platform state exhausts it sooner than a fast one. A's exposure window
+base fleet has only a limited absorption margin against the surge (the spare
+capacity that absorbs requests until the new capacity serves), and a slow
+platform state exhausts it sooner than a fast one. A's exposure window
 is short enough that the margin covers it in every run, so the variance
 leaves no visible trace in its outcome. The window of C and D is long
 enough that the margin is exhausted in every run, so both arms degrade in
@@ -2461,7 +2461,7 @@ as such. The full ordering A < B < C $\approx$ D did not hold, because B
 does not sit reliably between A and C: its collapsed replicates straddle C
 (B--C $p = 0.209$, direction 5/7). The sampled-push arm was also not strictly
 worst: C and D were statistically indistinguishable ($p = 0.456$), with the
-point estimate marginally against C. Read together with the margin effect
+point estimate, if anything, marginally in the sampled-push arm's favour. Read together with the margin effect
 described above, both deviations are informative rather than negative. The
 collapsed delayed replicates show that the cost of delay is conditional on
 the platform state that the arm samples, and the equivalence of C and D
@@ -2487,7 +2487,7 @@ completed-without-status class remaining largest in B (2.22~\% against
 the episode ordering is not an artefact of aggregating the episode into a
 single percentile. On the evaluated testbed, the observation interface
 therefore shapes the transient response to a demand shift, while leaving
-steady-state quality untouched.
+steady-state quality otherwise untouched.
 
 In sum, the results answer the question in the order it was posed. The
 delivery semantics changed what the controller observed about the overload
@@ -2563,8 +2563,8 @@ Table~\ref{tab:rq2_design} summarises the design of the original campaign.
         demand-drop phases. \\
         Experimental unit & Run; per-arm criterion over replicates. \\
         Replication & Six arms and six replicates in six counterbalanced
-        blocks (36 runs; five seed-matched replicates and one cross-seed
-        replicate per arm); 34 valid. \\
+        blocks (36 runs; seeds 42 and 43; five replicates on the primary
+        seed and one cross-seed replicate per arm); 34 valid. \\
         Exclusions & Two runs excluded as documented container memory-cap
         incidents (kills under the 256~MB and 512~MB caps); per-run screens as
         above. \\
@@ -2592,8 +2592,9 @@ Table~\ref{tab:rq2_design} summarises the design of the original campaign.
 The relief check asked whether the aligned action relieved the tier that
 bound the episode (Figure~\ref{fig:rq2_relief}). Where the storage tier
 bound the episode, it did: the prepared reserve was activated in every
-aligned run and shared the reads, and the storage-member peak CPU fell to
-0.57--0.66 of its pre-activation level in all twelve storage-only domains.
+run where the storage action was selected (11 of 11) and shared the reads,
+and the storage-member peak CPU fell to 0.57--0.66 of its pre-activation
+level in all twelve storage-only domains.
 The bottleneck-aware arm followed the same direction with eight of its
 ten domains below the threshold. On the compute-bound episode no relief is reported because the compute
 tier never entered the capacity-bound state, so there was no queue to
@@ -2709,15 +2710,16 @@ Resource use separates the policies where service does not: on the
 compute-bound episode both compute-scaling arms spent compute without
 changing the service, and on the data-access-bound episode the storage
 action's spend became tier relief and user-visible benefit, while the
-mismatched compute action's spend relieved nothing. What reaches users is
-decided by the tier a policy serves, not by the size of its spend.
+mismatched compute action's spend relieved nothing. In the evaluated
+envelope, what reached users was decided by the tier a policy served, not by
+the size of its spend.
 
-Selection correctness holds across regimes. The bottleneck-aware classifier
+Selection commitment holds across regimes. The bottleneck-aware classifier
 committed to the detected bottleneck in every evaluated regime: on the
 data-access-bound episode it activated the storage reserve first and scaled
-compute only after storage relief (agreement with the episode label in
-88--93~\% of scored decisions), and on the compute-bound episode it scaled
-compute without activating storage. The compute units the arm adds after
+compute only after storage relief, and on the compute-bound episode it scaled
+compute without activating storage. Classifier-versus-episode agreement was
+88--93~\% on the data-access-bound episode. The compute units the arm adds after
 storage relief follow from the condition (edge utilisation rose past its
 threshold while every request is served through the edge), not from a
 compute deficit.
@@ -2841,9 +2843,11 @@ exceed one second against a matched no-fault run.
         \midrule
         Treatment & Readiness-admission coordination: direct lifecycle
         notification versus periodic discovery (10~s poll), with a probe
-        fallback variant and a wake-and-verify variant, each measured with an
-        intact readiness-event source, under total event loss, and under a
-        premature readiness claim (2/5/10~s). \\
+        fallback variant and a wake-and-verify variant; the first three rules
+        are measured with an intact readiness-event source, under total event
+        loss, and under a premature readiness claim (2/5/10~s), while
+        wake-and-verify is measured under the premature claim at the
+        ten-second lead. \\
         Held constant & Readiness criterion (same probe), backend-selection
         function, routing weights, pool state, workload shape, per-backend CPU
         quota. \\
@@ -2894,7 +2898,7 @@ With everything working, the difference between the rules is the one the
 design implies. Direct lifecycle notification admits the backend the
 moment its message arrives, while periodic discovery waits for its next
 poll. The measured gap is complete, with a median of 0.001~s against
-6.984~s from verified readiness to admission ($d = -1.000$, earlier in
+6.984~s from verified readiness to admission ($\delta = -1.000$, earlier in
 every backend), with the full chain in Table~\ref{tab:rq3_delays} and
 Figure~\ref{fig:rq3_admission_intervals}. The head start reached the
 user end to end. Provisioning to the first successful response was about
@@ -2923,11 +2927,11 @@ deliberately removes.
         \toprule
         Interval & Direct & Periodic & Test \\
         \midrule
-        Verified readiness$\to$admission (s) & 0.001 & 6.984 & $d = -1.000$; earlier in every start-up class \\
+        Verified readiness$\to$admission (s) & 0.001 & 6.984 & $\delta = -1.000$; earlier in every start-up class \\
         Provisioning$\to$first successful response (s) & 11.27 & 17.70 & exact $p = 0.0005$, $\delta = -0.594$ \\
-        Scaling decision$\to$usable capacity (s) & 2.17 & 6.01 & exact $p = 0.0022$, $d = -1.000$ \\
+        Scaling decision$\to$usable capacity (s) & 2.17 & 6.01 & exact $p = 0.0022$, $\delta = -1.000$ \\
         Admission$\to$first routed request (s) & 0.4--1.2 & 0.4--1.2 & confirmatory; not separated \\
-        Existing-fleet relief (per-run median, pp) & 16.0 & 19.3 & exact $p = 0.209$; not separated \\
+        Existing-fleet relief (per-run median, pp; seven runs per rule) & 16.0 & 19.3 & exact $p = 0.209$; not separated \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2940,7 +2944,7 @@ deliberately removes.
     1.7 and 11.5~s against 9.2 and 18.3~s; exact $p = 0.0005$ pooled,
     complete separation within classes). (b) Scaling decision to usable
     capacity per run (rate-12 arm, six runs per mechanism; medians 2.17
-    against 6.01~s; exact $p = 0.0022$, $d = -1.000$). Fast- and
+    against 6.01~s; exact $p = 0.0022$, $\delta = -1.000$). Fast- and
     slow-binding class the backend's socket bind completing quickly or
     taking several seconds on this testbed. Black dots are individual
     backends (a) and runs (b); coloured bars and marks are medians;
@@ -3012,7 +3016,9 @@ removed was the fleet's margin, not the service.
 
 One qualifier bounds the event-loss reading. Its pre-registered
 conjunction was not fully met, the shortfall confined to two marginal
-no-fault floor breaches that do not touch the contrast.
+no-fault window breaches in the health-floor count that do not touch the
+contrast, with the block-4 exclusion resting on a separate pre-registered
+control-tail check recorded in Table~\ref{tab:rq3_fault}.
 
 Under a premature claim, the rules separated by what their evidence
 can verify. A rule that admits on the claim sends traffic to a backend
@@ -3031,7 +3037,9 @@ failures in any seed. Its probe cannot pass before the backend can
 serve, so the timing of the claim has nothing to act on. The
 wake-and-verify variant, which also admits only through its probe, held
 the same flat line at ten seconds ($-0.3$ and $-3.4$~pp), at a
-healthy-run cost of half a percentage point or less.
+cost of $+0.2$ and $+3.1$~pp on the no-fault runs at those two seeds, the second
+over the pre-registered $+2$~pp descriptive bound (a third seed measured
+$+0.5$~pp, its damage contrast removed by the pre-registered exclusion).
 
 The pre-registered expectations were met where they committed
 (Table~\ref{tab:rq3_soundness} and Figure~\ref{fig:rq3_soundness_damage}).
@@ -3039,17 +3047,17 @@ Exposure followed what each rule's evidence verifies. The trusting rules
 paid for the premature claim in proportion to its lead, while the rules
 that probe absorbed it, with periodic discovery keeping no positive
 damage above $+0.12$~pp and no recorded violations across the grid. The
-crossover reading was met in the direction and shape it named,
+crossover pattern appeared in the direction and shape it named,
 with the crossing at the smallest tested lead in all three seeds and the
 fallback variant's growth interval clearing the pre-registered threshold,
-while its strict growth criterion was not passed at this replication,
+but the pre-registered growth gate was not passed at this replication,
 so the crossing is carried descriptively and its confidence is limited
 by the three-seed replication.
 
 \begin{table}[H]
     \centering
     \caption{Pre-registered criteria of the premature-claim grid
-    and their outcomes (three seeds per cell, values are seed medians of
+    and their outcomes (three seeds per rule and lead, values are seed medians of
     the per-seed damage, computed from the archived runs). The crossover
     criterion is carried descriptively, because its strict growth test was
     not passed at this replication.}
@@ -3070,8 +3078,9 @@ by the three-seed replication.
         most 2~pp, on the same seeds & Periodic discovery kept no positive
         reading above $+0.12$~pp and no window failures in any seed, and
         wake-and-verify held $-0.3$ and $-3.4$~pp at ten seconds, at a
-        healthy-cell cost of $+0.5$ and $+0.2$~pp (two seeds after the
-        pre-registered exclusion) \\
+        cost of $+0.2$ and $+3.1$~pp on the no-fault runs, the second over the
+        $+2$~pp descriptive bound (a third seed measured $+0.5$~pp, its
+        damage contrast removed by the pre-registered exclusion) \\
         Crossover across the claim lead & Growth test passed and crossing
         band reported & Trend present, with the direct rule at
         $+1.0$~pp/s and the fallback variant interval clearing the
@@ -3159,22 +3168,25 @@ Chapter~\ref{ch:conclusions}.
         levels & The full ordering A $<$ B $<$ C $\approx$ D, and polling
         versus sampling not separated (C $\approx$ D) \\
         Scaling action (RQ2) & Storage action under data-access-bound
-        demand. Tier relief in every aligned run and user-visible benefit
-        over inaction (labelled comparison), with the classifier committed
-        to the detected tier in every evaluated regime (88--93~\% agreement
-        with the episode label) & A capacity-bound queue in the
+        demand. Tier relief in every storage-only domain (12/12) and
+        in most bottleneck-aware domains (8/10), with user-visible
+        benefit over inaction (labelled comparison); the classifier
+        committed to the detected tier in every evaluated regime, with
+        classifier-versus-episode agreement of 88--93~\% on the
+        data-access-bound episode & A capacity-bound queue in the
         served tier as the condition for benefit, and full compute
         execution with no service change where no queue formed & Compute-side
         recovery attributable to the action, no demonstrated advantage of
         bottleneck-aware selection over a fixed matched policy under the 
         tested conditions, the pre-registered harm expectation not met 
         (the measured ordering is the matched action, then the mismatched action,
-        then no action), and the pre-registered cell-level p95 storage gate, 
+        then the bottleneck-aware action, then no action), and the
+        pre-registered arm-level p95 storage gate, 
         reported unmet \\
         Readiness admission (RQ3) & Loss without re-derivation leaves
         capacity dark (zero admissions, six of six blocks), and a
-        premature claim damages only the rules that admit on it (medians
-        $+4.1$ to $+13.3$~pp) while the probing rules stay flat & The loss
+        premature claim damages only the rules that admit on it (damage
+        medians up to $+13.3$~pp) while the probing rules stay flat & The loss
         cost under the reduced headroom the campaign fixed, and
         premature-claim damage scaling with the claim lead for the trusting
         rules while the waiting rules stay flat (trend carried, strict
@@ -3230,7 +3242,8 @@ end), with memory near 70~MB everywhere. The records differ as designed:
 about 335 deliveries per run under complete delivery against about
 105--114 under the lossy arms, probe records in place of events under
 discovery admission, and eight or six compute scale-ups per run where the
-compute policies acted (Table~\ref{tab:app_config_control_cost}).
+compute policies acted (configuration medians in
+Table~\ref{tab:app_config_control_cost}).
 
 Chapter~\ref{ch:literature_review} left the three questions of
 Table~\ref{tab:interface_gaps} open, and the campaigns are their
@@ -3256,8 +3269,8 @@ statements characterise, within the reviewed literature, the interfaces
 that the reviewed works leave open. They do not assert that the
 coordination gap is universal.
 
-Three considerations follow for the design of stateful edge services, all
-bounded to the evaluated testbed. First, when an evidence path must survive
+Three considerations follow for the design of services like the one
+evaluated, all bounded to the evaluated testbed. First, when an evidence path must survive
 overload transients, completeness is the property to protect: dropping
 intermediate windows was the robust driver of user-visible cost, while a
 complete but delayed path degraded only where the absorption margin was
@@ -3288,6 +3301,29 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 % Scope discipline: observation + measured magnitude + qualifier ("on the
 % evaluated two-domain testbed", "under the tested workloads"); no generic
 % claims about edge deployments; null results carry the same qualifiers.
+% ANSWER-TABLE SCAFFOLD (2026-10-06, Ch1→Ch5 integration audit). Suggested
+% form: answer table (Polónio convention) or numbered answers (Cuco §6.1).
+% Each §1.1 motivation must close here as a finding or an explicit non-claim:
+%  - Coordination gap and accumulated handoff delays (§1.1 opener and chain
+%    footnote): one row per interface, drawn from Table~\ref{tab:synthesis};
+%    add the non-claim that no aggregate or end-to-end cost is measured
+%    (§2.7; §5.5; §1.1 closure sentence).
+%  - "Scale-up alone does not guarantee usable capacity instantly" (§1.1):
+%    RQ1 usable-capacity timing (28.5 s vs 83.2 s) and RQ3 readiness→serve
+%    chain (11.27 s vs 17.70 s).
+%  - Storage tier as a live capacity that must follow demand (§1.1): RQ2
+%    aligned storage action, tier relief plus labelled user-visible benefit
+%    over inaction, conditional on a capacity-bound queue.
+%  - Storage synchronisation and replication bandwidth (§1.1): held-constant
+%    design context (prepared reserve; member admitted only when able to
+%    serve reads) and unmetered replica-sync bandwidth; Tier 1 selective
+%    sync deferred (§6.4).
+%  - Demand variation (§1.1): §5.1 demand model and the block/seed design
+%    that the conditioned effects rest on.
+%  - Loss or delay of evidence (§1.1): RQ1 loss-vs-delay separation; RQ3
+%    lost notification; RQ2 delayed relief.
+%  - Cloud, mobile and traffic context (§1.1): background only, no measured
+%    claim.
 
 \section{Research Contributions}\label{sec:contributions_revisited}
 % TODO: Restate the four contributions with evidence from results, keeping the

@@ -347,6 +347,7 @@ workload-level, validity.
 | P7 (characterization, not superiority) | Ch.1 §Contributions; Ch.6 §Limitations |
 | Freshness hierarchy | Ch.2 §Monitoring (footnote-level honesty) |
 | Demand model | Ch.5 §5.1 Experimental Setup; Ch.1 motivation |
+| Ch.1 motivations → findings closure | Ch.6 §6.1 answer-table scaffold (2026-10-06); §1.1 non-claim sentence; §2.7 commitment |
 
 ---
 

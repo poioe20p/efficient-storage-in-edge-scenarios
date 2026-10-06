@@ -317,3 +317,62 @@ comments in the thesis file.
   sentence; §4.4 TODO) after a stale editor-buffer save overwrote them on
   disk; the ledger and this plan entry were unaffected. Editor buffer must
   be reverted to disk before further saving.
+- 2026-10-05: cross-chapter framing/consistency pass (author-approved after a
+  two-round review). Ch1: removed the global-scale demand sentence, the
+  core-network bandwidth-relief claim, and the lifecycle-hooks sentence
+  duplicated from §1.2; rewrote the stateful paragraph around same-service
+  storage capacity (site-to-site replication story removed); "when data must be
+  brought closer" now "the demand shift"; de-globalised the cloud sentence;
+  fixed the MongoDB clause grammar. Ch2: "many dispersed nodes" now "produced
+  across the service nodes"; "demand moves across sites" now "demand
+  fluctuates"; "cost of scaling the wrong resource" now "consequences of
+  serving the wrong tier"; the two "cannot relieve" claims softened to "do/does
+  not relieve". Ch5: RQ1 D-vs-C sentence now reads as marginally in the
+  sampled-push arm's favour; §5.1.4 "for each cell" now "for each arm";
+  synthesis ordering now lists the bottleneck-aware arm before inaction; RQ3
+  healthy-cell cost corrected to +0.2/+3.1 pp at the damage-reporting seeds
+  (seed 6303 over the +2 pp bound; seed 6301 +0.5 pp, contrast removed by the
+  pre-registered exclusion), verified against rq3snd_crossover_all.json. All
+  old forms grep-verified absent; main.pdf rebuilt clean (101 pages).
+- 2026-10-06: Ch1→Ch6 integration pass (author-approved options A+B,
+  after a Ch1-vs-experiments audit against the reference theses). A: §1.1
+  closing paragraph gains the per-interface non-claim sentence ("Each
+  interface is evaluated separately, and no aggregate cost along the chain
+  is claimed."), mirroring §2.7; the chapter opener is hedged ("degrades" →
+  "can degrade") so the stated motivation matches the conditional findings.
+  B: §6.1 gains the answer-table scaffold mapping each §1.1 motivation to
+  its finding or non-claim (aggregate cost; storage synchronisation and
+  replication bandwidth; cloud/mobile/traffic context as background), for
+  use when Ch6 is written. No results, counts, or values changed.
+- 2026-10-06b: auto-review gate fix batch (Reviewer pass; 26 findings
+  triaged against main.tex and the campaign records; author-approved). RQ1
+  third delivery class renamed lossy delivery (latest-state polling and
+  sampled push) in §1.3, §1.5, §5.2 and the RQ1 design table; §2.3 taxonomy
+  sentence aligned. Ch5 precision: synthesis RQ2 cell scopes relief
+  (12/12 storage-only, 8/10 bottleneck-aware) and separates commitment from
+  label agreement (88--93~\%); RQ2 replication cell names seeds 42/43; RQ1
+  window numbers corrected to table ranges (74--82~s C, 75--88~s D);
+  steady-state claim otherwise-scoped; recovery-gap superlative dropped;
+  RQ3 treatment cell scopes wake-and-verify to the ten-second lead;
+  crossover wording ("pattern appeared … growth gate not passed");
+  screening sentence flags symmetry breaches; RQ3 relief row annotated
+  (seven runs per rule; rq3_timing record: 16.0/19.3~pp, p = 0.2086);
+  no-fault qualifier distinguishes the health-floor breaches from the
+  block-4 exclusion; "partial hot copy" → "partial copy of the data";
+  "healthy-cell cost" → "cost ... on the no-fault runs"; $d$ → $\delta$
+  (four RQ3 spots); timeout caption scoped to the episode; C<D count marked
+  usable-capacity; compute-scale-up pointer annotated configuration
+  medians; absorption margin glossed at first use. Ch3: premature-claim
+  sentence (§3.3.2); classification-margin clause (§3.3.2); "it's"→"its"
+  (§3.3.3). Old forms grep-zero; new forms present; PDF rebuilt after the
+  batch.
+- 2026-10-06c: re-review residual fixes (7 findings: 0 critical, 2 warnings,
+  5 observations). §5.3 relief scope ("activated in every run where the
+  storage action was selected (11 of 11)"); §5.3/§5.5 classifier wording
+  split into commitment versus classifier-versus-episode agreement
+  (88--93~\% on the data-access-bound episode; "scored decisions" removed);
+  §1.3/§2.3 parenthetical "(latest-state polling and sampled push)"
+  (latter/last mismatch removed); §3.4 classification margin now cites
+  Appendix~\ref{app:campaign_config}; RQ1 window list range-consistent
+  (25--33~s in A); synthesis RQ3 damage medians "up to $+13.3$~pp";
+  synthesis RQ2 relief cell in domain units (12/12, 8/10).
