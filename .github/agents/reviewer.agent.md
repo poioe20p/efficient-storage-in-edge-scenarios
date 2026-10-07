@@ -2,7 +2,7 @@
 description: "Use when: reviewing a file, a plan that has been implemented, or a plan to be implemented — flagging issues, inconsistencies, logic gaps, and risks. Triggers on: 'review', 'check this file', 'review this plan', 'find issues', 'flag problems', 'code review', 'plan review', 'audit'"
 name: "Reviewer"
 tools: [read, search]
-model: deepseek-v4-flash-4.1
+model: DeepSeek V4.1 Flash (deepseek)
 reasoning: high
 thinking-effort: high
 argument-hint: "Provide the file or plan to review, and state whether it is already implemented or still to be implemented."

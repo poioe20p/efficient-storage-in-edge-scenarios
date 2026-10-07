@@ -98,11 +98,14 @@
 \begin{document}
 
 \chapter{Introduction}\label{ch:introduction} %DONE
-Edge web services that encompass routing, monitoring and auto-scaling rely
-on several control loops, and when these loops operate independently the
-handoffs between them accumulate delays. This accumulation of handoff
-delays can degrade orchestration efficiency and reliability, and may reduce
-service quality~\parencite{Qu2018AutoScalingWebApplicationsClouds,Bogdanov2018Kurma,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+Edge web services that encompass monitoring, auto-scaling and routing are
+commonly built from separate components, each with its own policies. 
+How well such a service absorbs a
+change in demand therefore depends not only on what each component does
+individually, but also on the interfaces between them. Coordination across those
+interfaces can fall short, and where it does, orchestration efficiency and
+reliability can degrade and may reduce the quality of service users
+experience~\parencite{Bogdanov2018Kurma,Podolskiy2018IaaSReactiveAutoscalingPerformanceChallenges}.
 
 The remainder of this chapter is organised as follows.
 Section~\ref{sec:context_motivation} presents the context, motivation and
@@ -175,41 +178,40 @@ copies consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement}.
 
     Scale-up alone does not guarantee usable capacity instantly. The
-orchestration system must detect the demand shift, deliver that
-information to the decision point, provision the right kind of capacity,
-and redirect traffic to it. Each of these steps,
-when executed in a system whose components must communicate with
-each other over the network, can introduce delay or data loss that
-degrades orchestration efficiency and, in turn, the quality of
-service experienced by users.
+orchestration must detect the demand shift, deliver that information to the
+decision point, provision the right kind of capacity, and redirect traffic
+to it. The steps hand over to one another across boundaries between
+functions, and what the next step acts on can be late, incomplete,
+mismatched, or unverified.
 
-    This sequence forms what this dissertation calls the demand-to-capacity
-chain, which is the path that an orchestration system takes to convert
-a change in overall user demand into capacity that serves that demand. A demand
+    This sequence forms the demand-to-capacity chain, the path that an
+orchestration system takes to convert a change in overall user demand into
+capacity that serves that demand. A demand
 shift is first observed by monitoring and telemetry, which deliver the
 evidence to a decision point. The decision point selects a scaling action,
-such as scaling compute or scaling storage, then with the action a new capacity is
-provisioned. Finally the new capacity attains a readiness state and is admitted
+such as scaling compute or scaling storage, and the action provisions new
+capacity. Finally the new capacity attains a readiness state and is admitted
 to traffic, which is the point at which it becomes usable. The chain is therefore a
-timeline through the orchestration system,
-and certain steps are separated from the next by an interface at which delay or
-loss of evidence can accumulate.\footnote{Throughout this dissertation, the
+timeline through the orchestration system, and its steps are joined by
+interfaces.\footnote{Throughout this dissertation, the
 \emph{demand-to-capacity chain} denotes the full timeline from a demand
 shift to usable capacity. An \emph{interface} is a boundary between two
-steps of the chain at which two functions meet. An \emph{handoff delay} is
-the latency added at an interface when the functions on either side run
-under independent control loops, that is, without explicit coordination
-between them. And the \emph{coordination gap} is the
-accumulated effect of these handoff delays along the chain.} Three of these
-interfaces, more specifically how demand evidence reaches the decision,
-which scaling action the decision hands over to the infrastructure,
-and when a ready backend is admitted to traffic, are the subject of
-this thesis. Figure~\ref{fig:demand_capacity_chain}
-illustrates the chain.
+steps of the chain at which two functions meet, and what crosses an
+interface is the evidence, the command, or the state that the next step
+acts on. A \emph{handoff delay} is the latency between a function's handover and the
+next step acting on it. The reviewed literature addresses this topic
+mainly at boundaries between functions that run under independent control
+loops, each observing, deciding, and acting on its own. The properties of
+what crosses (the completeness and freshness of the evidence, the match
+between the command and the demand, and the preservation and verification
+of a state claim) are studied here one at a time. The \emph{coordination gap} is the
+accumulated effect along the chain, which this dissertation does not
+measure as a whole.} The three interfaces between its steps, highlighted in
+Figure~\ref{fig:demand_capacity_chain}, are the subject of this thesis.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/demand_to_capacity_chain_v8.png}
+    \includegraphics[width=0.9\textwidth]{images/demand_to_capacity_chain_v2.png}
     \caption{The demand-to-capacity chain: from a demand shift to usable
     capacity, with the three interfaces studied in this dissertation
     highlighted.}
@@ -220,48 +222,53 @@ illustrates the chain.
 an ongoing demand shift. In practice, however, they are commonly performed by
 separate components. A monitoring system collects metrics, an
 auto-scaler provisions capacity, and a load balancer redirects traffic,
-each running under its own control loop. The information needed to
-respond to demand must therefore cross from one component to the next,
-and the delays accumulated at these handoffs determine how quickly newly
-provisioned capacity can actually serve traffic. In the reviewed literature,
-these handoffs are acknowledged in passing but never isolated or
-varied as an independent variable
-\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
-This thesis investigates them directly through two peer \ac{SDN}
-controllers, one per network domain. Within each controller,
-telemetry consumption, scaling decisions, and traffic routing run in the same process.
-Telemetry production and aggregation remain external to the controller, making
-the delivery of aggregated demand evidence an explicit and configurable
-interface.
+each running under its own control loop and acting on its own view of the
+service. In the reviewed literature, the cost of these crossings is
+acknowledged but never isolated or varied as an independent
+variable~\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+The crossings also differ in more than latency: evidence can arrive
+complete and fresh, complete but delayed, or with intermediate observations
+missing~\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork};
+a capacity command can serve the tier that binds the demand or one that
+does not~\parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}; and a
+readiness claim can be verified before admission, trusted before it is
+true, or lost~\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. 
+This thesis isolates the three interfaces and measures the
+effect of each of these properties on its own. The platform built for this
+purpose is organised as two peer \ac{SDN} controllers, one per network domain.
+Within each controller the consuming functions of the chain (telemetry consumption, scaling
+decisions, and traffic routing) run in the same process, so that each
+studied interface can be configured and varied on its own rather than
+observed as an incidental coupling. Telemetry
+production and aggregation remain external to the controller, making the
+delivery of aggregated demand evidence an explicit boundary, while
+scaling and admission are exposed as lifecycle hooks.
 
     Along this chain, three interfaces are studied in a stateful service
-deployed across two network domains: how demand evidence is
-delivered to the controller (telemetry delivery semantics), which
-scaling action the controller hands over to the infrastructure in
-response to the observed bottleneck, the resource tier the demand is
-pressing on (compute or storage scale-up), and when ready capacity is
-admitted to traffic (readiness admission).
+deployed across two network domains: how completely and how fresh demand
+evidence reaches the controller (telemetry delivery semantics); whether
+the capacity command serves the tier the demand presses on
+(bottleneck-aware scaling action); and whether a ready backend is verified
+before it is admitted to traffic (readiness admission).
 
     The thesis does not claim that this SDN-based architecture is superior
 to existing orchestration platforms such as Kubernetes or NFV Management
 and Orchestration (MANO) platforms, nor that its mechanisms generalise
-beyond the tested infrastructure. It claims only that these three
-interfaces are measurable, that within the reviewed literature they have
-not been previously characterised in isolation, and that measurement can
-establish how they affect resource orchestration and under what conditions.
-Each interface is evaluated separately, and no aggregate cost along the
-chain is claimed.
+beyond the tested infrastructure. It claims only that these three interfaces 
+are measurable in isolation and that measurement can establish which property
+of each interface decides the outcome, and under what conditions. The reviewed
+literature has not previously characterised them this way, and no
+aggregate cost along the chain is claimed.
 
 \section{Objectives}\label{sec:objectives} %DONE
-The main objective of this thesis is to study the coordination gaps that
-arise between independent modules with their own control loops and to
-contribute to more efficient resource orchestration for stateful edge
-services, by characterising a specific and less examined part of this
-problem, the coordination at the interfaces of the demand-to-capacity
-chain under varying demand shifts. This coordination covers the handoff delays that
-can arise in delivering demand evidence and in admitting ready
-capacity, and the scaling-action choice that determines which
-resource tier is relieved.
+The main objective of this thesis is to contribute to more efficient
+resource orchestration for stateful edge services by characterising the
+interfaces of the demand-to-capacity chain under varying demand shifts,
+and by establishing, for each interface, which property of the crossing
+decides the outcome: how complete and fresh the demand evidence is,
+whether bottleneck-aware scale-up targets the tier the demand presses on,
+and whether the readiness claim is preserved and verified before a new
+backend is admitted.
 
     The platform keeps controller-side coordination in-process while
 retaining telemetry delivery as an explicit, configurable boundary. Along
@@ -317,16 +324,18 @@ identification and motivation, definition of the objectives of a solution,
 design and development, demonstration, evaluation, and communication.
 
     This dissertation follows a problem-centred approach, in which the problem
-motivates the research and is defined as the coordination delays that
-accumulate between independently operating control loops in the
-orchestration of edge services. The problem definition is grounded in the
+motivates the research and is defined as the coordination between the
+functions that orchestrate an edge service, where handovers that are late,
+incomplete, mismatched, or unverified can lower orchestration efficiency
+and the quality of service users experience. The problem definition is grounded in the
 state of the art reviewed in Chapter~\ref{ch:literature_review}. The six
 activities unfolded as follows.
 
 \begin{enumerate}
 \item \textit{Problem identification and motivation.} Edge services whose
-monitoring, routing and scaling modules operate as independent components
-accumulate handoff delays between control loops, degrading orchestration
+monitoring, scaling and routing modules operate as independent components
+depend on information that crosses the boundaries between them, and how
+those crossings are operated can degrade orchestration
 efficiency. The problem is introduced in
 Section~\ref{sec:context_motivation}, and the review of the state of the art in
 Chapter~\ref{ch:literature_review} establishes both that these functions are typically
@@ -395,11 +404,12 @@ This dissertation makes the following contributions:
     \item An experimental characterisation of readiness admission that
     quantifies, under direct lifecycle notification versus periodic
     discovery (including a bounded fallback variant), the time from
-    verified readiness to routable and usable capacity, the reliability
-    cost the faster mechanism incurs when its readiness notification is
-    lost and no bounded re-derivation recovers it, with spare capacity
-    scarce, and the exposure of the trusting rules to a premature
-    readiness claim, which the probing rules absorb (RQ3).
+    verified readiness to routable and usable capacity. It further
+    prices two failure modes: the reliability cost the faster mechanism
+    incurs when its readiness notification is lost and no bounded
+    re-derivation recovers it, with spare capacity scarce, and the
+    exposure of the trusting rules to a premature readiness claim, which
+    the probing rules absorb (RQ3).
     \item A comparative synthesis of the observation, action-selection, and
     readiness-admission interfaces under their respective controlled
     workload regimes, identifying which effects were robust,
@@ -422,7 +432,7 @@ methodology used to conduct the review, it surveys the platform technologies on 
 proposed solution rests (edge platforms, SDN and OpenFlow, containers, and NoSQL document
 stores), then monitoring and telemetry, auto-scaling, load balancing and readiness
 admission on SDN, and resource orchestration on SDN, examines the default separation of
-monitoring, routing and scaling
+monitoring, scaling and routing
 into independent components observed across these areas, and concludes with the research
 gaps that motivate this dissertation.
 
@@ -469,11 +479,12 @@ readiness admission is handled.
     
     Within each area, the review examines whether and how the interfaces
 between these functions are considered, studied, evaluated, or mentioned.
-Whether the reviewed work provides evidence that the delays and losses at
-these handoffs cause orchestration or service-quality problems, and what
-ideas each field offers about them, with the aim of establishing a solid
-ground for the evaluation of the three interfaces of the
-demand-to-capacity chain. 
+It asks whether the reviewed work provides evidence that delay, loss,
+mismatched action, or unverified state at these handoffs causes
+orchestration or service-quality problems, and what ideas each field
+offers about these crossings, with the aim of establishing a solid ground
+for the evaluation of the three interfaces of the demand-to-capacity
+chain. 
 
     This examination grounds the claim, introduced in Section~\ref{sec:context_motivation},
 that these interfaces are acknowledged in the literature but have not been
@@ -982,10 +993,10 @@ to it fail.
     The reviewed selection studies optimise the distribution of load over the
 eligible set, taking that set as given. This dissertation treats the set
 itself as the variable: it studies how the arrival of newly provisioned,
-ready capacity into the eligible set affects load balancing and resource
-management, the admission interval from verified readiness to routing
-eligibility, the time until the new capacity serves traffic, and how
-quickly that membership change reaches the load distribution and the
+ready capacity into the eligible set affects when and whether that
+capacity carries load, the admission interval from verified readiness to
+routing eligibility, the time until the new capacity serves traffic, and
+how quickly that membership change reaches the load distribution and the
 existing fleet. Direct lifecycle notification and periodic discovery are
 the two operational mechanisms of that coordination interface, with the
 bounded fallback variant and the wake-and-verify variant evaluated in
@@ -1091,8 +1102,8 @@ warm-up, before treating them as one combined quantity
 but the delay it carries is not isolated. 
 None of their evaluations attributes the time taken by the state
 updates, exchanges, and redirects along those communication paths to
-the individual handoffs between observing demand, deciding, and
-admitting capacity.
+the individual handoffs between observing demand, deciding, provisioning,
+and admitting capacity.
 
     The related background is therefore organised in two modes. In the dominant
 mode, monitoring, scaling, and routing are implemented as separate
@@ -1118,12 +1129,12 @@ That interface-level isolation is what this dissertation provides.
 feasible arrangement, and the coordination it rests on is a recorded
 open issue. Nain et al. record resource optimisation in SDN-based
 edge environments among the continuing challenges of the field
-\parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The handoff
-delay studied in this dissertation is one measurable dimension of
+\parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The interface
+properties studied in this dissertation are one measurable dimension of
 that coordination, and because the functions meet at boundaries that
 an SDN-based control point can expose as explicit, configurable
 interfaces, such a platform is a suitable experimental basis for
-evaluating the handoff delays between them. The platform built in
+evaluating them. The platform built in
 this dissertation follows that arrangement and exposes telemetry
 delivery, scaling-action selection, and readiness admission as
 independently configurable interfaces, as presented in
@@ -1131,28 +1142,28 @@ Chapter~\ref{ch:system_architecture}.
 
 \section{Synthesis and Research Gaps}\label{sec:lit_synthesis} % DONE
     The review has examined the functions of resource
-orchestration. Where the reviewed works address the delay between the
-functions, it is treated at three levels.
-The delay is first acknowledged as a real cost. Kurma's
+orchestration. Where the reviewed works address the cost of these
+crossings, it is treated at three levels. That cost is first
+acknowledged as real. Kurma's
 seconds-granularity operation aims to reduce the over-provisioning
 and SLO violations incurred during provisioning delays
 \parencite{Bogdanov2018Kurma}, and Yaseen records the visibility gaps
 that pull-based polling leaves and calls for monitoring tightly
 integrated with control
 \parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork}.
-Second, where the delay is evaluated, it is evaluated only in
+Second, where the cost is evaluated, it is evaluated only in
 composite. Llorens-Carrodeguas et al. report activation at the
 granularity of the integrated system, OneEdge reports end-to-end
 deployment latency breaking it down into scheduling, network, and
 container-creation components, and Kurma presents the provisioning
 delay as one combined quantity, none attributing the measured time
-to an individual handoff
+to an individual handoff delay
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing,
 Saurez2021OneEdge,Bogdanov2018Kurma}.
-Third, the delay is never materialised as an experimental variable.
-The interfaces of the demand-to-capacity chain are acknowledged and,
-in places, combined, but no reviewed work traces the effect of an
-individual interface through a stateful service. The closest reviewed
+Third, the cost is never materialised as an experimental variable in a
+stateful service. The interfaces of the demand-to-capacity chain are
+acknowledged and, in places, combined, but no reviewed work traces the
+effect of an individual interface through such a service. The closest reviewed
 precedent is AdapPF, which varies
 monitoring freshness and measures a downstream consequence, but only
 for a single evaluated consumer, a scheduler
@@ -1166,6 +1177,15 @@ instance, names the interval between an instance's arrival and its
 readiness to serve as launch time, but the step from readiness to
 traffic admission lies outside its scope
 \parencite{TabatabaeeMalazi2022DynamicServicePlacementMultiAccess}.
+
+    No reviewed work materialises the other properties of these crossings as
+experimental variables either. The loss of intermediate evidence is
+recorded as a limitation of polling
+(Section~\ref{sec:lit_monitoring}), the tier that a capacity action
+serves is settled by forecasts or by joint placement rather than selected
+from a live observed bottleneck (Section~\ref{sec:lit_auto_scaling}), and
+failure-driven changes to the eligible set remain unaddressed by the 
+reviewed mechanisms (Section~\ref{sec:lit_sdn_lb}).
 
     Table~\ref{tab:interface_gaps} condenses these findings into the
 three interfaces and the question each leaves open.
@@ -1227,9 +1247,9 @@ to make them askable and measurable.
 \chapter{Architecture and Design of the Proposed Solution for Edge Services}\label{ch:system_architecture}
 This chapter presents the architecture and design of the proposed
 cross-layer \ac{SDN} orchestration platform for stateful edge services.
-The design provides a platform that runs traffic steering, controller-side
-telemetry consumption, and elasticity coordination in one controller process
-per domain. The delivery of aggregated telemetry, the selection of the scaling
+The design provides a platform that runs controller-side telemetry
+consumption, elasticity coordination, and traffic steering in one controller
+process per domain. The delivery of aggregated telemetry, the selection of the scaling
 action, and the lifecycle transitions from scaling action to traffic admission
 remain explicit observation points. 
 
@@ -1256,9 +1276,9 @@ Chapter~\ref{ch:literature_review}, and guide the design
 presented in the remainder of the chapter.
 
 \begin{enumerate}[label=\textit{DR\arabic*:}, leftmargin=*]
-    \item \textit{Cross-layer coordination.} Within each domain, traffic
-    steering, telemetry consumption, topology awareness, and resource lifecycle
-    management must share controller state within the same process.
+    \item \textit{Cross-layer coordination.} Within each domain, telemetry
+    consumption, topology awareness, resource lifecycle management, and
+    traffic steering must share controller state within the same process.
     Aggregated telemetry must reach the controller through a structured,
     configurable delivery interface. Peer controllers must share the topology
     state needed for cross-domain awareness.
@@ -1307,7 +1327,7 @@ a pool of containerised edge servers, a MongoDB replica-set storage tier, a
 telemetry aggregator, and an \ac{SDN} controller. The peer
 controllers exchange topology information, and each consumes the telemetry
 summaries published by the aggregators of both domains. Each controller runs
-traffic steering, telemetry consumption, and elasticity coordination in the
+telemetry consumption, elasticity coordination, and traffic steering in the
 same process for its own domain.
 
     The emulated inter-domain link models the cross-domain data path, while
@@ -2117,7 +2137,7 @@ question.
     campaign's demand episode), the onset window (the first 150~s of the
     plateau), and the plateau tail (the last 300~s of the plateau); and the
     number of admissions, the candidates abandoned and
-    torn down, and the requests served by the new capacity. How much a
+    torn down. How much a
     premature claim costs is read as the change in the same user-visible
     measure against a matched no-fault run. A backend counts
     as admitted when it becomes visible in the routing pool, not
@@ -2432,9 +2452,10 @@ while the other five remained close to the reference (5.0--12.6~s).
 \end{figure}
 
 A post-campaign analysis of the run artefacts attributes the spread of the
-delayed arm to the margin each semantics leaves to the base fleet rather than
-to the control loop. Across all seven delayed runs the control loop behaved
-identically: the decision evidence was 30~s old, the first scale-up decision
+delayed arm to the platform state each run samples rather than to the
+decision engine. Across all seven delayed runs the decision engine
+behaved consistently: the decision evidence carried the treatment's fixed
+30~s lag, the first scale-up decision
 fell between 52.0~s and 60.4~s, and usable capacity between 55.1~s and
 61.5~s. The user-visible outcome depends on how much of the surge the base
 fleet must absorb alone before the new capacity serves traffic.
@@ -2495,7 +2516,8 @@ and when the response became usable capacity, with the lossy arms taking
 nearly three times as long as the reference. They also changed the quality
 of service users experienced, with an approximately ninefold penalty in the
 episode endpoint p95 where intermediate evidence was lost and a delay cost
-that scales with the margin the semantics leave to the base fleet. Under this workload, the two failure modes of the observation
+that scales with the absorption margin the exposure window consumes.
+Under this workload, the two failure modes of the observation
 interface were therefore distinguishable and not interchangeable: loss of
 intermediate demand evidence was the robust driver of user-visible cost,
 while delivery delay was costly in proportion to the margin it consumes.
@@ -3163,8 +3185,8 @@ Chapter~\ref{ch:conclusions}.
         capacity became usable nearly three times later than the reference,
         and the episode p95 penalty was about ninefold, with complete
         separation in every replicate & Delivery
-        delay: costly in proportion to the absorption margin the base fleet
-        has left, with two of seven delayed replicates collapsing to lossy
+        delay: costly in proportion to the absorption margin it consumes,
+        with two of seven delayed replicates collapsing to lossy
         levels & The full ordering A $<$ B $<$ C $\approx$ D, and polling
         versus sampling not separated (C $\approx$ D) \\
         Scaling action (RQ2) & Storage action under data-access-bound
@@ -3304,10 +3326,11 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 % ANSWER-TABLE SCAFFOLD (2026-10-06, Ch1→Ch5 integration audit). Suggested
 % form: answer table (Polónio convention) or numbered answers (Cuco §6.1).
 % Each §1.1 motivation must close here as a finding or an explicit non-claim:
-%  - Coordination gap and accumulated handoff delays (§1.1 opener and chain
-%    footnote): one row per interface, drawn from Table~\ref{tab:synthesis};
-%    add the non-claim that no aggregate or end-to-end cost is measured
-%    (§2.7; §5.5; §1.1 closure sentence).
+%  - Interface properties (completeness and freshness / tier match /
+%    readiness verification) and the coordination-gap non-claim (§1.1 chain
+%    footnote and closure; §2.7; §5.5): one row per interface, drawn from
+%    Table~\ref{tab:synthesis}, and the non-claim that no aggregate or
+%    end-to-end cost is claimed.
 %  - "Scale-up alone does not guarantee usable capacity instantly" (§1.1):
 %    RQ1 usable-capacity timing (28.5 s vs 83.2 s) and RQ3 readiness→serve
 %    chain (11.27 s vs 17.70 s).

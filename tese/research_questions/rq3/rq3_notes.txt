@@ -108,3 +108,24 @@ caption defines damage (percentage points against a matched no-fault
 run) and the negative readings. Generator updated (docstring, panel
 letter parameters, interval_figure v2 render plus copy to tese/images);
 the v1 render moved to tese/images/unused/.
+(2026-10-06 j) Author review of the RQ3 link to the literature. Decision
+recorded: no separate pool-membership section. The membership framing is
+already carried by the three-interface decomposition (gap table row
+“Ready backend to traffic”), the sec:lit_sdn_lb closing paragraph, the
+Section 3.4 registration-to-routing-pool text, and the Section 5 RQ3
+opening. Only the overreaching clause was trimmed: the Ch2 closing
+paragraph now reads that the arrival “affects when and whether that
+capacity carries load” instead of “affects load balancing and resource
+management”, matching what was measured (selection held fixed;
+redistribution onset and extent, not distribution quality).
+
+(2026-10-06 k) Promise audit of the Chapter 5 experimental-setup metrics
+bullet (author-approved trim). The readiness-admission bullet no longer
+promises "the requests served by the new capacity" under loss: the
+quantity was never reported as a result in the RQ3 results section,
+only implied by the lifecycle-only rule admitting nothing (the eo_zero
+gate). The remaining promises of that bullet were each verified present
+in the RQ3 results: admission-chain intervals (tab:rq3_delays rows 1,
+2, 4), existing-fleet relief (row 5), slow-share windows and the
+admissions and abandoned-candidate counts (tab:rq3_fault), premature
+damage (tab:rq3_soundness).

@@ -3,7 +3,7 @@ description: "Use when: deep research reasoning, thesis planning, literature ana
 name: "Thesis Researcher"
 tools: [read, edit, search, web, execute, todo, agent, browser]
 argument-hint: "Describe your research question, thesis section, or writing task..."
-model: deepseek-v4-flash-4.1
+model: DeepSeek V4.1 Flash (deepseek)
 reasoning: max
 thinking-effort: max
 ---

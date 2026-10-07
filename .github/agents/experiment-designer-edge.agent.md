@@ -3,7 +3,7 @@ description: "Use when: turning an implemented edge-platform change into a writt
 name: "Edge Experiment Designer"
 tools: [read, search, edit, execute, todo, agent]
 argument-hint: "Describe the implemented change to evaluate, the question it should answer, and any constraints (planes, regimes, time)."
-model: deepseek-v4-pro
+model: DeepSeek V4.1 Flash (deepseek)
 reasoning: max
 thinking-effort: max
 ---

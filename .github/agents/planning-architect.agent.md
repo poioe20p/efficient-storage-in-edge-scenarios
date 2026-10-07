@@ -3,7 +3,7 @@ description: "Use when: planning work before coding, evaluating approaches, comp
 name: "Planning Architect"
 tools: [read, edit, search, web, execute, todo]
 argument-hint: "Describe what you want to plan or implement..."
-model: deepseek-v4-pro
+model: DeepSeek V4.1 Flash (deepseek)
 reasoning: max
 thinking-effort: max
 ---

@@ -319,3 +319,17 @@ Status: **comments DONE (2026-08-01)**; prose/heading items still open.
 - Final evidence (conclusions): `tese/research_questions/rq1/rq1_conclusions.md`,
   `tese/research_questions/rq2/rq2_conclusions.md`,
   `tese/research_questions/rq3/rq3_evaluation_conclusions.md`.
+
+## 7. Open loose ends (2026-10-07)
+
+The former claim-tracking plan
+(`tese/miscelineous/plan_claim_aligment_with_measured_evidence.md`) was
+retired on 2026-10-07; git history retains it. Its remaining open items are
+carried here:
+
+- Paper count: reconcile at the end against the final bibliography (corpus
+  index says 42; thesis text says 39).
+- Statistical/gate appendix: re-add alongside Appendix A once the gate
+  statistics are written.
+- Archive the RQ1 raw dataset and statistics locally before making
+  reproducibility claims.

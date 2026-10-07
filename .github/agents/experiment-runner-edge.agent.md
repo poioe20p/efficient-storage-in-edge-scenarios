@@ -4,7 +4,7 @@ name: "Edge Experiment Runner"
 tools: [read, search, execute, edit, todo, agent]
 argument-hint: "Name the experiment plan in docs/operation/testing/experiment/ and the run to execute (plus any per-run delta)."
 agents: []
-model: deepseek-v4-flash-4.1
+model: DeepSeek V4.1 Flash (deepseek)
 reasoning: high
 thinking-effort: high
 ---

@@ -34,8 +34,7 @@ Procedure, in order:
 2. **Check the rules.** Scan the Terminology Ledger below; check
    `tese/Notes/thesis_structure.md` for chapter and section conventions when
    adding or moving content; check
-   `tese/miscelineous/plan_claim_aligment_with_measured_evidence.md` when the
-   text makes empirical claims.
+   `tese/Notes/purpose_evidence_map.md` when the text makes empirical claims.
 3. **Propose before editing.** Present the exact old → new text and the
    reason, and name the rule that applies (e.g., "Terminology Ledger: storage
    tier"; "ISCTE §2.2: figure caption below"). Wait for explicit approval.
@@ -49,7 +48,7 @@ Procedure, in order:
    (must be present); check the file for errors; remind the author to reload
    `main.tex`.
 6. **Sync notes.** If the change touched a term, count, or claim, update the
-   working notes and tracking plans in the same change set.
+   working notes (`tese/Notes/`) in the same change set.
 
 For literature claims, additionally run the **audit protocol**: verify every
 claim against the paper's stored extraction (the `.txt` next to the PDF),
@@ -213,7 +212,7 @@ replica set", "edge servers/services".
 1. Grep old form → zero matches; grep new form → present.
 2. Check the file for errors; remind the author to reload `main.tex`.
 3. If a claim or count changed, update `tese/Notes/purpose_evidence_map.md`
-   and the tracking plans, with the date.
+   with the date.
 4. Never delete corpus extractions; new extractions are stored next to
    their PDF.
 
@@ -226,7 +225,8 @@ replica set", "edge servers/services".
   house reference)
 - Working notes — `tese/Notes/thesis_overview.md`, `thesis_structure.md`,
   `purpose_evidence_map.md`, `gaps_weakness.md`, `scope_assumptions.md`
-- Claim tracking —
-  `tese/miscelineous/plan_claim_aligment_with_measured_evidence.md`
+- Claim tracking — retired 2026-10-07
+  (`tese/miscelineous/plan_claim_aligment_with_measured_evidence.md`); use
+  `tese/Notes/purpose_evidence_map.md` and git history
 - Corpus — `tese/literature_review/README.md`
 - Equation-style exemplar — `sec:scaling_policy` in `tese/main.tex`

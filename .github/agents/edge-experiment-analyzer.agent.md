@@ -3,7 +3,7 @@ description: "Use when: analyzing completed experiment runs against their experi
 name: "Edge Experiment Analyzer"
 tools: [read, edit, search, execute, todo, agent]
 argument-hint: "Provide the experiment plan (experiment_plan.md), the run folder or folders, whether this is a rerun of a previous experiment, and whether the agent should update summaries, manage the results.md timeline, or perform post-analysis cleanup or analysis-output sync-back."
-model: deepseek-v4-flash-4.1
+model: DeepSeek V4.1 Flash (deepseek)
 reasoning: max
 thinking-effort: max
 ---
