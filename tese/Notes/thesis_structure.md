@@ -333,3 +333,49 @@ carried here:
   statistics are written.
 - Archive the RQ1 raw dataset and statistics locally before making
   reproducibility claims.
+
+## 8. Typography and layout conformance (2026-10-07)
+
+Measured the built PDF against the full ISCTE graphical norms (2020)
+(`tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`; the `.txt` beside
+it holds only §1). Fixes applied in `tese/preamble.sty` and verified on the
+rebuilt `main.pdf`:
+
+- **Typefaces** (§2.1 i) — `\usepackage{mathptmx}` (psnfss, installed
+  2026-10-07 with `mpm` once the broken `ffmpeg.exe` / `ffprobe.exe` PATH
+  entries were filtered out) sets the URW Nimbus Roman (Times) face for text and
+  mathematics — the same face the approved primary reference thesis uses.
+  `\renewcommand{\ttdefault}{lmtt}` keeps the monospaced bits (`\texttt` file
+  names, DOIs) in a vector face, since no URW Courier outlines are installed.
+  The PDF now holds **236 Type 1 font resources and no Type 3**; before this
+  work, every page of body text was 600-dpi bitmap Type 3 from EC `pk` fonts.
+- **Pagination after the change** — 97 pages; body pp. 1–68, references
+  pp. 69–72, Appendix A pp. 73–75. Every chapter-level element still starts on
+  an odd page.
+- **References** (§2.1 xii) — `\AtBeginBibliography{\setstretch{1}}` plus a
+  bibliography environment copied from biblatex's `numeric.bbx` with
+  `\labelwidth` = 0.7 cm − 2.5 pt and `\leftmargin` = 0.7 cm. Entries now begin
+  at the margin and continuation lines are indented exactly 0.7 cm
+  (measured 90.7 pt = 70.9 + 19.8), single-spaced (13.95 pt).
+- **Footnotes** (§2.1 xi) — bigfoot's `\@makefnstartbox` patched
+  (`\footnotesize` → `\small`, i.e. 11 pt against a 12 pt body) and
+  `\@makefntext` redefined with `\hangindent 0.4 cm \hangafter 1`. Measured:
+  11 pt text, single-spaced 12.95 pt, continuation lines at 0.40 cm.
+- **Page number** (§2.1 ix) — `\footskip` increased by 21.5 pt; the numeral now
+  sits with its centre 1.25 cm from the paper edge (ink 1.11–1.39 cm), still
+  outer (left on even pages, right on odd).
+- **Filler pages** — the `\cleardoublepage` note "[ This page is intentionally
+  left blank. ]" was removed; filler pages are silent, as in the approved
+  reference thesis.
+
+Not changed, by decision: front-matter placeholders (submission date,
+acknowledgements, dedication, Resumo, Abstract) and the 70-page body — the
+author finishes both; §4 dimensions (ISTA: 50 pp master's, 60 pp general case)
+are revisited once figures/tables move into the appendix.
+
+Context for future sessions: the approved primary reference thesis
+(`miscelineous/master_joao_rosa_polonio_Sdn.pdf`) shares this template but has
+Times (NimbusRoman), 70 pp body, 1.5-spaced references with a ~1.05 cm hanging
+indent, 9.3 pt footnotes and the same ~2.2 cm footer position — i.e. this
+template deviates from the norms in those places by default.
+

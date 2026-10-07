@@ -35,6 +35,25 @@
     uniquelist=false
   ]{biblatex}
 
+% ISCTE norms (2020) §2.1 xii: references set single-spaced, with the entry text
+% at a 0.7 cm hanging indent from the label at the left margin (bibliography
+% environment copied from biblatex's numeric.bbx, label column narrowed from the
+% IEEE default of labelnumberwidth + 1em).
+\AtBeginBibliography{\setstretch{1}}
+\defbibenvironment{bibliography}
+  {\list
+     {\printtext[labelnumberwidth]{%
+        \printfield{labelprefix}%
+        \printfield{labelnumber}}}
+     {\setlength{\labelwidth}{\dimexpr 0.7cm - 2.5pt\relax}%
+      \setlength{\leftmargin}{0.7cm}%
+      \setlength{\labelsep}{2.5pt}%
+      \setlength{\itemsep}{\bibitemsep}%
+      \setlength{\parsep}{\bibparsep}}%
+      \renewcommand*{\makelabel}[1]{\hss##1}}
+  {\endlist}
+  {\item}
+
 \usepackage{caption}
 \usepackage{float}
 \usepackage{subcaption}
@@ -174,17 +193,21 @@
 \makeatletter
 \def\cleardoublepage{\clearpage\if@twoside%
   \ifodd\c@page\else
-  \vspace*{\fill}
-  \hfill
-  \begin{center}
-  {\fontfamily{Montserrat-TOsF}\selectfont\small [ This page is intentionally left blank. ]}
-  
-  \end{center}
-  \vspace{\fill}
+  \null\vspace*{\fill}
   \thispagestyle{empty}
   \newpage
  \if@twocolumn\hbox{}\newpage\fi\fi\fi
 }
+\makeatother
+
+% Footnotes -- ISCTE norms (2020) §2.1 xi: text one point below the body size,
+% with a 0.4 cm hanging indent on the continuation lines.
+\makeatletter
+\patchcmd{\@makefnstartbox}{\reset@font\footnotesize}{\reset@font\small}{}{%
+  \PackageWarning{preamble}{Footnote size patch failed}}
+\renewcommand{\@makefntext}{%
+  \parindent\z@ \hangindent 0.4cm \hangafter 1
+  \noindent\@makefnmark\space\ignorespaces}
 \makeatother
 
 %
@@ -221,6 +244,14 @@
 \renewcommand{\headrulewidth}{0pt}
 \renewcommand{\footrulewidth}{0pt}
 %
+% ISCTE norms (2020) §2.1 i: Times New Roman (11 or 12 pt). psnfss' mathptmx
+% gives the URW Nimbus Roman face (Type1, vector) for text and mathematics, the
+% same face used by the approved reference thesis. Loaded before montserrat so
+% the sans family (cover pages) stays Montserrat.
+\usepackage{mathptmx}
+% No URW Courier outlines are installed here, so \texttt keeps a vector face
+% (Latin Modern Mono) instead of falling back to bitmap Type 3.
+\renewcommand{\ttdefault}{lmtt}
 \usepackage{montserrat}
 \usepackage[T1]{fontenc}
 \renewcommand*\oldstylenums[1]{{\fontfamily{Montserrat-TOsF}\selectfont #1}}
@@ -229,6 +260,9 @@
 \numberwithin{figure}{chapter}
 
 \setlength{\parindent}{0.7cm}
+
+% ISCTE norms (2020) §2.1 ix: page number 1.25 cm from the bottom edge.
+\setlength{\footskip}{\dimexpr\footskip+21.5pt\relax}
 
 \addto{\extrasenglish}{%
   \renewcommand{\bibname}{References}
