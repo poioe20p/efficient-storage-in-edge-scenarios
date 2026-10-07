@@ -57,6 +57,11 @@
 \usepackage{caption}
 \usepackage{float}
 \usepackage{subcaption}
+
+% ISCTE norms §2.2: table captions justified like the text. The caption
+% package's AMS-class defaults centre single lines and inset the block by
+% \captionindent; both are overridden here.
+\captionsetup[table]{justification=justified,singlelinecheck=false,margin=0pt}
 \usepackage{listings}
 \usepackage{booktabs}
 \usepackage[protrusion=true,expansion=false]{microtype}

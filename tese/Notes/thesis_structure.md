@@ -40,6 +40,13 @@
 > Appendix A row) and the restart passage rewritten to the verified
 > behaviour (in-memory state, re-derivation, mid-run restarts excluded
 > from evaluated runs); the log-tail attribution moved to the aggregator.
+>
+> **2026-10-08:** norms-compliance pass — table captions set justified
+> (`\captionsetup[table]` in `preamble.sty`, ISCTE §2.2), and the two large
+> overfull boxes fixed (Table `tab:rq3_delays` first column converted to
+> `p{}`; the appendix snapshot filenames made breakable). Remaining overfull
+> boxes are ≤9 pt in Ch1/Ch2/Ch5 prose and the bibliography. Open item: body
+> length (pp. 1–74) against the ISTA 50/60-page norm.
 
 ---
 

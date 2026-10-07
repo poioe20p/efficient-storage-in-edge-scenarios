@@ -3267,7 +3267,7 @@ deliberately removes.
     \label{tab:rq3_delays}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
-    \begin{tabular}{l c c c}
+    \begin{tabular}{p{0.32\textwidth} c c p{0.32\textwidth}}
         \toprule
         Interval & Direct & Periodic & Test \\
         \midrule
@@ -3727,7 +3727,10 @@ campaigns reported in Chapter~\ref{ch:results}, complementing the design
 summaries given at the start of each results section. The values are
 transcribed from the campaign configuration records; every run additionally
 stored the effective configuration it executed
-(\texttt{controller\_env\_snapshot.env}, \texttt{aggregator\_env\_snapshot.env})
+(%
+% \allowbreak: breakpoints inside the long artefact filenames (overfull box otherwise).
+\texttt{controller\_\allowbreak env\_\allowbreak snapshot.env},
+\texttt{aggregator\_\allowbreak env\_\allowbreak snapshot.env})
 and its phase schedule (\texttt{phases\_snapshot.json}), so the per-run values
 are recoverable from the run artefacts. Where a campaign spans several demand
 regimes or evidence sets, the arms state the value per regime or set.
