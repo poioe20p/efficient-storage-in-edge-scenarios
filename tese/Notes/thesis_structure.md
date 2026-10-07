@@ -23,6 +23,23 @@
 > papers produced one timing-precision issue and a set of explicit scope limits;
 > both are recorded in `tese/Notes/gaps_weakness.md` and folded into the
 > §0.5 guards and the §3/§4/§6 rows below.
+>
+> **2026-10-07 update:** Chapter 4 is written and applied in `main.tex`
+> (§4.1–§4.5 as implementation deltas over Ch.3, verified claim-by-claim
+> against `source/`). The section label typo was fixed
+> (`sec:impl_infrastructure`, also at the Ch.5 reference), figures are left
+> as short `% FIGURE:` comments for the author to draw, and the
+> implementation-knob table (`tab:app_config_knobs`) was added to
+> Appendix A.
+>
+> **2026-10-07 (later):** disclosure additions applied — timing-record
+> provenance (Ch.4 §4.3 and Ch.5 §5.1), data-set preparation and per-run
+> reset (Ch.5 §5.1), and the selective-synchronisation (Tier 1) and
+> cross-domain storage placement gloss (Ch.4 §4.2.2, term aligned with
+> §5.3). Timeout values corrected to per-campaign values (Ch.4 §4.4 +
+> Appendix A row) and the restart passage rewritten to the verified
+> behaviour (in-memory state, re-derivation, mid-run restarts excluded
+> from evaluated runs); the log-tail attribution moved to the aggregator.
 
 ---
 

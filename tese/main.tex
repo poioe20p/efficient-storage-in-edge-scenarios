@@ -1798,116 +1798,413 @@ Chapter~\ref{ch:results}.
 
 
 \chapter{Implementation of Proposed Solution}\label{ch:implementation}
-% Aqui dizer coisas como tu utilizas o docker container, ta tudo a correr em vms e cenas do 
-% genero.
-\section{Experimental infraestructure}\label{sec:impl_infraestructure}
-% TODO: two network domains on a single cloud-VM host; Docker containers;
-% OVS topology (two LANs + inter-domain link, tc-netem); inter-domain
-% link latency profile (fixed symmetric RTT).
-% TODO: workload driver and harness — open-loop client agents executing the
-% phase schedule (per-client rate, active-client fraction, request mix,
-% duration); bounded in-flight window; client-side request cap (300 s);
-% phase-end drain; per-run phase snapshot and request artefacts. The phase
-% model is defined in Section~\ref{sec:experimental_setup}.
-%
-% CANDIDATE TEXT for the workload-driver part of this section — uncomment
-% and adapt when writing Chapter 4; also check Chapter 3 for applicability.
-% Grounded in source/scripts/testing/traffic_generator.py and
-% docs/operation/testing/traffic_generator.md.
-%
-% The load on the platform is exerted by a scheduled workload driver that
-% runs on the experiment host beside the testbed. Each client is a Linux
-% network namespace attached to its domain's client LAN, and the driver
-% issues requests from a namespace as HTTP calls against the domain's
-% virtual service address, so that the controller observes the namespace's
-% source address and steers the request through the double-VIP data path of
-% Chapter~\ref{ch:system_architecture}. A run instantiates 24 clients per
-% domain, 48 in total.
-%
-% The driver executes the run's phase schedule
-% (Section~\ref{sec:experimental_setup}): each phase fixes its duration, a
-% per-client issuing rate, the fraction of clients that are active during
-% it, and its request mix from Table~\ref{tab:request_kinds}. Active
-% clients issue requests continuously at the phase rate, each request being
-% one HTTP call of a kind drawn from the phase mix and aimed at users and
-% content items taken from a snapshot of the seeded data set, so that
-% traffic generation does not depend on a live database. The run's seed
-% fixes which clients are active and the per-client request streams
-% (Section~\ref{sec:experimental_setup}).
-%
-% The delivery of the load is open-loop: a client issues its requests on
-% schedule regardless of whether earlier requests have completed, so the
-% offered demand is preserved when the service slows down and the load
-% accumulates as latency rather than thinning out. Three client-side
-% bounds make the resulting failure modes explicit and finite: each client
-% keeps at most 1024 requests in flight, and a request that arrives when
-% the window is full is not dispatched and is recorded as dropped; every
-% request carries a client-side cap of 300~s, and a request that reaches
-% the cap is recorded as a timeout; and in-flight requests that outlast
-% the 30~s phase-end drain are abandoned and recorded as cancelled. Each
-% issued request is written to the run's request record, carrying its
-% phase, kind, target identifiers, issue time, outcome class and latency;
-% the record, together with the phase snapshot captured per run, is the
-% raw material of the per-run analyses of Chapter~\ref{ch:results}.
+Chapter~\ref{ch:system_architecture} specified what the platform must do.
+This chapter describes what was built. Section~\ref{sec:impl_infrastructure}
+presents the testbed and its load source, Section~\ref{sec:impl_elastic} the
+two scaled resources as implemented, Section~\ref{sec:impl_monitoring} the
+observation and decision components, Section~\ref{sec:impl_control} the
+runtime behaviour of the controller, and Section~\ref{sec:impl_validation}
+the checks that validate the resulting platform. Configuration values named
+in the text are listed per campaign in Appendix~\ref{app:campaign_config}.
+
+\section{Experimental Infrastructure}\label{sec:impl_infrastructure}
+
+The platform runs on a single cloud VM host that holds both domains as
+Docker containers on emulated networks. Table~\ref{tab:impl_components}
+lists the components as deployed.
+
+\begin{table}[H]
+    \centering
+    \caption{Platform components as deployed.}
+    \label{tab:impl_components}
+    \footnotesize
+    \begin{tabular}{p{0.26\textwidth} p{0.31\textwidth} p{0.36\textwidth}}
+        \toprule
+        Component & Implementation & Role \\
+        \midrule
+        Domain network & Open vSwitch bridge per domain & Carries one domain's client, service, and data traffic \\
+        SDN controller (one per domain) & OS-Ken application (Python) & VIP interception, unit selection, flow installation, and the observation and action contexts \\
+        Telemetry aggregator (one per domain) & Python process on the ZeroMQ transport & Collects producer records and publishes windowed summaries \\
+        Edge server & Flask application on the Werkzeug server & Serves the workload, reports per-request telemetry, and exposes the readiness and drain endpoints \\
+        Storage member & \texttt{mongod} with a companion sidecar & Holds one replica-set member and reports replication and resource state \\
+        Inter-domain router & Linux container with traffic shaping & Joins the two domains and applies the emulated link profile \\
+        Workload driver & Python harness on the host & Issues the scheduled open-loop load from client namespaces \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% FIGURE: testbed deployment. Two domains on one host. In each domain the
+% client namespaces, the OVS bridge, the edge servers, the storage member,
+% and the aggregator. The controller instances and the inter-domain router
+% between the domains, with the emulated fixed symmetric RTT marked on the
+% inter-domain link and the driver attached to the client side.
+
+The two domains are joined by a router container whose inter-domain link
+carries an emulated, fixed symmetric round-trip time applied with tc-netem
+(185~ms in the reported campaigns, with the jitter, loss, and rate knobs
+available and off by default). The evaluated data path is single-site. The
+emulated link carries no evaluated traffic, and every control-plane link
+is host-local.
+
+Each domain has two virtual service addresses, one for client requests
+and one for storage reads. The data plane combines OpenFlow rules with
+the kernel's connection tracking. On the service path, the controller
+installs a DNAT/SNAT rule pair for the client and the selected backend.
+With flow isolation enabled the pair is scoped to a single connection and
+removed after its response, so every measured request triggers a fresh
+selection. On the data path, a forward rule selects the member and
+commits a NAT mapping to it, and the kernel records the connection by its
+five-tuple, the pair of addresses and ports plus the protocol. Reply
+packets are handed back to connection tracking, which reverses the
+mapping, so the identity of each connection lives in the kernel's table
+rather than in the rule. Two consequences matter for the platform.
+Established connections survive rule deletion, which lets the controller
+bulk-delete a member's forward rules when the member leaves the pool and
+lets new connections re-select while established ones finish. And because
+the kernel keeps connections apart by their full five-tuple, the rule can
+be scoped to the client or, as in the reported configuration, to a single
+connection of it, so a pooled client spreads its connections across
+members. Each domain tracks its connections in its own zone, and rules
+that belong to a domain share a cookie so they can be removed together.
+
+The load is exerted by a scheduled driver that runs on the host beside
+the testbed. Each client is a Linux network namespace attached to its
+domain's client network, and the driver issues requests from a namespace
+as HTTP calls against the domain's virtual service address, so the
+controller observes the namespace's source address and steers each
+request through the data path above. A run instantiates 24 clients per
+domain, 48 in total. The driver executes the run's phase schedule
+(Section~\ref{sec:experimental_setup}): each phase fixes its duration, a
+per-client issuing rate, the fraction of clients that are active, and its
+request mix. Active clients issue requests continuously at the phase rate
+against users and content items taken from a snapshot of the seeded data
+set, so traffic generation does not depend on a live database, and the
+run's seed fixes which clients are active and the per-client request
+streams. 
+
+The delivery of the load is open-loop, so a client keeps issuing
+its requests on schedule while earlier requests are still outstanding and
+the offered demand is preserved when the service slows down. Three
+client-side bounds make the resulting failure modes explicit and finite.
+Each client keeps at most 1024 requests in flight, and a request that
+arrives when the window is full is recorded as dropped. Every request
+carries a 300~s client-side cap, and a request that reaches it is
+recorded as a timeout. In-flight requests that outlast the 30~s phase-end
+drain are abandoned and recorded as cancelled. Each issued request is
+written to the run's request record with its phase, kind, target
+identifiers, issue time, outcome class, and latency, and the record,
+together with the phase snapshot captured per run, is the raw material of
+the per-run analyses of Chapter~\ref{ch:results}.
 
 \section{Distributed Elastic Allocation of Resources}\label{sec:impl_elastic}
 
 \subsection{Compute}\label{sec:impl_compute}
-% TODO: Edge server (Python/Flask); container lifecycle (build, start, health check,
-% OVS wiring, drain/cancel, removal); VIP_SERVER registration. RQ3 propagation
-% mechanism: READINESS_PROPAGATION env var (off / direct / discovery) +
-% ReadinessGate (pending-backend registry, app_ready event admission, probe
-% fallback, wake-verify sub-mode, abandonment bound) — thesis_overview.md §6-RQ3.
-% BACKEND_SELECTION_POLICY (topology_host / topology_slowstart /
-% topology_lifecycle) is the separate selection dimension (warm lease /
-% slow-start ramp), not the RQ3 propagation mechanism.
+
+A compute replica is a Flask application served by the Werkzeug server.
+It exposes the workload routes, a drain endpoint that moves the replica
+into a quiescing state, and a readiness endpoint. The readiness predicate
+is a real service round-trip, and the endpoint answers 200 only while a
+MongoDB ping against the domain's virtual data address succeeds. The
+server binds before readiness is declared, so the predicate means
+servability and the readiness claim cannot precede the socket. After each
+request the replica pushes a per-request telemetry record, and with the
+readiness event enabled it emits an \texttt{app\_ready} control event
+when the predicate first succeeds.
+
+The controller provisions a replica by starting its container with the
+tier's quotas and the run's environment, attaching it to the domain
+network through an OVS port, and recording it as a backend of the domain.
+Removal follows the two phases of Section~\ref{sec:elastic_allocation}.
+The replica is first withdrawn from the routing pool and signalled to
+drain, and the drain completes once its in-flight requests reach zero and
+a quiet period passes. Only then is its network attachment removed.
+
+Readiness admission is implemented by a component that holds newly
+spawned replicas in a pending registry and admits them to the routing
+pool only when its configured rule is satisfied. The rule is selected by
+a propagation mode.
+
+\begin{itemize}
+    \item \texttt{off}. The replica is admitted as soon as it is
+    provisioned, and no readiness rule applies.
+    \item \texttt{direct}. The replica is admitted on the
+    \texttt{app\_ready} event itself, with no probe before admission. A
+    fallback wait bounds how long the gate waits for the event before it
+    probes anyway, so a lost notification has a recovery path.
+    \item \texttt{discovery}. The event is ignored and the controller
+    probes the readiness endpoint on a fixed poll cadence, admitting on
+    the first successful probe.
+    \item Wake-and-verify, a sub-mode of the direct rule. The event wakes
+    a probe and admission requires the probe to pass, and the fallback
+    wait applies when no event arrives.
+\end{itemize}
+
+% FIGURE: readiness-gate decision flow. A readiness claim from a pending
+% replica on the left, the rule branches in the middle (direct admission,
+% the fallback probe after the event wait, discovery polling, and
+% wake-and-verify), and admission into the routing pool or abandonment on
+% the right. Label each admitted edge with the source recorded in the
+% admission log.
+
+Probes retry on a fixed cadence with their own timeout. A replica that is
+not admitted within the abandonment bound is abandoned and fully torn
+down. Every admission records its source in the admission log, the event,
+a poll, a fallback probe, or a wake-and-verify probe. A probe that
+disagrees with an event-driven admission is recorded as a warning and the
+admission stands, because the event already admitted the replica. The
+wake-and-verify rule never admits unverified. The admission decision is
+summarised in Algorithm~\ref{alg:readiness_admission}.
+
+% Algorithm floats follow the chapter-indexed numbering used for tables and
+% figures (the counter setup lives here rather than in the preamble).
+\numberwithin{algorithm}{chapter}
+
+\begin{algorithm}[H]
+    \caption{Readiness admission of a spawned compute replica.}
+    \label{alg:readiness_admission}
+    \begin{algorithmic}[1]
+        \State enqueue the replica in the pending registry
+        \If{mode is \texttt{off}}
+            \State admit the replica
+        \ElsIf{mode is \texttt{discovery}}
+            \State probe \texttt{/ready} on each poll and admit on the first success
+        \Else \Comment{\texttt{direct}}
+            \State admit the replica on the \texttt{app\_ready} event
+            \State without an event after the fallback wait: probe and admit on success
+            \State with wake-and-verify: the event wakes a probe, and admission requires it to pass
+        \EndIf
+        \State abandon and tear down a replica not admitted within the abandonment bound
+    \end{algorithmic}
+\end{algorithm}
+
+Warm-lease priority and slow-start ramps are a separate selection
+dimension of Section~\ref{sec:elastic_allocation} and are held constant
+in the readiness experiments.
 
 \subsection{Storage}\label{sec:impl_data}
-% TODO: MongoDB replica sets; sidecar self-join via replSetReconfig (non-voting
-% secondary); controller-side rs.remove() + wait-for-removal; VIP_DATA routing
-% (conntrack DNAT/SNAT; per-client and per-connection flows); read path =
-% per-request leases over per-LAN epochs (VIP address; rotation on VIP update;
-% AutoReconnect retry with backoff; readPreference=secondaryPreferred); write
-% path = direct-to-primary client; storage container lifecycle.
-% The way a mongodb replicaSet is built should be included and clarified.
+
+Each domain's storage is a MongoDB replica set of its own, built in three
+steps. At network build time, the domain's storage container starts as
+the set's single member and becomes its primary, and the run's data set
+is seeded through it. At runtime, a new member starts as a bare
+\texttt{mongod} with a companion sidecar. The sidecar connects to a known
+member of the set, appends itself as a non-voting member with zero
+priority so it cannot affect elections, and applies the change with a
+single \texttt{replSetReconfig} call. When the member reaches the
+secondary state and can serve reads, the sidecar emits the
+\texttt{rs\_secondary\_ready} control event, and the controller admits
+the member into the domain's virtual data address, by default on the
+event, with a telemetry-observed secondary state as the fallback path.
+Removal reverses the steps. The member leaves the routing pool first, and
+the controller then performs \texttt{rs.remove()} against the primary,
+waits for the removal to be confirmed, and tears the container down.
+The routing surface is the domain's virtual data address, and the 
+edge server's database driver never learns the physical membership.
+
+When the persistent reserve is enabled, one readied member is prepared
+ahead of demand and held outside the routing pool. The storage scale-up
+is then the activation of this prepared reserve, a membership that is
+already joined and servable, so the reaction path skips the join and its
+wait, and a replacement reserve is prepared once the slot is free. The
+member lifecycle is bounded by the run's caps
+(Appendix~\ref{app:campaign_config}).
+
+Reads are issued against the domain's virtual data address through
+per-request leases that the edge server manages per domain epoch. When
+the address's membership changes, the epoch rotates and pooled
+connections are retried with backoff, and reads prefer a secondary.
+Writes are issued directly to the replica-set primary, so the
+consistency contract is primary writes with eventually consistent
+secondary reads. Selective synchronisation (Tier~1), which holds a
+partial copy of the data in the consumer domain, and cross-domain
+storage placement, which places a replica-set member in the peer
+domain, are capabilities of Section~\ref{sec:elastic_data} and are
+disabled in the reported experiments.
 
 \section{Monitoring and Decision Engine}\label{sec:impl_monitoring}
-% TODO: Aggregator (ZMQ PULL→PUB + HTTP window-log/latest-summary cache;
-% fixed window cadence; always-publishes incl. empty windows; overload label);
-% collect_resource_stats.py (domain + debug + per-node CSVs); telemetry source
-% abstraction (ZmqTelemetrySource default push; PollingTelemetrySource
-% latest-state; EventPreservingTelemetrySource; DelayedEventPreservingTelemetrySource;
-% SampledPushTelemetrySource). Degradation score with configurable weights via
-% SCALEUP_W_CPU / SCALEUP_W_T_PROC env vars (LATENCY_SIGNAL_MODE mean|median);
-% ElasticityManager. RQ2 requires a bottleneck-classification gate that logs episode label,
-% evidence, selected/rejected action, and action budget (thesis_overview.md §6-RQ2).
+
+Observation begins at the producers. Each compute replica emits a
+per-request record of its resource state and request experience, and each
+storage member's sidecar emits replication and resource-state samples as
+the member reports activity, with a periodic heartbeat that keeps an idle
+node visible. A bootstrap heartbeat makes a starting node visible before
+its first request. A per-domain aggregator collects these records and
+publishes a windowed summary at a fixed cadence. Every window is
+published, including empty ones, and each summary carries the time of
+each node's last report. Each window also carries a producer-side
+overload label computed from fixed thresholds that are identical across
+the compared runs.
+
+The delivery of summaries to the controller is the configurable interface
+of Section~\ref{sec:monitoring_decision}, implemented as alternative
+sources over the same published windows. Every published window is
+appended to a durable, sequence-numbered log, and the numbering continues
+across aggregator restarts, because the aggregator reloads the log's tail
+at boot. A mid-run controller restart re-pulls the log and may re-deliver
+windows, which the analysis deduplicates by window identity.
+Table~\ref{tab:impl_delivery_sources} lists the implemented sources.
+
+\begin{table}[H]
+    \centering
+    \caption{Telemetry delivery sources as implemented.}
+    \label{tab:impl_delivery_sources}
+    \footnotesize
+    \begin{tabular}{p{0.22\textwidth} p{0.24\textwidth} p{0.46\textwidth}}
+        \toprule
+        Source & Class & Implementation \\
+        \midrule
+        push (default) & as published & each completed window delivered on the push path, without a delivery guarantee \\
+        poll & latest-state & the controller retrieves only the most recent window on a fixed interval, so intermediate windows are not delivered \\
+        event-preserving & event-preserving & ordered replay of the durable log, with each window acknowledged \\
+        delayed & delayed event-preserving & ordered replay released at window end plus a fixed delay, without burst replay \\
+        sampled push & latest-state & every Nth completed window delivered, with the intermediate windows dropped \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The replaying sources record every window they observe in a delivery log
+with its network, sequence, window end, delivery time, delay, and source
+mode, and this record is what the delivery experiments of
+Chapter~\ref{ch:results} read. Control events and topology always arrive
+on the push path, regardless of the telemetry source in use.
+
+On the measurement side, a collector writes per-run resource records for
+each domain, debug records, and per-node files, and samples the CPU and
+memory of both controller instances. The controller's own records
+complete the timing evidence: the lifecycle of each provisioned unit,
+the elasticity events, the admission log of the readiness gate, and the
+decision log of the selection gate, all kept per run beside the request
+record of Section~\ref{sec:impl_infrastructure} and the delivery log
+above. Inside the controller, the delivered
+windows feed the routing state and the decision engine of
+Section~\ref{sec:monitoring_decision}. The engine evaluates each
+delivered window with the policy of Section~\ref{sec:scaling_policy}, and
+every decision is written to the decision log with its evidence. In the
+bottleneck-aware configuration, the selection gate commits at most one
+action per window and records the bottleneck class it assigned, the
+per-tier evidence, the selected and rejected actions, and the budget
+counters. Lifecycle signals, such as the completion of a drain or the
+readiness of a member, reach the same decision path, and admission or
+release follows the same flow as the actions themselves. Absence
+detection and scale-down evaluation run on a fixed ticker once per
+delivered window rather than on window arrival. The configuration surface
+is environment-driven, and its values are listed in
+Appendix~\ref{app:campaign_config}.
 
 \section{Control Workflow}\label{sec:impl_control}
-% TODO: OS-Ken controller; three execution contexts (packet + observation on
-% the eventlet hub; action in a native elasticity thread, plus the
-% readiness-gate worker); shared data structures (telemetry state, priority
-% action queue, routing pools); key algorithm pseudo-code (degradation score →
-% threshold → sliding window → alert → spawn); Double-VIP ARP interception +
-% DNAT/SNAT (conntrack); release/admission log instrumentation.
-% TODO: pre-dispatch wait enumeration (by design: contents live here, not in
-% Ch3): connection setup through the double-VIP path (ARP interception;
-% conntrack DNAT/SNAT state); the first packet of a new flow to the
-% controller (backend selection + forwarding-rule installation); and where a
-% request can wait ahead of the serving process (queue-side; its growth is
-% reported in §5.3, not restated here).
+
+Each domain runs its own controller instance. The three execution
+contexts of Section~\ref{sec:control_workflow} are implemented as one
+cooperative event loop and two native threads. The packet path handles
+flow decisions inside the OpenFlow event loop and never blocks on
+infrastructure work. The telemetry consumer is a greenthread on the same
+loop that receives the published summaries, updates the per-backend and
+per-member state, evaluates the tier conditions, and posts typed alerts
+to a priority queue. The elasticity thread is a daemon thread that blocks
+on that queue and performs the infrastructure changes, and the readiness
+gate runs a probe worker thread of its own.
+
+State crosses the contexts through the shared structures of
+Section~\ref{sec:control_workflow}. The telemetry consumer writes the
+per-node state and the alerts between its yield points, the elasticity
+thread hands its results to the routing pools through the same
+registration the packet path reads, and the packet path reads the pools
+on each flow decision. Alerts are queued, so a slow infrastructure change
+does not stall request steering.
+
+On the first packet of a new connection, no flow rule matches and the
+packet is sent to the controller. The controller selects a unit with the
+cost function of Section~\ref{sec:architecture_overview}, installs the
+rules described in Section~\ref{sec:impl_infrastructure}, and sends the
+packet on. Subsequent packets follow the installed rules. The rules carry
+a configurable idle timeout, which resets as the connection stays
+active, and a configurable hard timeout, after which the rule expires and
+the next packet triggers a fresh selection. The evaluated values are
+listed per campaign in Appendix~\ref{app:campaign_config}. When a unit
+leaves a pool, its rules are removed, and on the
+data path established connections continue through the kernel's
+connection tracking while new connections re-select.
+Algorithm~\ref{alg:first_packet} summarises the first-packet path.
+
+\begin{algorithm}[H]
+    \caption{First-packet handling for a new connection.}
+    \label{alg:first_packet}
+    \begin{algorithmic}[1]
+        \State the first packet of a new connection finds no flow rule
+        \State send the packet to the controller
+        \State select a unit from the eligible pool with the cost function
+        \State install the routing rule for the client and the unit
+        (Section~\ref{sec:impl_infrastructure})
+        \State send the packet on, and later packets follow the rule
+    \end{algorithmic}
+\end{algorithm}
+
+A request waits ahead of the edge service in three places, which the
+instrumentation separates. The first is the connection setup through the
+virtual service address. The second is the first packet's round trip to
+the controller and the installation of its rules. The third is the queue
+on the selected replica before the application reads the request. The
+first two are part of the steering path described here, and the third
+accrues on the serving side. The waiting time is read as a difference,
+user-visible latency minus the reported edge service time, and its growth
+under load is reported in Section~\ref{sec:discussion}, not restated
+here.
+
+The controller keeps its state in memory. The routing pools, the
+per-node telemetry, and the lifecycle records of in-flight operations
+are not written durably, so a restart begins from an empty state and
+re-derives what it needs from the network: the topology worker
+re-observes the switches and rebuilds the hop cache and the routing
+pools, the telemetry resumes and repopulates the per-node state, and
+units without fresh reports receive the configured default in
+selection. On the switch connection, the stale flows are flushed and the
+catch-all rule is reinstalled, so later connections are selected again.
+Because a restart resets this state, the evaluated runs exclude mid-run
+controller restarts.
 
 \section{Implementation Validation}\label{sec:impl_validation}
-% TODO: Golden-config stability experiments (15+ runs, variance ≤0.23%);
-% mechanism validation (Tier 2, Tier 1, compute, conntrack);
-% algorithm correctness via stable behavior, not code inspection.
-% TODO: observation-path validation, reporting checks the pipeline already logs:
-% window continuity (delivery log: every produced window delivered, or recorded
-% as an aged-out gap; none silently lost); treatment fidelity per mode
-% (completeness ≈1.0 in the ordered modes vs the calibrated fraction in the
-% lossy modes; sequence order preserved; measured delay ≈ configured DELAY_S);
-% observation overhead (aggregator CPU/RSS and per-window payload bounded and
-% constant across modes); optional one-run cross-calibration of node resource
-% records against an independent collector (docker stats/cAdvisor).
+
+Before any experiment campaign, the implementation was validated in three
+ways. The locked configuration was exercised end to end and checked for
+stability, each mechanism was exercised and its effect reproduced, and
+the observation path was checked against the delivery semantics it
+implements.
+
+\begin{table}[H]
+    \centering
+    \caption{Implementation checks and their outcomes.}
+    \label{tab:impl_validation}
+    \footnotesize
+    \begin{tabular}{p{0.26\textwidth} p{0.35\textwidth} p{0.32\textwidth}}
+        \toprule
+        Check & Condition & Outcome \\
+        \midrule
+        Integrated stability & Identical runs of the locked configuration, with all mechanisms enabled & Failure rate within the envelope (0.18\,\% and 0.41\,\% against a 3\,\% gate), with no tracebacks \\
+        Variability & Identical replicates after the scale-down cooldown fix & Compute-phase variability removed, with 0.23\,\% overall in the verification run \\
+        Data-path routing & Stale-rule failures during member removal & Compute-phase failures fall from 56--65\,\% to 1.4\,\%, with no connection-epoch rotations \\
+        Storage reserve & Activation of the prepared reserve & The activated reserve carries data-path traffic, and liveness is stable \\
+        Selective synchronisation & Bidirectional hotspot activation & Data-access latency falls from 84.5\,ms to 3.58\,ms, with a clean drain in both directions \\
+        Observation path & Window continuity and per-mode fidelity & Every produced window delivered or recorded as an aged-out gap, completeness and measured delay match the configured mode, and overhead stays bounded across modes \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Correctness is read from this behaviour rather than from code inspection.
+The mechanisms were exercised under the canonical workload, and their
+effects were reproduced across replicate runs. The observation-path
+checks verify the delivery semantics directly. The window log records
+every produced window, and a window that is never delivered is recorded
+as an aged-out gap rather than silently lost. Completeness, sequence
+order, and delivery delay are logged per window and match the configured
+mode, and the aggregator's overhead and per-window payload stay bounded
+and constant across modes. The readiness path is additionally exercised
+with the fault instrumentation of the fault-robustness experiments, where
+a replica can be configured to claim readiness before it can serve, to
+answer workload requests with errors while the readiness predicate stays
+satisfied, or to lose its readiness event entirely. The instrumentation
+and its values are listed in Appendix~\ref{app:campaign_config}. The
+empirical characterisation of the three interfaces is presented in
+Chapter~\ref{ch:results}.
 
 
 
@@ -1927,7 +2224,7 @@ a two-domain testbed on a single host. Each domain runs its own data plane,
 compute replicas, storage tier, telemetry aggregator, and \ac{SDN}
 controller, and the two domains are joined by an emulated inter-domain link. Both
 domains are driven by the same scheduled, open-loop workload driver, described
-more extensively in Section~\ref{sec:impl_infraestructure} as a driver 
+more extensively in Section~\ref{sec:impl_infrastructure} as a driver 
 that applies the workload's request schedule regardless of the responses 
 it receives, so that the demand offered to the service is 
 independent of the capacity available to serve it.
@@ -1981,14 +2278,27 @@ a treatment. The campaigns therefore measure the coordination
 interfaces under controlled and repeatable conditions.
 
     Each run is an independent experimental unit and starts from the 
-same baseline fleet and configuration. During a run, the platform 
+same baseline fleet and configuration.
+
+    Before each run, the data set is generated from a fixed data seed and
+loaded into the domain's replica-set primary: 3000 content items and 100
+user profiles per domain, with the collection indexes created by the
+same setup. The setup also exports a snapshot of the seeded items and
+profiles, and the driver draws its request targets from that snapshot,
+so the offered demand is fixed by the run's seed and does not depend on
+the live database. Between runs, the persistent containers, the data
+state, and the controller state are reset.
+
+    During a run, the platform 
 records the timeline of the demand-to-capacity chain end to 
 end: demand episode onset, telemetry window completion and controller 
 observation, scaling decision and selected action,
 provisioning start and completion, application-readiness confirmation,
 admission to the routing pool, first routed request, and first successful
 response. The load distribution of the served demand across the
-replicas is also recorded. The rest of this section defines the 
+replicas is also recorded. The records behind these timestamps are
+described in Section~\ref{sec:impl_monitoring}, and every timing
+reported in this chapter is read from them. The rest of this section defines the 
 workloads that drive these timelines, the outcomes extracted from them, 
 and the design under which each campaign varied exactly one interface.
 
@@ -3424,7 +3734,7 @@ regimes or evidence sets, the arms state the value per regime or set.
 
 \begin{table}[H]
     \centering
-    \caption{Container resource limits and client bounds per campaign.}
+    \caption{Container resource limits, flow timeouts, and client bounds per campaign.}
     \label{tab:app_config_resources}
     \footnotesize
     \setlength{\tabcolsep}{4pt}
@@ -3440,6 +3750,7 @@ regimes or evidence sets, the arms state the value per regime or set.
         MongoDB connections per edge server & 6 & 12 & 6 \\
         Dynamic-unit cap (compute / storage) & 3 / 3 & 6 / 6 & 12 / not exercised \\
         Inter-domain link RTT (emulated) & 185~ms & 185~ms & 185~ms \\
+        Service-path flow timeouts (idle / hard) & 30~s / 60~s & 30~s / 60~s & 30~s / 120~s \\
         Client bounds (in-flight window / request cap / phase-end drain) & 1024 / 300~s / 30~s & 1024 / 300~s / 30~s & 1024 / 300~s / 30~s \\
         \bottomrule
     \end{tabular}
@@ -3544,6 +3855,29 @@ storage adds for the run-start reserve preparation, excluded from the
 storage rows above; the no-action comparator records 2.2~\% on the
 compute-bound episode and 17.0~\% on the data-access-bound one. Counts are
 medians across that configuration's runs.\par}
+
+\begin{table}[H]
+    \centering
+    \caption{Implementation knobs of the interface experiments.}
+    \label{tab:app_config_knobs}
+    \footnotesize
+    \begin{tabular}{p{0.30\textwidth} p{0.64\textwidth}}
+        \toprule
+        Knob & Meaning \\
+        \midrule
+        \texttt{READINESS\_PROPAGATION} & Compute-admission mode. \texttt{off} registers a replica immediately, \texttt{direct} admits on the \texttt{app\_ready} event, and \texttt{discovery} probes on the poll cadence. \\
+        \texttt{READINESS\_EVENT\_FALLBACK\_S} & Direct mode. The time the gate waits for the event before probing anyway. 20~s in the reported admission runs and 130~s in the fault-robustness event-only configuration, where probing cannot begin before the abandonment bound. \\
+        \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Discovery probe cadence. 10~s in the primary arms and 15~s in the sensitivity cell. \\
+        \texttt{READINESS\_WAKE\_VERIFY\_MODE} & \texttt{probe} enables the wake-and-verify rule on the direct base. The event wakes a probe, and admission requires the probe to pass. \\
+        \texttt{READINESS\_PROBE\_TIMEOUT\_S}, \texttt{\_RETRY\_S}, \texttt{\_MAX\_S} & Probe timeout (5~s), retry cadence (1~s), and abandonment bound (120~s). \\
+        \texttt{EDGE\_READY\_PREMATURE\_S} & Fault instrumentation. The replica claims readiness this many seconds before it can serve, 2, 5, and 10~s in the premature-claim grid. \\
+        \texttt{EDGE\_READY\_SEMANTIC\_LIE\_S} & Fault instrumentation. Workload requests fail while the readiness predicate stays satisfied, for this window counted from bind (1200~s). \\
+        \texttt{READINESS\_EVENT\_DROP\_MODE} & Fault instrumentation. The readiness event is dropped entirely. \\
+        \texttt{TELEMETRY\_SOURCE} & Delivery source. \texttt{zmq} is the push default, \texttt{poll} is latest-state, and \texttt{event\_preserving}, \texttt{delayed\_event\_preserving} (\texttt{DELAY\_S}, 30~s), and \texttt{sampled\_push} (\texttt{SAMPLE\_EVERY}, every third window) implement the graded semantics. \\
+        \texttt{VIP\_FLOW\_ISOLATION}, \texttt{EDGE\_FLOW\_ISOLATION} & One fresh routing decision per measured request, with per-connection service-path flows. \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 }
 
 \end{document}
