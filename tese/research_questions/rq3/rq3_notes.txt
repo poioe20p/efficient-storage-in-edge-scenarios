@@ -129,3 +129,23 @@ in the RQ3 results: admission-chain intervals (tab:rq3_delays rows 1,
 2, 4), existing-fleet relief (row 5), slow-share windows and the
 admissions and abandoned-candidate counts (tab:rq3_fault), premature
 damage (tab:rq3_soundness).
+
+(2026-10-07 l) RQ3 source search and Chapter 2 grounding. Corpus: Dreibholz
+& Mazumdar 2023 (Internet of Things 21:100651) admitted as row 5 of
+03_readiness_admission_rq3, the only candidate of two search rounds managing
+a variable pool of serving resources (registration/de-registration,
+keep-alive availability, propagation inaccuracy) in an edge-inclusive
+context; eight candidates rejected on scope and removed from Newer/
+(recorded in the folder README). Thesis: new paragraph in sec:lit_sdn_lb
+placed after the Neghabi failure-management sentence and before the
+desynchronisation paragraph, stating pool management as established prior
+art and quoting the propagation inaccuracy (p. 6) with the selection-side
+mitigation. Placement revised on author review: the desynchronisation
+paragraph closes the problem statement, so the prior-art paragraph
+precedes it. Bib entry added at first citation
+(Dreibholz2023TowardsLightweightTaskSchedulingFramework).
+Opener revised on author review: the paragraph now begins "Outside those
+studies, managing the pool itself is an established problem", so the
+preceding "remain unaddressed" reads as a contrast (unaddressed by the
+surveyed mechanisms, while pool management is established as a problem
+class), not a contradiction.

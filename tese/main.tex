@@ -982,8 +982,20 @@ concerned, take the eligible set as given. Indeed, Neghabi et al.
 record failure management as a concern that the mechanisms their
 survey covers have not taken into account, so failure-driven changes
 to the eligible set remain unaddressed
-\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. The
-eligible set and the true serving state of its backends can therefore
+\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. 
+    Outside those studies, managing the pool itself is an established
+problem. Dreibholz and
+Mazumdar apply the IETF Reliable Server Pooling framework to a pool
+spanning edge and multi-cloud resources. A member registers to the pool
+when it joins and de-registers when it leaves, while a registrar keeps
+its availability current through periodic keep-alive checks. The
+framework's own analysis notes that \enquote{propagating load updates
+takes time, leading to temporary inaccuracy}, and the mitigation for
+that inaccuracy is left to the selection layer, in policies that
+discount stale pool state
+\parencite[p.~6]{Dreibholz2023TowardsLightweightTaskSchedulingFramework}.
+
+The eligible set and the true serving state of its backends can therefore
 desynchronise in one of two directions. When a change reaches the
 routing plane late or not at all, ready capacity stays outside the set,
 and the fleet serves the demand without it. When a backend is in the
