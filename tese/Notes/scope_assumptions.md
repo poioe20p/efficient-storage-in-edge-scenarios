@@ -36,3 +36,12 @@ caps; state it as a limitation; a stronger option (future work) is separate VMs 
 domain with a tc-netem inter-domain link between them, plus an RTT/jitter/loss
 sensitivity sweep
 (ledger §11.5).
+
+**Host inventory (2026-10-08).** The three campaign hosts (RQ1 `cloud-vm`,
+RQ2 `cloud-vm-rq2`, RQ3 `cloud-vm-rq3`) are KVM virtual machines of the same
+type (4 vCPU on an AMD EPYC-Genoa processor at 2.4 GHz, 8 GB RAM, Ubuntu
+22.04.5 LTS, local SSD), identical apart from the
+RQ1 host's smaller local disk (80 GB against 160 GB, because no instance
+with the same disk size was available when it was provisioned). Registered
+in the thesis at Ch4 §4.1 and Ch5 Table 5.1 (host profile) and Ch5 §5.1
+(disk difference); full detail in `docs/operation/testing/vm_provisioning.md`.

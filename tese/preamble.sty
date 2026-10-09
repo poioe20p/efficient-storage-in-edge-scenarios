@@ -62,6 +62,10 @@
 % package's AMS-class defaults centre single lines and inset the block by
 % \captionindent; both are overridden here.
 \captionsetup[table]{justification=justified,singlelinecheck=false,margin=0pt}
+% ISCTE norms §2.2: figure captions below and centred. The AMS-class default
+% centres only single lines and justifies the inset block; the override below
+% centres every line across the full text width.
+\captionsetup[figure]{justification=centering,singlelinecheck=false,margin=0pt}
 \usepackage{listings}
 \usepackage{booktabs}
 \usepackage[protrusion=true,expansion=false]{microtype}

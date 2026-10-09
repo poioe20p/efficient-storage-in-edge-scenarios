@@ -238,6 +238,12 @@ backend-selection function fixed. (Warm-lease priority and slow-start ramps are
 held constant; only the **readiness admission mechanism** — direct lifecycle notification
 vs periodic discovery — varies.)
 
+**Reported evidence sets (2026-10-08):** the admission timing is characterised
+on separate intact-source campaigns (a per-backend campaign, a higher-rate arm
+at 12.0 req/s/client, a seven-run-per-rule campaign for the relief contrast,
+and a six-run poll-interval sensitivity arm reported descriptively), each run
+under its own fixed workload and quota.
+
 **Use in thesis:** Ch.2 — one subsection per interface (I1/I2/I3), each ending
 with its RQ and gap statement above.
 

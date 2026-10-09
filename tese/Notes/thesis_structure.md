@@ -47,6 +47,37 @@
 > `p{}`; the appendix snapshot filenames made breakable). Remaining overfull
 > boxes are ≤9 pt in Ch1/Ch2/Ch5 prose and the bibliography. Open item: body
 > length (pp. 1–74) against the ISTA 50/60-page norm.
+>
+> **2026-10-08 (later):** host specifications registered — Ch4 §4.1 and
+> Ch5 Table 5.1 state the full host profile (a KVM virtual machine running
+> Ubuntu 22.04.5 LTS, with 4 vCPU on an AMD EPYC-Genoa processor at 2.4 GHz,
+> 8 GB of memory, and local SSD storage), and Ch5 §5.1 records that the
+> campaign hosts are identical
+> apart from disk size (80 GB on the telemetry delivery host against 160 GB
+> on the other two, because no instance with the same disk size was
+> available when that host was provisioned). `vm_provisioning.md` inventory
+> corrected (all three rows, 150 GB → 80/160 GB) and `scope_assumptions.md`
+> host inventory added, both measured on the hosts on 2026-10-08.
+>
+> **2026-10-09:** statistics and metrics clarifications in Ch.5 §5.1.4 —
+> node-minute definition gains the 1×30 = 3×10 = 30 example; the 95~%
+> confidence level gains its replicate-count justification (lower level
+> weakens the guard, higher level widens intervals beyond resolution at
+> six/seven runs); and a closing paragraph states the distinct roles of the
+> exact test (beyond-chance difference) and the effect size (magnitude and
+> direction) for small matched replicate sets.
+> Follow-up (same day): both sentences simplified — six and seven runs
+> per arm are stated as enough to discount run-to-run variation as the
+> source of the observed difference, and the effect-size text states that
+> the closer the value is to −1 or 1, the more the difference is carried
+> by the runs themselves, with a complete separation only preservable or
+> weakenable by additional replicates.
+> **2026-10-09 (later 2):** seed design clarified in Ch.5 §5.1.4 — the
+> one-integer derivation chain (driver RNG initialisation, active-client
+> sets drawn from it, per-client streams at seed plus client index) and
+> the statement that seed values are chosen labels for independent demand
+> realisations, fixed per campaign before collection and never reused
+> within a campaign.
 
 ---
 

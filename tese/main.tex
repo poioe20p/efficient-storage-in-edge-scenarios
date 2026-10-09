@@ -263,12 +263,12 @@ aggregate cost along the chain is claimed.
 \section{Objectives}\label{sec:objectives} %DONE
 The main objective of this thesis is to contribute to more efficient
 resource orchestration for stateful edge services by characterising the
-interfaces of the demand-to-capacity chain under varying demand shifts,
+interfaces of the demand-to-capacity chain under controlled demand regimes,
 and by establishing, for each interface, which property of the crossing
-decides the outcome: how complete and fresh the demand evidence is,
-whether bottleneck-aware scale-up targets the tier the demand presses on,
-and whether the readiness claim is preserved and verified before a new
-backend is admitted.
+decides the outcome and under which conditions: how complete and how fresh
+the demand evidence is, whether the scaling action serves the tier the
+demand presses on, and whether the readiness claim is preserved and
+verified before a new backend is admitted.
 
     The platform keeps controller-side coordination in-process while
 retaining telemetry delivery as an explicit, configurable boundary. Along
@@ -810,14 +810,6 @@ changes. When and how many resources to add or remove therefore
 determines both the quality of service during a demand shift and
 the efficiency with which scarce resources are managed.
 
-% \begin{figure}[H]
-%     \centering
-%     \includegraphics[width=0.55\textwidth]{images/autoscaling_loop.png}
-%     \caption{Closed loop of an autoscaler: monitoring, analysis, planning,
-%     and execution repeated over the managed service.}
-%     \label{fig:autoscaling_loop}
-% \end{figure}
-
     Qu et al. classify the auto-scalers along several characteristics,
 among them the scaling indicator, the resource estimation method, and
 the timing of the action, and Taherizadeh and Stankovski present a
@@ -1083,14 +1075,6 @@ second binds two of the three, so combining the functions at an SDN
 control point has precedent in the literature
 and is leveraged in this dissertation. Neither system, however, reports the
 delay within its coordination.
-
-% \begin{figure}[H]
-%     \centering
-%     \includegraphics[width=0.7\textwidth]{images/orchestration_layers.png}
-%     \caption{Layered orchestration of containerised services over an
-%     SDN-programmed edge infrastructure.}
-%     \label{fig:orchestration_layers}
-% \end{figure}
 
     At the geo-distributed scale, three systems coordinate the same
 functions. OneEdge keeps authoritative state at each edge site,
@@ -1388,6 +1372,14 @@ Figure~\ref{fig:vip_routing_sequence} walks through the resulting sequence.
     selection of a replica-set member.}
     \label{fig:vip_routing_sequence}
 \end{figure}
+
+The selection policy also defines two behaviours that accompany the cost
+function: a warm-lease priority, which gives a newly admitted backend
+bounded priority for new connections during a configured window, and a
+slow-start ramp, in which a newly discovered backend is held back by a
+cost penalty that decays over the same window. Both are configuration
+choices of the routing path, held constant across the compared arms of
+the reported campaigns.
 
 A request's path decomposes into two intervals. The first is the
 \emph{pre-dispatch wait}: the time between the client issuing the request and
@@ -1810,8 +1802,10 @@ in the text are listed per campaign in Appendix~\ref{app:campaign_config}.
 \section{Experimental Infrastructure}\label{sec:impl_infrastructure}
 
 The platform runs on a single cloud VM host that holds both domains as
-Docker containers on emulated networks. Table~\ref{tab:impl_components}
-lists the components as deployed.
+Docker containers on emulated networks. The host is a KVM virtual machine
+running Ubuntu 22.04.5~LTS, with 4~vCPU on an AMD EPYC-Genoa processor at
+2.4~GHz, 8~GB of memory, and local SSD storage.
+Table~\ref{tab:impl_components} lists the components as deployed.
 
 \begin{table}[H]
     \centering
@@ -1977,9 +1971,9 @@ summarised in Algorithm~\ref{alg:readiness_admission}.
     \end{algorithmic}
 \end{algorithm}
 
-Warm-lease priority and slow-start ramps are a separate selection
-dimension of Section~\ref{sec:elastic_allocation} and are held constant
-in the readiness experiments.
+Warm-lease priority and slow-start ramps are separate selection
+behaviours of the routing path (Section~\ref{sec:vip_data_paths}) and
+are held constant in the readiness experiments.
 
 \subsection{Storage}\label{sec:impl_data}
 
@@ -2146,9 +2140,7 @@ the controller and the installation of its rules. The third is the queue
 on the selected replica before the application reads the request. The
 first two are part of the steering path described here, and the third
 accrues on the serving side. The waiting time is read as a difference,
-user-visible latency minus the reported edge service time, and its growth
-under load is reported in Section~\ref{sec:discussion}, not restated
-here.
+user-visible latency minus the reported edge service time.
 
 The controller keeps its state in memory. The routing pools, the
 per-node telemetry, and the lifecycle records of in-flight operations
@@ -2242,8 +2234,10 @@ listed in Appendix~\ref{app:campaign_config}.
         \toprule
         Component & Configuration \\
         \midrule
-        Host & both domains on a single cloud virtual machine; all components
-        run as CPU-capped containers \\
+        Host & both domains on a single KVM-based cloud virtual machine
+        running Ubuntu 22.04.5~LTS, with 4~vCPU on an AMD EPYC-Genoa processor
+        at 2.4~GHz, 8~GB of memory, and local SSD storage; all components run
+        as CPU-capped containers \\
         Inter-domain link (emulated) & fixed symmetric round-trip latency of
         185~ms (tc-netem) \\
         Data plane & one Open vSwitch per domain, programmed over OpenFlow \\
@@ -2264,7 +2258,11 @@ listed in Appendix~\ref{app:campaign_config}.
 \end{table}
 
     The testbed runs the two domains on a single host, which keeps the control
-paths host-local. Telemetry delivery and controller-to-controller topology
+paths host-local. The three campaigns ran on hosts of the same type,
+identical apart from the local disk, which is smaller on the host of the
+telemetry delivery campaign (80~GB against 160~GB) because no instance with
+the same disk size was available when that host was provisioned. Telemetry
+delivery and controller-to-controller topology
 exchange do not traverse the inter-domain link, which carries
 cross-domain data traffic only. The evaluation workloads reference locally owned
 content only, so storage reads remain within the replica set of the domain
@@ -2444,8 +2442,9 @@ question.
     units those actions provision. A node-minute is one provisioned unit
     counted for each minute it exists, so the totals characterise how much
     capacity-time a policy keeps in service beyond the static fleet, not
-    how busy that capacity is; they are normalised per thousand recorded
-    requests. The load spread across the replicas of the
+    how busy that capacity is. One unit kept for thirty minutes and three
+    units kept for ten minutes both total thirty node-minutes. The totals
+    are normalised per thousand recorded requests. The load spread across the replicas of the
     receiving tier, as each replica's share of the served demand and its
     utilisation, reports the mechanism through which the action executed.
     \item \textit{The readiness admission campaign} answers its question in three parts.
@@ -2490,12 +2489,18 @@ over matched demand. A run is assigned a seed that fixes the randomised
 content of its demand: which clients are active in each phase and, for each
 client, the sequence of request kinds it issues, the users and content
 items it targets, the payload values it sends, and the jitter on its
-request timing. Runs that share a seed are therefore exposed to the same
+request timing. One integer produces all of this. The seed initialises
+the driver's random process, the active-client sets are drawn from it,
+and each client's stream continues from the seed offset by the client's
+index. Runs that share a seed are therefore exposed to the same
 demand by construction, given the campaign's phase profile and client set.
 The runs of each campaign are organised into blocks: a block contains one
 run of every treatment the campaign compares, its arms, and
 the runs of a block share one seed, so that the treatments entering a
-contrast are measured under identical demand.
+contrast are measured under identical demand. The seed values are labels
+for independent demand realisations, not derived quantities. Each
+campaign fixes its own range before data collection, and no seed is
+reused within a campaign.
 The order in which a block's treatments are executed is counterbalanced
 across blocks, so that slow drift in the testbed over the campaign cannot
 align with a single treatment.
@@ -2504,7 +2509,9 @@ align with a single treatment.
 that a fully separated contrast remains resolvable under the pre-registered
 test. Under complete separation between two treatment sets of $n$ runs, the
 exact Mann--Whitney $U$ test has a $p$-value floor of $2/\binom{2n}{n}$:
-0.0022 at six per treatment and 0.0006 at seven. The campaigns use these
+0.0022 at six per treatment and 0.0006 at seven. The exact test shows
+that six and seven runs per arm are enough to discount run-to-run
+variation as the source of the observed difference. The campaigns use these
 sizes: six per arm in the scaling action and readiness admission campaigns,
 with the readiness-admission relief contrast drawn from a separate set at seven
 runs per arm, and seven per arm in the telemetry delivery campaign. That campaign
@@ -2532,9 +2539,19 @@ of the first treatment tend to be lower than those of the second, and a
 positive value means they tend to be higher. At $-1$, every run of the
 first treatment lies below every run of the second. At $1$, the order
 reverses. The two extreme cases are called complete separation, and values
-near $0$ mean the two treatments overlap. Where a confidence
+near $0$ mean the two treatments overlap. The closer the value to $-1$ or $1$, the more the difference is carried by the runs themselves, and a complete separation can only be preserved or weakened by additional replicates, never strengthened. Where a confidence
 interval is reported, it is a 95~\% interval, which gives the range of
-plausible values rather than a single number.
+plausible values rather than a single number. This level suits the
+replicate counts of six or seven runs per arm: a lower level would weaken
+the guard against chance results, and a higher level would widen the
+intervals enough that the pre-registered criteria could not be resolved.
+
+In short, the two statistics answer different questions about the same
+comparison. The exact test asks whether the difference between the arms is
+larger than run-to-run variation could plausibly produce, and the effect
+size asks how far apart the runs lie and in which direction. Together they
+let a small set of matched runs support a conclusion, in place of
+comparing averages, which a single atypical run could mislead.
 
 Each campaign uses these tests and intervals on its own measures. The
 telemetry delivery campaign reports each $\delta$ with a 95~\% bootstrap
@@ -3148,7 +3165,8 @@ is lost or early.
 All rules observe the same verified-readiness state
 (Table~\ref{tab:rq3_design}), with the readiness criterion, the
 backend-selection function, the workload, and the resource limits held
-fixed, leaving the admission rule as the only variable.
+fixed within each compared set, leaving the admission rule as the only
+variable.
 
 The rules differ in the evidence they trust. Direct lifecycle
 notification admits on the readiness message the backend sends, without
@@ -3194,7 +3212,8 @@ exceed one second against a matched no-fault run.
         ten-second lead. \\
         Held constant & Readiness criterion (same probe), backend-selection
         function, routing weights, pool state, workload shape, per-backend CPU
-        quota. \\
+        quota (fixed within each compared set, with per-set quota values
+        listed in Appendix~\ref{app:campaign_config}). \\
         Workload & Admission timing with an intact event source; fault
         contrast on a baseline followed by a 600~s compute-bound plateau (rate
         2.0 per client, pure service pressure) under fixed reduced headroom
@@ -3205,9 +3224,13 @@ exceed one second against a matched no-fault run.
         Replication & Three admission configurations and two fault arms in
         six blocks (36 runs, seeds 5201--5206), arm order rotated per block;
         the admission timing is characterised on separate intact-source
-        campaigns; a premature-claim grid runs four rules over three
-        seed-matched blocks (seeds 6301--6303), arm order rotated per block.
-        Samples are never pooled across these sets. \\
+        campaigns, each with its own fixed workload and quota: a per-backend
+        campaign of six runs per mechanism, a higher-rate arm of six runs per
+        mechanism at 12.0 requests per second per client, a seven-run-per-rule
+        campaign for the relief contrast, and a poll-interval sensitivity arm
+        of six runs reported descriptively; a premature-claim grid runs four
+        rules over three seed-matched blocks (seeds 6301--6303), arm order
+        rotated per block. Samples are never pooled across these sets. \\
         Exclusions & One block excluded from the fault contrast (no-fault
         control tail breach); pre-registered health floors on the no-fault
         arm. \\
@@ -3252,7 +3275,12 @@ seconds sooner (scaling decision to usable capacity 2.17~s against
 6.01~s, exact $p = 0.0022$). Once admitted, both rules served the first
 request in about a second. The load then left the existing fleet by the
 same amount under both rules (relief $p = 0.209$), so the rule changes
-when the redistribution begins, not how much it moves.
+when the redistribution begins, not how much it moves. A pre-registered
+poll-interval sensitivity arm (six runs at a 15~s cadence) showed the
+delay scaling with the poll period: the admission interval 15.22~s
+against 9.62~s at the 10~s cadence, and the time from the scaling
+decision to usable capacity 16.97~s against 11.45~s, both rising by
+about the added five seconds (descriptive, Cliff's $\delta = -0.444$).
 No user-visible cost of the seconds-level delay appeared in any
 tested healthy regime, and the interval stayed inside the fleet's spare
 capacity as the margin that the event-loss part of the campaign
@@ -3287,8 +3315,9 @@ deliberately removes.
     (a) Provisioning to first successful response per backend (medians
     1.7 and 11.5~s against 9.2 and 18.3~s; exact $p = 0.0005$ pooled,
     complete separation within classes). (b) Scaling decision to usable
-    capacity per run (rate-12 arm, six runs per mechanism; medians 2.17
-    against 6.01~s; exact $p = 0.0022$, $\delta = -1.000$). Fast- and
+    capacity per run (the higher-rate arm, 12.0 requests per second per
+    client, six runs per mechanism; medians 2.17 against 6.01~s; exact
+    $p = 0.0022$, $\delta = -1.000$). Fast- and
     slow-binding class the backend's socket bind completing quickly or
     taking several seconds on this testbed. Black dots are individual
     backends (a) and runs (b); coloured bars and marks are medians;
@@ -3870,7 +3899,7 @@ medians across that configuration's runs.\par}
         \midrule
         \texttt{READINESS\_PROPAGATION} & Compute-admission mode. \texttt{off} registers a replica immediately, \texttt{direct} admits on the \texttt{app\_ready} event, and \texttt{discovery} probes on the poll cadence. \\
         \texttt{READINESS\_EVENT\_FALLBACK\_S} & Direct mode. The time the gate waits for the event before probing anyway. 20~s in the reported admission runs and 130~s in the fault-robustness event-only configuration, where probing cannot begin before the abandonment bound. \\
-        \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Discovery probe cadence. 10~s in the primary arms and 15~s in the sensitivity cell. \\
+        \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Discovery probe cadence. 10~s in the primary arms and 15~s in the sensitivity arm. \\
         \texttt{READINESS\_WAKE\_VERIFY\_MODE} & \texttt{probe} enables the wake-and-verify rule on the direct base. The event wakes a probe, and admission requires the probe to pass. \\
         \texttt{READINESS\_PROBE\_TIMEOUT\_S}, \texttt{\_RETRY\_S}, \texttt{\_MAX\_S} & Probe timeout (5~s), retry cadence (1~s), and abandonment bound (120~s). \\
         \texttt{EDGE\_READY\_PREMATURE\_S} & Fault instrumentation. The replica claims readiness this many seconds before it can serve, 2, 5, and 10~s in the premature-claim grid. \\

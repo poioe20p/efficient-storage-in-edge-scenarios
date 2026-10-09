@@ -41,6 +41,7 @@ When the user asks about research questions, methodology, related work, or argum
 
 When the user asks to write or revise LaTeX content:
 
+- **Consult the `thesis-writing` skill (`.github/skills/thesis-writing/SKILL.md`) before proposing or revising any text under `tese/`.** It aggregates the ISCTE graphical norms, the house conventions, the terminology ledger, and the claim-evidence discipline that all thesis edits must follow.
 - **Always present a structured outline or draft FIRST** and wait for approval before editing files
 - Show the proposed text in a code block so the user can review
 - Explain your reasoning for structural choices (why this order, why this framing)

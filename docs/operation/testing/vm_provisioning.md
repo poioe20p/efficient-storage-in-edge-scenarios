@@ -8,9 +8,15 @@ one.
 
 | RQ | VM host alias | IP | User | Spec |
 | --- | --- | --- | --- | --- |
-| RQ1 | `cloud-vm` | `204.168.202.35` | `testop` | Ubuntu 22.04.5 LTS, 4 vCPU, 8 GB, 150 GB |
-| RQ2 | `cloud-vm-rq2` | `62.238.107.159` | `testop` | Ubuntu 22.04.5 LTS, 4 vCPU, 8 GB, 150 GB |
-| RQ3 | `cloud-vm-rq3` | `62.238.107.141` | `testop` | Ubuntu 22.04.5 LTS, 4 vCPU, 8 GB, 150 GB |
+| RQ1 | `cloud-vm` | `204.168.202.35` | `testop` | Ubuntu 22.04.5 LTS, 4 vCPU, 8 GB, 80 GB local disk |
+| RQ2 | `cloud-vm-rq2` | `62.238.107.159` | `testop` | Ubuntu 22.04.5 LTS, 4 vCPU, 8 GB, 160 GB local disk |
+| RQ3 | `cloud-vm-rq3` | `62.238.107.141` | `testop` | Ubuntu 22.04.5 LTS, 4 vCPU, 8 GB, 160 GB local disk |
+
+`cloud-vm` has a smaller local disk (80 GB against 160 GB on the other two
+hosts) because no instance with the same disk size was available when it was
+provisioned. Every other resource is identical across the three hosts
+(KVM virtual machines; 4 vCPU on an AMD EPYC-Genoa processor at 2.4 GHz;
+8 GB of memory; Ubuntu 22.04.5 LTS; verified on the hosts, 2026-10-08).
 
 Local SSH config aliases (`~/.ssh/config`) for the RQ2/RQ3 hosts point at the
 `edge-testop` key:

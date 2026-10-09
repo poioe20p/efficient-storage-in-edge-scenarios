@@ -33,8 +33,7 @@ Procedure, in order:
    truth.
 2. **Check the rules.** Scan the Terminology Ledger below; check
    `tese/Notes/thesis_structure.md` for chapter and section conventions when
-   adding or moving content; check
-   `tese/Notes/purpose_evidence_map.md` when the text makes empirical claims.
+   adding or moving content.
 3. **Propose before editing.** Present the exact old → new text and the
    reason, and name the rule that applies (e.g., "Terminology Ledger: storage
    tier"; "ISCTE §2.2: figure caption below"). Wait for explicit approval.
@@ -206,6 +205,8 @@ replica set", "edge servers/services".
   Prefer operational verbs (routed through, admitted, withdrawn, drains).
 - Formatting: `Tier~0`, `Section~\ref`, `Figure~\ref`, `Chapter~\ref` with
   non-breaking `~`; quotes via `\enquote{}`; en-dash as `--`.
+- No ---
+- Simple, clear and minimal wording.
 
 ## Verification protocol for every edit
 
