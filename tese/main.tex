@@ -2777,6 +2777,13 @@ while the other five remained close to the reference (5.0--12.6~s).
         Loss B--C & 10.77 vs 35.04 & 0.209 & $-0.429$ [$-$1.000, 0.429] & 5/7 \\
         \bottomrule
     \end{tabular}
+
+    {\footnotesize\noindent\textit{Note.} Direction counts the blocks
+    consistent with each contrast's predicted order: A $<$ B and D $>$ C
+    (delay edges), A $<$ D and B $<$ C (loss edges). The D $>$ C prediction
+    reflects the flag, before the campaign, that the sampled-push arm could
+    be strictly worst; its low count (2/7) is the deviation reported in the
+    text.\par}
 \end{table}
 
 \begin{figure}[H]
@@ -2839,27 +2846,26 @@ The cost is confined to the overload episode. Outside it the arms were
 indistinguishable, with baseline, recovery and demand-drop p95 at about
 1.05--1.08~s in every arm (bar two single-window recovery blips, one in~C at
 4.2~s and one in~D at 5.8~s), and no run recorded a single timeout inside the
-episode. The only timeouts in the campaign were the client-cap tail timeouts
-during the demand drop (0.07--0.12~\% of offered requests). Cancellation 
-and dropped shares were flat across arms at roughly 5--7~\%, with the small
-completed-without-status class remaining largest in B (2.22~\% against
-0.03--0.42~\% elsewhere). A per-bucket check (30~s buckets) confirmed that
-the episode ordering is not an artefact of aggregating the episode into a
-single percentile. On the evaluated testbed, the observation interface
-therefore shapes the transient response to a demand shift, while leaving
-steady-state quality otherwise untouched.
+episode. Cancellation and dropped shares were flat across arms at roughly 
+5--7~\%, with the small completed-without-status class remaining largest
+in B (2.22~\% against 0.03--0.42~\% elsewhere). A per-bucket check (with 
+each bucket being chunks of 30s, within the episode from start to finish) 
+confirmed that the episode ordering is not an artefact of aggregating
+the episode into a single percentile. On the evaluated testbed, the
+observation interface therefore shapes the transient response to a
+demand shift, while leaving steady-state quality otherwise untouched.
 
-In sum, the results answer the question in the order it was posed. The
-delivery semantics changed what the controller observed about the overload
-and when the response became usable capacity, with the lossy arms taking
-nearly three times as long as the reference. They also changed the quality
-of service users experienced, with an approximately ninefold penalty in the
-episode endpoint p95 where intermediate evidence was lost and a delay cost
-that scales with the absorption margin the exposure window consumes.
-Under this workload, the two failure modes of the observation
-interface were therefore distinguishable and not interchangeable: loss of
-intermediate demand evidence was the robust driver of user-visible cost,
-while delivery delay was costly in proportion to the margin it consumes.
+In sum, the delivery semantics changed what the controller observed about 
+the overload and when the response became usable capacity, with the lossy 
+arms taking nearly three times as long as the reference. They also 
+changed the quality of service users experienced, with an approximately 
+ninefold penalty in the episode endpoint p95 where intermediate evidence 
+was lost and a delay cost that scales with the absorption margin the 
+exposure window consumes. Under this workload, the two failure modes of 
+the observation interface were therefore distinguishable and not 
+interchangeable: loss of intermediate demand evidence was the robust 
+driver of user-visible cost, while delivery delay was costly in proportion
+to the margin it consumes.
 
 \section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
 
@@ -2890,8 +2896,8 @@ acts on its single tier alone.
 
 The pre-registered expectation was that the aligned action would relieve
 the tier that bound the episode and improve the user-visible service
-against inaction on the data-access-bound side, and that the mismatched
-action would harm service relative to inaction.
+against inaction and that the mismatched action would harm service relative
+to inaction.
 
 Table~\ref{tab:rq2_design} summarises the design of the original campaign.
 
