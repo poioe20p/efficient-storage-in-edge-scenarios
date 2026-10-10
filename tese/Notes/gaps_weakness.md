@@ -7,13 +7,14 @@
 > seven local reference dissertations): **Tier 1** — scope-internal honesty
 > items to disclose in the manuscript; **Tier 2** — out-of-scope production
 > concerns to omit or reduce to a one-line future-work mention.
+>
+> 2026-10-09: RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in main.tex §1.3.
 
 ## 1. Verdict
 
 The platform has the essential stack for the three research questions:
 programmable data plane (OpenFlow), service indirection (double-VIP),
-container lifecycle control, compute and storage elasticity, telemetry with
-configurable delivery semantics, readiness gating, resource caps and
+container lifecycle control, compute and storage elasticity, configurable telemetry mode, readiness gating, resource caps and
 cooldowns, and end-to-end instrumentation.
 
 It is **not production-ready** and must never be described as such. Chapter 3
@@ -75,7 +76,7 @@ on the reaction path.
 
 | Paper | Benchmark contribution | Position of this architecture |
 |---|---|---|
-| 5G backhaul monitoring architecture | Per-device telemetry microservices, collector restart, time-series storage | Deeper telemetry semantics/instrumentation experimentally; no claim of carrier scale or collector fault tolerance |
+| 5G backhaul monitoring architecture | Per-device telemetry microservices, collector restart, time-series storage | Deeper telemetry modes/instrumentation experimentally; no claim of carrier scale or collector fault tolerance |
 | SEND | Data labels, freshness/shelf life, cloud archival, metadata-driven placement | Not a missing core unless metadata-driven placement is claimed; the system manages capacity around existing data |
 | VNF scaling + LB (Llorens) | Flow affinity, health handling, scaling bounds, active/standby controllers | Closest comparator; matches or exceeds lifecycle, routing, and telemetry detail; HA is the significant missing production feature |
 | Industrial IIoT orchestration | Kubernetes migration, energy measurements | More detailed control-loop design; no energy claim |

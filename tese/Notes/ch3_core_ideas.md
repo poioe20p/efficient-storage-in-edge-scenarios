@@ -4,6 +4,8 @@
 > `ch:system_architecture` for use while writing Chapter 4 and keeping the
 > design/implementation boundary clean. Source of truth: `tese/main.tex`
 > §3.1–§3.5; per-campaign values: Appendix A. Last update: 2026-10-03.
+>
+> 2026-10-09: RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in main.tex §1.3.
 
 ## In one line
 
@@ -41,8 +43,7 @@ interfaces of the demand-to-capacity chain.
 
 - Producers → aggregator → windowed summaries → two consumers: routing state
   and the decision engine. Delivery to the controller is the configurable
-  interface (default push; latest-state; sampled-push; event-preserving
-  immediate or delayed) — the RQ1 surface.
+  interface (push; delayed push; polling; sampled push) — the RQ1 surface.
 - Per tier, two signals: CPU utilisation + latency, where the latency signal is
   the edge-service component — request processing for compute, data access for
   storage; the window statistic is the mean or the median, configured per

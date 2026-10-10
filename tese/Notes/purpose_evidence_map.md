@@ -2,6 +2,7 @@
 
 > **Status:** 2026-07-31; refreshed 2026-08-01 (corpus reorganisation);
 > 2026-09-26 (RQ1 results written into §5.2, `sec:results_rq1_delivery`).
+> 2026-10-09: RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in main.tex §1.3.
 > Companion to `thesis_overview.md` (framing) and
 > `../literature_review/global_literature_review.md` (evidence ledger).
 > **Quote source:** all verbatim quotes below come from the evidence ledger
@@ -55,7 +56,7 @@ papers, verbatim quotes, where each quote lives, and its **evidence strength**.
 
 > **Given varying demand, the quality of an elastic stateful edge service's
 > recovery — from observed demand to usable capacity — is governed by three
-> control-loop interfaces: telemetry delivery semantics (RQ1), bottleneck-aware
+> control-loop interfaces: telemetry modes (RQ1), bottleneck-aware
 > scaling-action selection (RQ2), and backend readiness admission (RQ3).**
 
 ---
@@ -163,7 +164,7 @@ called-for), each ending with "never isolated or measured."
 
 ## P5 — Three interfaces, each with its own evidence chain
 
-### I1 — Monitoring → decision (RQ1, telemetry delivery semantics)
+### I1 — Monitoring → decision (RQ1, telemetry modes)
 
 | Evidence | Detail | Strength |
 |---|---|---|
@@ -173,10 +174,9 @@ called-for), each ending with "never isolated or measured."
 | **Belgaum et al.** (2020) | 76-paper SDN-LB review; open issues = security, controller placement, AI; **nothing about freshness**. | `SILENCE` — *inattention only, do not cite as importance* |
 
 **The RQ1 gap statement:** AdapPF proves freshness matters for a scheduler; this
-thesis isolates *which* failure — **delay but complete** (delayed
-event-preserving) vs **lost intermediate evidence** (latest-state) — matters for a
+thesis isolates *which* failure — **delay but complete** (delayed push) vs **lost intermediate windows** (polling and sampled push) — matters for a
 *stateful service's* scaling + admission chain, and measures magnitude per mode.
-No reviewed paper distinguishes the two semantics or traces them through scaling
+No reviewed paper distinguishes delayed push from polling or sampled push, or traces them through scaling
 and admission.
 
 **Answered (2026-09-26):** measured in the v3 RQ1 campaign (28 runs, n = 7 per

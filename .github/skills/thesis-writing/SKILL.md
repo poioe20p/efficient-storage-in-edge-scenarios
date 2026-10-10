@@ -116,10 +116,12 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
 | Use | Never / retired | Notes |
 | --- | --- | --- |
 | **scale-up / scale-down** | scale-out (retired from prose) | defined in §2.4: adding a unit of capacity to a tier is scale-up, removing one is scale-down |
-| **scaling action** | capacity action (retired 2026-10-03) | the unit the decision point selects and hands to the infrastructure (compute or storage scale-up); decision-side counterpart: **scaling decision**; attributive: scaling-action selection |
-| **arm** | cell (retired 2026-10-03) | one tested configuration of a campaign: delivery mode (RQ1, Arm~A--D); policy × regime (RQ2, six arms); admission-configuration × fault (RQ3) |
+| **scaling action** | capacity action (retired 2026-10-03) | the unit the decision point selects and hands to the infrastructure (compute or storage scale-up); decision-side counterpart: **scaling decision** (retired attributive "scaling-action selection", 2026-10-10) |
+| **action gate** | selection gate (retired 2026-10-10) | the gate in §4.3 that commits at most one scaling action per window; parallel to **readiness gate** |
+| **arm** | cell (retired 2026-10-03) | one tested configuration of a campaign: telemetry mode (RQ1, arms~A--D, one mode each); policy × regime (RQ2, six arms); admission-configuration × fault (RQ3) |
+| **telemetry mode** (push, delayed push, polling, sampled push) | telemetry delivery semantics; delivery semantics; delivery mode; delivery treatment; event-preserving; delayed event-preserving; latest-state (all retired 2026-10-09) | RQ1's four modes, one per arm; fixed RQ wording in §1.3 ("affect how the controller scales the service when load rises"); the RQ1 episode is "the load rise"; raw source literals (`event_preserving`, `delayed_event_preserving`, `poll`, `sampled_push`) only as config values in Table~\ref{tab:impl_delivery_sources} and the appendix |
 | **run** | lane (retired 2026-10-03) | a single campaign execution; "replicate" = run within a design block |
-| **backend selector** | — | first-use form in §3.3.2; "the selector" thereafter |
+| **load balancing** | backend selection, backend selector, selection policy, unit selection (retired 2026-10-10) | the function that chooses the backend for a new flow; the controller performs it with the cost function of §3.3.2; the readiness/vip sections say a unit "becomes eligible for load balancing" |
 | **routing pool** | selector's eligible pool (retired) | the set a unit enters on admission and leaves on removal |
 | **absorption margin** | absorbing margin (typo form) | the base fleet's spare capacity that absorbs delay while new capacity starts |
 | **operating envelope** | evaluated envelope (retired) | the evaluated operating conditions; resource-side bounds are "resource limits" |
@@ -132,7 +134,8 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
 | **activation of a prepared reserve** | cold replica creation on the reaction path | storage-action wording rule |
 | **Tier~0 / Tier~1 / Tier~2** | unqualified "hot copy" | Tier 1 = capability, held constant where unevaluated |
 | **prepared reserve, peer domain, spillover** | — | fixed vocabulary |
-| **degradation score, adaptive threshold, telemetry window, idle condition** | — | equations and `where:` lists in `sec:scaling_policy` |
+| **summary** (first use: **telemetry summary**) | window, telemetry window, windowed summary, update (retired 2026-10-10 for the delivered object) | one aggregator report covering the last 10~s; the object the modes deliver and the policy evaluates; "window" survives only for lengths of time (exposure, release, onset, in-flight, warm-lease, scale-up/down) |
+| **degradation score, adaptive threshold, idle condition** | — | equations and `where:` lists in `sec:scaling_policy` |
 | **pre-dispatch wait** | — | the first request-path interval; boundary at **dispatch** (where the edge service time starts); read only as a difference (user-visible latency minus edge service time); contents enumerated in §4.4 |
 | **the reviewed state of the art / within the reviewed literature** | universal claims | corpus-bounded qualifiers |
 | British English: organised, characterisation, utilisation, normalised, behaviour | US spellings in prose | comments may lag |

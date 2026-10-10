@@ -9,6 +9,8 @@
 > conclusion — so that Chapter 5 can be written without re-deriving anything.
 > Companions: `rq1_results_section_draft.tex` (staged §5.2 text),
 > `rq1_conclusions.md` (verdict record), `rq1.md` (framing provenance).
+>
+> 2026-10-09: RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in main.tex §1.3.
 
 ---
 
@@ -34,20 +36,19 @@ use the same three-semantics wording — consistent, **no change needed**.
 
 ## 2. Design / research (Chapter 3 + Chapter 4)
 
-- The three semantics named in the RQ are evaluated in a **4-arm design**,
-  with the latest-state class realised in two lossy forms: **C** latest-state
-  polling (30 s) and **D** sampled push (every 3rd completed window).
+- The four telemetry modes named in the RQ are evaluated in a **4-arm design**:
+  **A** push, **B** delayed push, **C** polling (30 s), and **D** sampled push
+  (every 3rd completed window).
   Settled framing: `thesis_overview.md` §6-RQ1 and `rq1.md` §4 (2×2:
-  completeness × delivery staleness). The staged §5.2 opening states this
-  explicitly ("the latest-state class realised in two lossy forms").
+  completeness × delivery staleness). The staged §5.2 opening states this explicitly.
 - **Delivery machinery** (durable, sequence-numbered window log; ordered
   replay; delivery acknowledgement; sequence validation / gap recovery) —
   summarised in `rq1.md` ("Delivery-semantics machinery"); Chapter 4's TODO
   already lists the source implementations (Zmq / Polling / EventPreserving /
   DelayedEventPreserving / **SampledPush**).
-- ✅ **Chapter 3 §3.4 sampled-push clause — APPLIED 2026-09-28:** the
-  delivery-modes sentence now lists the sampled-push realisation alongside
-  latest-state retrieval and ordered replay, closing the design-chapter
+- ✅ **Chapter 3 §3.4 sampled push clause — APPLIED 2026-09-28:** the
+  telemetry-modes sentence now lists the sampled push realisation alongside
+  polling retrieval and ordered replay, closing the design-chapter
   alignment. Same day: the §5.1 RQ1 design table now reads "four telemetry
   delivery treatments … realising the three delivery semantics with the
   latest-state class in two forms" (was "four telemetry delivery
@@ -84,9 +85,9 @@ One row of the per-RQ setup table:
 
 | Field | RQ1 content |
 | --- | --- |
-| Treatment | telemetry delivery semantics — A: event-preserving (fresh + complete); B: delayed event-preserving (+30 s, no burst replay); C: latest-state polling (30 s, ~1/3 of windows); D: sampled push (every 3rd window, ~1/3) |
+| Treatment | telemetry modes — push (A): fresh + complete; delayed push (B): +30 s, no burst replay; polling (C): 30 s, ~1/3 of windows; sampled push (D): every 3rd window, ~1/3 |
 | Held constants | aggregation window (10 s), scaling policy and parameters, routing policy, workload, topology, resource limits (RQ1 holds the other two interfaces fixed) |
-| Workload | co-loaded overload episode: 180 s at rate 1.2, client fraction 1.0, mix service_pressure 0.30 / content_lookup 0.35 / feed_ranking 0.15 / content_update 0.10 / content_aggregate 0.10; the four standard tails (baseline, recovery gap, demand drop, idle tail) unchanged. Do not claim a common phase list across RQs. |
+| Workload | co-loaded load rise: 180 s at rate 1.2, client fraction 1.0, mix service_pressure 0.30 / content_lookup 0.35 / feed_ranking 0.15 / content_update 0.10 / content_aggregate 0.10; the four standard tails (baseline, recovery gap, demand drop, idle tail) unchanged. Do not claim a common phase list across RQs. |
 | Experimental unit | one run, per-run mean of the two domains for latency metrics |
 | Replication | 4 arms × n = 7 = 28 runs; seeds 3001–3007; counterbalanced (one run per arm per seed block) |
 | Exclusions / flags | none excluded; reported flags: `delayed_3` domain asymmetry 5.26× (only run above the 3× line); `sp_6` cancellation outlier (21.2 %); B residual completed-without-status class (2.22 % vs 0.03–0.42 % elsewhere) |
@@ -105,17 +106,20 @@ One row of the per-RQ setup table:
   two-column observation table was restored in `main.tex`.
 - **Figure (one representative figure per RQ):** source
   `docs/operation/testing/experiment/v3/rq1/graphs/thesis/episode_latency_p95.png`
-  → **copied to** `tese/images/rq1_episode_latency_p95.png` (2026-09-26).
-  **Do NOT use `endpoint_latency_p95.png`** (run-wide pooled metric — diluted,
+  → **copied to** `tese/images/rq1_episode_latency_p95.png` (2026-09-26);
+  **regenerated 2026-10-09** as `tese/images/rq1_episode_latency_p95_v2.png`
+  (included in `main.tex` §5.2), with the superseded render moved to
+  `tese/images/unused/rq1_episode_latency_p95.png`. **Do NOT use
+  `endpoint_latency_p95.png`** (run-wide pooled metric — diluted,
   not the pre-registered endpoint).
 - **Tables:** `tab:rq1_observation` (delivery realisation and overload
   observability; added 2026-09-28, trimmed to the two treatment axes
   2026-09-29 — detection delay and missed windows are no longer reported;
   campaign record / appendix graphs retain them), `tab:rq1_arms` (per-arm
   summary), `tab:rq1_edges` (pre-registered contrasts).
-- **2026-10-01:** `tab:rq1_design` gained a pre-registered expectations row (ordering A < B < C ≈ D on usable capacity and the served-basis episode p95; the sampled-push arm expected to be strictly worst; non-surge quality clean in every arm). The four §5.2 result exhibits were re-ordered to sit after the paragraphs that invoke them (ISCTE near-invocation rule), in `main.tex` and in the staged draft. A same-day follow-up added an 'on usable capacity' gloss to the replicated-ordering sentence (both files); the row change 'permitted' → 'expected' is main-only.
+- **2026-10-01:** `tab:rq1_design` gained a pre-registered expectations row (ordering A < B < C ≈ D on usable capacity and the served-basis episode p95; the sampled push arm expected to be strictly worst; non-surge quality clean in every arm). The four §5.2 result exhibits were re-ordered to sit after the paragraphs that invoke them (ISCTE near-invocation rule), in `main.tex` and in the staged draft. A same-day follow-up added an 'on usable capacity' gloss to the replicated-ordering sentence (both files); the row change 'permitted' → 'expected' is main-only.
 - **2026-10-05:** full number re-verification of §5.2 against the `cloud-vm` run artifacts (reaction_timeline / info_age / phase_service_quality / per_node_stats, plus the campaign dataset and stats): all quoted values confirmed; two corrections applied — D-arm episode-p95 lower bound 30.7 → 31.4 (raw minimum 31.43 s, `sp_2`), and the margin-sentence usable-capacity range aligned to the per-run mean-of-domains unit (52.6–63.6 → 55.1–61.5 s; the wider figure was the pooled per-domain range, dominated by the flagged `delayed_3` run). The robustness sentence now also notes the two single-window recovery blips (C 4.2 s, D 5.8 s). No other §5.2 numbers changed.
-- **2026-10-09:** `tab:rq1_edges` gained a table note stating the per-contrast predicted orders of the direction counts (A < B and D > C for the delay edges; A < D and B < C for the loss edges) and noting that the D > C prediction is the flagged pre-campaign possibility that the sampled-push arm would be strictly worst, its low count (2/7) being the reported deviation. Added for reader clarity, since the 2/7 count is otherwise unreadable without the campaign record; mirrored in the staged draft; table values unchanged.
+- **2026-10-09:** `tab:rq1_edges` gained a table note stating the per-contrast predicted orders of the direction counts (A < B and D > C for the delay edges; A < D and B < C for the loss edges) and noting that the D > C prediction is the flagged pre-campaign possibility that the sampled push arm would be strictly worst, its low count (2/7) being the reported deviation. Added for reader clarity, since the 2/7 count is otherwise unreadable without the campaign record; mirrored in the staged draft; table values unchanged.
 - **Numbers:** all re-verified 2026-09-26 against the campaign summary, the
   stats CSV, and the run bundles (provenance comment in the draft header).
 - **Optional appendix material** (not in the page-limited body):
@@ -156,8 +160,8 @@ One row of the per-RQ setup table:
 ## 8. Ready-to-write checklist
 
 - [x] Question fixed in §1.3; three clauses map to the §5.2 structure
-- [x] Design framing settled (4-arm realisation of the three semantics)
-- [x] Chapter 3 §3.4 sampled-push clause — applied 2026-09-28
+- [x] Design framing settled (4-arm realisation of the four telemetry modes)
+- [x] Chapter 3 §3.4 sampled push clause — applied 2026-09-28
 - [x] Expectations pre-registered (H1–H3 + four edges) and verdicts recorded
 - [x] §5.1 evaluation facts for the RQ1 row (§4 of this dossier)
 - [x] §5.2 text staged; numbers verified; figure + tables ready
@@ -165,3 +169,23 @@ One row of the per-RQ setup table:
 - [x] Integration: figure copied, §5.2 inserted into `main.tex` (2026-09-26),
   build verified
 - [ ] §6.3 TODO refresh (stale "n = 3" note) — when Chapter 6 is written
+
+## 9. Design/result split and verified ages — 2026-10-10
+
+- §3.4 now declares the four modes as the two delivery defects
+  (complete/partial x prompt/late) realised by four configurations of one
+  interface, not two transport patterns compared against each other; the read
+  cadence alone places polling in its cell. §5.3 keeps only observations.
+  (Re-applied after a workbench save overwrote the first application.)
+- Verified on the 28-run campaign
+  (`metrics/2026080{8,9}_*_rq1_{ep,delayed,sp,ls}_{1..7}`): delivered share
+  ep/delayed 1.0000, sp 0.3306, ls 0.3302; delivery age
+  (`delivery_ts - window_end`, per-run mean) ep 0.45, delayed 30.00, sp 0.47,
+  ls 5.29 s (per-window min 0.02, max 10.01 s = one summary period).
+- `tab:rq1_observation` second column pinned: information age at decision =
+  `decision_ts - window_end` of the summary behind each decision, from
+  `analysis/rq1_delivery/info_age.csv`, per-run mean over the episode then
+  mean over the seven replicates: 3.5 / 33.3 / 16.2 / 11.7 s (ranges
+  1.2-7.5, 30.6-38.4, 13.8-19.8, 5.3-15.9). The old gloss ("how old the
+  newest delivered summary was when the decision engine read it") described
+  the delivery age instead; corrected in the caption and in §5.1.

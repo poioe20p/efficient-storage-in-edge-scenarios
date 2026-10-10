@@ -2,6 +2,8 @@
 
 > **Status:** Current thesis framing, 2026-08-21.
 >
+> 2026-10-09: RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in main.tex §1.3.
+>
 > This document defines what the thesis studies, the state-of-the-art gap it addresses, its research questions, and the limits of its claims. It is the narrative reference for the thesis manuscript, research-question documents, and experiment plans.
 
 ---
@@ -82,13 +84,13 @@ The review opens with the platform technologies on which the testbed rests, each
 
 ### 3.2 Monitoring and Telemetry
 
-Monitoring research establishes that delivery design matters. The state of the art rests on a common pipeline — per-node collectors, an aggregation layer, and pull-based consumption from a time-series store, as in OSM-based NFV and containerised edge stacks — and the thesis derives from this pipeline the three delivery regimes it varies: prompt and complete, delayed event-preserving, and latest-state. Within this pipeline, Huang and Pierre's AdapPF varies Prometheus scrape intervals in geo-distributed cluster federations and shows that coarse collection can reduce scheduling quality, while adaptive collection can reduce monitoring traffic, with aggregation proposed as a way to make monitoring scale. Yaseen's survey of programmable network-wide monitoring identifies pull-based visibility gaps and calls for monitoring to be integrated with control and automation, a co-location a production 5G SDN controller demonstrates without scaling. Usman et al.'s observability survey for edge and container-based microservices leaves the definition of appropriate measurement intervals as an open problem, naming the dimension RQ1 varies.
+Monitoring research establishes that delivery design matters. The state of the art rests on a common pipeline — per-node collectors, an aggregation layer, and pull-based consumption from a time-series store, as in OSM-based NFV and containerised edge stacks — and the thesis derives from this pipeline the four telemetry modes it varies: push, delayed push, polling, and sampled push. Within this pipeline, Huang and Pierre's AdapPF varies Prometheus scrape intervals in geo-distributed cluster federations and shows that coarse collection can reduce scheduling quality, while adaptive collection can reduce monitoring traffic, with aggregation proposed as a way to make monitoring scale. Yaseen's survey of programmable network-wide monitoring identifies pull-based visibility gaps and calls for monitoring to be integrated with control and automation, a co-location a production 5G SDN controller demonstrates without scaling. Usman et al.'s observability survey for edge and container-based microservices leaves the definition of appropriate measurement intervals as an open problem, naming the dimension RQ1 varies.
 
-These works establish that telemetry freshness, overhead, and orchestration quality are related. In the reviewed corpus, they do not distinguish between delayed but complete telemetry delivery and latest-state delivery that discards intermediate observations. They also do not trace those delivery semantics through a stateful service's scaling and traffic-admission path.
+These works establish that telemetry freshness, overhead, and orchestration quality are related. In the reviewed corpus, they do not distinguish between delayed but complete telemetry delivery and delivery that discards intermediate windows. They also do not trace those telemetry modes through a stateful service's scaling and traffic-admission path.
 
 ### 3.3 Auto-Scaling
 
-Auto-scaling research has extensively studied scaling algorithms, indicators, prediction, and resource allocation. Qu, Calheiros, and Buyya provide a taxonomy of web-application auto-scalers centered on dimensions such as scaling indicators, resource estimation, and scaling timing; it discusses monitoring interval as an operational trade-off, but does not make telemetry freshness or delivery semantics a taxonomy dimension. Toka et al. model and improve Kubernetes edge scaling through machine learning. Zhou and Yong show that changing the monitored metric can improve HPA behavior. Llorens-Carrodeguas et al. integrate SDN traffic steering with horizontal VNF scaling while retaining external monitoring and lifecycle components. Dogani et al. survey auto-scaling for container-based cloud and edge/fog and note that adding resources may not raise throughput when other bottlenecks exist; the awareness is cross-service and compute-only, and no reviewed system selects a storage action.
+Auto-scaling research has extensively studied scaling algorithms, indicators, prediction, and resource allocation. Qu, Calheiros, and Buyya provide a taxonomy of web-application auto-scalers centered on dimensions such as scaling indicators, resource estimation, and scaling timing; it discusses monitoring interval as an operational trade-off, but does not make telemetry freshness or telemetry mode a taxonomy dimension. Toka et al. model and improve Kubernetes edge scaling through machine learning. Zhou and Yong show that changing the monitored metric can improve HPA behavior. Llorens-Carrodeguas et al. integrate SDN traffic steering with horizontal VNF scaling while retaining external monitoring and lifecycle components. Dogani et al. survey auto-scaling for container-based cloud and edge/fog and note that adding resources may not raise throughput when other bottlenecks exist; the awareness is cross-service and compute-only, and no reviewed system selects a storage action.
 
 This literature largely studies **when** to scale and **how many** instances to create. In the reviewed corpus, it does not directly test whether a stateful edge controller should choose a compute-capacity action or a storage-capacity action according to the bottleneck observed in service telemetry.
 
@@ -163,10 +165,9 @@ earlier, pre-reframe RQ1/RQ2/RQ3 campaigns remain supporting/calibration only):
   d = −1.000); gap-window user-harm consequence null (0.000 at every load).
   Storage-replica extension evaluated and closed as null.
   Evidence: `tese/research_questions/rq3/rq3_evaluation_conclusions.md`.
-- **RQ1 — telemetry delivery semantics (complete).** The three delivery
-  semantics, with the latest-state class realised in two lossy arms (polled
-  latest-state and sampled-push), 4 arms × n=7 = 28 runs: lossy
-  delivery (~1/3 completeness) degrades per-episode p95 ~9× (δ = −1.000,
+- **RQ1 — telemetry modes (complete).** The four telemetry modes (push,
+  delayed push, polling, and sampled push), 4 arms × n=7 = 28 runs: lossy
+  delivery by polling and sampled push (~1/3 completeness) degrades per-episode p95 ~9× (δ = −1.000,
   p = 0.0006, perfect separation, 7/7); +30 s delay significant in aggregate
   (p = 0.0012) but seed-dependent (bimodal); non-surge quality clean in every
   arm. Evidence: `tese/research_questions/rq1/rq1_conclusions.md`.
@@ -184,26 +185,25 @@ earlier, pre-reframe RQ1/RQ2/RQ3 campaigns remain supporting/calibration only):
 
 ## 6. Research Questions
 
-### RQ1 - Telemetry Delivery Semantics
+### RQ1 - Telemetry Modes
 
-> **How do verified event-preserving, delayed event-preserving, and latest-state telemetry delivery semantics affect overload observability, scaling response, and transient service quality in a stateful edge service?**
+> **How do the four telemetry modes (push, delayed push, polling, and sampled push) affect how the controller scales the service when load rises?**
 
-The experiment compares the three delivery semantics named in the RQ in a
-4-arm completeness × info-age design, with the latest-state class realised in
-two lossy arms:
+The experiment compares the four telemetry modes named in the RQ in a
+4-arm completeness × info-age design:
 
-- an event-preserving reference that delivers every completed telemetry window exactly once in source order (fresh + complete);
-- delayed event-preserving delivery of the same ordered windows, with a fixed, pre-registered delay and no burst replay (stale + complete);
-- latest-state polling, where the consumer obtains only the most recent completed window and intermediate windows are not delivered (stale + lossy); and
-- **sampled-push** delivery, where every Nth completed window is delivered immediately and the intermediate windows are dropped (fresh + lossy) — a second lossy realisation of the latest-state class, the cell that lets the delay-vs-loss attribution be drawn cleanly.
+- a push reference that delivers every completed telemetry window exactly once in source order (fresh + complete);
+- delayed push delivery of the same ordered windows, with a fixed, pre-registered delay and no burst replay (stale + complete);
+- polling, where the consumer obtains only the most recent completed window and intermediate windows are not delivered (stale + lossy); and
+- **sampled push** delivery, where every Nth completed window is delivered immediately and the intermediate windows are dropped (fresh + lossy) — a second lossy mode, the cell that lets the delay-vs-loss attribution be drawn cleanly.
 
-The aggregation window, scaling policy, routing policy, workload, topology, and resource limits remain fixed. The controller evaluates each delivered window when it arrives, so the effect of the specified delay on the decision timeline is intentional and measurable. The pre-registered primary reaction metric is usable-capacity latency; the first-decision latency is descriptive-only because delivery timing confounds it in the delayed/poll/sampled arms.
+The aggregation window, scaling policy, routing policy, workload, topology, and resource limits remain fixed. The controller evaluates each delivered window when it arrives, so the effect of the specified delay on the decision timeline is intentional and measurable. The pre-registered primary reaction metric is usable-capacity latency; the first-decision latency is descriptive-only because delivery timing confounds it in the delayed push, polling, and sampled push arms.
 
 The purpose is not to claim that monitoring cadence has never been studied. AdapPF already shows that collection interval affects scheduler quality. This RQ isolates a more specific question: whether the controller is harmed mainly by delay, by loss of intermediate demand evidence, or by both.
 
 Primary measurements include:
 
-- completed and missed overload windows;
+- completed and missed load-rise windows;
 - information age and delivery delay;
 - time from demand shift to scaling decision;
 - time from demand shift to usable capacity;
@@ -211,9 +211,9 @@ Primary measurements include:
 - latency distributions and failure rate; and
 - controller and telemetry overhead.
 
-**Platform extension (implemented):** a durable, sequence-numbered telemetry-window log with retention, ordered replay, delivery acknowledgement, and shared event identifiers was created, because the ZMQ PUB/SUB path was not assumed to be event-preserving. **Verified per run** (delivery-completeness logged: event-preserving/delayed 1.0, latest-state/sampled-push ≈ 0.33).
+**Platform extension (implemented):** a durable, sequence-numbered telemetry-window log with retention, ordered replay, delivery acknowledgement, and shared event identifiers was created, because the ZMQ PUB/SUB path was not assumed to deliver every window. **Verified per run** (delivery-completeness logged: push and delayed push 1.0, polling and sampled push ≈ 0.33).
 
-**Result:** lossy delivery (latest-state or sampled-push, ~1/3 completeness) degrades per-episode p95 ~9× (δ = −1.000, p = 0.0006, perfect separation, 7/7); +30 s delay is significant in aggregate (p = 0.0012) but seed-dependent (bimodal); non-surge quality is clean in every arm; usable-capacity ordering A 28.5 < B 59.6 < C 79.6 ≈ D 83.2 s. Full evidence: `tese/research_questions/rq1/rq1_conclusions.md`.
+**Result:** lossy delivery (polling or sampled push, ~1/3 completeness) degrades per-episode p95 ~9× (δ = −1.000, p = 0.0006, perfect separation, 7/7); +30 s delay is significant in aggregate (p = 0.0012) but seed-dependent (bimodal); non-surge quality is clean in every arm; usable-capacity ordering A 28.5 < B 59.6 < C 79.6 ≈ D 83.2 s. Full evidence: `tese/research_questions/rq1/rq1_conclusions.md`.
 
 ### RQ2 - Bottleneck-Aware Scaling Action
 
@@ -351,7 +351,7 @@ It does not claim:
 | Document                                                        | Relationship                                                                                                                                                                             |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tese/literature_review/README.md`                            | Corpus index: RQ → folder mapping and the core citation set.                                                                                                                            |
-| `tese/literature_review/01_telemetry_rq1/README.md`           | Telemetry state of the art and the delivery-semantics gap (RQ1).                                                                                                                         |
+| `tese/literature_review/01_telemetry_rq1/README.md`           | Telemetry state of the art and the telemetry-mode gap (RQ1).                                                                                                                         |
 | `tese/literature_review/02_action_selection_rq2/README.md`    | Auto-scaling and edge-storage state of the art and the bottleneck-to-action gap (RQ2).                                                                                                   |
 | `tese/literature_review/03_readiness_admission_rq3/README.md` | SDN load-balancing and service-discovery state of the art and the readiness-admission gap (RQ3).                                                                                       |
 | `tese/literature_review/04_context_edge/README.md`            | Edge framing and platform context (introduction).                                                                                                                                        |
