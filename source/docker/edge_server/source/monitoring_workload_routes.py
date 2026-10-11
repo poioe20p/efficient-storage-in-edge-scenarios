@@ -14,6 +14,7 @@ from compute import (
     compute_feed_summary,
     compute_service_pressure,
     compute_trend,
+    hash_chain,
     score_content_relevance,
     score_feed_relevance,
     verify_feed_integrity,
@@ -258,6 +259,23 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
             if _SP_CACHE_TTL_S > 0 and am_refreshing:
                 with _sp_refresh_lock:
                     _sp_refreshing.discard(cache_key)
+
+    @app.route("/compute/hash", methods=["GET"])
+    def compute_hash():
+        """Request-bound CPU hashing — the RQ2 v4 computational-demand press.
+
+        Runs ``config.hash_work_factor`` chained SHA-256 rounds over the
+        caller's nonce and returns the digest prefix as a correctness witness.
+        Pure CPU, no database access, no caching.
+        """
+        nonce = request.args.get("nonce", "0")
+        rounds = config.hash_work_factor
+        digest = hash_chain(nonce, rounds)
+        return jsonify({
+            "rounds": rounds,
+            "nonce": nonce,
+            "digest": digest.hex()[:16],
+        }), 200
 
     @app.route("/feed/<user_id>", methods=["GET"])
     def feed_ranking(user_id: str):

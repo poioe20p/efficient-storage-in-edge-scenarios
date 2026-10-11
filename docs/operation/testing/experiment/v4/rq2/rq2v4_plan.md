@@ -91,34 +91,46 @@ aligned compute action relieves both lanes and sticks.
    present; enabled via docker-run env) — deploy to `cloud-vm-rq2`, low-rate
    smoke run. **Gate: smoke clean, telemetry continuous, no startup
    regressions; lockstep asserted per the artifact §11.**
-4. **P1.4 Verification battery** — 13 runs under the `rq2v4_mode_*` deltas
-   merged over the canonical override (canonical phases file edited in place
-   per rung; snapshots captured per run):
-   (i) ladder `none`/`comp`/`stor` @2.25 and `none`/`comp`/`stor` @2.5 (6);
-   (ii) one regime-shift run (compute→storage; tests the former L4 jam);
-   (iii) a data-bound re-anchor pair (`none_db`, `stor_db` at the campaign
-   data config) — the fix changes liveness/scale-down semantics, so the
-   data-bound row must be re-anchored post-fix;
-   (iv) RQ1-mode smoke set — 4 low-rate runs via the
-   `rq2v4_transport_{ep,delayed,poll,sampled}` deltas, asserting each
-   delivery mode's signature (late-but-complete / poll cadence / every
-   SAMPLE_EVERY-th window / contiguous) with no cull rows (artifact §12.1).
+4. **P1.4 Verification battery** — 5 runs (lean core, author-scoped
+   2026-10-11) under the `rq2v4_mode_*` deltas merged over the canonical
+   override (canonical phases file edited in place per shape; snapshots
+   captured per run):
+   (i) compute-bound at the hard rung (rate 2.5): `none`/`comp`/`stor` (3) —
+   `comp` must relieve **and** unlock, `none` must stay bound, `stor` must
+   not relieve (specificity);
+   (ii) data-bound re-anchor pair (`none`, `stor` at the campaign data
+   config) — the fix changes liveness/scale-down semantics, so the
+   data-bound row is re-anchored post-fix.
    Full retention + 1 Hz host sampler
    (`source/scripts/testing/rq2v4_p1_04_host_sampler.py`).
+   Optional add-ons only if a gate needs disambiguation (author-informed):
+   the 2.25 relief rung and the regime-shift run. The RQ1-mode smoke set is
+   **out of RQ2 scope** (RQ1-owned; what/where/how/why recorded in the
+   artifact §12.1).
    **Gates: (a) zero culls of added units [primary]; (b) no removal of any
-   added unit across its episode plus the post-phase margin; (c) `comp`@2.25
-   relieves both lanes — relief per the pre/post window ratio below the
-   pre-registered threshold pinned in P1.1 (ratio ≤ 0.75, artifact §11); (d) `comp`@2.5 unlocks (lock
-   present pre-add, cleared both lanes post-add under the same window
-   convention); (e) no more than 2 consecutive empty windows; (f) added
-   units keep receiving assignments, and window/routing stats show no
-   zero-latency poisoning; (g) RQ1 smoke set: every transport shows its
-   delivery signature and zero cull rows (artifact §12.1).** Artifact
+   added unit across its episode plus the post-phase margin; (c) `comp`@2.5
+   relieves both sides — pre/post window CPU ratio ≤ 0.75 (artifact §11) —
+   and unlocks (lock present pre-add, cleared post-add under the same
+   window convention); (d) no more than 2 consecutive empty windows;
+   (e) added units keep receiving assignments, and window/routing stats
+   show no zero-latency poisoning.** Artifact
    `rq2v4_p1_05_verification.md`.
-   **Decision gate:** if (c)/(d) fail → P1.5.
+   **Outcome (2026-10-11):** battery executed 5/5 valid —
+   `rq2v4_p1_05_verification.md`. Gates (a)/(b)/(e) **pass**, (d) **pass
+   episode-scoped**, (c) **not evaluable as pinned**: the action fires +21 s
+   into the episode and 2.5 no longer locks on the repaired platform (none
+   p95 86 ms) → **press re-anchor moves to P2** (Finding F1). One latency
+   burst recorded with the host-interference hypothesis (Finding F2) —
+   confirm during P2 calibration under strict host quiescence; protocol
+   hardened: no host-side heavy commands during episodes. P4 must also pin
+   `TELEMETRY_SOURCE` and `SCALEUP_POLICY` explicitly.
+   **Decision gate:** (c) not evaluable ≠ failed — no P1.5.
 5. **P1.5 (conditional) Assignment engagement** — time-boxed diagnosis of why
    added nodes miss load rotations (routing metric staleness / per-minute
    rotation); minimal fix; re-run the failing battery rows.
+   **Not triggered** (2026-10-11): every added unit served in the battery;
+   the rotation itself is a selection behaviour, recorded as a measurement
+   note in the verification artifact §4.
 
 **Exit:** battery green, or a documented residual with an explicit decision.
 
@@ -126,23 +138,37 @@ aligned compute action relieves both lanes and sticks.
 
 ## Phase 2 — Hashing request kind (honest compute press)
 
-1. **P2.1 Spec + implement** — artifact `rq2v4_p2_01_hash_kind.md`.
-   Endpoint `/compute/hash`: a configurable number of hash rounds over a
-   request-bound nonce, no database; `HASH_WORK_FACTOR` env knob. Generator
-   mix key `hash_challenge`. Smoke test: per-request cost scales with the
-   work factor, no DB calls.
+1. **P2.1 Spec + implement** ✅ (2026-10-11) — artifact
+   [`rq2v4_p2_01_hash_kind.md`](rq2v4_p2_01_hash_kind.md): endpoint
+   `/compute/hash` (`HASH_WORK_FACTOR` env, default 25000 ≈ **26 ms/request
+   measured**, seeded by `hash_chain` in `compute.py`), generator kind
+   `hash_challenge`, env plumbing (static edges via network scripts, dynamic
+   via `compute_node_manager`); selftest
+   `source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py` green
+   (13 assertions). Expected campaign press: ≤ ~6 rps/lane at the default —
+   P2.3 seats the rate.
 2. **P2.2 Build + deploy** — combined (P1+P2) image, built **after** the P1
-   battery passes; regression smoke on the other kinds (mixed low-rate run).
+   battery passes (it did); regression smoke on the other kinds (mixed
+   low-rate run).
 3. **P2.3 Knee calibration** — seat the ladder from a per-request cost
    estimate (hash rounds × per-round cost, confirmed at one low rate) before
-   spending rungs; pure-hash ladder at the campaign quota (0.15 edge):
-   3–5 rungs → lock onset `R_s` (both lanes). The calibration must show
+   spending rungs; **measured basis (P2.1 selftest): ≈1.04 µs/round ⇒
+   default-25000 ≈ 26 ms/request ⇒ ≈5–6 rps/lane capacity at the 0.15 quota
+   ⇒ campaign rate ≈ 0.26–0.35 per client unit; bracket the ladder around
+   that (3–5 rungs) — and remember F1: start above the dead 2.5 anchor and
+   require the none-arm to lock before declaring `R_s`.** pure-hash ladder at the campaign quota (0.15 edge):
+   3–5 rungs → lock onset `R_s` (both lanes). **Finding F1 (P1.4): the old
+   2.5 anchor no longer locks — start the ladder above it (bracket
+   ~3.0–4.0) and require the none-arm to lock before declaring `R_s`.** The
+   calibration must show
    **hash work dominates the pre-dispatch/connection overhead** in the knee
    (report the cost split; raise the work factor if not). Then verify
    compute-only relieves both lanes at `R_s·(1.1–1.2)` (margin basis: clear
    the observed 2.0→2.25-scale hysteresis while keeping relief feasible
-   under the 6/6 caps). Artifact `rq2v4_p2_02_knee_calibration.md` freezing
-   (work factor, rate, quota, caps).
+   under the 6/6 caps). **Run with strict host quiescence and check the F2
+   burst signature** (verification artifact §4–5). Artifact
+   `rq2v4_p2_02_knee_calibration.md` freezing (work factor, rate, quota,
+   caps).
 4. **P2.4 Workload documentation** — update the demand-model/kind and phase
    tables in the operational docs (e.g.
    `docs/operation/testing/testing_workloads.md`, already stale vs
@@ -259,13 +285,13 @@ unmet ones.
 
 | Phase | Runs |
 | --- | --- |
-| P1 verification battery (9 gates + 4 RQ1-mode smokes) | 13 |
+| P1 verification battery (lean core) | 5 |
 | P2 knee calibration | ~5 |
 | P3 mixed calibration | ~6–8 |
 | P5 campaign | 84 + spares ~14 |
-| **Total** | **≈ 124** |
+| **Total** | **≈ 116** |
 
-Wall clock: ≈ 55–70 VM-hours including switching — run in daily batches.
+Wall clock: ≈ 50–65 VM-hours including switching — run in daily batches.
 
 ---
 

@@ -540,3 +540,21 @@ def verify_feed_integrity(content_items: list[dict], work_factor: int = 200) -> 
         for _ in range(work_factor):
             h = hashlib.sha256(h).digest()
         item["integrity_hash"] = h.hex()[:16]
+
+
+# ---------------------------------------------------------------------------
+# Function 7: Request-bound hashing workload (RQ2 v4 computational-demand press)
+# ---------------------------------------------------------------------------
+
+def hash_chain(nonce: str, rounds: int) -> bytes:
+    """Chained SHA-256 over a request-bound nonce — pure CPU, no I/O.
+
+    ``rounds`` (HASH_WORK_FACTOR) controls CPU time linearly; the result is
+    returned to the caller so the work cannot be optimised away. Deterministic:
+    the same ``(nonce, rounds)`` always yields the same digest.
+    See docs/operation/testing/experiment/v4/rq2/rq2v4_p2_01_hash_kind.md.
+    """
+    digest = hashlib.sha256(nonce.encode("utf-8")).digest()
+    for _ in range(rounds):
+        digest = hashlib.sha256(digest).digest()
+    return digest

@@ -264,6 +264,9 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "-e", f"EDGE_READY_SEMANTIC_LIE_S={os.environ.get('EDGE_READY_SEMANTIC_LIE_S', '0')}",
             "-e", f"EDGE_MONGO_READ_PREFERENCE={os.environ.get('EDGE_MONGO_READ_PREFERENCE', 'secondaryPreferred')}",
             "-e", f"EDGE_MONGO_MAX_POOL_SIZE={os.environ.get('EDGE_MONGO_MAX_POOL_SIZE', '1')}",
+            # RQ2 v4 hashing press: forward the controller-side work factor so
+            # dynamic replicas match the static edges (default = image default).
+            "-e", f"HASH_WORK_FACTOR={os.environ.get('HASH_WORK_FACTOR', '25000')}",
             # Dynamic nodes heartbeat too (liveness only): presence must
             # survive telemetry blackouts under saturation. Supersedes the
             # 2026-08 heartbeat gate plan — see

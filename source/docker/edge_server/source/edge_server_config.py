@@ -59,6 +59,7 @@ class EdgeServerConfig:
     mongo_client_retire_grace_s: float
     feed_candidate_limit: int
     feed_integrity_work_factor: int
+    hash_work_factor: int
     mongo_retry_backoff_ms: int
     mongo_retry_max_attempts: int
     mongo_server_selection_timeout_ms: int
@@ -124,6 +125,9 @@ class EdgeServerConfig:
             ),
             feed_integrity_work_factor=int(
                 os.environ.get("FEED_INTEGRITY_WORK_FACTOR", "200")
+            ),
+            hash_work_factor=int(
+                os.environ.get("HASH_WORK_FACTOR", "25000")
             ),
             mongo_retry_backoff_ms=int(
                 os.environ.get("MONGO_RETRY_BACKOFF_MS", "100")

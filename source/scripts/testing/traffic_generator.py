@@ -150,6 +150,16 @@ def pick_target(client_lan: str, phase: PhaseConfig, snap: Snapshot, request_typ
     if request_type == "service_pressure":
         return {"content_id": "", "user_id": "", "target_region": home}
 
+    if request_type == "hash_challenge":
+        # Request-bound nonce for the CPU hashing press (RQ2 v4); fresh per
+        # request so caching cannot flatten the cost.
+        return {
+            "content_id": "",
+            "user_id": "",
+            "target_region": home,
+            "nonce": "%016x" % random.getrandbits(64),
+        }
+
     if request_type == "content_update":
         content_id = random.choice(snap.content_ids_by_region[home])
         return {"content_id": content_id, "user_id": "", "target_region": home}
@@ -177,6 +187,8 @@ def build_url(vip: str, request_type: str, target: dict) -> str:
         return f"{base}/feed/{target['user_id']}?limit=10"
     if request_type == "service_pressure":
         return f"{base}/service_pressure?window_min=1&limit=10"
+    if request_type == "hash_challenge":
+        return f"{base}/compute/hash?nonce={target['nonce']}"
     if request_type == "content_update":
         return f"{base}/content"
     if request_type == "content_aggregate":

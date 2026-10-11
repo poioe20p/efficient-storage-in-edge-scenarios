@@ -75,13 +75,13 @@
    empty/meta windows; enable heartbeats on dynamic containers.
 2. Config belt (mitigation only): `TELEMETRY_TIMEOUT_S` raise — already in
    place (600 s) on the canonical override.
-3. Fix-verification battery (before the campaign): ladder `none` / `comp` /
-   `stor` at 2.25 and 2.5, one regime-shift run, and a data-bound
-   re-anchor pair (9 gate runs); plus a 4-run RQ1 delivery-mode smoke set
-   (`rq2v4_transport_*` deltas) re-proving mode producibility on the fixed
-   build — 13 runs total. Full retention + 1 Hz host sampler; gates — no
-   culls, no removal of added units, both-lane relief, treatment unlocks.
-   The full gate list is `rq2v4_plan.md` P1.4.
+3. Fix-verification battery (before the campaign, lean core): compute-bound
+   at the hard rung (2.5) × `none`/`comp`/`stor`, plus the data-bound
+   re-anchor pair (`none`, `stor`) — 5 runs. Optional add-ons only if a
+   gate needs disambiguation: the 2.25 rung and the regime-shift run. Full
+   retention + 1 Hz host sampler; gates — no culls, no removal of added
+   units, relief + unlock, no stat poisoning (full list: `rq2v4_plan.md`
+   P1.4).
 
 ### 2.4 RQ1 interaction (audited 2026-10-11)
 
@@ -102,13 +102,13 @@ Full write-up: `rq2v4_p1_01_liveness_fix.md` §12.
 | --- | --- | --- |
 | D1 | Scaling modes = capability ablations (knobs exist) | approved 2026-10-11 |
 | D2 | The both mode = dual selection; wording "compute and storage scaling" | approved 2026-10-11 |
-| D3 | New compute-heavy request kind (hashing on the edge), configurable work factor | proposed 2026-10-11; to implement |
-| D4 | Compute-bound rate ≈ 2.5 per client | proposed; re-verify under the fix |
+| D3 | New compute-heavy request kind (hashing on the edge), configurable work factor | **implemented 2026-10-11** (P2.1: `/compute/hash` + `hash_challenge`; selftest green; ≈26 ms/request at the default) |
+| D4 | Compute-bound rate ≈ 2.5 per client | **superseded 2026-10-11 by F1**: 2.5 no longer locks on the repaired platform (none p95 86 ms); the press is re-anchored by the P2 knee calibration (ladder above 2.5, none-arm must lock) |
 | D5 | Replicates: 7 per cell (standardised with RQ1's seven) + no-action comparators | approved 2026-10-11 |
 | D6 | The mixed "both" regime = single simultaneous episode (both knees co-placed by calibration) | constructible; recipe in §4; calibration before the campaign |
 | D7 | Regime-shift sequence (compute→storage, storage→compute in one run) | candidate v4 extension after the core matrix validates |
 | D8 | Tier-1 held off in all v4 modes (`SS_ENABLED=0`) so no un-evaluated spawn path escapes the ablation; verify v3 RQ2 Tier-1 activity at P1.2 | proposed 2026-10-11 |
-| D9 | RQ1 interaction: archived results stand as the pre-fix platform record; the fix changes teardown semantics only (audit §2.4); the 4-mode smoke set re-proves producibility on the fixed build | recommended 2026-10-11 |
+| D9 | RQ1 interaction: archived results stand as the pre-fix platform record; the fix changes teardown semantics only (audit §2.4); mode producibility holds by construction (additive fields); any RQ1 re-proof is RQ1-owned and parked | recommended 2026-10-11 |
 
 ## 4. Mixed-regime construction (design answer)
 
@@ -126,10 +126,12 @@ rather than a substitute for the mixed row.
 
 1. ~~Draft the minimal fix diff for review~~ ✅ (no VM touch before approval —
    done; approved and implemented 2026-10-11).
-2. Run the fix-verification battery (13 runs: 9 gates + 4 RQ1-mode smokes)
-   on `cloud-vm-rq2`.
-3. Implement the hashing request kind (+ generator support; the demand-model
-   table grows to six kinds).
+2. ~~Run the fix-verification battery~~ ✅ (2026-10-11, 5-run lean core;
+   results in `rq2v4_p1_05_verification.md`: repair verified — zero culls /
+   absent-cleanups / poisoning; press re-anchor to P2 per F1; F2 latency
+   burst to confirm under host quiescence).
+3. ~~Implement the hashing request kind~~ ✅ (2026-10-11, P2.1 implemented +
+   selftest green; build + calibration next).
 4. Calibrate the mixed regime; re-anchor the compute-bound rate.
 5. Freeze the v4 experiment plan (treatments, gates, replication,
    counterbalancing, blocks) and run the campaign.
