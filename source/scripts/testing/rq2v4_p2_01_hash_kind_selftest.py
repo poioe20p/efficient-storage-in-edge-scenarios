@@ -72,7 +72,7 @@ def test_cost_scaling() -> None:
     print(f"  per-round: {ms_per_round:.5f} ms  ({ms_per_round*1000:.2f} us)  "
           f"default({HASH_WORK_FACTOR_DEFAULT}) ~ {est_default_ms:.1f} ms/request")
     # Unit/regression guard: per-round cost must sit in a plausible band
-    # (0.1-5 us/round). This catches label/scaling bugs like the 1000x one.
+    # (0.1-20 us/round). This catches label/scaling bugs like the 1000x one.
     _assert(0.0001 <= ms_per_round <= 0.02,
             "per-round cost inside the plausible band (0.1-20 us)")
     # Seat sanity for P2.3: the default must plausibly dominate the observed

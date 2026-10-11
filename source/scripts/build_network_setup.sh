@@ -129,6 +129,17 @@ trap cleanup_temp_controller_env EXIT
 prepare_osken_env_file
 print_controller_env_provenance "$OSKEN_ENV_FILE"
 
+# RQ2 v4 press constant: forward HASH_WORK_FACTOR from the (merged) controller
+# env file to the static-edge launchers below — network/build_network_1/2.sh
+# read it from the environment and forward it to the static edge containers
+# only when set. Without this lift, a value living only in the env file would
+# reach the controller (dynamic spawns) but not the static edges. Scoped: only
+# this key is exported (not a blanket source of the env file). CR-safe.
+ENV_HASH_WORK_FACTOR="$(sed -n 's/^HASH_WORK_FACTOR=//p' "$OSKEN_ENV_FILE" | tr -d '\r' | tail -n 1)"
+if [[ -n "$ENV_HASH_WORK_FACTOR" && -z "${HASH_WORK_FACTOR:-}" ]]; then
+    export HASH_WORK_FACTOR="$ENV_HASH_WORK_FACTOR"
+fi
+
 # Source WAN-emulation knobs (consumed by network/inject_wan_latency.sh from
 # build_router.sh). All variables default to 0 if the file is absent.
 if [[ -f "${WAN_ENV_FILE}" ]]; then

@@ -39,18 +39,20 @@
   against the ~2.3–2.6 ms non-handler overhead is unfavourable — at 26 ms the
   hash is already ~10× the overhead, well inside the target).
 - Carrier mechanics (one knob at the launcher call; nothing defaults twice):
-  - the launcher resolves one effective value: the caller's exported
-    `HASH_WORK_FACTOR` if set (appended to the merged controller override),
-    otherwise a value already present in the merged env (lifted into the make
-    var — the same mechanism as `POLL_INTERVAL_S`), otherwise unset;
-  - that single value is passed as a make var (→ static edges via the network
-    scripts, which forward it only when set) **and** is present in the merged
-    controller override (→ controller env → dynamic spawns via
+  - **two lift points make the guarantee invocation-independent.** The
+    launcher lifts a caller export (or a merged-env value) into the make var;
+    `build_network_setup.sh` additionally lifts `HASH_WORK_FACTOR` from the
+    (merged) controller env file into the static-edge launchers' environment.
+    So a value placed **only** in the canonical override reaches the static
+    edges via the setup-script lift and the dynamic spawns via the controller
+    reading the same file — under both documented invocation paths (launcher
+    and direct `sudo make`).
+  - when set, one resolved value is forwarded as a make var (→ static edges;
+    the network scripts forward only when set) **and** is present in the
+    merged controller override (→ controller env → dynamic spawns via
     `compute_node_manager`, which also forwards only when set);
   - unset everywhere ⇒ every container falls back to the one image default
-    (`HASH_WORK_FACTOR_DEFAULT`). Because the launcher lifts whatever the
-    merged env carries into the make var, the static and dynamic paths always
-    agree — a mismatch cannot be produced by any single-carrier edit.
+    (`HASH_WORK_FACTOR_DEFAULT`).
 - Surfaced in `EdgeServerConfig` (`hash_work_factor`), following the
   `FEED_INTEGRITY_WORK_FACTOR` precedent.
 - **No per-request override** — cost changes require a re-deploy with a new
