@@ -497,6 +497,7 @@ docker run -dit --name osken --network host --restart=on-failure \
     -e EDGE_CPUS="${EDGE_CPUS:-0.30}" \
     ${TELEMETRY_SOURCE:+-e TELEMETRY_SOURCE="${TELEMETRY_SOURCE}"} \
     -e POLL_INTERVAL_S="${POLL_INTERVAL_S:-10}" \
+    ${HASH_WORK_FACTOR:+-e HASH_WORK_FACTOR="${HASH_WORK_FACTOR}"} \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN1_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n1
@@ -517,6 +518,7 @@ docker run -dit --name osken_2 --network host --restart=on-failure \
     -e EDGE_CPUS="${EDGE_CPUS:-0.30}" \
     ${TELEMETRY_SOURCE:+-e TELEMETRY_SOURCE="${TELEMETRY_SOURCE}"} \
     -e POLL_INTERVAL_S="${POLL_INTERVAL_S:-10}" \
+    ${HASH_WORK_FACTOR:+-e HASH_WORK_FACTOR="${HASH_WORK_FACTOR}"} \
     osken-controller --observe-links --ofp-tcp-listen-port "${OSKEN2_PORT}" \
         --log-config-file /etc/osken/logging.conf \
         sdn_controller.main_n2

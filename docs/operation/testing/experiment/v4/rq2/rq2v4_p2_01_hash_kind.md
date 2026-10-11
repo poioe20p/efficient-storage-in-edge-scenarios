@@ -47,12 +47,15 @@
     edges via the setup-script lift and the dynamic spawns via the controller
     reading the same file — under both documented invocation paths (launcher
     and direct `sudo make`).
-  - when set, one resolved value is forwarded as a make var (→ static edges;
-    the network scripts forward only when set) **and** is present in the
-    merged controller override (→ controller env → dynamic spawns via
-    `compute_node_manager`, which also forwards only when set);
+  - when set, one resolved value reaches every family: forwarded as a make
+    var (→ static edges; the network scripts forward only when set), exported
+    into the static-edge launchers by the setup-script lift, and passed as an
+    explicit `-e` to the controller containers (`-e` overrides the
+    `--env-file`, same pattern as `EDGE_CPUS`) so dynamic spawns read it from
+    the controller environment;
   - unset everywhere ⇒ every container falls back to the one image default
-    (`HASH_WORK_FACTOR_DEFAULT`).
+    (`HASH_WORK_FACTOR_DEFAULT`). All carrier combinations reduce to one
+    value (or none).
 - Surfaced in `EdgeServerConfig` (`hash_work_factor`), following the
   `FEED_INTEGRITY_WORK_FACTOR` precedent.
 - **No per-request override** — cost changes require a re-deploy with a new
