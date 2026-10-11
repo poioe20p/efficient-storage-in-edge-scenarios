@@ -53,7 +53,8 @@ rotate per window").
 1. **ε-band tie-spread in `select_server`** — treat costs within ε as tied
    and spread the epoch burst across the band (round-robin/stateless hash).
    Directly restores concurrency. Knob `BACKEND_SELECTION_SPREAD_EPS`
-   (≈0.03; ≪ hop term 0.28, < peer gap 0.14).
+   (≈0.03, kept well below the local↔peer hop gap
+   `W_HOPS·delta_hops/hops_max` ≈ 0.14–0.28 canonically).
 2. **Warm-lease band inclusion** — in the warm branch, the claimed backend
    joins the ε-band instead of monopolizing it. Keeps warm-up purpose (new
    node is always eligible) while ending the 45 s monopoly (41 % of epochs).
@@ -76,7 +77,7 @@ P2.7 re-seat running.
 | # | File | Change |
 | --- | --- | --- |
 | 1 | `source/sdn_controller/scaling_config.py` | `_BACKEND_SELECTION_SPREAD_EPS` (env `BACKEND_SELECTION_SPREAD_EPS`, default **0.03**; 0 = legacy behaviour) |
-| 2 | `source/sdn_controller/_vip_routing/selection.py` | `select_server`: after the argmin, collect candidates with `cost ≤ min + ε`, spread via a stateless deterministic hash of the client identity (band sorted by (cost, mac)); warm branch: claimed backend **joins** the band instead of monopolising it |
+| 2 | `source/sdn_controller/_vip_routing/selection.py` | `select_server`: after the argmin, collect candidates with `cost ≤ min + ε`, spread via a stateless deterministic hash of the client identity (band sorted by MAC); warm branch: claimed backend **joins** the band instead of monopolising it |
 | 3 | `source/scripts/testing/rq2v4_p2_06_selection_spread_selftest.py` | new: band membership, spread uniformity across clients, legacy behaviour at ε=0, warm inclusion, no peer-band drift |
 | 4 | docs | authoritative selection doc updated (`vip_routing_backend_selection_and_warm_leases.md` §5/§7/§7a/§8); config comment carries the theory (thesis Ch3 text stays the author's, flagged in P7) |
 

@@ -274,8 +274,9 @@ _ADMISSION_LOG_PATH = os.environ.get("ADMISSION_LOG_PATH", "/tmp/admission_log.c
 _VIP_FLOW_ISOLATION = int(os.environ.get("VIP_FLOW_ISOLATION", "0"))
 # Per-connection VIP_SERVER flow matching (RQ3 flow isolation, 2026-08-04).
 # 0 (default) = per-CLIENT flows (one DNAT/SNAT pair per client, keyed by
-#   client_mac); preserves canonical/RQ1/RQ2 byte-identical behavior and the
-#   original D5 per-client design.
+#   client_mac); preserves the canonical/RQ1/RQ2 per-client flow design (D5).
+#   NOTE: selection behaviour itself changed after P2.6 (default-active
+#   spread) — this knob only controls the flow layout.
 # 1 = per-CONNECTION flows keyed on tcp_src (the client's ephemeral port).
 #   Each fresh request connection gets its own flow pair, so the async
 #   request_complete delete for one request can never collide with the next
