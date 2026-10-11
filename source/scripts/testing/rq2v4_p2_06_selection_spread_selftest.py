@@ -33,7 +33,8 @@ SOURCE = REPO / "source"
 sys.path.insert(0, str(SOURCE))
 
 for _var in ("BACKEND_SELECTION_SPREAD_EPS", "BACKEND_SELECTION_POLICY",
-             "VIP_SERVER_PER_CONNECTION_FLOWS"):
+             "VIP_SERVER_PER_CONNECTION_FLOWS",
+             "W_CPU", "W_RAM", "W_REQUESTS", "W_HOPS"):
     os.environ.pop(_var, None)
 
 from sdn_controller._vip_routing import selection  # noqa: E402
@@ -136,6 +137,10 @@ def test_warm_inclusion() -> None:
             f"warm claim joins the band, all receive clients: {counts}")
     _assert(e not in picks, "beyond-eps candidate stays out with a warm claim live")
 
+    first = selection.select_server(ctrl, CLIENTS[3])["mac"]
+    again = selection.select_server(ctrl, CLIENTS[3])["mac"]
+    _assert(first == again, "warm band is deterministic per client")
+
     # Legacy: the warm claim owns the selection exclusively.
     original = selection._BACKEND_SELECTION_SPREAD_EPS
     try:
@@ -156,6 +161,23 @@ def test_peer_guard() -> None:
             "cross-LAN unit beyond eps never enters a local band (peer guard)")
 
 
+def test_single_candidate_and_nan_band() -> None:
+    a, c = "00:00:00:00:00:01", "00:00:00:00:00:03"
+
+    # Single candidate: band size 1 (no spread possible, still serves).
+    ctrl = _controller({a: _stats(0.0)})
+    _seed_hops(ctrl, (a,))
+    picks = {selection.select_server(ctrl, client)["mac"] for client in CLIENTS}
+    _assert(picks == {a}, "single-candidate band returns the only member")
+
+    # All-NaN costs (malformed telemetry): no comparable minimum -> None.
+    nan = float("nan")
+    ctrl = _controller({a: _stats(nan), c: _stats(nan)})
+    _seed_hops(ctrl, (a, c))
+    _assert(selection.select_server(ctrl, CLIENTS[0]) is None,
+            "all-NaN costs return None instead of raising")
+
+
 def main() -> int:
     print("rq2v4 P2.6 selection-spread selftest")
     _assert(selection._BACKEND_SELECTION_SPREAD_EPS == 0.03,
@@ -168,6 +190,8 @@ def main() -> int:
     test_warm_inclusion()
     print("-- peer guard")
     test_peer_guard()
+    print("-- single candidate + NaN band")
+    test_single_candidate_and_nan_band()
     print("PASS: all rq2v4 P2.6 selection-spread assertions hold")
     return 0
 

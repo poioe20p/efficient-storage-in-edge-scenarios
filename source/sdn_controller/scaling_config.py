@@ -296,9 +296,15 @@ _FLOW_ISOLATION_WARMUP_S = float(os.environ.get("FLOW_ISOLATION_WARMUP_S", "120.
 # synchronized 60 s flow hard-timeout funnel every lane's traffic onto ONE
 # serving unit per epoch (one-hot; added replicas rotate the hot seat instead
 # of adding concurrency). 0 = legacy argmin/exact-tie behaviour.
-# Must stay well below the peer/hop gap (0.14) so cross-LAN units never join
-# a local band. See docs/operation/testing/experiment/v4/rq2/
-# rq2v4_p2_03_relief_diagnosis.md.
+# Repair (like the P1 liveness fix), not a mode: active by default, so a
+# re-run of RQ1/RQ3 campaigns on this commit selects differently than their
+# archives — reproductions mean the pre-P2.6 commit.
+# Band membership can include a cross-LAN unit only when that unit is itself
+# within eps of the global minimum; the typical hop gap is
+# W_HOPS * delta_hops / hops_max (about 0.14-0.28 in the canonical topology)
+# — keep eps well below it. Applies in every policy mode when eps > 0;
+# under topology_slowstart the ramp penalty adds to costs, so a unit can
+# join the band late in its ramp.
 _BACKEND_SELECTION_SPREAD_EPS = float(
     os.environ.get("BACKEND_SELECTION_SPREAD_EPS", "0.03"))
 

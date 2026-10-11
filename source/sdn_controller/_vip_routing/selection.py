@@ -229,19 +229,25 @@ def select_server(controller, client_mac: str) -> dict | None:
         # of funnelling onto one (the 60 s one-hot epoch).
         cutoff = best_cost + _BACKEND_SELECTION_SPREAD_EPS
         band = [(c, e) for c, e in scored if c <= cutoff]
+        if not band:
+            # Every scored cost was NaN (malformed telemetry): no comparable
+            # minimum exists — return None instead of spreading or crashing.
+            return None
         if warm_entry is not None and all(e["mac"] != warm_entry["mac"] for _, e in band):
-            band.append((best_cost, warm_entry))
+            band.append((None, warm_entry))
         if len(band) > 1:
             band.sort(key=lambda ce: ce[1]["mac"])
             idx = int(
                 hashlib.md5((client_mac or "").encode("utf-8")).hexdigest(), 16
             ) % len(band)
-            chosen = band[idx][1]
+            chosen_cost, chosen = band[idx]
         else:
-            chosen = band[0][1]
+            chosen_cost, chosen = band[0]
         logger.info(
-            "select_server: selected=%s cost=%.4f (spread band=%d eps=%.3f warm=%s)",
-            chosen["mac"], best_cost, len(band), _BACKEND_SELECTION_SPREAD_EPS,
+            "select_server: selected=%s cost=%s min=%.4f (spread band=%d eps=%.3f warm=%s)",
+            chosen["mac"],
+            f"{chosen_cost:.4f}" if chosen_cost is not None else "warm",
+            best_cost, len(band), _BACKEND_SELECTION_SPREAD_EPS,
             warm_entry is not None,
         )
         return chosen

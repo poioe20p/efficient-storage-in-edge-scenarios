@@ -98,12 +98,19 @@ $$
 ### Selection Order
 
 1. **Warm lease claim.** If a valid warm lease exists for a backend that is
-   still in the pool and has a known IP, that backend is selected immediately
-   (see Section 8).
-2. **WSM scoring.** If no warm lease is claimable, all backends in the pool are
-   scored and the lowest-cost candidate is chosen.
-3. **Round-robin tie-breaking.** When multiple backends share the lowest cost,
-   a global `_rr_server_idx` counter distributes traffic evenly.
+   still in the pool and has a known IP, that backend is claimed (see
+   Section 8). With `BACKEND_SELECTION_SPREAD_EPS > 0` (P2.6, default) the
+   claim does **not** return immediately — the claimed backend joins the
+   near-cost band below and receives a share of selections. With eps = 0 the
+   legacy behaviour holds: the claim owns the selection outright.
+2. **WSM scoring.** All backends in the pool are scored; the lowest cost
+   defines the band cutoff (step 3).
+3. **Near-cost band spread (P2.6).** With eps > 0, every backend whose cost
+   is within eps of the minimum forms a band; each client deterministically
+   picks one band member (stateless md5 hash of the client MAC over the
+   band sorted by MAC). Exact ties are a subset of the band, so the legacy
+   round-robin below does not run in this mode. With eps = 0 the legacy path
+   is byte-identical: exact-tie round-robin via `_rr_server_idx`.
 
 ## 6. Storage Selection
 
@@ -195,6 +202,31 @@ traffic evenly:
 - Storage selection uses per-domain counters `_rr_storage_idx["n1"]` and
   `_rr_storage_idx["n2"]`.
 
+**P2.6 note:** for server selection this applies in legacy mode only
+(`BACKEND_SELECTION_SPREAD_EPS = 0`). With eps > 0 (default), exact ties are
+absorbed into the near-cost band and distributed by the per-client hash —
+which removes the 60 s one-hot funnel (see Section 7a).
+
+### 7a. Near-Cost Band Spread (P2.6)
+
+`BACKEND_SELECTION_SPREAD_EPS` (default **0.03**, env-overridable; 0 =
+legacy) repairs a capacity defect: per-client VIP_SERVER flows expire in
+synchronized 60 s bursts (hard timeout), and within each burst all clients
+computed identical costs and selected the same backend — one serving unit
+per lane per epoch, so added replicas rotated the hot seat instead of adding
+concurrency (diagnosis:
+`docs/operation/testing/experiment/v4/rq2/rq2v4_p2_03_relief_diagnosis.md`).
+
+- Band = backends with cost ≤ pool minimum + eps, plus any live warm claim.
+- Chooser = md5(client MAC) mod |band| over the band sorted by MAC — stable
+  per client while the band is stable; a membership change re-maps clients.
+- The band can include a cross-LAN unit only when that unit itself is within
+  eps of the global minimum; the hop gap between local and peer units is
+  about `W_HOPS · delta_hops / hops_max` (≈ 0.14–0.28 canonically), so keep
+  eps well below it.
+- Repair semantics: active by default in every policy mode; re-running
+  pre-P2.6 campaigns reproduces only from the pre-P2.6 commit.
+
 ## 8. Warm Lease Claim Path
 
 Newly admitted compute backends and newly promoted storage secondaries receive
@@ -210,6 +242,12 @@ policy mode — the creation path is unchanged. However, warm leases are only
 leases expire after their TTL with an info-level log line. This is harmless and
 keeps the code change minimal (no modification to `main_n*.py` or
 `elasticity/`).
+
+**P2.6 band inclusion:** with `BACKEND_SELECTION_SPREAD_EPS > 0` (default),
+a claimed lease appends its backend to the near-cost band instead of
+returning it exclusively — the new backend still receives traffic
+immediately, but as a share of the selections rather than a 45 s monopoly
+(see Section 7a).
 
 ### Lease Data Structure
 

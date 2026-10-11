@@ -78,22 +78,34 @@ P2.7 re-seat running.
 | 1 | `source/sdn_controller/scaling_config.py` | `_BACKEND_SELECTION_SPREAD_EPS` (env `BACKEND_SELECTION_SPREAD_EPS`, default **0.03**; 0 = legacy behaviour) |
 | 2 | `source/sdn_controller/_vip_routing/selection.py` | `select_server`: after the argmin, collect candidates with `cost ≤ min + ε`, spread via a stateless deterministic hash of the client identity (band sorted by (cost, mac)); warm branch: claimed backend **joins** the band instead of monopolising it |
 | 3 | `source/scripts/testing/rq2v4_p2_06_selection_spread_selftest.py` | new: band membership, spread uniformity across clients, legacy behaviour at ε=0, warm inclusion, no peer-band drift |
-| 4 | docs | `docs/operation/telemetry/…`/`testing_overview` load-balancing note + design-side record (thesis Ch3 text stays the author's, flagged in P7) |
+| 4 | docs | authoritative selection doc updated (`vip_routing_backend_selection_and_warm_leases.md` §5/§7/§7a/§8); config comment carries the theory (thesis Ch3 text stays the author's, flagged in P7) |
 
 **Semantics:** the cost function and pool rules are untouched; the change
 only spreads selections among **near-equal-cost** candidates (≤ ε apart) —
 i.e. it removes the arbitrary tie collapse. Warm-up still gives the new
 backend eligibility; it no longer gives it exclusivity.
 
-**Risks:** slight mean-cost rise (bounded by ε); ε must stay below the
-peer/hop gap (0.14) — selftest asserts; reproductions of pre-P2.6 runs
-mean the pre-P2.6 commit (same discipline as the P1 repair).
+**Risks:** slight mean-cost rise (bounded by ε); the band can include a
+cross-LAN unit only when that unit is itself within ε of the global minimum
+— the typical hop gap is `W_HOPS · delta_hops / hops_max` (≈0.14–0.28
+canonically), and ε (0.03) must stay well below it. **Default is active in
+every policy mode (repair, like P1): re-running RQ1/RQ3 campaigns on this
+commit selects differently than their archives — reproductions mean the
+pre-P2.6 commit.** Under `topology_slowstart` the ramp penalty adds to
+costs, so a unit can join the band late in its ramp.
+
+**Review fixes (2026-10-11, all rounds):** NaN-band guard (all-NaN scored
+costs return `None` instead of a `band[0]` IndexError); the selection log now
+reports the chosen member's own cost (plus the band minimum); selftest pins
+the WSM weights it derives gaps from and covers single-candidate, NaN-band
+and warm determinism.
 
 **Verification (P2.7, VM):** re-run the seat block at 0.23 — `comp` must
 relieve (post-add p95 < 1 s in ≥ 80 % of windows both lanes, completion
-≥ 95 %, recovery persists) and `stor` must still not relieve; `none` at
-0.20 unchanged by construction (single static per lane ⇒ band size 1 —
-no re-run needed unless cheap). The full 3-run block is ~1.5 h.
+≥ 95 %, recovery persists) and `stor` must still not relieve. `none` at 0.20
+is expected unchanged — its band is the single static **provided the peer's
+hop gap exceeds ε** (typical, but verified in the analysis, not assumed by
+construction; the pool is `local | peer`).
 
 ## 5. Provenance
 
