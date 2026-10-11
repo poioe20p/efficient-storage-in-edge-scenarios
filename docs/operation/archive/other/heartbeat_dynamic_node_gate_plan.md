@@ -1,6 +1,13 @@
 # Plan — Disable Heartbeats on Dynamic Nodes (`HEARTBEAT_ENABLED` Gate)
 
-**Status:** Implemented
+> **Superseded 2026-10-11 (dynamic-node default):** dynamic compute and
+> storage nodes now spawn with `HEARTBEAT_ENABLED=true` (liveness only) so
+> presence survives telemetry blackouts under saturation — see
+> [rq2v4_p1_01_liveness_fix.md](../../testing/experiment/v4/rq2/rq2v4_p1_01_liveness_fix.md)
+> (patches C1/C2). The gate below remains the design for the periodic
+> heartbeat thread; only the spawn-time default was reversed.
+
+**Status:** Implemented (periodic-thread gate); dynamic-node default **superseded** 2026-10-11
 **Scope:** Telemetry subsystem + dynamic node spawners
 **Approach:** Env-var gate (`HEARTBEAT_ENABLED`) — see §2 for alternatives considered
 

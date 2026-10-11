@@ -698,6 +698,10 @@ class ElasticityManager:
                 self._pop_pending_drain(effective_mac)
             except Exception:
                 pass
+        # Recycled-MAC hygiene: bare-remove paths never unregister through the
+        # VIP helpers, and even a never-ready container emits one bootstrap
+        # heartbeat — drop any cached telemetry for the abandoned MAC.
+        self._topo.drop_backend_caches(effective_mac)
         logger.error(
             "[elasticity] compute: %s abandoned (never ready) — teardown submitted",
             name,
@@ -730,6 +734,8 @@ class ElasticityManager:
             # primary_container=alert.primary_container,
             port=alert.port,
             ip=ip, mac=mac,
+            # Everyday dynamic storage nodes heartbeat too (liveness only).
+            heartbeat_enabled=True,
             rs_seed_host_override=rs_seed_override,
         )
         self._storage_adder.log_timings(result)
@@ -967,6 +973,10 @@ class ElasticityManager:
                     pass
             self._record({"type": "cleanup_reserve", "alert": alert})
             logger.info("[elasticity] cleanup_reserve: done %s", alert.container_name)
+
+        # Recycled-MAC hygiene: the reserve never unregistered through the VIP
+        # helpers, so drop its cached telemetry stats + discovery stamp here.
+        self._topo.drop_backend_caches(alert.mac)
 
     def _handle_scale_down_compute(self, alert: ScaleDownComputeAlert) -> None:
         """Phase A: isolate from VIP, discover veth, send drain signal, return.
@@ -1555,6 +1565,8 @@ class ElasticityManager:
         self._record({"type": "scale_down_selective_phase_b", "alert": alert, "result": result})
 
         self._pop_pending_drain(alert.mac)
+        # Recycled-MAC hygiene (pre-emptive; SS is off in every v4 mode).
+        self._topo.drop_backend_caches(alert.mac)
 
         if pending.ip:
             self._get_allocator(pending.lan).release(pending.ip)

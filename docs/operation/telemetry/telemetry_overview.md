@@ -77,9 +77,23 @@ Implemented 2026-07-31 for RQ1 (the "required extension" from
   monotonic `window_seq` (`window_id = f"{NETWORK_ID}:{window_seq}"`). Every
   window is **always published**, including empty/idle windows
   (`servers={}`, `storage_servers={}`, `domain_summary=None`,
-  `overload=False`). Control mini-summaries (`drain_complete`,
-  `rs_secondary_ready`) keep `window_seq=None` and are never part of the
-  window universe.
+  `overload=False`). Every window also carries `request_evidence: bool` —
+  `False` when the window held no HTTP request samples (empty or
+  non-HTTP-only windows). Controller-side consumers (overload history,
+  absence, scale-down) must not read a no-evidence window as a lull signal
+  (see `../testing/experiment/v4/rq2/rq2v4_p1_01_liveness_fix.md`). Control
+  mini-summaries (`drain_complete`, `rs_secondary_ready`) keep
+  `window_seq=None` and are never part of the window universe.
+- **Heartbeat-only entries** — dynamic edge containers heartbeat (enabled
+  at spawn since 2026-10-11, liveness only); the aggregator flags a
+  heartbeat-synthesised `servers` entry `heartbeat_only=True`. The
+  controller uses such entries for presence and freshness only: they never
+  overwrite measurements — an existing stats entry receives only the
+  freshness stamp and drain state, and a never-served node keeps a flagged
+  zeroed placeholder (pre-patch bootstrap semantics). Removed nodes drop
+  their cached summaries so a recycled MAC never inherits foreign stats.
+  Dynamic storage heartbeats carry real instantaneous measurements and flow
+  normally.
 - **Overload labelling** — each real window carries a producer-side
   `overload: bool` label computed from pre-registered thresholds
   (`OVERLOAD_CPU_PCT`, `OVERLOAD_PEAK_LATENCY_MS`, `OVERLOAD_ERROR_RATE`),
@@ -97,7 +111,8 @@ Implemented 2026-07-31 for RQ1 (the "required extension" from
   `network_id, window_seq, window_id, window_end, delivery_ts, delay_s,
   mode, release_ts`.
 - **Delivery modes** — `TELEMETRY_SOURCE ∈ {zmq, poll, event_preserving,
-  delayed_event_preserving}`. `zmq` remains the default; `event_preserving`
+  delayed_event_preserving, sampled_push}`. `zmq` remains the default;
+  `event_preserving`
   pulls windows in order from the log and acks each one;
   `delayed_event_preserving` holds windows in a FIFO queue and releases them
   at `window_end + DELAY_S`. Control events + topology always arrive via ZMQ

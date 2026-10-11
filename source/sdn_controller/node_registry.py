@@ -129,8 +129,16 @@ class DynamicNodeRegistry:
         whenever a delivered window contains the node. Missing last-seen
         defaults to now, so a freshly re-added node is treated as just-seen
         (birth grace is a second protection layer).
+
+        A node is only aged when the window carried evidence for its tier:
+        HTTP request samples for compute nodes, storage summaries for
+        storage nodes (liveness-only heartbeat entries included — they
+        evidence the storage tier is alive). Windows without tier evidence —
+        telemetry blackouts — must never produce absence.
         """
         now = time.monotonic()
+        request_evidence = summary.request_evidence
+        storage_evidence = bool(summary.storage_servers)
         timed_out: list[str] = []
         for mac in list(self._dynamic_node_macs):
             # Skip freshly spawned nodes still booting
@@ -140,13 +148,32 @@ class DynamicNodeRegistry:
             present = (mac in summary.servers) or (mac in summary.storage_servers)
             if present:
                 self._last_seen_mono[mac] = now
-            elif now - self._last_seen_mono.get(mac, now) > _TELEMETRY_TIMEOUT_S:
+                continue
+            info = self._active.get(mac)
+            if info is not None and info.node_type in ("storage", "selective_storage"):
+                if not storage_evidence:
+                    continue
+            elif not request_evidence:
+                continue
+            if now - self._last_seen_mono.get(mac, now) > _TELEMETRY_TIMEOUT_S:
                 logger.warning(
                     "[registry] mac=%s not seen for %.0fs — triggering removal",
                     mac, now - self._last_seen_mono.get(mac, now),
                 )
                 timed_out.append(mac)
         return timed_out
+
+    def refresh_presence(self, summary: TelemetrySummary) -> None:
+        """Refresh liveness for every tracked dynamic node in a delivered window.
+
+        Called on delivery, outside the housekeeping churn guard, so
+        suppression can no longer freeze presence ages. Heartbeat-only
+        entries count as presence — liveness is their purpose.
+        """
+        now = time.monotonic()
+        for mac in self._dynamic_node_macs:
+            if mac in summary.servers or mac in summary.storage_servers:
+                self._last_seen_mono[mac] = now
 
     # ── Queries ──────────────────────────────────────────────────────────
 

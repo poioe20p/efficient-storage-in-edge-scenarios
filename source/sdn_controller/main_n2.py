@@ -60,6 +60,7 @@ from .scaling_config import (
     _VIP_FLOW_ISOLATION,
     _HOUSEKEEPING_OVERLOAD_GATE,
     _HOUSEKEEPING_OVERLOAD_LOOKBACK,
+    _HOUSEKEEPING_STALE_S,
 )
 from .node_registry import DynamicNodeRegistry
 from .control_events import ControlEventDispatcher
@@ -186,6 +187,7 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._cross_region_reserve_prepared: bool = False
         self._cross_region_reserve_prepare_attempts: int = 0
         self._last_summary: TelemetrySummary | None = None
+        self._last_summary_mono: float = 0.0
 
         # Thread 2 — telemetry source (RQ1 delivery-mode selection)
         _telemetry_source_mode = os.environ.get("TELEMETRY_SOURCE", "zmq")
@@ -551,7 +553,10 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         # control mini-summaries (window_seq None) never do.
         if summary.window_seq is not None:
             self._last_summary = summary
-            self._recent_overload.append(summary.overload)
+            self._last_summary_mono = time.monotonic()
+            if summary.request_evidence:
+                self._recent_overload.append(summary.overload)
+            self._node_registry.refresh_presence(summary)
 
         # 1. Sync node tracking (Thread 3 → Thread 2)
         self._node_registry.sync(self._elasticity)
@@ -913,6 +918,12 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             s = self._last_summary
             if s is None or s.window_seq is None:
                 return
+            if time.monotonic() - self._last_summary_mono > _HOUSEKEEPING_STALE_S:
+                logger.debug(
+                    "[housekeeping] no fresh window for %.0fs — skipping",
+                    time.monotonic() - self._last_summary_mono,
+                )
+                return
 
             # ── research_q3 recall pass (pre-churn-guard; pure gate state) ─────
             # Both tiers share ONE overload feed per window: each gate keeps
@@ -922,7 +933,8 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             # check guards both.
             if (self._release_gate.active
                     and s.window_seq != self._last_recall_feed_seq
-                    and self._release_gate.mode == "stabilized"):
+                    and self._release_gate.mode == "stabilized"
+                    and s.request_evidence):
                 self._last_recall_feed_seq = s.window_seq
                 overloaded = bool(s.overload)
                 compute_recall_signal = self._release_gate.feed_window(overloaded)
@@ -1046,7 +1058,9 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
                 return
             self._last_scale_eval_seq = s.window_seq
             ds = s.domain_summary
-            if ds is None:
+            if ds is None or not s.request_evidence:
+                # Zeroed domain summaries (no HTTP samples in this window)
+                # must not read as underutilisation.
                 return
 
             if self._elasticity.is_busy():

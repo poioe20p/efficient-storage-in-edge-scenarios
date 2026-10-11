@@ -144,6 +144,10 @@ class VipRoutingMixin:
         """Remove a storage backend from the VIP pool."""
         return state.unregister_storage_backend(self, mac, domain)
 
+    def drop_backend_caches(self, mac: str) -> None:
+        """Drop cached telemetry stats + discovery for a removed node that never unregistered (reserve/selective)."""
+        return state.drop_backend_caches(self, mac)
+
     def mark_server_backend_warm(self, mac: str) -> None:
         """Create a warm lease for a server backend (bypasses cold-start penalty)."""
         return state.mark_server_backend_warm(self, mac)

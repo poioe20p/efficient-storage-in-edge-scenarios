@@ -155,20 +155,24 @@ def _compute_overload(summary: dict) -> bool:
     )
 
 
-def _publish_window(summary: dict) -> None:
+def _publish_window(summary: dict, *, request_evidence: bool = True) -> None:
     global _window_seq
     _window_seq += 1
     summary["window_seq"] = _window_seq
     summary["window_id"] = f"{NETWORK_ID}:{_window_seq}"
+    # False = the window carried no HTTP request samples (empty window or
+    # non-HTTP-only window). Consumers must not read it as a lull signal.
+    summary["request_evidence"] = request_evidence
     summary["overload"] = _compute_overload(summary)
     ds = summary.get("domain_summary") or {}
     logger.info(
-        "Publishing window seq=%d network_id=%s total_requests=%d avg_cpu=%.1f%% peak_total_ms=%.1f overload=%s",
+        "Publishing window seq=%d network_id=%s total_requests=%d avg_cpu=%.1f%% peak_total_ms=%.1f evidence=%s overload=%s",
         _window_seq,
         summary.get("network_id"),
         ds.get("total_requests", 0),
         ds.get("average_cpu_percent", 0.0),
         ds.get("peak_time_total_ms", 0.0),
+        request_evidence,
         summary["overload"],
     )
     logger.debug("Full summary: %s", summary)
@@ -358,7 +362,7 @@ def _publish_loop() -> None:
                 "storage_servers": {},
                 "domain_summary":  None,
                 "control_events":  [],
-            })
+            }, request_evidence=False)
             continue
 
         # ── Per-server HTTP stats ─────────────────────────────────────────────
@@ -493,7 +497,11 @@ def _publish_loop() -> None:
                     }
             else:                                     # edge server heartbeat
                 if sid not in servers:
+                    # Liveness-only entry (zeroed latency fields). Flagged so
+                    # the routing stats never absorb it as a zero-latency
+                    # sample — presence consumers may still see it.
                     servers[sid] = {
+                        "heartbeat_only":    True,
                         "avg_time_total_ms": 0.0,
                         "avg_time_db_ms":    0.0,
                         "avg_time_proc_ms":  0.0,
@@ -639,7 +647,7 @@ def _publish_loop() -> None:
                 "request_lease_outcomes_per_lan": request_lease_outcomes_per_lan,
             },
         }
-        _publish_window(summary)
+        _publish_window(summary, request_evidence=bool(http_events))
 
 
 threading.Thread(target=_receive_loop, daemon=True).start()

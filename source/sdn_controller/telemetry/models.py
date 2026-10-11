@@ -51,6 +51,11 @@ class ServerSummary(BaseModel):
     # {owner_lan: {collection: {op_type: count}}} over the window.
     op_counters: dict[str, dict[str, dict[str, int]]] = {} # 
     state: Literal["active", "draining"] = "active"
+    # True for liveness-only heartbeat entries (zeroed latency fields).
+    # Routing consumers refresh only the freshness stamp / drain state from
+    # these; they never overwrite measurements. Producer: aggregator
+    # heartbeat merge.
+    heartbeat_only: bool = False
 
 
 class StorageServerSummary(BaseModel):
@@ -113,6 +118,11 @@ class TelemetrySummary(BaseModel):
     window_seq: int | None = None
     window_id: str | None = None      # f"{network_id}:{window_seq}"
     overload: bool = False            # producer-side label (D3)
+    # False when the window carried no HTTP request samples (empty or
+    # non-HTTP-only window). Controller-side consumers must not treat such
+    # windows as lull evidence. Producer:
+    # source/docker/local_state_server/aggregator.py.
+    request_evidence: bool = True
     servers: dict[str, ServerSummary]
     storage_servers: dict[str, StorageServerSummary] = {}
     domain_summary: DomainSummary | None = None  # absent in mini-summaries (drain_complete)

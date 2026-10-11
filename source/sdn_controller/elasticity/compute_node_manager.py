@@ -264,10 +264,12 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "-e", f"EDGE_READY_SEMANTIC_LIE_S={os.environ.get('EDGE_READY_SEMANTIC_LIE_S', '0')}",
             "-e", f"EDGE_MONGO_READ_PREFERENCE={os.environ.get('EDGE_MONGO_READ_PREFERENCE', 'secondaryPreferred')}",
             "-e", f"EDGE_MONGO_MAX_POOL_SIZE={os.environ.get('EDGE_MONGO_MAX_POOL_SIZE', '1')}",
-            # Dynamic nodes inherit HEARTBEAT_ENABLED=false (the image default).
-            # Lifecycle is handled by scale-down (graceful) + telemetry-window
-            # absence timeout (failure). See
-            # docs/operation/other/heartbeat_dynamic_node_gate_plan.md.
+            # Dynamic nodes heartbeat too (liveness only): presence must
+            # survive telemetry blackouts under saturation. Supersedes the
+            # 2026-08 heartbeat gate plan — see
+            # docs/operation/archive/other/heartbeat_dynamic_node_gate_plan.md
+            # and docs/operation/testing/experiment/v4/rq2/rq2v4_p1_01_liveness_fix.md.
+            "-e", "HEARTBEAT_ENABLED=true",
             "edge_server",
         ]
         return self._run_cmd(cmd)

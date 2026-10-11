@@ -28,6 +28,7 @@ __all__ = [
     "register_new_server_backend",
     "unregister_server_backend",
     "unregister_storage_backend",
+    "drop_backend_caches",
     "delete_vip_server_client_flows",
     "update_server_stats",
     "update_storage_stats",
@@ -174,6 +175,10 @@ def unregister_server_backend(controller, mac: str) -> None:
     controller.remove_server_mac(mac)
     clear_server_backend_warm(controller, mac)
     controller._backend_discovery_ts.pop(mac, None)
+    # Drop the cached telemetry summary: the MAC is allocator-recycled and a
+    # recycled container must never inherit the previous one's stats (a
+    # heartbeat would otherwise refresh foreign measurements as "fresh").
+    controller._server_stats.pop(mac, None)
     # RQ3 flow isolation: drop any client binding that pointed at this backend
     # (its MAC/IP identity is allocator-recycled). Only relevant when the
     # binding map is active (VIP_FLOW_ISOLATION=1).
@@ -235,6 +240,9 @@ def unregister_storage_backend(controller, mac: str, domain: str) -> None:
     controller.remove_storage_mac(mac, domain)
     clear_storage_backend_warm(controller, mac, domain)
     controller._backend_discovery_ts.pop(mac, None)
+    # Same recycled-MAC hygiene as the compute side: a removed storage node's
+    # cached stats must not survive its removal.
+    controller._storage_stats.pop(mac, None)
 
     # Drop per-connection bindings pointing at the removed backend (Approach B):
     # a connection to a removed backend must NOT be re-installed to it.  The
@@ -263,6 +271,18 @@ def unregister_storage_backend(controller, mac: str, domain: str) -> None:
             )
 
 
+def drop_backend_caches(controller, mac: str) -> None:
+    """Drop the cached telemetry summary + discovery stamp for a removed node.
+
+    For removal paths that never unregistered through the VIP helpers
+    (standby-reserve loss, selective-storage cleanup): the MAC is
+    allocator-recycled, so the previous container's stats must not survive.
+    """
+    controller._server_stats.pop(mac, None)
+    controller._storage_stats.pop(mac, None)
+    controller._backend_discovery_ts.pop(mac, None)
+
+
 # --- Telemetry cache updates (Thread 2 facing) ---
 
 def update_server_stats(controller, servers: dict) -> None:
@@ -274,9 +294,25 @@ def update_server_stats(controller, servers: dict) -> None:
     function.
     """
     for mac, summary in servers.items():
-        controller._server_stats[mac] = summary
         if mac not in controller._backend_discovery_ts:
+            # Stamp discovery for every node the controller hears from —
+            # including liveness-only heartbeats — so the slow-start ramp
+            # clock starts at spawn, not at first assignment.
             controller._backend_discovery_ts[mac] = time.monotonic()
+        if summary.heartbeat_only:
+            # Liveness-only sample: zeroed latency fields must never
+            # overwrite real routing stats. Refresh the freshness stamp and
+            # drain state on an existing entry; a node with no entry yet
+            # keeps a flagged placeholder (as the pre-patch bootstrap
+            # heartbeat did) so it stays a graceful scale-down candidate.
+            entry = controller._server_stats.get(mac)
+            if entry is None:
+                controller._server_stats[mac] = summary
+            elif summary.last_report_ts > entry.last_report_ts:
+                entry.last_report_ts = summary.last_report_ts
+                entry.state = summary.state
+            continue
+        controller._server_stats[mac] = summary
         logger.debug(
             "server stats updated: mac=%s cpu=%.1f%% ram=%.1fMB req=%d",
             mac, summary.avg_cpu_percent,

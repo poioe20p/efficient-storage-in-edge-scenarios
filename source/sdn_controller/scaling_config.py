@@ -160,6 +160,20 @@ _HOUSEKEEPING_OVERLOAD_GATE = os.environ.get(
 _HOUSEKEEPING_OVERLOAD_LOOKBACK = int(os.environ.get(
     "HOUSEKEEPING_OVERLOAD_LOOKBACK", "5"))
 
+# Housekeeping freshness bound: judgments need a window delivered recently
+# (empty windows still refresh delivery). With no delivery for this long the
+# controller cannot distinguish a dead node from a dead telemetry path, so
+# it must not act. At least twice the longest delivery period past the last
+# delivery — sampled push delivers every 3 x WINDOW_S — plus one tick of
+# slack. Defaults (CONTROL_TICK_S=10, WINDOW_S=10): 70 s. WINDOW_S is the
+# aggregator's window knob (absent from the controller env by default): when
+# a deployment changes it, set WINDOW_S here too or set
+# HOUSEKEEPING_STALE_S explicitly.
+_HOUSEKEEPING_STALE_S = float(os.environ.get(
+    "HOUSEKEEPING_STALE_S",
+    str(max(6.0 * _CONTROL_TICK_S,
+            6.0 * float(os.environ.get("WINDOW_S", "10"))) + _CONTROL_TICK_S)))
+
 # ── RQ2 bottleneck policy gate ─────────────────────────────────────────
 # SCALEUP_POLICY selects the scale-up selection policy:
 #   "dual"                 → pre-RQ2 behavior (both tiers may fire + submit
