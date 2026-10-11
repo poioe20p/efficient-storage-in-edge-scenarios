@@ -82,8 +82,14 @@ PYEOF
 # (POLL_INTERVAL_S) / the arm silently loses its transport knob.
 MERGED_POLL="$(sed -n 's/^POLL_INTERVAL_S=//p' "$MERGED_ENV" | tail -n 1)"
 MERGED_TELEMETRY="$(sed -n 's/^TELEMETRY_SOURCE=//p' "$MERGED_ENV" | tail -n 1)"
+MERGED_HASH="$(sed -n 's/^HASH_WORK_FACTOR=//p' "$MERGED_ENV" | tail -n 1)"
 if [ -n "$MERGED_POLL" ] && [ -z "${POLL_INTERVAL_S:-}" ]; then POLL_INTERVAL_S="$MERGED_POLL"; fi
 if [ -n "$MERGED_TELEMETRY" ] && [ -z "${TELEMETRY_SOURCE:-}" ]; then TELEMETRY_SOURCE="$MERGED_TELEMETRY"; fi
+# Lift the press constant too: whatever the merged env carries (caller export
+# or canonical) becomes the single make-var value, so static and dynamic
+# edges can never disagree.
+if [ -n "$MERGED_HASH" ] && [ -z "${HASH_WORK_FACTOR:-}" ]; then HASH_WORK_FACTOR="$MERGED_HASH"; fi
+if [ -n "$HASH_ENV" ]; then rm -f "$HASH_ENV"; fi
 
 ulimit -n 65535
 exec sudo -n make -C source/scripts setup_network create_clients setup_test_data run_experiment \

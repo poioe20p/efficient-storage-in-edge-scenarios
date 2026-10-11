@@ -5,7 +5,7 @@ Produces <run_dir>/analysis/endpoint_breakdown.png with two panels:
   - failure count by endpoint per phase (stacked bars)
 
 Endpoints: content_lookup (data-plane heavy), feed_ranking (compute-plane heavy),
-service_pressure (mixed).
+service_pressure (mixed), hash_challenge (CPU-bound press, RQ2 v4).
 
 Usage:
     python -m source.scripts.testing.analysis.cli_endpoint_breakdown --run-dir <dir>

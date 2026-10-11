@@ -39,29 +39,35 @@
   against the ~2.3–2.6 ms non-handler overhead is unfavourable — at 26 ms the
   hash is already ~10× the overhead, well inside the target).
 - Carrier mechanics (one knob at the launcher call; nothing defaults twice):
-  - the launcher, when the caller exports `HASH_WORK_FACTOR`, passes it as a
-    make var (→ static edges via the network scripts, which forward it only
-    when set) **and** appends it to the merged controller override (→
-    controller env → dynamic spawns via `compute_node_manager`, which also
-    forwards only when set);
-  - unset everywhere ⇒ every container falls back to the image default.
-  Mismatch between static and dynamic edges is structurally impossible
-  (both read the one launcher value, or both read the image default).
+  - the launcher resolves one effective value: the caller's exported
+    `HASH_WORK_FACTOR` if set (appended to the merged controller override),
+    otherwise a value already present in the merged env (lifted into the make
+    var — the same mechanism as `POLL_INTERVAL_S`), otherwise unset;
+  - that single value is passed as a make var (→ static edges via the network
+    scripts, which forward it only when set) **and** is present in the merged
+    controller override (→ controller env → dynamic spawns via
+    `compute_node_manager`, which also forwards only when set);
+  - unset everywhere ⇒ every container falls back to the one image default
+    (`HASH_WORK_FACTOR_DEFAULT`). Because the launcher lifts whatever the
+    merged env carries into the make var, the static and dynamic paths always
+    agree — a mismatch cannot be produced by any single-carrier edit.
 - Surfaced in `EdgeServerConfig` (`hash_work_factor`), following the
   `FEED_INTEGRITY_WORK_FACTOR` precedent.
-- Plumbing (one value, three carriers — a campaign constant, frozen at P2.3):
-  - static edge containers: `build_network_1.sh` / `build_network_2.sh`
-    forward `-e HASH_WORK_FACTOR=${HASH_WORK_FACTOR:-25000}`;
-  - dynamic edge containers: `compute_node_manager._docker_run_server`
-    forwards the controller-environment value (default 25000);
-  - the campaign launcher passes the frozen value as a make var and the
-    controller override carries the same value (P2.3/P4 freeze).
 - **No per-request override** — cost changes require a re-deploy with a new
   value; the calibration ladder varies **rate**, not cost.
+- **Freeze procedure (P2.3/P4), exact:** to change the value, either
+  (a) export `HASH_WORK_FACTOR` in the shell before calling the launcher, or
+  (b) place it in the canonical override and let the launcher lift it; both
+  are equivalent (see below). To keep the image default, set nothing anywhere.
+  Never hand-edit one carrier only — the launcher lift makes both carriers
+  agree, and that is the enforcement point.
 
 ### 1.3 Generator kind — `hash_challenge`
 
 - Mix key usable in `phases.json`: `"mix": {"hash_challenge": 1.0}`.
+  **Mix weights must sum to 1.0** (the selector does not normalise — see
+  `traffic_generator.md` Phase Schema); P2.3/P3 mix authoring uses normalised
+  weights.
 - `pick_target`: returns `{"content_id": "", "user_id": "", "target_region": <home>,
   "nonce": <16 hex chars>}` — fresh random nonce per request.
 - `build_url`: `http://<vip>/compute/hash?nonce=<nonce>` (GET).

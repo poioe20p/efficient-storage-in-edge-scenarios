@@ -96,7 +96,7 @@ Each phase object supports:
 | `rate_per_client` | float | Requests per second for each active client namespace |
 | `cross_region_ratio` | float | Fraction of `content_lookup` requests that target the foreign LAN |
 | `hotspot_direction` | string | Optional source-LAN pin for cross-region `content_lookup`; blank or omitted means both LANs may emit the cross-region share |
-| `mix` | dict | Weighted request distribution across the supported request kinds |
+| `mix` | dict | Weighted request distribution across the supported request kinds. **Weights must sum to 1.0** — the selector consumes the cumulative sum against a draw from [0,1) and does not normalise; a mix summing to more than 1 makes the first key win almost always. |
 | `client_fraction` | float | Fraction of all clients that are active during the phase |
 
 Important behavior:

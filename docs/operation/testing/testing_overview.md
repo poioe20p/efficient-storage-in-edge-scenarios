@@ -271,7 +271,7 @@ diagnostic or smoke profiles live under `testing/phases_override/`.
 ## Client-Facing Workload Requests
 
 The active read-path narrative is deliberately simple. Test clients primarily
-exercise three request types through `VIP_SERVER` to the edge-server service.
+exercise the request types below through `VIP_SERVER` to the edge-server service.
 
 | Request type | Endpoint | Purpose | Main pressure created |
 | --- | --- | --- | --- |
@@ -294,7 +294,7 @@ types in storage-heavy windows:
 - `content_aggregate` for aggregation-heavy storage work
 
 These two POST routes are real runtime paths, but they are auxiliary to the
-three-route read-path story above.
+read-path story above.
 
 ---
 

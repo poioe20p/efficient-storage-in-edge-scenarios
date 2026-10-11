@@ -97,6 +97,14 @@ Also used by `feed_ranking`.
 - runs deterministic iterative hashing over the returned content list
 - converts feed ranking into CPU-visible work without changing the DB path
 
+### `hash_chain()`
+
+Used by `/compute/hash` (RQ2 v4 computational-demand press).
+
+- request-bound chained SHA-256 (`rounds + 1` calls) — pure CPU, no DB
+- cost set by `HASH_WORK_FACTOR`; measured ~1.0–1.5 µs/round on the host
+  (~26–35 ms/request at the 25000 default)
+
 ---
 
 ## Runtime Knobs

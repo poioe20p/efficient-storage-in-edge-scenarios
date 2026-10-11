@@ -1,5 +1,12 @@
 # Testing Workloads
 
+> **Maintenance note (2026-10-11):** this document is scheduled for a full
+> update in the RQ2 v4 P2.4 step. Until then its kind/demand tables do **not**
+> include `hash_challenge` (the CPU-bound press added in P2.1; see
+> `experiment/v4/rq2/rq2v4_p2_01_hash_kind.md`) and may lag
+> `source/scripts/testing/phases.json` in other details. Treat the v4 records
+> as authoritative for the compute-bound regime.
+
 The testing workload exists to demonstrate four things under one coherent
 application shape:
 
