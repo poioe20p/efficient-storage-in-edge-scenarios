@@ -165,15 +165,19 @@ aligned compute action relieves both lanes and sticks.
    p50 sustained); `stor` **specificity PASSED**; margin PASSED. Mechanism
    signature: traffic concentrates one-unit-at-a-time (multi-window hot-seat
    rotation); queue sits ahead of the serving handler. Seat freeze deferred.
-4. **P2.5 Relief diagnosis (read-only)** — **opened 2026-10-11** (autopsy
-   #3): why does selection funnel onto one backend at a time despite N
-   eligible units? Classes: client-binding stickiness / selection
-   determinism / warm-lease reinforcement; minimal-fix options per class.
-   Resolves before any campaign freeze; fallback is an author decision on
-   re-scoping the compute claim.
-5. **P2.6 (conditional) Relief repair + re-seat** — implement the confirmed
-   minimal fix; re-run the seat block (`none`/`comp`/`stor` @ R_s·1.15) to
-   pass relief + specificity + margin; then freeze the seat.
+4. **P2.5 Relief diagnosis (read-only)** — **done 2026-10-11** (autopsy #3;
+   artifact [`rq2v4_p2_03_relief_diagnosis.md`](rq2v4_p2_03_relief_diagnosis.md)):
+   the funnel = per-client DNAT binding + synchronized 60 s hard-timeout
+   epochs + deterministic single actor per burst (argmin `tied=1` or an
+   unconsumed 45 s warm claim); one unit per lane serves each epoch ⇒ added
+   capacity never becomes concurrency. Fix options ranked; recommended =
+   ε-band tie-spread (+ warm-band inclusion).
+5. **P2.6 Relief repair (proposed, awaiting approval)** — controller-only
+   edits: `BACKEND_SELECTION_SPREAD_EPS` knob + ε-band spread in
+   `select_server` + warm-lease band inclusion + selftest + docs.
+   Deployed by checkout sync (no rebuild).
+6. **P2.7 Relief re-seat (after P2.6)** — re-run the seat block at 0.23
+   (`comp` must relieve; `stor` must not); then freeze the seat.
 4. **P2.4 Workload documentation** — update the demand-model/kind and phase
    tables in the operational docs (e.g.
    `docs/operation/testing/testing_workloads.md`, already stale vs
