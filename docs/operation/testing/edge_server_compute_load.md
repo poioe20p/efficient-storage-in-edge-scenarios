@@ -30,6 +30,7 @@ compute helpers live in `source/docker/edge_server/source/compute.py`.
 | `/content/<content_id>?requester=<user_id>` | `score_content_relevance()` + `compute_trend()` | about 5-15 ms/request |
 | `/service_pressure` | `compute_service_pressure()` over local request activity | about 3-10 ms/request |
 | `/feed/<user_id>?limit=<N>` | `score_feed_relevance()` + `compute_feed_summary()` + `verify_feed_integrity()` | about 80-120 ms/request |
+| `/compute/hash?nonce=<string>` | `hash_chain()` — chained SHA-256 over the nonce | about 26 ms/request at `HASH_WORK_FACTOR=25000` (measured; the RQ2 v4 computational-demand press — pure CPU, no DB) |
 
 Two additional routes exist in the canonical storage-heavy phase mix:
 
@@ -110,6 +111,7 @@ The current content-discovery compute path is controlled by these env vars in
 | `LOCAL_REQUEST_BUFFER_MAX_EVENTS` | derived | Cap for the edge-local request buffer |
 | `FEED_CANDIDATE_LIMIT` | `500` | Maximum candidate pool fetched before ranking |
 | `FEED_INTEGRITY_WORK_FACTOR` | `200` | Hash iterations used by `verify_feed_integrity()` |
+| `HASH_WORK_FACTOR` | `25000` | SHA-256 rounds per `/compute/hash` request (`hash_chain()`); RQ2 v4 press constant — single default in `edge_server_config.HASH_WORK_FACTOR_DEFAULT`, forwarded to containers only when set |
 
 `FEED_CANDIDATE_LIMIT` and `FEED_INTEGRITY_WORK_FACTOR` are the most direct
 controls over how much CPU the `feed_ranking` route consumes per request.

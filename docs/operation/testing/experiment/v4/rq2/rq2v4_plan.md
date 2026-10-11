@@ -143,9 +143,11 @@ aligned compute action relieves both lanes and sticks.
    `/compute/hash` (`HASH_WORK_FACTOR` env, default 25000 ≈ **26 ms/request
    measured**, seeded by `hash_chain` in `compute.py`), generator kind
    `hash_challenge`, env plumbing (static edges via network scripts, dynamic
-   via `compute_node_manager`); selftest
-   `source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py` green
-   (13 assertions). Expected campaign press: ≤ ~6 rps/lane at the default —
+   via `compute_node_manager`); single default
+   (`HASH_WORK_FACTOR_DEFAULT` in `edge_server_config.py`), one carrier knob
+   at the launcher (make var → statics; merged controller env → dynamics);
+   selftest `source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py` green
+   (all assertions). Expected campaign press: ≤ ~6 rps/lane at the default —
    P2.3 seats the rate.
 2. **P2.2 Build + deploy** — combined (P1+P2) image, built **after** the P1
    battery passes (it did); regression smoke on the other kinds (mixed

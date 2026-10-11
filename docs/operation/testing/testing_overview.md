@@ -278,12 +278,14 @@ exercise three request types through `VIP_SERVER` to the edge-server service.
 | `content_lookup` | `/content/<content_id>?requester=<user_id>` | Fetch one content item for one requester, enrich it with requester-specific relevance context, and compute a short trend. | Storage-locality pressure via targeted reads to `content_items` and `user_profiles` |
 | `service_pressure` | `/service_pressure?window_min=<minutes>&limit=<N>` | Ask one edge server how much recent demand it has been under by summarizing its local in-memory request buffer. | Edge-local CPU pressure from local analytics, with no synchronous MongoDB read/write path |
 | `feed_ranking` | `/feed/<user_id>?limit=<N>` | Return a ranked set of relevant content for one user profile. | Compute pressure from multi-LAN reads, scoring, sorting, and summary work |
+| `hash_challenge` | `/compute/hash?nonce=<string>` | Run a request-bound chained-SHA-256 workload (RQ2 v4 press). | Pure compute pressure with no DB path; cost set by `HASH_WORK_FACTOR` |
 
 Useful shorthand:
 
 - `content_lookup` = one-content lookup and the primary storage-oriented path
 - `feed_ranking` = ranked feed generation and the primary compute-oriented path
 - `service_pressure` = edge-local introspection over recent request activity
+- `hash_challenge` = CPU-bound hashing press, cost-controlled by work factor
 
 The canonical phase profile also uses two auxiliary generator-driven request
 types in storage-heavy windows:

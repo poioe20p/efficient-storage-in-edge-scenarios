@@ -266,11 +266,22 @@ def register_monitoring_workload_routes(app: Flask, config, process_state) -> No
 
         Runs ``config.hash_work_factor`` chained SHA-256 rounds over the
         caller's nonce and returns the digest prefix as a correctness witness.
-        Pure CPU, no database access, no caching.
+        Pure CPU, no database access, no caching. The nonce is required so the
+        digest stays a per-request witness.
         """
-        nonce = request.args.get("nonce", "0")
+        nonce = request.args.get("nonce", "")
+        if not nonce:
+            raise BadRequest("nonce is required")
         rounds = config.hash_work_factor
         digest = hash_chain(nonce, rounds)
+        stage_local_request_event(
+            request_kind="hash_challenge",
+            content_id=None,
+            user_id="",
+            relevance="",
+            status="ok",
+            tags=(),
+        )
         return jsonify({
             "rounds": rounds,
             "nonce": nonce,

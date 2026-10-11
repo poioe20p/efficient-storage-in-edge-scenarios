@@ -14,26 +14,39 @@
 
 ### 1.1 Edge endpoint — `GET /compute/hash?nonce=<string>`
 
-- **CPU-bound hashing, no database access.** The handler runs `HASH_WORK_FACTOR`
-  chained SHA-256 rounds over the nonce (`digest_0 = sha256(nonce)`;
-  `digest_{i+1} = sha256(digest_i)`), then returns
+- **CPU-bound hashing, no database access.** The handler runs
+  `HASH_WORK_FACTOR` chained SHA-256 rounds over the nonce
+  (`digest_0 = sha256(nonce)`; `digest_{i+1} = sha256(digest_i)`; total
+  `rounds + 1` SHA-256 calls), then returns
   `{"rounds": N, "nonce": ..., "digest": <first 16 hex chars of the final digest>}`.
-- The digest is a correctness witness: same nonce + rounds ⇒ same digest
-  (deterministic), different nonce ⇒ different digest (request-bound, defeats
-  caching).
+- **`nonce` is required** (400 `BadRequest` when absent) — the digest stays a
+  per-request correctness witness: same nonce + rounds ⇒ same digest
+  (deterministic), different nonce ⇒ different digest (defeats caching).
 - Registered in `monitoring_workload_routes.py` beside the other workload
-  routes; counted as a normal user request (not in `SKIP_COUNTING_PATHS`), so
-  drain/active-request semantics are the same as `service_pressure`.
+  routes; counted as a normal user request (not in `SKIP_COUNTING_PATHS`) and
+  **staged into the edge-local request buffer** like `content_lookup` /
+  `feed_ranking`, so `/service_pressure`'s summary and `request_kind_counts`
+  include `hash_challenge` during a hash-only episode.
 - Pure function `hash_chain(nonce, rounds)` lives in `compute.py` (already
   imports `hashlib`; used by the selftest).
 
 ### 1.2 Knob — `HASH_WORK_FACTOR`
 
-- Env var on the edge container, integer SHA-256 rounds, default **25000**.
-  **Measured (P2.1 selftest, host): ~1.04 µs/round ⇒ ≈ 26 ms/request at the
-  default** (re-measure in-container at P2.3; re-seat the default if the
-  split against the ~2.3–2.6 ms non-handler overhead is unfavourable — at
-  26 ms the hash is already ~10× the overhead, well inside the target).
+- Env var on the edge container, integer SHA-256 rounds.
+  **Single default source of truth: `edge_server_config.HASH_WORK_FACTOR_DEFAULT`
+  = 25000** — measured (P2.1 selftest, host) ~1.04 µs/round ⇒ ≈ 26 ms/request
+  (re-measure in-container at P2.3; re-seat the default there if the split
+  against the ~2.3–2.6 ms non-handler overhead is unfavourable — at 26 ms the
+  hash is already ~10× the overhead, well inside the target).
+- Carrier mechanics (one knob at the launcher call; nothing defaults twice):
+  - the launcher, when the caller exports `HASH_WORK_FACTOR`, passes it as a
+    make var (→ static edges via the network scripts, which forward it only
+    when set) **and** appends it to the merged controller override (→
+    controller env → dynamic spawns via `compute_node_manager`, which also
+    forwards only when set);
+  - unset everywhere ⇒ every container falls back to the image default.
+  Mismatch between static and dynamic edges is structurally impossible
+  (both read the one launcher value, or both read the image default).
 - Surfaced in `EdgeServerConfig` (`hash_work_factor`), following the
   `FEED_INTEGRITY_WORK_FACTOR` precedent.
 - Plumbing (one value, three carriers — a campaign constant, frozen at P2.3):
@@ -90,17 +103,27 @@
 
 ## 4. P2.1 selftest (local, host Python) — GREEN 2026-10-11
 
-`source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py` (13 assertions):
+`source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py`:
 - `hash_chain` determinism (same nonce + rounds ⇒ same digest), nonce and
   rounds sensitivity, full 32-byte digest.
-- Cost scaling: monotonic; **measured 1k=1.45 ms, 10k=11.0 ms, 50k=52.4 ms
-  ⇒ ≈1.04 µs/round ⇒ default 25000 ≈ 26 ms/request**.
+- Cost scaling: monotonic; per-round cost guarded into the plausible band
+  (0.1–5 µs — catches unit/label regressions); **measured ≈ 1.0–1.5 ms/1k
+  rounds ⇒ default `HASH_WORK_FACTOR_DEFAULT` (25000) ≈ 26–35 ms/request**
+  (host; P2.3 re-measures in-container).
 - Generator: 16-hex fresh nonce per request; URL targets
-  `/compute/hash?nonce=…`; hash-only mix selects the kind.
-- Config: `HASH_WORK_FACTOR` env is read; default 25000 (real
-  `EdgeServerConfig.from_env()` import assertions).
+  `/compute/hash?nonce=…`; weighted selection is exercised with the new kind
+  among existing ones (400 draws).
+- Config: `HASH_WORK_FACTOR` env is read; the default comes from the module
+  constant (real `EdgeServerConfig.from_env()` assertions; env restored
+  afterwards).
 
 ## 5. P2.2/P2.3 notes
+
+- **Evidence source for the cost split:** controller-side per-request
+  telemetry derives `request_type` from the HTTP method only (all GETs are
+  "read"), so `hash_challenge` is not distinguishable there. The cost-split
+  evidence comes from the **client CSV** (`endpoint` column + `latency_s`)
+  and the edge's `T_proc`/CPU in the window logs — use those in P2.3.
 
 - P2.2 combines this with the P1 fix in the build (edge image changes now —
   both edge and `local_state_server` images rebuilt; the controller stays

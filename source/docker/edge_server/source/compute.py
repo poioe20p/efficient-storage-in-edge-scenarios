@@ -549,9 +549,11 @@ def verify_feed_integrity(content_items: list[dict], work_factor: int = 200) -> 
 def hash_chain(nonce: str, rounds: int) -> bytes:
     """Chained SHA-256 over a request-bound nonce — pure CPU, no I/O.
 
-    ``rounds`` (HASH_WORK_FACTOR) controls CPU time linearly; the result is
-    returned to the caller so the work cannot be optimised away. Deterministic:
-    the same ``(nonce, rounds)`` always yields the same digest.
+    ``rounds`` (HASH_WORK_FACTOR) controls CPU time linearly; total work is
+    one seed hash plus ``rounds`` chained rounds (``rounds + 1`` SHA-256
+    calls). The result is returned to the caller so the work cannot be
+    optimised away. Deterministic: the same ``(nonce, rounds)`` always yields
+    the same digest.
     See docs/operation/testing/experiment/v4/rq2/rq2v4_p2_01_hash_kind.md.
     """
     digest = hashlib.sha256(nonce.encode("utf-8")).digest()

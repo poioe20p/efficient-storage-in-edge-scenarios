@@ -40,7 +40,17 @@ for env in ${EXTRA_ENVS[@]+"${EXTRA_ENVS[@]}"}; do
 done
 
 MERGED_ENV="$(mktemp /tmp/rq2v4_merged_XXXXXX.env)"
-python3 - "$MERGED_ENV" "$CANONICAL_ENV" "$MODE_ENV" ${EXTRA_ENVS[@]+"${EXTRA_ENVS[@]}"} <<'PYEOF'
+# HASH_WORK_FACTOR (RQ2 v4 press constant): when set in the caller env it is
+# carried to BOTH container families — make var → static edges (network
+# scripts), merged controller env → controller → dynamic spawns
+# (compute_node_manager). Unset everywhere ⇒ edge image default (single
+# source of truth: edge_server_config.HASH_WORK_FACTOR_DEFAULT).
+HASH_ENV=""
+if [ -n "${HASH_WORK_FACTOR:-}" ]; then
+    HASH_ENV="$(mktemp /tmp/rq2v4_hashwf_XXXXXX.env)"
+    printf 'HASH_WORK_FACTOR=%s\n' "$HASH_WORK_FACTOR" > "$HASH_ENV"
+fi
+python3 - "$MERGED_ENV" "$CANONICAL_ENV" "$MODE_ENV" ${EXTRA_ENVS[@]+"${EXTRA_ENVS[@]}"} ${HASH_ENV:+"$HASH_ENV"} <<'PYEOF'
 import sys
 
 out_path = sys.argv[1]
@@ -87,4 +97,5 @@ exec sudo -n make -C source/scripts setup_network create_clients setup_test_data
   OVERLOAD_MIN_REQUESTS=${OVERLOAD_MIN_REQUESTS:-60} \
   ${TELEMETRY_SOURCE:+TELEMETRY_SOURCE=${TELEMETRY_SOURCE}} \
   ${POLL_INTERVAL_S:+POLL_INTERVAL_S=${POLL_INTERVAL_S}} \
+  ${HASH_WORK_FACTOR:+HASH_WORK_FACTOR=${HASH_WORK_FACTOR}} \
   SKIP_CLIENTS=1 SKIP_SEED=1 SKIP_SNAPSHOT=1

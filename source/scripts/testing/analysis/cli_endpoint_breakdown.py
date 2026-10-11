@@ -81,6 +81,7 @@ def run(run_dir: Path) -> None:
         "content_lookup": "#1a7abf",
         "feed_ranking": "#bf5a1a",
         "service_pressure": "#1abf4a",
+        "hash_challenge": "#7a1abf",
     }
     x = np.arange(len(phases_present))
     n_endpoints = len(endpoints_sorted)

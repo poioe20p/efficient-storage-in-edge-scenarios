@@ -11,9 +11,9 @@ Exercises the hashing request kind
 - Generator wiring (``source/scripts/testing/traffic_generator.py``):
   ``pick_target("hash_challenge")`` yields a fresh 16-hex nonce;
   ``build_url`` targets ``/compute/hash?nonce=…``.
-- Config knob: ``HASH_WORK_FACTOR`` env is read by the edge config
-  (import check only — the dataclass body needs the full env surface,
-  so the field is asserted structurally).
+- Config knob: ``HASH_WORK_FACTOR`` env is read by the edge config via a real
+  ``EdgeServerConfig.from_env()`` assertion; the default comes from the
+  module constant ``HASH_WORK_FACTOR_DEFAULT`` (single source of truth).
 
 Exit non-zero on any assertion failure. Runs with host Python (stdlib only).
 Gate: local validation only.
@@ -33,6 +33,7 @@ sys.path.insert(0, str(EDGE_SRC))
 sys.path.insert(0, str(TESTING))
 
 from compute import hash_chain  # noqa: E402
+from edge_server_config import HASH_WORK_FACTOR_DEFAULT  # noqa: E402
 import traffic_generator as tg  # noqa: E402
 
 
@@ -65,12 +66,16 @@ def test_cost_scaling() -> None:
 
     t1k, t10k, t50k = measure(1000), measure(10000), measure(50000)
     _assert(t10k > t1k and t50k > t10k, "cost grows monotonically with rounds")
-    ms_per_round = (t50k - t1k) / 49000 * 1000.0
-    est_default_ms = ms_per_round * 25000
+    ms_per_round = (t50k - t1k) / 49000 * 1000.0  # seconds delta -> ms/round
+    est_default_ms = ms_per_round * HASH_WORK_FACTOR_DEFAULT
     print(f"  measured: 1k={t1k*1000:.2f}ms 10k={t10k*1000:.2f}ms 50k={t50k*1000:.2f}ms")
-    print(f"  ms/round={ms_per_round*1000:.4f}ms  default(25000) ~ {est_default_ms:.1f}ms/request")
-    _assert(ms_per_round > 0, "per-round cost measurable")
-    # Seat sanity for P2.3: default must plausibly dominate the observed
+    print(f"  per-round: {ms_per_round:.5f} ms  ({ms_per_round*1000:.2f} us)  "
+          f"default({HASH_WORK_FACTOR_DEFAULT}) ~ {est_default_ms:.1f} ms/request")
+    # Unit/regression guard: per-round cost must sit in a plausible band
+    # (0.1-5 us/round). This catches label/scaling bugs like the 1000x one.
+    _assert(0.0001 <= ms_per_round <= 0.005,
+            "per-round cost inside the plausible band (0.1-5 us)")
+    # Seat sanity for P2.3: the default must plausibly dominate the observed
     # per-request non-handler overhead (2.3-2.6 ms at 0.15 core). Warn only.
     if est_default_ms < 5.0:
         print(f"  WARN: default cost {est_default_ms:.1f}ms < 5ms - P2.3 must re-seat HASH_WORK_FACTOR")
@@ -95,21 +100,32 @@ def test_generator_wiring() -> None:
     _assert(url == f"http://10.0.0.253:5000/compute/hash?nonce={t1['nonce']}",
             "build_url targets /compute/hash with the nonce")
 
-    # Mix plumbing: a hash-only mix selects the new kind.
-    _assert(tg.pick_request_type({"hash_challenge": 1.0}) == "hash_challenge",
-            "pick_request_type supports a hash-only mix")
+    # Mix plumbing: weighted selection interleaves the new kind with an
+    # existing one (mix weights are normalised — all shipped mixes sum to 1).
+    kinds = {tg.pick_request_type({"hash_challenge": 0.2, "content_lookup": 0.8})
+             for _ in range(400)}
+    _assert(kinds == {"hash_challenge", "content_lookup"},
+            "weighted selection interleaves the new kind with an existing one")
 
 
 def test_config_knob() -> None:
-    os.environ["HASH_WORK_FACTOR"] = "12345"
     from edge_server_config import EdgeServerConfig
-    cfg = EdgeServerConfig.from_env()
-    _assert(cfg.hash_work_factor == 12345,
-            "edge config reads HASH_WORK_FACTOR from the environment")
-    os.environ.pop("HASH_WORK_FACTOR")
-    cfg_default = EdgeServerConfig.from_env()
-    _assert(cfg_default.hash_work_factor == 25000,
-            "edge config defaults hash_work_factor to 25000")
+    prior = os.environ.get("HASH_WORK_FACTOR")
+    try:
+        os.environ["HASH_WORK_FACTOR"] = "12345"
+        cfg = EdgeServerConfig.from_env()
+        _assert(cfg.hash_work_factor == 12345,
+                "edge config reads HASH_WORK_FACTOR from the environment")
+        os.environ.pop("HASH_WORK_FACTOR")
+        cfg_default = EdgeServerConfig.from_env()
+        _assert(cfg_default.hash_work_factor == HASH_WORK_FACTOR_DEFAULT,
+                f"edge config defaults to HASH_WORK_FACTOR_DEFAULT "
+                f"({HASH_WORK_FACTOR_DEFAULT})")
+    finally:
+        if prior is None:
+            os.environ.pop("HASH_WORK_FACTOR", None)
+        else:
+            os.environ["HASH_WORK_FACTOR"] = prior
 
 
 def main() -> int:

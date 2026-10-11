@@ -13,20 +13,21 @@ validation and diagnostic profiles live under
 
 ## Workload Request Types
 
-The generator currently supports five request kinds.
+The generator currently supports six request kinds.
 
 | Request type | Endpoint shape | Purpose |
 | --- | --- | --- |
 | `content_lookup` | `/content/<content_id>?requester=<user_id>` | Primary cross-region point-read driver |
 | `feed_ranking` | `/feed/<user_id>?limit=<N>` | Primary edge-compute driver |
 | `service_pressure` | `/service_pressure?window_min=<minutes>&limit=<N>` | Local support-state introspection |
+| `hash_challenge` | `/compute/hash?nonce=<16-hex>` | CPU-bound hashing press (RQ2 v4); fresh nonce per request, no DB |
 | `content_update` | `POST /content` | Storage write amplification and oplog traffic |
 | `content_aggregate` | `POST /content/aggregate` | Collection-level aggregation work through `VIP_DATA` |
 
-`content_lookup`, `feed_ranking`, and `service_pressure` are the public
-workload-facing routes. `content_update` and `content_aggregate` are auxiliary
-generator operations used by the storage-heavy phase mixes in the canonical
-profile.
+`content_lookup`, `feed_ranking`, `service_pressure` and `hash_challenge` are
+the public workload-facing routes. `content_update` and `content_aggregate`
+are auxiliary generator operations used by the storage-heavy phase mixes in
+the canonical profile.
 
 ---
 
@@ -249,6 +250,8 @@ sudo python3 source/scripts/testing/traffic_generator.py \
 - `content_lookup` builds `/content/<content_id>?requester=<user_id>`
 - `feed_ranking` builds `/feed/<user_id>?limit=10`
 - `service_pressure` builds `/service_pressure?window_min=10&limit=10`
+- `hash_challenge` builds `/compute/hash?nonce=<16-hex>` with a fresh nonce
+  per request
 - `content_update` sends `POST /content` with `content_id`, `engagement`,
   `lan`, and a 1 KB padding string to enlarge oplog entries
 - `content_aggregate` sends `POST /content/aggregate` with `lan` and a random
@@ -273,7 +276,7 @@ Columns:
 | `phase` | Phase name from the config |
 | `client_ns` | Namespace that sent the request |
 | `client_lan` | LAN of that namespace |
-| `endpoint` | Request type (`content_lookup`, `feed_ranking`, `service_pressure`, `content_update`, `content_aggregate`) |
+| `endpoint` | Request type (`content_lookup`, `feed_ranking`, `service_pressure`, `hash_challenge`, `content_update`, `content_aggregate`) |
 | `content_id` | Target content item when applicable |
 | `user_id` | Target requester when applicable |
 | `target_region` | Region targeted by the request |

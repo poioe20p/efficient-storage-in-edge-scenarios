@@ -27,6 +27,13 @@ _READ_PREF_MAP = {
     "secondary": "secondary",
 }
 
+# RQ2 v4 computational-demand press: chained SHA-256 rounds per
+# /compute/hash request. Measured ~1.04 us/round => ~26 ms/request at this
+# default (P2.1 selftest, host). Single source of truth: the shells and the
+# controller spawner only FORWARD HASH_WORK_FACTOR when explicitly set.
+# See docs/operation/testing/experiment/v4/rq2/rq2v4_p2_01_hash_kind.md.
+HASH_WORK_FACTOR_DEFAULT = 25000
+
 
 def resolve_mongo_read_preference() -> str:
     """Map the EDGE_MONGO_READ_PREFERENCE string (lowercased, underscores
@@ -127,7 +134,7 @@ class EdgeServerConfig:
                 os.environ.get("FEED_INTEGRITY_WORK_FACTOR", "200")
             ),
             hash_work_factor=int(
-                os.environ.get("HASH_WORK_FACTOR", "25000")
+                os.environ.get("HASH_WORK_FACTOR", str(HASH_WORK_FACTOR_DEFAULT))
             ),
             mongo_retry_backoff_ms=int(
                 os.environ.get("MONGO_RETRY_BACKOFF_MS", "100")
