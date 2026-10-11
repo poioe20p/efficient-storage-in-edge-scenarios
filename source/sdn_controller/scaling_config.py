@@ -288,6 +288,20 @@ _VIP_SERVER_PER_CONNECTION = int(
 # request_complete events have arrived within this many seconds of startup.
 _FLOW_ISOLATION_WARMUP_S = float(os.environ.get("FLOW_ISOLATION_WARMUP_S", "120.0"))
 
+# RQ2 v4 P2.6 — backend-selection spread over near-equal costs.
+# Costs within this epsilon of the pool minimum are treated as a tie band and
+# distributed across clients (stateless deterministic hash in
+# _vip_routing/selection.select_server) instead of collapsing to one winner
+# per selection burst. Without it, byte-identical within-burst costs + the
+# synchronized 60 s flow hard-timeout funnel every lane's traffic onto ONE
+# serving unit per epoch (one-hot; added replicas rotate the hot seat instead
+# of adding concurrency). 0 = legacy argmin/exact-tie behaviour.
+# Must stay well below the peer/hop gap (0.14) so cross-LAN units never join
+# a local band. See docs/operation/testing/experiment/v4/rq2/
+# rq2v4_p2_03_relief_diagnosis.md.
+_BACKEND_SELECTION_SPREAD_EPS = float(
+    os.environ.get("BACKEND_SELECTION_SPREAD_EPS", "0.03"))
+
 # ── Storage persistent reserve ─────────────────────────────────────────
 # 1 = maintain one ready same-LAN storage reserve per LAN; 0 = off.
 _STORAGE_PERSISTENT_RESERVE_ENABLED = int(

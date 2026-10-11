@@ -172,12 +172,22 @@ aligned compute action relieves both lanes and sticks.
    unconsumed 45 s warm claim); one unit per lane serves each epoch ⇒ added
    capacity never becomes concurrency. Fix options ranked; recommended =
    ε-band tie-spread (+ warm-band inclusion).
-5. **P2.6 Relief repair (proposed, awaiting approval)** — controller-only
-   edits: `BACKEND_SELECTION_SPREAD_EPS` knob + ε-band spread in
-   `select_server` + warm-lease band inclusion + selftest + docs.
-   Deployed by checkout sync (no rebuild).
-6. **P2.7 Relief re-seat (after P2.6)** — re-run the seat block at 0.23
-   (`comp` must relieve; `stor` must not); then freeze the seat.
+5. **P2.6 Relief repair** — ✅ **implemented 2026-10-11** (author-approved):
+   `_BACKEND_SELECTION_SPREAD_EPS` knob (default 0.03, env-overridable,
+   0 = legacy) in `scaling_config.py`; `select_server` builds a near-min band
+   (cost ≤ min + ε) plus any live warm claim and spreads via a stateless
+   deterministic client hash (band sorted by MAC); warm branch joins the
+   band instead of monopolising. Selftest
+   `source/scripts/testing/rq2v4_p2_06_selection_spread_selftest.py` green
+   (band membership, spread balance, determinism, legacy-at-0, warm
+   inclusion, beyond-eps exclusion, peer guard). Controller-only — deployed
+   by checkout sync (each launcher run recreates the containers).
+6. **P2.7 Relief re-seat** — **in progress** (2026-10-11 evening): re-run
+   the seat block at 0.23 (`comp` must relieve: post-add p95 < 1 s in
+   ≥ 80 % of windows both lanes, completion ≥ 95 %, persists; `stor` must
+   still not relieve) + concurrency census (expect ≥3 units concurrently
+   hot) + burst fan-out check (distinct MACs per epoch burst). Then freeze
+   the seat.
 4. **P2.4 Workload documentation** — update the demand-model/kind and phase
    tables in the operational docs (e.g.
    `docs/operation/testing/testing_workloads.md`, already stale vs

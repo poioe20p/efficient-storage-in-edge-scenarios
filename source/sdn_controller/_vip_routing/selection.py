@@ -2,6 +2,7 @@
 and round-robin tie-breaking for server and storage VIPs.
 """
 
+import hashlib
 import time
 
 from .config import (
@@ -13,6 +14,7 @@ from .config import (
 )
 from ..scaling_config import _VIP_WARM_SERVER_SECONDS, _VIP_WARM_STORAGE_SECONDS
 from ..scaling_config import _STORAGE_READ_POLICY
+from ..scaling_config import _BACKEND_SELECTION_SPREAD_EPS
 
 # Reads offload to SECONDARY members only. Non-SECONDARY states (RECOVERING,
 # STARTUP, STARTUP2, ROLLBACK, or stale/None telemetry) are NOT offload
@@ -124,9 +126,13 @@ def select_server(controller, client_mac: str) -> dict | None:
     Cost_j = w_cpu·(CPU_j/CPU_max) + w_ram·(RAM_j/RAM_max)
            + w_req·(Req_j/Req_max) + w_hops·(Hops_j/Hops_max)
 
-    When multiple candidates share the lowest cost (typical during cold
-    start when all resource dimensions are 0.0), round-robin across them
-    to distribute traffic evenly.
+    Spread (RQ2 v4 P2.6, `_BACKEND_SELECTION_SPREAD_EPS` > 0): candidates
+    within eps of the pool minimum form a band and are distributed across
+    clients via a stateless deterministic hash, so one selection burst does
+    not funnel every client onto a single backend. A live warm claim joins
+    the band instead of monopolising it. With eps = 0 the legacy behaviour
+    is preserved exactly (argmin + exact-tie round-robin + exclusive warm
+    claim).
     """
     pool = controller.vip_server_pool
     if not pool:
@@ -136,12 +142,14 @@ def select_server(controller, client_mac: str) -> dict | None:
     # Warm lease: only active in topology_lifecycle mode (RQ2).
     # topology_host and topology_slowstart skip it — the WSM cost
     # function handles new-backend selection via unknown-stats defaults.
+    warm_entry = None
     if _BACKEND_SELECTION_POLICY == "topology_lifecycle":
-        warm = _claim_warm_backend(
+        warm_entry = _claim_warm_backend(
             controller, "vip_server", controller._warm_server_leases, pool,
         )
-        if warm is not None:
-            return warm
+        if warm_entry is not None and _BACKEND_SELECTION_SPREAD_EPS <= 0:
+            # Legacy: the claim owns the selection (45 s monopoly).
+            return warm_entry
 
     # Compute max values for normalization (only from servers in the pool)
     pool_stats = [controller._server_stats[m] for m in pool if m in controller._server_stats]
@@ -152,6 +160,7 @@ def select_server(controller, client_mac: str) -> dict | None:
 
     best_cost = float("inf")
     tied: list[dict] = []
+    scored: list[tuple[float, dict]] = []
 
     for mac, entry in pool.items():
         stats = controller._server_stats.get(mac)
@@ -195,6 +204,7 @@ def select_server(controller, client_mac: str) -> dict | None:
         # topology_lifecycle cleaner: both have a 45 s window, differing
         # only in when that window starts (discovery vs. spawn).
         cost += _slowstart_penalty(controller, mac, _VIP_WARM_SERVER_SECONDS)
+        scored.append((cost, entry))
         logger.debug(
             "select_server: mac=%s cpu=%.1f ram=%.1f req=%s hops=%s cost=%.4f",
             mac,
@@ -208,6 +218,33 @@ def select_server(controller, client_mac: str) -> dict | None:
             tied = [entry]
         elif cost == best_cost:
             tied.append(entry)
+
+    if not scored:
+        return None
+
+    if _BACKEND_SELECTION_SPREAD_EPS > 0:
+        # P2.6 spread: near-min candidates + any live warm claim form a band;
+        # each client deterministically picks one band member (stateless hash),
+        # so a synchronized selection burst fans out across cold units instead
+        # of funnelling onto one (the 60 s one-hot epoch).
+        cutoff = best_cost + _BACKEND_SELECTION_SPREAD_EPS
+        band = [(c, e) for c, e in scored if c <= cutoff]
+        if warm_entry is not None and all(e["mac"] != warm_entry["mac"] for _, e in band):
+            band.append((best_cost, warm_entry))
+        if len(band) > 1:
+            band.sort(key=lambda ce: ce[1]["mac"])
+            idx = int(
+                hashlib.md5((client_mac or "").encode("utf-8")).hexdigest(), 16
+            ) % len(band)
+            chosen = band[idx][1]
+        else:
+            chosen = band[0][1]
+        logger.info(
+            "select_server: selected=%s cost=%.4f (spread band=%d eps=%.3f warm=%s)",
+            chosen["mac"], best_cost, len(band), _BACKEND_SELECTION_SPREAD_EPS,
+            warm_entry is not None,
+        )
+        return chosen
 
     if not tied:
         return None

@@ -64,9 +64,14 @@ rotate per window").
 4. *(Enabler)* jitter the hard timeout to de-synchronize epochs — cheap, but
    no concurrency gain without 1–2.
 
-## 4. P2.6 — proposed repair (awaiting author approval)
+## 4. P2.6 — repair (APPROVED + IMPLEMENTED 2026-10-11)
 
 **Edits (controller only; deployed by checkout sync — no image rebuild):**
+implemented as designed — knob `_BACKEND_SELECTION_SPREAD_EPS` (default
+0.03), ε-band + stateless client-hash spread in `select_server`, warm claim
+joins the band; selftest
+`source/scripts/testing/rq2v4_p2_06_selection_spread_selftest.py` green;
+P2.7 re-seat running.
 
 | # | File | Change |
 | --- | --- | --- |
