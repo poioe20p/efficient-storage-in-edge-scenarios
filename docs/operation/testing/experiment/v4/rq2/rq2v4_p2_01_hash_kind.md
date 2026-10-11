@@ -1,7 +1,7 @@
 # RQ2 v4 — P2.1: Hashing request kind (spec + implementation)
 
-> **Status:** 2026-10-11 · implemented (P2.1) + selftest green; P2.2 build +
-> P2.3 calibration pending.
+> **Status:** 2026-10-11 · implemented (P2.1) + selftest green; **review-clean
+> (4 rounds, 0 open findings)**; P2.2 build + P2.3 calibration pending.
 > **Purpose (D3, F1):** give RQ2 an **honest compute press** — a workload whose
 > per-request CPU cost is explicit, configurable and dominant, replacing the
 > history-dependent `service_pressure` stressor whose apparent knee (v3) was

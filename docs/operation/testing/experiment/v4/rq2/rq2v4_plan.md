@@ -138,15 +138,13 @@ aligned compute action relieves both lanes and sticks.
 
 ## Phase 2 — Hashing request kind (honest compute press)
 
-1. **P2.1 Spec + implement** ✅ (2026-10-11) — artifact
+1. **P2.1 Spec + implement** ✅ (2026-10-11, review-clean 4 rounds) — artifact
    [`rq2v4_p2_01_hash_kind.md`](rq2v4_p2_01_hash_kind.md): endpoint
-   `/compute/hash` (`HASH_WORK_FACTOR` env, default 25000 ≈ **26 ms/request
+   `/compute/hash` (`HASH_WORK_FACTOR` env, default 25000 ≈ **26–35 ms/request
    measured**, seeded by `hash_chain` in `compute.py`), generator kind
-   `hash_challenge`, env plumbing (static edges via network scripts, dynamic
-   via `compute_node_manager`); single default
-   (`HASH_WORK_FACTOR_DEFAULT` in `edge_server_config.py`), one carrier knob
-   at the launcher (make var → statics; merged controller env → dynamics);
-   selftest `source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py` green
+   `hash_challenge`, carrier mechanics with two lift points + controller `-e`
+   (all carrier combinations reduce to one value); selftest
+   `source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py` green
    (all assertions). Expected campaign press: ≤ ~6 rps/lane at the default —
    P2.3 seats the rate.
 2. **P2.2 Build + deploy** — combined (P1+P2) image, built **after** the P1
