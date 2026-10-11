@@ -203,8 +203,9 @@ next step acting on it. The reviewed literature addresses this topic
 mainly at boundaries between functions that run under independent control
 loops, each observing, deciding, and acting on its own. The properties of
 what crosses (the completeness and freshness of the evidence, the match
-between the command and the demand, and the preservation and verification
-of a state claim) are studied here one at a time. The \emph{coordination gap} is the
+between the command and the demand, and whether a ready backend is admitted on its message
+alone, on the message with a bounded re-check, or only through a check)
+are studied here one at a time. The \emph{coordination gap} is the
 accumulated effect along the chain, which this dissertation does not
 measure as a whole.} The three interfaces between its steps, highlighted in
 Figure~\ref{fig:demand_capacity_chain}, are the subject of this thesis.
@@ -231,8 +232,7 @@ complete and fresh, complete but delayed, or with summaries
 missing~\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork};
 a capacity command can serve the tier that binds the demand or one that
 does not~\parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}; and a
-readiness claim can be verified before admission, trusted before it is
-true, or lost~\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. 
+readiness message can arrive on time, early, or not at all~\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}.
 This thesis isolates the three interfaces and measures the
 effect of each of these properties on its own. The platform built for this
 purpose is organised as two peer \ac{SDN} controllers, one per network domain.
@@ -248,8 +248,9 @@ scaling and admission are exposed as lifecycle hooks.
 deployed across two network domains: how telemetry reaches the controller
 (the telemetry mode); whether
 the capacity command serves the tier the demand presses on
-(bottleneck-aware scaling action); and whether a ready backend is verified
-before it is admitted to traffic (readiness admission).
+(bottleneck-aware scaling action); and whether a ready backend is
+admitted on its message alone, on the message with a bounded re-check,
+or only through a check (readiness admission).
 
     The thesis does not claim that this SDN-based architecture is superior
 to existing orchestration platforms such as Kubernetes or NFV Management
@@ -267,8 +268,9 @@ interfaces of the demand-to-capacity chain under controlled demand regimes,
 and by establishing, for each interface, which property of the crossing
 decides the outcome and under which conditions: how telemetry reaches the
 controller, whether the scaling action serves the tier the
-demand presses on, and whether the readiness claim is preserved and
-verified before a new backend is admitted.
+demand presses on, and whether a ready backend is admitted on its
+readiness message alone, on the message with a bounded re-check, or
+only through a periodic check.
 
     The platform keeps controller-side coordination in-process, with how
 telemetry reaches the controller retained as an explicit, configurable
@@ -293,11 +295,11 @@ This thesis seeks to answer the following three research questions:
     recovery and resource use?
 
     \item \textit{RQ3}: When a newly provisioned backend becomes ready,
-    how does the readiness-admission mechanism, direct lifecycle
-    notification versus periodic discovery, affect when the backend
-    actually serves requests, and what does the admission evidence
-    guarantee when spare capacity is already low and the readiness claim
-    is lost or premature (delivered before the backend can serve)?
+    how do the three admission rules (the readiness message alone, the
+    message with a bounded re-check, and a periodic check of the backend)
+    affect whether and when the new capacity starts serving requests and
+    what users experience, under an intact message, a lost message, or a
+    message that arrives before the backend can serve?
 \end{itemize}
 
 \section{Research Methodology}\label{sec:research_methodology} %DONE
@@ -358,7 +360,7 @@ technology choices are justified by
 their utility for the platform. SDN provides a single programmable control
 plane through which routing behaviour can be re-programmed directly in a central manner, 
 Docker enables fast provisioning and teardown of service backends, and MongoDB provides native
-replica-set replication with concurrent access.
+replica-set replication whose membership the platform changes at run time.
 
 \item \textit{Demonstration.} The artefact was deployed as a running system in
 an emulated edge environment with two network domains, and was driven with
@@ -398,15 +400,13 @@ This dissertation makes the following contributions:
     from the observed bottleneck, compared with fixed single-tier policies,
     affects targeted-tier relief, service recovery, and resource use under
     compute-bound and data-access-bound demand (RQ2).
-    \item An experimental characterisation of readiness admission that
-    quantifies, under direct lifecycle notification versus periodic
-    discovery (including a bounded fallback variant), the time from
-    verified readiness to routable and usable capacity. It further
-    prices two failure modes: the reliability cost the faster mechanism
-    incurs when its readiness notification is lost and no bounded
-    re-derivation recovers it, with spare capacity scarce, and the
-    exposure of the trusting rules to a premature readiness claim, which
-    the probing rules absorb (RQ3).
+    \item An experimental characterisation of readiness admission,
+    specifically how the three admission rules (the readiness message
+    alone, the message with a bounded re-check, and a periodic check of
+    the backend) affect whether and when the new capacity starts serving
+    requests and what users experience, under an intact message, a lost
+    message, or a message that arrives before the backend can serve
+    (RQ3).
     \item A comparative synthesis of the three interfaces studied
     (telemetry modes, scaling decisions, and readiness admission)
     under their respective controlled workload regimes, identifying which
@@ -620,7 +620,11 @@ the most extensively used SDN protocol in the research community
     In its OpenFlow form, a single controller re-programs the forwarding
 behaviour of the network by installing and updating match-action flow rules,
 so that network behaviour can follow the life cycle of the services it
-carries without reconfiguring the forwarding devices individually. The
+carries without reconfiguring the forwarding devices individually.
+In this thesis, that programmability keeps the routing decisions inside
+the platform's control loop: which backend serves a request, when newly
+scaled capacity joins the traffic path, and which storage member serves a
+read are all decided by the controller and enacted as flow rules. The
 decoupling is illustrated in Figure~\ref{fig:sdn_architecture}.
 
 \begin{figure}[H]
@@ -646,7 +650,7 @@ documents rather than as rows of relational tables. Because related
 data is embedded in a single document and the model avoids joins and
 fixed schemas, records can be partitioned and replicated across
 servers, which is how these stores scale horizontally, whereas
-relational systems are traditionally scaled vertically by enlarging a
+relational deployments have traditionally grown by enlarging a
 single server. This model suits the heterogeneous data of edge and IoT
 services, whose structure varies between sources and evolves over time.
 
@@ -692,7 +696,7 @@ telemetry arrives is therefore the first interface studied in this thesis.
 the producer sends each summary as it closes, and polling, where the consumer
 reads the latest summary at a fixed interval. Either pattern can reach the
 consumer late, or with summaries missing, according to how it is configured:
-a read that keeps pace with production delivers every summary, at most one period
+a read at the same interval as the summaries delivers every summary, at most one period
 old, while a slower read, or a producer that samples or holds summaries back,
 loses or delays them. The four telemetry modes compared in
 Chapter~\ref{ch:results} are these two defects separately and together: push
@@ -882,7 +886,7 @@ Figure~\ref{fig:sdn_load_balancing}.
 
     Load balancing is a common application of SDN. At a given routing
 decision, a load-balancing policy operates over the set of backends
-currently eligible to receive traffic, and the reviewed studies
+receiving traffic, and the reviewed studies
 concentrate on optimising the distribution of load over that set, using
 criteria such as load, path properties, and resource utilisation
 \parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined,Belgaum2020SystematicReviewLoadBalancingTechniques}.
@@ -893,32 +897,31 @@ can \enquote{work in tandem with modern elastic controllers, thereby
 reducing over-provisioning and SLO violations incurred during
 provisioning delays} \parencite[p.~386]{Bogdanov2018Kurma}. The delay between
 provisioning and usable capacity is therefore a recognised cost, yet
-the interval in which readiness state propagates to the routing plane
-is not separated from the surrounding lifecycle.
+the time a backend spends between becoming ready and starting to
+receive traffic is not measured on its own in that evaluation.
 
-    Llorens-Carrodeguas et al. combine monitoring, auto-scaling, and load
-balancing in an SDN redirector for a transparent VNF cluster, so that
+    Llorens-Carrodeguas et al. couple auto-scaling with load balancing
+    in an SDN redirector for a transparent VNF cluster, so that
 load balancing operates over a pool of instances that is resized while
 traffic is being served. Their system changes the number of active
 cluster members and removes flow rules for unhealthy instances using
 status obtained through the MANO monitoring path
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 It therefore demonstrates that dynamic membership is already a legitimate
-concern. Its evaluation, however, reports activation at the granularity of
-the integrated system, so the interval from verified application readiness
-to routing eligibility is not separated from the surrounding lifecycle.
+concern. Its evaluation, however, reports activation for the whole
+system, so the time between a backend becoming ready and starting to
+receive traffic is not isolated in their evaluation.
 
-    The membership of the eligible set, however, is not fixed. Backends are
+    The membership of that set, however, is not fixed. Backends are
 added as demand rises and removed as it recedes, and a backend becomes
-usable capacity only once it can serve the application, its readiness
-state has propagated to the routing plane, and it is included in the
-eligible set. The interval between verified readiness and routing eligibility is
-therefore an admission delay, and it lies outside the scope of the
-load-balancing studies reviewed here, which, as far as admission is
-concerned, take the eligible set as given. Indeed, Neghabi et al.
+usable capacity only once it can serve the application and has
+been admitted to the set of backends receiving traffic. The time a ready
+backend spends outside that set is therefore an admission delay, and the
+load-balancing studies reviewed here take the set as given, so they do
+not measure it. Indeed, Neghabi et al.
 record failure management as a concern that the mechanisms their
 survey covers have not taken into account, so failure-driven changes
-to the eligible set remain unaddressed
+to the set of backends receiving traffic remain unaddressed
 \parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. 
     Outside those studies, managing the pool itself is an established
 problem. Dreibholz and
@@ -932,24 +935,22 @@ that inaccuracy is left to the load-balancing layer, in policies that
 discount stale pool state
 \parencite[p.~6]{Dreibholz2023TowardsLightweightTaskSchedulingFramework}.
 
-The eligible set and the true serving state of its backends can therefore
-desynchronise in one of two directions. When a change reaches the
+The set of backends receiving traffic and the true serving state of its
+backends can therefore fall out of step in one of two directions. When a change reaches the
 routing plane late or not at all, ready capacity stays outside the set,
 and the nodes already serving carry the demand without it. When a backend is in the
 set while it cannot serve the traffic it receives, the requests routed
 to it fail.
 
-    The reviewed load-balancing studies optimise the distribution of load over the
-eligible set, taking that set as given. This dissertation treats the set
-itself as the variable: it studies how the arrival of newly provisioned,
-ready capacity into the eligible set affects when and whether that
-capacity carries load, the admission interval from verified readiness to
-routing eligibility, the time until the new capacity serves traffic, and
-how quickly that membership change reaches the load distribution and the
-existing nodes. Direct lifecycle notification and periodic discovery are
-the two operational mechanisms of that coordination interface, with the
-bounded fallback variant and the wake-and-verify variant evaluated in
-Chapter~\ref{ch:results}.
+    This dissertation treats admission into that set as the variable: the
+three admission rules require different evidence before a backend is
+admitted (the readiness message alone, the message with a bounded
+re-check, or a periodic check of the backend). The comparison measures
+how they affect whether and when the new capacity starts serving
+requests and what users
+experience, under an intact message, a lost message, or a message that
+arrives before the backend can serve. Chapter~\ref{ch:results}
+evaluates the three rules under one regime.
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration} %DONE
 Resource orchestration is the management layer that keeps a running
@@ -1090,7 +1091,7 @@ provisioning delay as one combined quantity \parencite{Bogdanov2018Kurma},
 OneEdge breaks end-to-end deployment latency into scheduling, network, and
 container creation without attributing it to a single handoff
 \parencite{Saurez2021OneEdge}, and Llorens-Carrodeguas et al. report
-activation at the granularity of the integrated system
+only whole-system activation
 \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}. The
 closest reviewed precedent is AdapPF, which varies monitoring freshness and
 measures a downstream consequence, but without separating late from missing
@@ -1107,7 +1108,7 @@ recorded as a limitation of polling
 (Section~\ref{sec:lit_monitoring}), the tier that a capacity action
 serves is settled by forecasts or by joint placement rather than chosen
 from a live observed bottleneck (Section~\ref{sec:lit_auto_scaling}), and
-failure-driven changes to the eligible set remain unaddressed by the 
+failure-driven changes to the set of backends receiving traffic remain unaddressed by the 
 reviewed mechanisms (Section~\ref{sec:lit_sdn_lb}).
 
     Table~\ref{tab:interface_gaps} condenses these findings into the
@@ -1133,11 +1134,12 @@ three interfaces and the question each leaves open.
         recovery, and resource use relative to fixed single-tier
         policies, and where do the effects concentrate? \\
         Ready backend to traffic (RQ3) &
-        How does readiness-admission coordination affect the delay from
-        verified readiness to usable capacity, when the new capacity begins
-        to carry load, the onset-window service consequence, and what the
-        admission evidence guarantees when the readiness claim is lost or
-        premature? \\
+        When a newly provisioned backend becomes ready, how do the three
+        admission rules (the readiness message alone, the message with a
+        bounded re-check, and a periodic check of the backend) affect
+        whether and when the new capacity starts serving requests and what
+        users experience, under an intact message, a lost message, or a
+        message that arrives before the backend can serve? \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -1197,7 +1199,8 @@ presented in the remainder of the chapter.
     \item \textit{Independent compute and storage elasticity.} The platform
     must distinguish an increase or decrease in compute capacity from an
     increase or decrease in storage capacity, allowing each resource tier to
-    be managed separately.
+    be managed separately, and storage capacity must be changeable at run
+    time from the platform's own code, while the service keeps serving.
 
     \item \textit{Lifecycle-safe admission.} Provisioned resources must not be
     regarded as usable capacity before they are admitted to the appropriate
@@ -1581,9 +1584,11 @@ summary at a fixed read interval, partial and late. The modes are four
 configurations of one interface rather than two transports opposed to each
 other, and the read interval alone places polling in its cell: with one summary
 every 10~s, two summaries close between the 30~s reads and are never fetched, and the
-read is not aligned to the production cycle, so the summary it returns had
-closed up to one period before the read. A read on the 10~s period would
-have delivered nearly every summary, at most one period old. 
+read is not aligned with when the summaries close, so the summary it
+returns had closed up to one period before the read. The read was fixed at
+30~s, not to compare push against polling, in addition an earlier experiment with
+polling reads at 5~s and 12~s showed no significant difference in outcome from push,
+so a 10~s read was left out.
 
 Because the decision engine evaluates delivered summaries only, the mode sets the
 earliest moment a scaling reaction can begin: a decision cannot be taken
@@ -1902,6 +1907,19 @@ behaviours of the routing path (Section~\ref{sec:vip_data_paths}) and
 are held constant in the readiness experiments.
 
 \subsection{Storage}\label{sec:impl_data}
+
+The storage tier is built on MongoDB replica sets, chosen because DR3
+requires storage capacity to change at run time from the platform's own
+code, while the service keeps serving. MongoDB meets this requirement with
+the database's own membership commands, issued by the platform's code, and
+each member is one container running one database process. The alternatives
+considered add a management component or require hand-built orchestration.
+A MySQL InnoDB Cluster changes membership through the cluster API of MySQL
+Shell, a separate management component the platform must invoke
+\parencite{MySQLDocsAdminAPI,MySQLDocsInnoDBCluster}. A PostgreSQL
+streaming-replication standby has no built-in membership operation at all
+and must be provisioned and configured by hand
+\parencite{PostgreSQLDocsWarmStandby}.
 
 Each domain's storage is a MongoDB replica set of its own, built in three
 steps. At network build time, the domain's storage container starts as
