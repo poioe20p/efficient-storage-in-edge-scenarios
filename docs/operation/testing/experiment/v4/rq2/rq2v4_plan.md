@@ -140,33 +140,36 @@ aligned compute action relieves both lanes and sticks.
 
 1. **P2.1 Spec + implement** ✅ (2026-10-11, review-clean 4 rounds) — artifact
    [`rq2v4_p2_01_hash_kind.md`](rq2v4_p2_01_hash_kind.md): endpoint
-   `/compute/hash` (`HASH_WORK_FACTOR` env, default 25000 ≈ **26–35 ms/request
-   measured**, seeded by `hash_chain` in `compute.py`), generator kind
+   `/compute/hash` (`HASH_WORK_FACTOR` env, default 25000; **in-container
+   measured basis: raw ≈ 8.7 ms/request, wall quota-quantization dominated —
+   spec §1.2**, seeded by `hash_chain` in `compute.py`), generator kind
    `hash_challenge`, carrier mechanics with two lift points + controller `-e`
    (all carrier combinations reduce to one value); selftest
    `source/scripts/testing/rq2v4_p2_01_hash_kind_selftest.py` green
-   (all assertions). Expected campaign press: ≤ ~6 rps/lane at the default —
-   P2.3 seats the rate.
-2. **P2.2 Build + deploy** — combined (P1+P2) image, built **after** the P1
-   battery passes (it did); regression smoke on the other kinds (mixed
-   low-rate run).
-3. **P2.3 Knee calibration** — seat the ladder from a per-request cost
-   estimate (hash rounds × per-round cost, confirmed at one low rate) before
-   spending rungs; **measured basis (P2.1 selftest): ≈1.04 µs/round ⇒
-   default-25000 ≈ 26 ms/request ⇒ ≈5–6 rps/lane capacity at the 0.15 quota
-   ⇒ campaign rate ≈ 0.26–0.35 per client unit; bracket the ladder around
-   that (3–5 rungs) — and remember F1: start above the dead 2.5 anchor and
-   require the none-arm to lock before declaring `R_s`.** pure-hash ladder at the campaign quota (0.15 edge):
-   3–5 rungs → lock onset `R_s` (both lanes). **Finding F1 (P1.4): the old
-   2.5 anchor no longer locks — start the ladder above it (bracket
-   ~3.0–4.0) and require the none-arm to lock before declaring `R_s`.** The
-   calibration must show
-   **hash work dominates the pre-dispatch/connection overhead** in the knee
-   (report the cost split; raise the work factor if not). Then verify
-   compute-only relieves both lanes at `R_s·(1.1–1.2)` (margin basis: clear
-   the observed 2.0→2.25-scale hysteresis while keeping relief feasible
-   under the 6/6 caps). **Run with strict host quiescence and check the F2
-   burst signature** (verification artifact §4–5). Artifact
+   (all assertions). Expected campaign press: ≈5–10 rps/lane capacity at
+   0.15 ⇒ ladder rungs 0.20–0.35 — P2.3 seats the rate.
+2. **P2.2 Build + deploy** ✅ (2026-10-11) — edge image rebuilt
+   (`30a2c88bc1ce → 12c9ef0dc4b7`, edge_server only); lockstep asserted
+   (static edges on the new image, endpoint live incl. the 400-on-missing-
+   nonce contract); mixed smoke `20261011_201900_rq2v4_p2_smoke`: all six
+   kinds served, 0×5xx, 0 culls, no exceptions. Discovery recorded in the
+   spec §1.2: VM CPU ~3× the P2.1 host (8.7 ms raw per request); in-container
+   wall latency is quota-quantization dominated; measured hash capacity
+   ≈ 5–10 rps/lane at 0.15.
+3. **P2.3 Knee calibration** — **in progress** (2026-10-11 evening). Hash-only
+   ladder at the campaign quota (0.15 edge), rungs 0.20/0.25/0.30/0.35
+   (extend to 0.40/0.50 only if 0.35 does not lock); rps/lane ≈ rate × 24;
+   capacity basis = the P2.2 in-container measurement (raw ≈ 8.7 ms/request,
+   wall quota-quantization dominated, **≈ 5–10 rps/lane**; spec §1.2).
+   **Lock metric:** per-lane episode p95 ≥ 1 s in ≥ 80 % of 10 s windows,
+   BOTH lanes, completion < ~95 %; near-lock rungs (60–79 %) are carried
+   forward, not discarded. `R_s` = first locking rung. Then verify
+   compute-only relieves both sides at `R_s × 1.15` (post-add p95 < 1 s in
+   ≥ 80 % of windows, completion ≥ 95 %, recovery persists to episode end)
+   and that storage-only does NOT clear the lock. **Run with strict host
+   quiescence and check the F2 burst signature** (verification artifact
+   §4–5). The calibration reports the cost split (hash CPU vs per-request
+   overhead vs quota throttling). Artifact
    `rq2v4_p2_02_knee_calibration.md` freezing (work factor, rate, quota,
    caps).
 4. **P2.4 Workload documentation** — update the demand-model/kind and phase

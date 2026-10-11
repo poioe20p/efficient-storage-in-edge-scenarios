@@ -34,10 +34,14 @@
 
 - Env var on the edge container, integer SHA-256 rounds.
   **Single default source of truth: `edge_server_config.HASH_WORK_FACTOR_DEFAULT`
-  = 25000** — measured (P2.1 selftest, host) ~1.04 µs/round ⇒ ≈ 26 ms/request
-  (re-measure in-container at P2.3; re-seat the default there if the split
-  against the ~2.3–2.6 ms non-handler overhead is unfavourable — at 26 ms the
-  hash is already ~10× the overhead, well inside the target).
+  = 25000.** **Measured basis (P2.2, in-container on the VM): raw CPU ≈
+  0.35 µs/round ⇒ ≈ 8.7 ms/request — but the wall latency is dominated by
+  CFS quota quantization (15 ms CPU budget per 100 ms period at the 0.15
+  quota): light-load hash p50 ≈ 63 ms, under-load ≈ 0.2–1.1 s. The quota
+  itself is the binding resource — the press we want. Measured server-side
+  hash capacity ≈ 5–10 rps/lane at the campaign quota.**
+  (P2.1 host measurement — ~1.0–1.4 µs/round, ≈ 26–35 ms — was ~3× slower
+  than the VM CPU; kept here for provenance.)
 - Carrier mechanics (one knob at the launcher call; nothing defaults twice):
   - **two lift points make the guarantee invocation-independent.** The
     launcher lifts a caller export (or a merged-env value) into the make var;
@@ -130,11 +134,20 @@
 
 ## 5. P2.2/P2.3 notes
 
+- **P2.2 executed (2026-10-11):** edge image rebuilt `30a2c88bc1ce → 12c9ef0dc4b7`
+  (only edge_server), deployed with lockstep asserted (both static edges on the
+  new image; endpoint live: `nonce=selftest` → JSON `rounds: 25000`, missing
+  nonce → 400). Mixed smoke `20261011_201900_rq2v4_p2_smoke`: all six kinds
+  served (hash 920 rows), 0×5xx / 0×000, 0 culls, no exceptions. In-container
+  hash cost measured (quota quantization dominates the wall; see §1.2).
 - **Evidence source for the cost split:** controller-side per-request
   telemetry derives `request_type` from the HTTP method only (all GETs are
   "read"), so `hash_challenge` is not distinguishable there. The cost-split
   evidence comes from the **client CSV** (`endpoint` column + `latency_s`)
   and the edge's `T_proc`/CPU in the window logs — use those in P2.3.
+- **P2.3 (in progress):** hash-only ladder rungs 0.20/0.25/0.30/0.35 at the
+  0.15 quota (rps/lane ≈ rate × 24; expected onset in this band given the
+  measured 5–10 rps/lane capacity), seat `comp`/`stor` at `R_s × 1.15`.
 
 - P2.2 combines this with the P1 fix in the build (edge image changes now —
   both edge and `local_state_server` images rebuilt; the controller stays
