@@ -109,6 +109,7 @@ Full write-up: `rq2v4_p1_01_liveness_fix.md` §12.
 | D7 | Regime-shift sequence (compute→storage, storage→compute in one run) | candidate v4 extension after the core matrix validates |
 | D8 | Tier-1 held off in all v4 modes (`SS_ENABLED=0`) so no un-evaluated spawn path escapes the ablation; verify v3 RQ2 Tier-1 activity at P1.2 | proposed 2026-10-11 |
 | D9 | RQ1 interaction: archived results stand as the pre-fix platform record; the fix changes teardown semantics only (audit §2.4); mode producibility holds by construction (additive fields); any RQ1 re-proof is RQ1-owned and parked | recommended 2026-10-11 |
+| D10 | Compute relief not demonstrable under a real press (P2.3: comp engaged fully, lock persisted — traffic concentrates one-unit-at-a-time). P2.5 read-only diagnosis opened; seat freeze deferred; fallback = author decision on re-scoping the compute claim | opened 2026-10-11 |
 
 ## 4. Mixed-regime construction (design answer)
 
@@ -132,7 +133,10 @@ rather than a substitute for the mixed row.
    burst to confirm under host quiescence).
 3. ~~Implement the hashing request kind~~ ✅ (2026-10-11, P2.1 implemented +
    selftest green; build + calibration next).
-4. Calibrate the mixed regime; re-anchor the compute-bound rate.
+4. ~~Calibrate the mixed regime; re-anchor the compute-bound rate~~ — the
+   compute seat is seated (R_s = 0.20) but its **relief is unresolved**
+   (P2.5 diagnosis running; see `rq2v4_p2_02_knee_calibration.md`). Mixed
+   regime (P3) waits on the relief resolution.
 5. Freeze the v4 experiment plan (treatments, gates, replication,
    counterbalancing, blocks) and run the campaign.
 

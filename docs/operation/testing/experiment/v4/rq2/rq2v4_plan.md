@@ -156,22 +156,24 @@ aligned compute action relieves both lanes and sticks.
    spec §1.2: VM CPU ~3× the P2.1 host (8.7 ms raw per request); in-container
    wall latency is quota-quantization dominated; measured hash capacity
    ≈ 5–10 rps/lane at 0.15.
-3. **P2.3 Knee calibration** — **in progress** (2026-10-11 evening). Hash-only
-   ladder at the campaign quota (0.15 edge), rungs 0.20/0.25/0.30/0.35
-   (extend to 0.40/0.50 only if 0.35 does not lock); rps/lane ≈ rate × 24;
-   capacity basis = the P2.2 in-container measurement (raw ≈ 8.7 ms/request,
-   wall quota-quantization dominated, **≈ 5–10 rps/lane**; spec §1.2).
-   **Lock metric:** per-lane episode p95 ≥ 1 s in ≥ 80 % of 10 s windows,
-   BOTH lanes, completion < ~95 %; near-lock rungs (60–79 %) are carried
-   forward, not discarded. `R_s` = first locking rung. Then verify
-   compute-only relieves both sides at `R_s × 1.15` (post-add p95 < 1 s in
-   ≥ 80 % of windows, completion ≥ 95 %, recovery persists to episode end)
-   and that storage-only does NOT clear the lock. **Run with strict host
-   quiescence and check the F2 burst signature** (verification artifact
-   §4–5). The calibration reports the cost split (hash CPU vs per-request
-   overhead vs quota throttling). Artifact
-   `rq2v4_p2_02_knee_calibration.md` freezing (work factor, rate, quota,
-   caps).
+3. **P2.3 Knee calibration** — **done 2026-10-11** (artifact
+   [`rq2v4_p2_02_knee_calibration.md`](rq2v4_p2_02_knee_calibration.md)):
+   ladder seated **R_s = 0.20** (0.25–0.35 skipped by decision logic —
+   first rung locked both lanes: 95.3/100 % windows ≥ 1 s, p50 ≈ 1.9 s);
+   **press gate PASSED**. Seat runs at 0.23: `comp` engaged fully
+   (6+6 units, all serving) but **relief FAILED** (lock persisted, ~1.8 s
+   p50 sustained); `stor` **specificity PASSED**; margin PASSED. Mechanism
+   signature: traffic concentrates one-unit-at-a-time (multi-window hot-seat
+   rotation); queue sits ahead of the serving handler. Seat freeze deferred.
+4. **P2.5 Relief diagnosis (read-only)** — **opened 2026-10-11** (autopsy
+   #3): why does selection funnel onto one backend at a time despite N
+   eligible units? Classes: client-binding stickiness / selection
+   determinism / warm-lease reinforcement; minimal-fix options per class.
+   Resolves before any campaign freeze; fallback is an author decision on
+   re-scoping the compute claim.
+5. **P2.6 (conditional) Relief repair + re-seat** — implement the confirmed
+   minimal fix; re-run the seat block (`none`/`comp`/`stor` @ R_s·1.15) to
+   pass relief + specificity + margin; then freeze the seat.
 4. **P2.4 Workload documentation** — update the demand-model/kind and phase
    tables in the operational docs (e.g.
    `docs/operation/testing/testing_workloads.md`, already stale vs
