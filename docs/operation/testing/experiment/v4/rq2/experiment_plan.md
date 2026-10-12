@@ -272,6 +272,13 @@ Decide the following — P4.2 auto-review already ran (3 rounds, all 🔴/🟡 f
 - **R15** Confirm F2 confirmation status (Q14).
 - **R16** Confirm block-level MC1/MC4 vs the P4.1 per-run wording (Q15).
 
+**P4.3 — SIGNED OFF 2026-10-12 (author): R1–R16 approved as recommended.**
+Recorded deviations: **R4** db re-anchor preflight **approved** (2 runs at
+P5.1, seed 42: `none` + `stor`); **R12** instrumentation parked
+(post-campaign; D14 CPU leg carries the storage gates); **R15** F2
+confirmation carried into P5.1 (host sampler at 1 Hz + first-block
+review). The plan freezes with this sign-off.
+
 ## Appendix
 
 ### A. Prerequisites (P5.1 preflight checklist)
