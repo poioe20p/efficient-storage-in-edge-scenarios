@@ -1,6 +1,8 @@
 # RQ2 v4 — P3.1: Mixed ("both") regime levers study + P3.2 calibration-ladder proposal
 
-> **Status:** 2026-10-12 · design artifact (no VM, no runs). Inputs from
+> **Status:** 2026-10-12 · design artifact; decisions 1–10 approved; ladder
+> v1 executed — all rungs + the contingency failed leg (iii) → D13
+> member-quota rework (execution record in §6). Inputs from
 > [rq2v4_plan.md](rq2v4_plan.md) Phase 3, the frozen P2 seat
 > ([rq2v4_p2_08_band_floor.md](rq2v4_p2_08_band_floor.md) §6 / D12), and the
 > v3 data-bound record. The run/verdict companion (frozen mix, quotas, rate)
@@ -310,3 +312,48 @@ lookup-cost bracket vs probe (and the ≈1 pp worst-corner breach), the
 the quota-relative press and artifact-defined thresholds (0.08 vs `edge020`),
 the TELEMETRY_SOURCE pinning, and the hash-kind completion-clause escalation
 rule.
+
+---
+
+## 6. P3.2 execution record — ladder v1 (2026-10-12)
+
+Decisions 1–10 approved 2026-10-12. Ladder v1 executed (canonical
+`phases.json` episode edited in place per §3; BA delta for the `none` rungs;
+full retention; HEAD `8064d71`):
+
+| Run | R_m | r_h / r_l | quotas e/m | hash p50 L1/L2 | hash compl. | edge mean | member CPU mean | legs |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `…_r10` | 1.0 | 4.92 / 19.1 | 0.15 / 0.08 | 8.4 / 8.4 s | 79.8 / 79.7 % | 66.4 / 46.9 % | 25.4 / 24.8 % | (i)✓ (ii)✓ **(iii)✗** (iv)✓ |
+| `…_r115` | 1.15 | 5.66 / 21.9 | 0.15 / 0.08 | 8.7 / 8.6 s | 70.5 / 70.1 % | 71.1 / 67.5 % | 24.9 / 24.7 % | (i)✓ (ii)✓ **(iii)✗** (iv)✓ |
+| `…_r13` | 1.3 | 6.40 / 24.8 | 0.15 / 0.08 | 8.6 / 8.5 s | 63.9 / 63.1 % | 59.6 / 45.5 % | 24.9 / 24.9 % | (i)✓ (ii)✓ **(iii)✗** (iv)✓ |
+| `…_edge020` (contingency) | 1.85 | 7.55 / 36.9 | 0.20 / 0.10 | 5.5 / 5.4 s | 70.1 / 71.4 % | 72.6 / 75.9 % | 24.5 / 25.3 % | (i)✓ (ii)✓ **(iii)✗** (iv)✓ |
+
+Leg (iii) failed on the CPU floor (member mean ≥ 33 %) in every run while
+its score clause passed (84.4–98.4 % of rows ≥ threshold). Legs (i), (ii)
+and (iv) passed everywhere (hash lock 96.9–100 %; the "≈100 % completion
+with p95 ≥ 1 s" escalation case did not occur; edge mean 45.5–75.9 %).
+Culls 0/0, exceptions 0, no spawns, `phases.json` restored.
+
+**Finding — the member is delivery-capped, not quota-limited.** Member CPU
+is pinned at ≈25 % (idle ≈ 6.6–9.4 % → load-attributable press only
++15–18 pp), invariant to offered lookup rate (19.1 → 36.9 rps), member
+quota (0.08 → 0.10) and edge quota (0.15 → 0.20). Demand queues at the
+EDGE (hash p50 5.4–8.7 s; strict hash completions 64–80 %, ex-phantom
+99.3–99.8 %), so raising the offered rate raises the queue, not the
+arrivals at the member. Consequence: the 33 % press floor is unreachable
+by rate at member 0.08 and C14's model over-predicts here. The mixed
+regime at the frozen edge seat is **edge-delivery-limited** — a recorded
+platform property (relevant to the write-up).
+
+Contingency note: the single pre-authorized `edge020` round was executed
+under the "edge-bound before member-bound" mechanism reading (the formal
+leg-(iv) mean never crossed 95 %); it failed the same leg → the chain
+stopped at the plan gate — no pilots, no improvisation.
+
+**Decision D13 (author-approved 2026-10-12): member-quota rework** —
+`STORAGE_CPUS` 0.08 → **0.05** (the designated balancing lever; per-regime
+quotas follow the v3 precedent), one confirm rung at R_m = 1.15, then the
+three pilots at that seat. Amended starting config: §3 with member 0.05
+(predicted member reading ≈40 %). Comparability caveat (mixed@0.05 vs
+data-bound@0.15) stands and deepens — carried into P4. Confirm rung +
+pilots running.
