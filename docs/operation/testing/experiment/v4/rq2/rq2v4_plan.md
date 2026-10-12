@@ -190,17 +190,19 @@ aligned compute action relieves both lanes and sticks.
    one-hot) — relief failed as pre-registered (0/15 post-add windows both
    lanes); the single band=5 epoch coincided with full relief (p50
    0.05–0.12 s). Stor specificity passed. → P2.8.
-7. **P2.8 Band floor + verification re-seat** — **in progress (2026-10-12)**:
-   `_BACKEND_SELECTION_SPREAD_MIN_BAND` (default 4) tops the band up to ≥
-   min(k, eligible locals) members (finite cost, known IP, not peer,
-   slow-start penalty fully decayed) so a burst is one-hot only when fewer
-   than two eligible locals exist;
-   selftest extended (32 assertions green); artifact
-   [`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md). Verification:
-   re-run the seat pair (`rq2v4_p2_{comp,stor}_h023_v3`, rate 0.23, seed 42)
-   — comp relief gate + band ≥ 4 members in the post-add steady state
-   (expected fan-out = band size) + census ≥ 3 concurrent; stor must stay
-   locked. Then freeze the seat.
+7. **P2.8 Band floor + verification re-seat** — **done 2026-10-12;
+   verified** (artifact
+   [`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md) §6): mechanism
+   gates all pass — band = 4 in every steady-state epoch, every
+   floor-complete burst seats all 4 members, 3–4 concurrent servers
+   sustained (48/61 windows per lane), stor specificity held, comp
+   completion 100 %, timeouts 0, T_proc halved. Relief passes in the
+   post-engagement steady state (83.3/82.1 % of windows, medians ≈ 0.5 s);
+   the pinned post-add window fails structurally (first floor-complete
+   burst ≈ add+177 s — the re-selection cadence, not the repair) →
+   **D12**: campaign relief gate re-anchored to that steady state, with
+   time-to-relief as a measured endpoint. **Seat frozen** (R_s = 0.20 /
+   hash 25000 / quota 0.15 / caps 6/6) → Phase 3.
 8. **P2.4 Workload documentation** — update the demand-model/kind and phase
    tables in the operational docs (e.g.
    `docs/operation/testing/testing_workloads.md`, already stale vs

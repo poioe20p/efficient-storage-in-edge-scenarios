@@ -1,7 +1,8 @@
 # RQ2 v4 — P2.8: Spread band floor (minimum fan-out per selection burst)
 
-**Status:** implemented 2026-10-12 (review pending); verification re-seat
-pending. Parent: [`rq2v4_p2_03_relief_diagnosis.md`](rq2v4_p2_03_relief_diagnosis.md)
+**Status:** implemented + verified 2026-10-12 (auto-review converged;
+verification re-seat `_v3`: mechanism gates PASS, relief achieved in the
+post-engagement steady state; decision D12, seat frozen — see §6). Parent: [`rq2v4_p2_03_relief_diagnosis.md`](rq2v4_p2_03_relief_diagnosis.md)
 (funnel diagnosis) and
 [`rq2v4_p2_02_knee_calibration.md`](rq2v4_p2_02_knee_calibration.md) §6 (P2.7
 verdict).
@@ -136,3 +137,47 @@ structural option (per-connection server flows) with the author.
   consistency: `band < k` exemption precedence made explicit; "cannot take
   a burst" qualified by the eligible-locals clamp everywhere) — resolved.
   Converged.
+
+## 6. Verdict (re-seat `_v3`, 2026-10-12)
+
+Runs (post-P2.8 `750ef12`, hash-only shape, rate 0.23, seed 42, full
+retention):
+
+- `20261012_003550_rq2v4_p2_comp_h023_v3` (00:35:50–00:57:05 Z)
+- `20261012_010455_rq2v4_p2_stor_h023_v3` (01:04:55–01:26:41 Z)
+
+| Run | p50 L1/L2 | p95 L1/L2 (max) | Lock % win | Completion | Timeouts |
+| --- | --- | --- | --- | --- | --- |
+| comp v3 | 0.2 / 0.2 s | 1.8 / 2.1 s (3.5) | 32.8 / 34.4 | **100 / 100 %** | **0** |
+| stor v3 | 2.0 / 2.3 s | 16.7 / 15.0 s (35.6) | 100 / 100 | 98.1 / 98.1 % | 1 |
+
+Mechanism gates — all PASS:
+
+- band = 4 in **every** steady-state epoch (histogram `{1:1, 2:1, 4:8}`;
+  the two sub-4 bursts were eligibility-clamped at episode start with only
+  2–3 units admitted — the pre-registered exemption);
+- every floor-complete burst seats **all four** band members, both lanes
+  (v1: one-hot everywhere; v2: mostly band=1);
+- sustained **3–4 concurrent servers in 48/61 windows** per lane (serving
+  census; the >30 %-CPU proxy under-detects post-spread);
+- stor specificity holds (100 % lock windows, zero compute spawns);
+- culls 0/0, exceptions 0, timeouts 0 (comp), completion 100 %;
+- per-request cost unchanged — T_proc halved (381 → 188 ms) by concurrency.
+
+Relief timing — the honest reading:
+
+- post-engagement steady state (add+180 → end): **PASS both lanes** —
+  lan1 83.3 %, lan2 82.1 % of windows p95 < 1 s (medians 0.53 / 0.60 s);
+- pinned post-add window ([add+30, +180]): 40.0 / 53.3 % — structurally
+  transitional: the floor cannot engage before ≥ 4 units are admitted and
+  the next 60 s re-selection burst arrives (first floor-complete burst ≈
+  add+177 s). The window measured the platform's re-selection cadence, not
+  the repair;
+- last 180 s: lan2 84.2 % PASS; lan1 78.9 % — one window short.
+
+Decision D12 (2026-10-12, author-approved): the campaign relief gate is
+**re-anchored to the post-engagement steady state** (first floor-complete
+burst → episode end), and **time-to-relief** (first add → first sustained
+relief) is recorded as a measured endpoint of the compute cells. Seat
+frozen: R_s = 0.20 (rate 0.23 seat), work factor 25000, edge quota 0.15,
+caps 6/6.

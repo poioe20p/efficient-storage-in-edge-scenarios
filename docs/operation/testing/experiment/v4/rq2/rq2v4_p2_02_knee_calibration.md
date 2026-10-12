@@ -64,9 +64,10 @@ visible; it must now be resolved (or the RQ2 claim re-scoped, author's call).
    near-equal costs (argmin funnel + slow rotation); (c) warm-lease/cost
    interactions. Fix options depend on the class; a minimal selection-spread
    repair would restore concurrent serving and relief.
-2. **Seat freeze deferred** until relief is resolved: press seat
-   (R_s = 0.20, work factor 25000, quota 0.15, caps 6/6) is otherwise
-   ready to freeze.
+2. **Seat frozen 2026-10-12** (after the P2.8 verdict — see
+   [`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md) §6): press seat
+   R_s = 0.20 (rate 0.23), work factor 25000, quota 0.15, caps 6/6; relief
+   definition per D12 (post-engagement steady state + time-to-relief).
 3. **Cost split (recorded):** light-load hash p50 ≈ 55–58 ms vs raw 8.7–11 ms
    — CFS quota quantization (throttled 54.6/69.6 % of periods in the ladder
    runs) is the per-request wall floor below saturation; under press the
@@ -119,3 +120,10 @@ Consequence: P2.8 band floor (minimum k = 4 eligible local units in the
 band) — see plan item 7 and
 [`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md); the verification
 re-seat re-runs this pair (labels `_v3`).
+
+**Follow-up (2026-10-12):** the P2.8 verification resolved the funnel —
+band = 4 in every steady-state epoch, 3–4 concurrent servers sustained,
+steady-state relief on both lanes (83.3/82.1 % of windows), stor
+specificity held; relief onset is one re-selection cadence after capacity
+(≈ add+177 s), recorded as decision D12. Verdict:
+[`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md) §6.
