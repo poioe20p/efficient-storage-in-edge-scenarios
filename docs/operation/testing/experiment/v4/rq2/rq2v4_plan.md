@@ -182,13 +182,26 @@ aligned compute action relieves both lanes and sticks.
    (band membership, spread balance, determinism, legacy-at-0, warm
    inclusion, beyond-eps exclusion, peer guard). Controller-only — deployed
    by checkout sync (each launcher run recreates the containers).
-6. **P2.7 Relief re-seat** — **in progress** (2026-10-11 evening): re-run
-   the seat block at 0.23 (`comp` must relieve: post-add p95 < 1 s in
-   ≥ 80 % of windows both lanes, completion ≥ 95 %, persists; `stor` must
-   still not relieve) + concurrency census (expect ≥3 units concurrently
-   hot) + burst fan-out check (distinct MACs per epoch burst). Then freeze
-   the seat.
-4. **P2.4 Workload documentation** — update the demand-model/kind and phase
+6. **P2.7 Relief re-seat** — **done 2026-10-12; gate FAILED, diagnosis
+   recorded** (`rq2v4_p2_02_knee_calibration.md` §6): the P2.6 spread broke
+   the timeout regime (comp timeouts 229 → 0, completion up, lan1 fan-out up
+   to 5 MACs/epoch) but the ε-band collapses to one member in most bursts
+   whenever a unit is strict argmin by > ε (lan1 5/9, lan2 8/9 epochs
+   one-hot) — relief failed as pre-registered (0/15 post-add windows both
+   lanes); the single band=5 epoch coincided with full relief (p50
+   0.05–0.12 s). Stor specificity passed. → P2.8.
+7. **P2.8 Band floor + verification re-seat** — **in progress (2026-10-12)**:
+   `_BACKEND_SELECTION_SPREAD_MIN_BAND` (default 4) tops the band up to ≥
+   min(k, eligible locals) members (finite cost, known IP, not peer,
+   slow-start penalty fully decayed) so a burst is one-hot only when fewer
+   than two eligible locals exist;
+   selftest extended (32 assertions green); artifact
+   [`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md). Verification:
+   re-run the seat pair (`rq2v4_p2_{comp,stor}_h023_v3`, rate 0.23, seed 42)
+   — comp relief gate + band ≥ 4 members in the post-add steady state
+   (expected fan-out = band size) + census ≥ 3 concurrent; stor must stay
+   locked. Then freeze the seat.
+8. **P2.4 Workload documentation** — update the demand-model/kind and phase
    tables in the operational docs (e.g.
    `docs/operation/testing/testing_workloads.md`, already stale vs
    `phases.json`) to the v4 kinds: add `hash_challenge`; `service_pressure`

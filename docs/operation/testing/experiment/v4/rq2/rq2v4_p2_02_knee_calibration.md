@@ -79,3 +79,43 @@ visible; it must now be resolved (or the RQ2 claim re-scoped, author's call).
 - Independent verification (main session): h020 lock metrics, comp timeline
   per-minute recomputation, cull/removal counts re-checked with correct
   quoting (0/0).
+
+## 6. P2.7 re-seat verdict — spread v2 (2026-10-11/12)
+
+Runs (post-P2.6 `57f58c3`, hash-only shape, rate 0.23, seed 42, full
+retention):
+
+- `20261011_225528_rq2v4_p2_comp_h023_v2` (22:55:28–23:17:15 Z)
+- `20261011_232451_rq2v4_p2_stor_h023_v2` (23:24:51–23:46:23 Z)
+
+| Run | p50 L1/L2 | p95 L1/L2 (max) | Lock % windows | Completion | Timeouts |
+| --- | --- | --- | --- | --- | --- |
+| comp v2 | 0.8 / 2.0 s | 2.9 / 7.8 s (16.4) | 75.4 / 98.4 | 99.1 / 97.7 % | **0** (v1: 229) |
+| stor v2 | 2.4 / 2.6 s | 30.0 / 28.1 s (300) | 100 / 100 | 96.3 / 95.3 % | 208 |
+
+Burst fan-out (distinct MACs per 60 s epoch): lan1 `{1:5, 2:2, 3:1, 5:1}`,
+lan2 `{1:8, 2:1}` (v1: one-hot everywhere). Concurrency census (units
+> 30 % CPU per 30 s): lan1 max 4 (≥ 3 units in 3 buckets), lan2 max 2.
+
+Verdicts: comp relief **FAILED** as pre-registered (0/15 post-add windows,
+p95 < 1 s both lanes); stor specificity **PASSED**; timeouts 229 → 0 and
+completion up in comp.
+
+Diagnosis (burst logs + independent timeline recomputation):
+
+1. **Band collapse** — the ε-band alone is size 1 in most bursts whenever a
+   unit is the strict argmin by more than ε (or the warm claim is the strict
+   minimum): lan1 5/9, lan2 8/9 epochs stayed one-hot, so the one-unit
+   rotation persisted at epoch granularity.
+2. **Mechanism validated where the band was wide** — the single band=5
+   epoch (23:02:05 Z) maps exactly onto the only full-relief interval
+   (23:02:01–23:03:11, lan1 p50 0.05–0.12 s): wide band ⇒ concurrent
+   serving ⇒ relief, immediately. The fix works; the dose was too small.
+3. Anomaly (recorded, no action) — simultaneous both-lane latency storm
+   23:04:11–23:05:11 Z (p95 up to 16 s) with no controller error; host
+   transient, F2 discipline upheld.
+
+Consequence: P2.8 band floor (minimum k = 4 eligible local units in the
+band) — see plan item 7 and
+[`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md); the verification
+re-seat re-runs this pair (labels `_v3`).

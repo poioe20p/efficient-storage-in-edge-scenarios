@@ -309,6 +309,24 @@ _FLOW_ISOLATION_WARMUP_S = float(os.environ.get("FLOW_ISOLATION_WARMUP_S", "120.
 _BACKEND_SELECTION_SPREAD_EPS = float(
     os.environ.get("BACKEND_SELECTION_SPREAD_EPS", "0.03"))
 
+# RQ2 v4 P2.8 — minimum spread-band size (floor).
+# The eps-band alone still collapses to one member whenever the cheapest unit
+# wins by more than eps — the common case under load — so most selection
+# bursts stayed one-hot after P2.6 (8/9 lan2 bursts in the P2.7 verification)
+# and relief failed. With this floor k > 1, a band smaller than k is topped
+# up to k members with the cheapest eligible LOCAL units (finite cost, known
+# IP, not peer, slow-start penalty fully decayed; MAC tie-break keeps the cut
+# deterministic across pool rebuilds), clamped to the number of eligible
+# locals. The band then holds at least min(k, eligible locals) members and
+# per-unit load falls to about rate/k once >= k locals are eligible;
+# per-burst fan-out is hash-determined from
+# the band (expected = band size). k <= 1 disables the floor (P2.6
+# semantics). Applies only when the spread is active (eps > 0). Same repair
+# discipline as P2.6: default-active; pre-P2.8 reproduction baseline = the
+# P2.6 commit 57f58c3.
+_BACKEND_SELECTION_SPREAD_MIN_BAND = int(
+    os.environ.get("BACKEND_SELECTION_SPREAD_MIN_BAND", "4"))
+
 # ── Storage persistent reserve ─────────────────────────────────────────
 # 1 = maintain one ready same-LAN storage reserve per LAN; 0 = off.
 _STORAGE_PERSISTENT_RESERVE_ENABLED = int(

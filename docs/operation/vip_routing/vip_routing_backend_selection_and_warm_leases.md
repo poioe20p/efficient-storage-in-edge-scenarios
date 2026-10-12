@@ -105,12 +105,17 @@ $$
    legacy behaviour holds: the claim owns the selection outright.
 2. **WSM scoring.** All backends in the pool are scored; the lowest cost
    defines the band cutoff (step 3).
-3. **Near-cost band spread (P2.6).** With eps > 0, every backend whose cost
-   is within eps of the minimum forms a band; each client deterministically
-   picks one band member (stateless md5 hash of the client MAC over the
-   band sorted by MAC). Exact ties are a subset of the band, so the legacy
-   round-robin below does not run in this mode. With eps = 0 the legacy path
-   is byte-identical: exact-tie round-robin via `_rr_server_idx`.
+3. **Near-cost band spread (P2.6) + band floor (P2.8).** With eps > 0, every
+   backend whose cost is within eps of the minimum forms a band; each client
+   deterministically picks one band member (stateless md5 hash of the client
+   MAC over the band sorted by MAC). Exact ties are a subset of the band, so
+   the legacy
+   round-robin below does not run in this mode. With the P2.8 floor k > 1 a
+   band smaller than k is topped up to k members with the cheapest eligible
+   **local** units (finite cost, known IP, not peer, slow-start penalty
+   fully decayed), so a strict single winner cannot take a whole selection
+   burst once at least two eligible locals exist. With eps = 0 the
+   legacy path is byte-identical: exact-tie round-robin via `_rr_server_idx`.
 
 ## 6. Storage Selection
 
@@ -207,7 +212,7 @@ traffic evenly:
 absorbed into the near-cost band and distributed by the per-client hash —
 which removes the 60 s one-hot funnel (see Section 7a).
 
-### 7a. Near-Cost Band Spread (P2.6)
+### 7a. Near-Cost Band Spread (P2.6) + Band Floor (P2.8)
 
 `BACKEND_SELECTION_SPREAD_EPS` (default **0.03**, env-overridable; 0 =
 legacy) repairs a capacity defect: per-client VIP_SERVER flows expire in
@@ -226,6 +231,35 @@ concurrency (diagnosis:
   eps well below it.
 - Repair semantics: active by default in every policy mode; re-running
   pre-P2.6 campaigns reproduces only from the pre-P2.6 commit.
+
+`BACKEND_SELECTION_SPREAD_MIN_BAND` (default **4**, env-overridable; k ≤ 1
+disables) floors the band: the eps-band alone collapses to one member
+whenever the cheapest unit wins by more than eps — the common case under
+load (P2.7 verification: 8 of 9 lan2 bursts stayed one-hot and relief
+failed). With the floor active, a band smaller than k is topped up to k
+members with the cheapest eligible **local** units not already in the band;
+eligible = finite cost, known backend IP, not peer, slow-start penalty
+fully decayed. Cost ties break on MAC, so the cut is deterministic across
+pool rebuilds. The floor never adds peers (even when a peer is cheaper than
+the
+next local) and clamps to the number of eligible locals. Effect: the band
+holds at least min(k, eligible locals) members, so a strict single winner
+cannot take a selection burst once at least two eligible locals exist; the
+actual per-burst fan-out is
+hash-determined with expected value equal to the band size — 24 clients
+over a 4-member band ≈ 6 clients/unit ≈ 1.4 rps/unit, about 3.4× inside the
+measured single-unit knee (~4.8 rps/lane). A live warm claim still joins as
+a share and counts toward k. Active only when eps > 0; with eps = 0 the
+legacy path is untouched by the floor.
+
+Two bounds from P2.6 change: (a) the "mean-cost rise bounded by ε" bound is
+superseded — the floor admits the k-th cheapest local regardless of its
+distance from the minimum, so the selection cost is bounded by that unit's
+cost, not by ε; (b) reproducibility: the pre-P2.8 baseline is the P2.6
+commit `57f58c3` — post-P2.6/pre-P2.8 runs are not reproducible on this
+commit. Peer classification is read from `peer_hosts` at selection time
+(topology updates replace it wholesale), so a unit reclassified between
+scoring and top-up can be seated once — bounded by a single selection.
 
 ## 8. Warm Lease Claim Path
 
@@ -247,7 +281,8 @@ keeps the code change minimal (no modification to `main_n*.py` or
 a claimed lease appends its backend to the near-cost band instead of
 returning it exclusively — the new backend still receives traffic
 immediately, but as a share of the selections rather than a 45 s monopoly
-(see Section 7a).
+(see Section 7a). Under the P2.8 floor the claimed backend counts toward the
+band-size floor k.
 
 ### Lease Data Structure
 
@@ -268,9 +303,9 @@ class WarmLease:
 3. **Filter claimable candidates.** A lease is claimable only when:
    - Its MAC is present in the concrete VIP pool.
    - Its MAC has a known backend IP in `_mac_to_ip`.
-4. **Newest wins.** If multiple leases are claimable, the one with the highest
-   `started_ts` wins. This keeps the brief post-scale-up preference aligned
-   with the latest admitted backend under sustained load.
+4. **Round-robin.** If multiple leases are claimable, `_warm_rr_idx` rotates
+   the choice across them (the earlier highest-`started_ts` preference was
+   replaced; see the docstring in `_claim_warm_backend`).
 5. **Return the chosen pool entry.** The caller uses it directly; the lease
    remains in the dict until it expires naturally -- it is not consumed on
    claim.
@@ -359,6 +394,11 @@ RQ3 runs pin `BACKEND_SELECTION_POLICY=topology_host` and
 `VIP_WARM_SERVER_SECONDS=0` in **both** arms (`direct` / `discovery`): no
 warm-lease consumption and no slow-start ramp, with a newly admitted backend
 strongly preferred by WSM through its best-case (`0.0`) unknown stats.
+(P2.6/P2.8 repair note: with the default-active spread, a newly admitted
+backend joins the selection band and receives ≈ 1/k of each selection burst
+instead of dominating selection — RQ3 re-runs on this commit measure the
+repaired behaviour; the archived RQ3 results reproduce only from the
+pre-P2.6 commit.)
 Backend admission itself goes through the readiness gate -- the spawned backend
 is held `PendingBackend` until `/ready` returns `200` before it joins the pool.
 See
@@ -396,6 +436,15 @@ The unweighted penalty (range 0–1) exceeds the maximum weighted WSM cost sum
 dominant — a backend under slowstart cannot win against any backend with real
 stats until the penalty has decayed substantially. This is intentional: the
 ramp IS the mechanism, not a subtle bias.
+
+(P2.8 caveat: the band floor also excludes units whose penalty has not
+fully decayed from its top-up candidates, so the deterrence holds for the
+floor too — when fewer than k eligible locals exist the band is clamped
+and penalised units are not seated to fill the gap. Interaction: under
+`topology_slowstart` the units a scale-up just added are ramping for the
+TTL window after every add, so during that window the floor seats
+non-ramping locals only — spreading a burst onto just-added capacity is
+deliberately subordinate to this mode's deterrence.)
 
 ### Design Note — TTL Reuse
 

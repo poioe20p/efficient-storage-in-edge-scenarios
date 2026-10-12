@@ -86,7 +86,11 @@ only spreads selections among **near-equal-cost** candidates (≤ ε apart) —
 i.e. it removes the arbitrary tie collapse. Warm-up still gives the new
 backend eligibility; it no longer gives it exclusivity.
 
-**Risks:** slight mean-cost rise (bounded by ε); the band can include a
+**Risks:** slight mean-cost rise (bounded by ε) — *superseded by P2.8: the
+band floor admits the k-th cheapest local regardless of its distance from the
+minimum, so the selection cost is bounded by that unit's cost, not by ε; see
+[`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md) §3*; the band can
+include a
 cross-LAN unit only when that unit is itself within ε of the global minimum
 — the typical hop gap is `W_HOPS · delta_hops / hops_max` (≈0.14–0.28
 canonically), and ε (0.03) must stay well below it. **Default is active in

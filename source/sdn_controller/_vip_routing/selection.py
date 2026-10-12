@@ -3,6 +3,7 @@ and round-robin tie-breaking for server and storage VIPs.
 """
 
 import hashlib
+import math
 import time
 
 from .config import (
@@ -15,6 +16,7 @@ from .config import (
 from ..scaling_config import _VIP_WARM_SERVER_SECONDS, _VIP_WARM_STORAGE_SECONDS
 from ..scaling_config import _STORAGE_READ_POLICY
 from ..scaling_config import _BACKEND_SELECTION_SPREAD_EPS
+from ..scaling_config import _BACKEND_SELECTION_SPREAD_MIN_BAND
 
 # Reads offload to SECONDARY members only. Non-SECONDARY states (RECOVERING,
 # STARTUP, STARTUP2, ROLLBACK, or stale/None telemetry) are NOT offload
@@ -126,13 +128,16 @@ def select_server(controller, client_mac: str) -> dict | None:
     Cost_j = w_cpu·(CPU_j/CPU_max) + w_ram·(RAM_j/RAM_max)
            + w_req·(Req_j/Req_max) + w_hops·(Hops_j/Hops_max)
 
-    Spread (RQ2 v4 P2.6, `_BACKEND_SELECTION_SPREAD_EPS` > 0): candidates
+    Spread (RQ2 v4 P2.6/P2.8, `_BACKEND_SELECTION_SPREAD_EPS` > 0): candidates
     within eps of the pool minimum form a band and are distributed across
     clients via a stateless deterministic hash, so one selection burst does
     not funnel every client onto a single backend. A live warm claim joins
-    the band instead of monopolising it. With eps = 0 the legacy behaviour
-    is preserved exactly (argmin + exact-tie round-robin + exclusive warm
-    claim).
+    the band instead of monopolising it, and
+    `_BACKEND_SELECTION_SPREAD_MIN_BAND` floors the band at the k cheapest
+    local eligible units when the eps-band alone is smaller — a single
+    strict winner can no longer take a whole burst. With eps = 0 the legacy
+    behaviour is preserved exactly (argmin + exact-tie round-robin +
+    exclusive warm claim).
     """
     pool = controller.vip_server_pool
     if not pool:
@@ -235,6 +240,35 @@ def select_server(controller, client_mac: str) -> dict | None:
             return None
         if warm_entry is not None and all(e["mac"] != warm_entry["mac"] for _, e in band):
             band.append((None, warm_entry))
+        # P2.8 floor: the eps-band alone collapses to one member whenever a
+        # unit is the strict minimum by more than eps (or the warm claim is
+        # the strict minimum) — the common case under load. Top the band up
+        # to k members with the cheapest eligible LOCAL units so every burst
+        # draws from at least min(k, eligible locals) candidates. Eligible =
+        # finite cost, known IP
+        # (no silent ingress drop), not peer, slow-start penalty fully
+        # decayed (recomputed at band-fill time; a decay crossing between
+        # scoring and fill is bounded by one selection);
+        # cost ties break on MAC so the cut is deterministic across pool
+        # rebuilds (the raw scored order follows set iteration).
+        floor_k = _BACKEND_SELECTION_SPREAD_MIN_BAND
+        if floor_k > 1 and len(band) < floor_k:
+            in_band = {e["mac"] for _, e in band}
+            local = sorted(
+                ((c, e) for c, e in scored
+                 if math.isfinite(c)
+                 and e["mac"] not in controller.peer_hosts
+                 and e["mac"] in controller._mac_to_ip
+                 and _slowstart_penalty(controller, e["mac"],
+                                        _VIP_WARM_SERVER_SECONDS) == 0.0),
+                key=lambda ce: (ce[0], ce[1]["mac"]),
+            )
+            for c, e in local:
+                if len(band) >= floor_k:
+                    break
+                if e["mac"] not in in_band:
+                    band.append((c, e))
+                    in_band.add(e["mac"])
         if len(band) > 1:
             band.sort(key=lambda ce: ce[1]["mac"])
             idx = int(
@@ -244,10 +278,12 @@ def select_server(controller, client_mac: str) -> dict | None:
         else:
             chosen_cost, chosen = band[0]
         logger.info(
-            "select_server: selected=%s cost=%s min=%.4f (spread band=%d eps=%.3f warm=%s)",
+            "select_server: selected=%s cost=%s min=%.4f "
+            "(spread band=%d eps=%.3f floor=%d warm=%s)",
             chosen["mac"],
             f"{chosen_cost:.4f}" if chosen_cost is not None else "warm",
             best_cost, len(band), _BACKEND_SELECTION_SPREAD_EPS,
+            _BACKEND_SELECTION_SPREAD_MIN_BAND,
             warm_entry is not None,
         )
         return chosen
