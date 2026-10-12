@@ -355,5 +355,53 @@ stopped at the plan gate — no pilots, no improvisation.
 quotas follow the v3 precedent), one confirm rung at R_m = 1.15, then the
 three pilots at that seat. Amended starting config: §3 with member 0.05
 (predicted member reading ≈40 %). Comparability caveat (mixed@0.05 vs
-data-bound@0.15) stands and deepens — carried into P4. Confirm rung +
-pilots running.
+data-bound@0.15) stands and deepens — carried into P4.
+
+---
+
+## 7. D13 confirm + pilots — verdicts (2026-10-12)
+
+Confirm rung `rq2v4_p3_mx_none_r115_m05` (`20261012_133403…`): **all four
+legs pass, both lanes** — member CPU 40.2/38.6 % (episode mean, 64
+windows/lane, `domain_summary.avg_storage_cpu_percent`), hash lock
+98.4/98.4 %, compute score 96.8/98.4 %, edge 74.9/67.2 %, culls 0/0.
+**Seat frozen: R_m = 1.15, EDGE_CPUS 0.15, STORAGE_CPUS 0.05, mix
+0.205/0.795, hash work factor 25000.** Per-kind client stats (pooled, no
+phantom exclusion): lookup p50 10.03 s @ 71.3 % completion; hash 10.13 s
+@ 70.8 % — the none-mode mixed press is edge-queue dominated for **both**
+kinds.
+
+Pilots (same seed/shape/seat; single-run manipulation gates):
+
+| Pilot | Compute | Storage |
+| --- | --- | --- |
+| `mx_both` | engagement ✓ (3 alerts/lane, 6 spawns); relief ✓ 88.4/91.3 % (D12; time-to-relief ≈ 150 s) | engagement ✓ (activations +10/+21 s); **busiest pre-add member relieved in 82.0/95.7 % of post-ready windows** ✓; reads moved — activated member ≈ 30.8 % (lan1) / 23.0 % (lan2) of sampled reads (collective, beyond the two busiest ≈ 66/75 %) |
+| `mx_comp` | relief ✓ 88.4/89.1 % | **unrelieved ✓** (own-peak ratio ≥ 0.96; member ≥ 33 % in ≈ 95 % of windows) |
+| `mx_stor` | unrelieved ✓ (no alerts/spawns; lock 98.4 %) | **not relieved ✗** — busiest-member own-peak relief windows 2/51 (lan1, 3.9 %) and 0/49 (lan2, 0.0 %); activated members received ≈ 1–2 % (lan1) / 19–21 % (lan2) of sampled reads; one lan2 member did drop (`:02:07` 36/48) — partial, lane-inconsistent |
+
+**D14 (approved 2026-10-12) — storage-relief criterion re-anchor.** The
+v3-era "single activated member ≥ 40 % of reads" is structurally wrong for
+multi-member splits, and the per-member counters are sampled (≈ 1
+sample/window; shares are reported descriptively, never gated). Storage
+relief is judged on the robust CPU leg: the **pre-add busiest member's
+per-window CPU < 0.75 × its own pre-add peak in ≥ 80 % of post-ready
+windows** (post-ready = first in-episode `[reserve] activated` + 120 s →
+episode end). Under D14: `mx_both` ✓/✓ (82.0/95.7 %); `mx_stor` ✗/✗
+(3.9/0.0 %).
+
+**Finding — scaling storage alone does not fix the mixed storage press.**
+In `stor` mode the added members were provisioned and accumulated
+connections (≈ 16–21 each) yet the reads stayed on the pre-existing
+members in lan1 (activated ≈ 1–2 %; lan2 partial, ≈ 20 %). What made reads
+move in `mx_both` is **not established** — the simple
+connection-replacement explanation is unsupported (connections and read
+shares diverge across modes). The run artifacts carry **no per-read /
+per-connection storage-member attribution**; adding it (member attribution
+in the read/flow-install path) is the P4 instrumentation note. Campaign
+expectation for `stor` mixed cells: storage-side relief is **not assumed**
+— it is measured, and partial or no relief is a reportable outcome.
+
+**Phase-3 exit (reached):** mixed regime constructible — `none` locks
+both tiers; `dual` relieves both (D12 compute + D14 storage); `comp` leaves
+storage unrelieved; `stor` relieves nothing reliably. Campaign pattern
+refined: in a both-sided spike, **only scaling both fixed both**.

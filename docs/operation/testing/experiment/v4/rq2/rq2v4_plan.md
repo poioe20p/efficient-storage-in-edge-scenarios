@@ -224,14 +224,19 @@ aligned compute action relieves both lanes and sticks.
    (3 rate rungs + 1 contingency + 3 pilots) with a 4-leg pass criterion,
    exact decision-log evidence, D12/v3-B2 relief anchors. **Awaiting author
    decisions (artifact §5 items 1–10) before P3.2.**
-2. **P3.2 Calibration ladder** — **running (2026-10-12)**: ladder v1
-   executed — rungs 1.0/1.15/1.3 + the one pre-authorized `edge020`
-   contingency **all failed leg (iii)**: member CPU pinned ≈25 % across
-   rate 19→37 lookup rps and quota 0.08→0.10 (edge-capped lookup delivery;
-   the mixed regime is edge-delivery-limited at the frozen seat — finding
-   in the study §6). Gate fired → **D13 approved: member-quota rework
-   (STORAGE_CPUS 0.05) + one confirm rung at 1.15 + pilots** (running).
-   Original design: ~6–8 runs: vary total rate at fixed
+2. **P3.2 Calibration ladder** — **done 2026-10-12** (study §6–§7 carry the
+   executed path): ladder v1 (1.0/1.15/1.3 + `edge020`) all failed leg
+   (iii) → **D13** member-quota rework → confirm rung at 1.15/0.05 **passed
+   all four legs** (member 40.2/38.6 %) → **seat frozen (R_m 1.15, edge
+   0.15, member 0.05, mix 0.205/0.795)**. Pilots: `mx_both` compute ✓ +
+   storage busiest-member relief ✓ (D12; reads moved — activated ≈ 30.8 %);
+   `mx_comp` compute ✓, storage unrelieved ✓; `mx_stor` compute unrelieved
+   ✓, storage **not relieved** ✗ (3.9/0.0 %; reads stayed on the
+   pre-existing members — finding + P4 instrumentation note). **D14**:
+   storage-relief criterion re-anchored (busiest pre-add member own-peak <
+   0.75 in ≥ 80 % post-ready windows; shares reported).
+
+   ~~Original design: ~6–8 runs: vary total rate at fixed
    mix/quotas → find the point where `none` degrades on **both** tier
    signals (both fire in the decision log); if one tier does not fire, add
    quota-shift rungs (edge/member) before concluding; pilots: dual relieves
@@ -241,9 +246,11 @@ aligned compute action relieves both lanes and sticks.
    **Decision gate:** if the co-press is not stable after one quota-shift
    round (time-boxed), **stop and bring options to the author** — quota
    rework vs a revised D6. Do **not** silently substitute the sequential
-   variant: it is a different treatment (D7), not a fallback.
+   variant: it is a different treatment (D7), not a fallback.~~
 
-**Exit:** mixed regime frozen with manipulation evidence.
+**Exit:** ✅ reached 2026-10-12 — seat frozen (D13) + manipulation evidence
+(none locks both tiers; dual relieves both — D12/D14; compute-only leaves
+storage unrelieved; storage-only relieves nothing reliably).
 
 ---
 
