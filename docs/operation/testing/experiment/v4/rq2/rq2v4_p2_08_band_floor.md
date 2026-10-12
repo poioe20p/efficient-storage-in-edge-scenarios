@@ -75,10 +75,13 @@ the minimum); the pre-P2.8 reproducibility baseline is the P2.6 commit
 `57f58c3`.
 
 Expected effect at the seat: the band holds ≥ 4 members per lane once four
-locals are eligible (clamped to the two statics early in the episode), so
+locals are eligible (clamped to the single static early in the episode,
+until dynamics are admitted — corrected 2026-10-12: one static + up to 6
+dynamics = 7 eligible units/lane; see
+[`rq2v4_p3_00_levers.md`](rq2v4_p3_00_levers.md) C3), so
 the expected fan-out is the band size: ≈ 24 clients × 0.23 rps ÷ 4 ≈
 **1.4 rps/unit**, about 3.4× inside the measured single-unit knee
-(~4.8 rps/lane); with only two eligible statics ≈ 2.8 rps/unit — still
+(~4.8 rps/lane); with only two eligible units ≈ 2.8 rps/unit — still
 inside the knee.
 
 Repair discipline: default-active, like P2.6 and P1 — reproductions of

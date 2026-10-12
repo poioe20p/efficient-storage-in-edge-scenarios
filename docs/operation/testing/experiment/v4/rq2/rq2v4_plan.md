@@ -216,10 +216,16 @@ aligned compute action relieves both lanes and sticks.
 
 ## Phase 3 — Mixed ("both") regime construction
 
-1. **P3.1 Levers study** — from P2 numbers and the data-bound knees, compute
-   the expected co-press point: choose quotas (edge/member), mix
-   (hash : lookup), total rate; work factor already frozen in P2.
-2. **P3.2 Calibration ladder** — ~6–8 runs: vary total rate at fixed
+1. **P3.1 Levers study** — **done (2026-10-12)**, artifact
+   [`rq2v4_p3_00_levers.md`](rq2v4_p3_00_levers.md): hold edge 0.15 (the
+   frozen seat), move the storage member quota to 0.08 as the balancing
+   lever, mix `hash_challenge 0.205 : content_lookup 0.795`, R_m = 1.15 →
+   5.66 hash + 21.9 lookup rps/lane; co-press math + margins; ~7-run ladder
+   (3 rate rungs + 1 contingency + 3 pilots) with a 4-leg pass criterion,
+   exact decision-log evidence, D12/v3-B2 relief anchors. **Awaiting author
+   decisions (artifact §5 items 1–10) before P3.2.**
+2. **P3.2 Calibration ladder** — **pending the §5 decisions**: ~6–8 runs:
+   vary total rate at fixed
    mix/quotas → find the point where `none` degrades on **both** tier
    signals (both fire in the decision log); if one tier does not fire, add
    quota-shift rungs (edge/member) before concluding; pilots: dual relieves
