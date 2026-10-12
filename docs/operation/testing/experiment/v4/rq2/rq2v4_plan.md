@@ -224,8 +224,8 @@ aligned compute action relieves both lanes and sticks.
    (3 rate rungs + 1 contingency + 3 pilots) with a 4-leg pass criterion,
    exact decision-log evidence, D12/v3-B2 relief anchors. **Awaiting author
    decisions (artifact §5 items 1–10) before P3.2.**
-2. **P3.2 Calibration ladder** — **pending the §5 decisions**: ~6–8 runs:
-   vary total rate at fixed
+2. **P3.2 Calibration ladder** — **running (2026-10-12, approved; all 10
+   study decisions per artifact §5)**: ~6–8 runs: vary total rate at fixed
    mix/quotas → find the point where `none` degrades on **both** tier
    signals (both fire in the decision log); if one tier does not fire, add
    quota-shift rungs (edge/member) before concluding; pilots: dual relieves
