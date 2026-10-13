@@ -300,7 +300,7 @@ review). The plan freezes with this sign-off.
 | First expected add window | engagement rows in controller logs; spawn counts per mode | MC2/MC3 early signal |
 | Episode end | 0 `triggering removal` lines; completion/timeout classes present | MC5, I2 |
 | Between runs | `phases_snapshot.json` + `controller_env_snapshot.env` present in the run folder | D3 |
-| Each regime's first completed block | **Author directive (D16): block-1 ordering gate** — the aligned mode(s) (`both` ≈ the regime-aligned single) must beat `none` ≈ the misaligned single on episode completion + p50; for db additionally the edge must be well below the member (no compute-side impedance of the storage press). Violation → stop + report | cb seed-42 ✓ 2026-10-13 (`both`/`comp` 100 % @ 0.16–0.21 s vs `stor`/`none` 98.7/96.1 % @ 2.2–2.6 s); mx first block pending; **db preflight ⚠ — `stor` ≈ `none` (91.3/93.5 %; edge 39 % vs member 68–74 %) — read-only investigation scheduled before the db blocks** |
+| Each regime's first completed block | **Author directive (D16): block-1 ordering gate** — the aligned mode(s) (`both` ≈ the regime-aligned single) must beat `none` ≈ the misaligned single on episode completion + p50; for db additionally the edge must be well below the member (no compute-side impedance of the storage press). Violation → stop + report | cb seed-42 ✓ 2026-10-13 (`both`/`comp` 100 % @ 0.16–0.21 s vs `stor`/`none` 98.7/96.1 % @ 2.2–2.6 s); **mx seed-45 ✓ 2026-10-13** (`both`/`comp` 99.2/98.8 % @ 0.009–0.010 s vs `stor`/`none` 75.7/71.7 % @ 9.2–10.0 s); **db preflight ⚠ — `stor` ≈ `none` (91.3/93.5 %; edge 39 % vs member 68–74 %) — read-only investigation scheduled before the db blocks** |
 
 ### C. Validity threats & limitations
 
