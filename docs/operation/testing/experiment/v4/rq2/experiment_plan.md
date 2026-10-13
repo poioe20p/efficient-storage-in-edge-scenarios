@@ -300,6 +300,7 @@ review). The plan freezes with this sign-off.
 | First expected add window | engagement rows in controller logs; spawn counts per mode | MC2/MC3 early signal |
 | Episode end | 0 `triggering removal` lines; completion/timeout classes present | MC5, I2 |
 | Between runs | `phases_snapshot.json` + `controller_env_snapshot.env` present in the run folder | D3 |
+| Each regime's first completed block | **Author directive (D16): block-1 ordering gate** — the aligned mode(s) (`both` ≈ the regime-aligned single) must beat `none` ≈ the misaligned single on episode completion + p50; for db additionally the edge must be well below the member (no compute-side impedance of the storage press). Violation → stop + report | cb seed-42 ✓ 2026-10-13 (`both`/`comp` 100 % @ 0.16–0.21 s vs `stor`/`none` 98.7/96.1 % @ 2.2–2.6 s); mx first block pending; **db preflight ⚠ — `stor` ≈ `none` (91.3/93.5 %; edge 39 % vs member 68–74 %) — read-only investigation scheduled before the db blocks** |
 
 ### C. Validity threats & limitations
 
@@ -324,3 +325,4 @@ The P3 `mx_stor` finding established that **run artifacts carry no per-read / pe
 | Date | Change | Rationale |
 | --- | --- | --- |
 | 2026-10-12 | Authored P4.1 plan (84-run matrix, gates, mechanics, open questions); auto-review rounds 1–3 — all critical/warning findings fixed; freezing pending R1–R16 sign-off | P4.1/P4.2 of `rq2v4_plan.md` |
+| 2026-10-13 | Author directive D16: first-block ordering gate per regime + db edge-headroom check; db preflight pair recorded (`stor` ≈ `none`, edge 39 % vs member 68–74 % ⇒ not edge-impeding); read-only investigation scheduled before the db blocks | author request (2026-10-13) |
