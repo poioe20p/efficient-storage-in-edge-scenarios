@@ -401,6 +401,16 @@ in the read/flow-install path) is the P4 instrumentation note. Campaign
 expectation for `stor` mixed cells: storage-side relief is **not assumed**
 — it is measured, and partial or no relief is a reportable outcome.
 
+*Update 2026-10-14 — NOW ESTABLISHED:* read redistribution rides on
+**connection births only** (per-connection pins are never re-selected);
+`mx_both`'s movement came from the **new edge containers' fresh Mongo
+pools** (3 dynamics + static reopening pools mid-episode — all their
+births landed on the new members), while `stor` modes spawn no new edge
+containers and the fixed pool stays pinned to the pre-existing member.
+Full analysis:
+[`rq2v4_p5_02_read_path_pinning.md`](rq2v4_p5_02_read_path_pinning.md)
+(also explains the db preflight `stor` ≈ `none` anomaly).
+
 **Phase-3 exit (reached):** mixed regime constructible — `none` locks
 both tiers; `dual` relieves both (D12 compute + D14 storage); `comp` leaves
 storage unrelieved; `stor` relieves nothing reliably. Campaign pattern

@@ -305,6 +305,7 @@ review). The plan freezes with this sign-off.
 ### C. Validity threats & limitations
 
 - **db regime carried, not re-calibrated** (Q3): the v3 bind numbers (66–74 % member CPU, pool-12 read spread) may not transfer to the repaired platform at pool 6; MC1's 50 % floor is a conservative carrier, not a measured v4 knee.
+- **Read-path pinning (D18, [`rq2v4_p5_02_read_path_pinning.md`](rq2v4_p5_02_read_path_pinning.md)):** storage reads move only through newly born connections; with a fixed edge set, members admitted mid-press receive no reads — `stor`@db and `stor`@mx cells are expected to show no storage relief (measured, explained, not a gate failure). `both` storage relief is downstream of the compute spawn (new edge pools).
 - **Quota comparability (D13):** mixed@0.05 vs data-bound@0.15 storage presses are quota-relative and must not be pooled cross-regime.
 - **`stor`@mx storage arm:** P3 n=1 pilot showed no relief; the 7-replicate cell may confirm, contradict, or split — all are reportable.
 - **Read-share evidence is sampled** (≈1 sample/window) and descriptive only (D14).
