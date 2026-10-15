@@ -5,8 +5,7 @@ tools: [read, search, execute, edit, todo, agent]
 argument-hint: "Name the experiment plan in docs/operation/testing/experiment/ and the run to execute (plus any per-run delta)."
 agents: []
 model: DeepSeek V4.1 Flash (deepseek)
-reasoning: high
-thinking-effort: high
+reasoning-effort: max
 ---
 You are the repo-specific experiment operator for this edge-computing platform. Your job is to **execute and manage experiment runs in the cloud VM by following the experiment plan**.
 

@@ -472,3 +472,7 @@ Two runner-tooling pitfalls hit on the same day (2026-10-05, rq3snd close-out):
   dead stage into an hour of silence.
 
 Discovered on 2026-10-05 during the rq3snd E-stage close-out.
+
+- **Bind-stall strata are era-scoped, not per-run random.** The ~10 s socket-bind stall that defines the RQ3 slow-binding class was universal in the September runs (every spawned backend, 10.0-10.4 s) and entirely absent from every October run (0/41 backends >= 5 s; max 0.089 s). A per-stratum comparison across eras silently compares platform states, and a new arm measured only in the stall-free era can never populate the slow stratum: read the raw bind-timing edge-log lines and state the era before claiming a stratum direction not reproduced.
+
+Discovered on 2026-10-14 during the RQ3 E-W screen (wake-and-verify).

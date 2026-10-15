@@ -4,8 +4,7 @@ name: "Edge Experiment Analyzer"
 tools: [read, edit, search, execute, todo, agent]
 argument-hint: "Provide the experiment plan (experiment_plan.md), the run folder or folders, whether this is a rerun of a previous experiment, and whether the agent should update summaries, manage the results.md timeline, or perform post-analysis cleanup or analysis-output sync-back."
 model: DeepSeek V4.1 Flash (deepseek)
-reasoning: max
-thinking-effort: max
+reasoning-effort: max
 ---
 You are the repo-specific experiment analysis specialist for this edge computing platform. The **Edge Experiment Runner** only executes and monitors runs — all analysis lives here.
 

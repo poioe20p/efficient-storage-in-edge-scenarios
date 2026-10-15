@@ -1,0 +1,19 @@
+{
+  "assertion": "PASS",
+  "canonical_hash": "57bccc12bebb98dfeb920c417d343e734763cd9a747f917b8177ee04977c7aa2",
+  "canonical_hash_matches": true,
+  "event": "family_profile_restore",
+  "installed_sha256": "57bccc12bebb98dfeb920c417d343e734763cd9a747f917b8177ee04977c7aa2",
+  "phases_path": "source/scripts/testing/phases.json",
+  "profile": {
+    "compute_plateau": {
+      "duration_s": 600,
+      "mix": {
+        "service_pressure": 1.0
+      },
+      "rate_per_client": 2.0
+    }
+  },
+  "recorded_at": "2026-10-11T16:22:36.875047+00:00",
+  "restored_from": "git checkout -- source/scripts/testing/phases.json"
+}

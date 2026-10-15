@@ -4,6 +4,11 @@ Parent plan: [`experiment_plan.md`](experiment_plan.md) · Host: `cloud-vm-rq3`
 · Frozen base: commit `852a8a3`; tag `rq3tim-preflight-<date>` recorded in the
 manifest at preparation time.
 
+> **Completion (2026-10-11, pre-registered):** the intact/lost cells are
+> extended to seven seed-matched blocks (block 7, seed 5207) by
+> [`../rq3_admission_modes/`](../rq3_admission_modes/) (Family 6); the recorded
+> blocks 1–6 here stay as-is.
+
 Launch: `rq3tim_p1_01_launch_run.sh <arm> <fault> <label> <seed> <rate>`.
 The launcher **asserts** that the frozen `phases.json` `compute_plateau`
 rate equals `<rate>` (mismatch = STOP). Quota is fixed at 0.12 inside the

@@ -149,3 +149,73 @@ studies, managing the pool itself is an established problem", so the
 preceding "remain unaddressed" reads as a contrast (unaddressed by the
 surveyed mechanisms, while pool management is established as a problem
 class), not a contradiction.
+
+(2026-10-13 m) RQ3 propagation opened (author directive; the C4 run matrix
+executes in a parallel session). Wake-and-verify un-parked and evaluated as
+the fourth rule D (message with a confirmation check; config `wake_verify`;
+20 s absence fallback); thesis story = operational trio A message only /
+C periodic check / D confirmation check, with `hybrid` (B) retained as the
+recovery-without-verification control. C4 set: 22 runs (7 intact + 7 lost
+@5201-5207, 4 paired premature blocks @6304-6307, the 3+3 pilots @6301-6303
+reused), read through the E-W1/E-W2/E-W3 screen (plan §7.5; E-W1 is a
+cross-tree contrast, soundness vs timing families). rq3_final.md core
+updated to the four-rule form; the thesis-text freeze (question sentence,
+ledger rows, §5 RQ3 rewrite) awaits author approval. Parked: 2 s/5 s leads
+(pilot only); the ready->admit instrument degeneracy carries to the
+limitations. No main.tex edit yet.
+
+(2026-10-13 n) Thesis RQ3 wave (author-approved): admission modes renamed —
+A backend notification, B notification with a fallback check (control),
+C periodic polling, D notification with a confirmation check; 'admission
+rule' retired to 'admission mode' in RQ3 prose. Message conditions laid out
+as the arrival-property triple (the message arrives intact, never arrives,
+or arrives before the backend can serve), shorthand intact/lost/premature,
+each held for the whole run. main.tex wave applied: all chapters renamed;
+§5.4 premature subsection re-anchored to the evaluated 10 s lead with the
+seven-pair damage numbers for A-C (A +14.4 pp 6/6, B +11.7 pp 6/7,
+C -0.05 pp 7/7 within 2 pp; separations A-C +17.0, B-C +16.2, 7/7); 2 s/5 s
+leads parked as pilot; D parked pending the C4 verdict.
+
+(2026-10-14 o) Chapter 5 RQ3 story restructure (author-approved skeleton).
+Section retitled "Readiness Admission Modes (RQ3)" (label unchanged). Each
+message condition is now read as expectation -> outcomes per mode ->
+verdict ("The expectation held." / qualifier) -> justification, with the
+criteria close in the RQ2 style before "In sum": intact direction, band
+and post-admission invariance held; lost separation and boundedness held
+with the conjunction qualifier; premature criterion held in both
+directions. Four "% RQ3-D (confirmation check)" markers carry D's slots
+(intact, lost, premature, criteria close) pending the C4 completion.
+Overview heading renamed to match.
+
+(2026-10-14 p) C4 complete — E-W screen dispatched. campaign_log.md C4
+verdict: 22/22 wake runs valid (all cell-exact, restart-free, admissions
+via wake_verify_probe). Synced read: claim->first median over runs
+10.99 s (D) vs 19.47 s (periodic) — admission at true servability, the
+earliest safe admission. Author ruling (relayed): marginal 2-4 % variation
+is not a drop criterion — carry as notes. The E-W1/E-W2/E-W3 screen (plus
+the E-P2 extension contrast A-D, D-C) is running in a background session:
+outputs land as analysis/completion_wake_{intact,lost,premature}.json and
+a results.md §2.5 with D rows in T1-T4. When those numbers land, fill the
+four D slots in main.tex §5.4 and regenerate the premature-message damage
+figure with all four modes.
+
+(2026-10-14 p2) E-W screen completed and integrated (screen already run
+on the VM by the other session; verified, re-derived and synced here).
+E-W1: D 4.01 s fast class (n=41) vs A 4.08 near-tie (+0.07 s), C 9.98
+(5.97 s later); slow class has no D evidence — the bind stall did not
+occur in the completion era (0/41 backends >=5 s, max 0.089 s; the
+September blocks bind at ~10 s on every backend), so the recorded gate
+reads not-reproduced-in-every-stratum while the substance holds in the
+fast class (a stated limitation in the thesis). E-W2: mechanism exact
+(probe_fallback 44 under loss; wake_verify_probe 30 intact); paired
+deltas 7/7 within 2 pp (median -0.4) under the author ruling re-including
+the b2/b5 partner tails (2.19/3.64 %). E-W3: damage median -0.9 pp over
+the seven pairs (recorded 6-pair -2.05; 6/7 within 2 pp, exception b5
++3.13), claim->first 10.99 s vs reconcile 19.47 s; A-D +16.86 pp 7/7
+gated pass; D-C -0.24 near-tie; b1 re-included (3.95 % tail, -0.87 pp);
+two runs carry the recorded two-success pre-bind transient. Filled the
+four D slots in main.tex §5.4 (intact sentence + class limitation, lost
+sentence + fault-table row, premature sentences + damage-table row,
+criteria close); build green, no new boxes. results.md §2.5 + T1-T4 D
+rows written; the three wake JSONs (+ the four pre-existing completion
+JSONs) synced to the workstation analysis folder.

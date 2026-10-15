@@ -20,6 +20,48 @@
 > spawn→first serve 5/6 + tie); the campaign pass remains false on H-T3 alone.
 > **Companions:** `rq3_evaluation_conclusions.md` (mechanism evidence),
 > `rq3_related_work.md`, `rq3_diagrams.md`.
+> **Revised 2026-10-11 (design consolidated; core simplified):** RQ3 is
+> recomposed as three admission rules under three message conditions.
+> Rules: **A message only** (config `direct`, its fallback inert beyond
+> the abandonment bound), **B message with a bounded re-check** (config
+> `direct` with the 20 s probe fallback), **C periodic check** (config
+> `discovery`, 10 s). Conditions: intact, lost (every
+> readiness message dropped), premature (the message arrives before the
+> backend can serve; 10 s lead in the evaluated matrix). The evaluated
+> matrix is three admission rules × three conditions × seven seed-matched
+> blocks under one regime (rate 2.0 per client, quota 0.12 vCPU, 600 s
+> plateau), to be completed with 30 new matrix runs (platform-identity
+> check first), each premature block with its matched no-fault partner;
+> supporting sets standardised to seven replicates (+5 runs) --- 35 new
+> runs in total.
+> Wake-and-verify and the 2 s/5 s claim leads were parked as pilot
+> evidence as of that revision; the stopped robustness family remains
+> archive-only. See "Core design" at the end of this file.
+>
+> **Revised 2026-10-13 (m):** wake-and-verify is un-parked and evaluated
+> as the fourth mode, **D notification with a confirmation check** (config
+> `wake_verify`): the readiness message merely wakes an immediate check, and
+> admission requires the check to pass; the 20 s absence fallback applies
+> when no message arrives. The results narrative is told in the operational
+> trio — **A backend notification, C periodic polling, D notification with
+> a confirmation check** — with the recorded `hybrid` (**B**) retained as
+> the recovery-without-verification control; the question and the evaluated
+> matrix carry all four modes. The **C4 set** (22 runs: 7
+> intact + 7 lost at seeds 5201--5207, 4 paired premature blocks at seeds
+> 6304--6307, the 3+3 recorded pilots at seeds 6301--6303 reused)
+> completes the four-mode matrix (A–D × intact/lost/premature × seven
+> seed-matched blocks); execution began 2026-10-13, read through the
+> E-W1/E-W2/E-W3 screen (plan §7.5). E-W1 (intact) is a cross-tree
+> contrast (wake runs from the soundness tree, the A/C intact runs from
+> the timing family), stated as such when reported. The 2 s/5 s leads
+> remain pilot evidence; the stopped robustness family remains
+> archive-only.
+
+**Body status (2026-10-11, extended 2026-10-13 (m)):** the sections below
+record the earlier two-mechanism framing and the completed campaign
+evidence. Where they conflict with the consolidated design, "Core design
+(2026-10-11, extended 2026-10-13 (m))" at the end of this file governs,
+and the campaign measurements remain valid.
 
 ## Summary (plain language)
 
@@ -55,8 +97,12 @@ user-visible in any tested regime.
 > coordination delay become a transient service-quality cost when incumbent
 > headroom is constrained and the lifecycle event source fails?**
 
+*(Superseded 2026-10-11 — the current question is the trio form in "Core design" at the end of this file; see the status note at the top.)*
+
 Readiness-admission coordination is operationalized as two mechanisms over the
 *same* verified-readiness state:
+
+*(Superseded 2026-10-11 — the evaluated design is the four admission rules under three message conditions, the story told in three with the control; see "Core design".)*
 
 - **lifecycle-coupled admission** — admit the backend the moment its readiness
   event fires;
@@ -126,6 +172,8 @@ Demand shift
 ## 3. Experimental apparatus and design
 
 ### 3.1 The two admission mechanisms
+
+*(Superseded 2026-10-11 — the evaluated rules are A (message only), B (message with a bounded re-check), and C (periodic check); see "Core design".)*
 
 | Arm | Mechanism | Foundation |
 | --- | --- | --- |
@@ -401,6 +449,8 @@ first successful traffic (approved → carrying traffic).
 > seconds-level delay, where a recovery path exists, was not shown to be
 > user-visible in any tested regime.
 
+*(Superseded 2026-10-11 — see "Core design" for the consolidated claim shape.)*
+
 ## 8. Scope and boundaries
 
 - The consequence is demonstrated for **total event loss** with constrained
@@ -444,3 +494,66 @@ cited): `docs/operation/testing/experiment/v3/rq3_robustness_DO_NOT_CITE/`.
 **Thesis map:** `tese/Notes/purpose_evidence_map.md` (I3, P6) ·
 `tese/Notes/thesis_overview.md` §6-RQ3 ·
 `tese/literature_review/global_literature_review.md` §5.5.
+
+---
+
+## Core design (2026-10-11, extended 2026-10-13 (m)) — consolidated
+
+**Question.** When a newly provisioned backend becomes ready, how do the
+four admission modes (backend notification, notification with a fallback
+check, periodic polling, and notification with a confirmation check)
+affect whether and when the new capacity starts serving requests and
+what users experience, under three message conditions, each held for the
+whole run: the message arrives intact, never arrives, or arrives before
+the backend can serve? The fallback check is the control that separates
+recovery from verification.
+
+**Contrast logic.** Backend notification (A) is the reference. B changes
+one thing: a fallback check recovers a lost message, and it does not
+verify the message. D changes what the message is allowed to do: the
+message merely wakes an immediate check, and admission requires the check
+to pass, so D verifies the message and, through the same absence fallback
+as B, recovers a lost one. C changes the other end: only its own check
+admits, so it recovers and verifies by construction. Each condition
+attacks one assumption: intact attacks none (reference; prices), lost
+attacks "the message will arrive", premature attacks "the message is
+true". The 10 s premature lead is one checking period: the unit that
+bounds C's recovery in the lost condition, longer than the backend's
+recorded start-up lag, and chosen as the matrix dosage (the 2 s and 5 s
+leads remain descriptive pilot evidence). The thesis story is told in the
+trio A, C, D; B is the control that separates recovery from verification,
+and the C4 screen must show D carries both protections (E-W1/E-W2/E-W3).
+
+**Outcome parts (reporting order).** (1) When the new capacity starts
+serving: ready→admission, admission→first routed request, scaling
+decision→usable capacity, first successful response. (2) Whether it
+serves at all: admitted and abandoned backends per run. (3) What users
+experience: slow share against the matched no-fault partner, relief of
+the incumbents, and the silent-failure accounting. D's readings follow
+the same three parts; its numbers land with the C4 verdict.
+
+**Matrix and completion.** 4 modes × 3 conditions × 7 blocks in one
+regime, plus a matched no-fault partner run for every premature block.
+Existing valid runs: A–C intact and A–C lost (six blocks each, the
+2026-09-09/10 campaign), completed to seven by the 2026-10-11/12 C1 set;
+A–C premature at the 10 s lead (three blocks each, seeds 6301--6303)
+with their matched no-fault partners, completed to seven pairs by the
+2026-10-12/13 C2 set. New C4 set (2026-10-13, executing): D intact and D
+lost at seeds 5201--5207 (the intact runs also serve as the
+loss-condition no-fault partners, as in the A–C sets) and four paired
+premature blocks at seeds 6304--6307, with the 3+3 recorded pilots at
+seeds 6301--6303 reused --- 22 new runs. Paired premature damage is a
+seven-block result for every mode (assessable denominators and
+qualifiers per set: the campaign `results.md`). Parked: the 2 s/5 s
+leads (pilot only; D's blocks 1--3 reuse the recorded 10 s pilots).
+
+**Claim shape.** While the message is intact, the price of checking (up
+to one period) registers as end-to-end latency and was not shown to
+register in the service-quality measure; the delay is absorbed.
+What separates the modes for users is the validity of the evidence: when
+the message is lost, a mode without a re-derivation path turns ready
+capacity into none; when the message is premature, a mode that admits on
+it sends traffic to capacity that cannot serve. The two protections
+(recovery, verification) are separable, and each has a measured price.
+B prices recovery without verification; D carries both, and the C4
+screen tests that separation (E-W1/E-W2/E-W3).

@@ -1,0 +1,1348 @@
+{
+  "E-P1": {
+    "cells": {
+      "event_only": {
+        "assessable": true,
+        "assessable_blocks": 7,
+        "new_runs_passing": 4,
+        "passing_blocks": 7,
+        "recorded_blocks_passing": 3
+      },
+      "hybrid": {
+        "assessable": true,
+        "assessable_blocks": 7,
+        "new_runs_passing": 4,
+        "passing_blocks": 7,
+        "recorded_blocks_passing": 3
+      },
+      "reconcile": {
+        "assessable": true,
+        "assessable_blocks": 6,
+        "new_runs_passing": 4,
+        "passing_blocks": 6,
+        "recorded_blocks_passing": 2
+      }
+    },
+    "new_run_checks": {
+      "b4_event_only": {
+        "arm": "event_only",
+        "block": 4,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_084348_rq3snd_premature10_event_only_4",
+        "seed": 6304,
+        "validity_failed": []
+      },
+      "b4_hybrid": {
+        "arm": "hybrid",
+        "block": 4,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_101839_rq3snd_premature10_hybrid_4",
+        "seed": 6304,
+        "validity_failed": []
+      },
+      "b4_reconcile": {
+        "arm": "reconcile",
+        "block": 4,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_114733_rq3snd_premature10_reconcile_4",
+        "seed": 6304,
+        "validity_failed": []
+      },
+      "b5_event_only": {
+        "arm": "event_only",
+        "block": 5,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_162034_rq3snd_premature10_event_only_5",
+        "seed": 6305,
+        "validity_failed": []
+      },
+      "b5_hybrid": {
+        "arm": "hybrid",
+        "block": 5,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_131951_rq3snd_premature10_hybrid_5",
+        "seed": 6305,
+        "validity_failed": []
+      },
+      "b5_reconcile": {
+        "arm": "reconcile",
+        "block": 5,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_144957_rq3snd_premature10_reconcile_5",
+        "seed": 6305,
+        "validity_failed": []
+      },
+      "b6_event_only": {
+        "arm": "event_only",
+        "block": 6,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_192113_rq3snd_premature10_event_only_6",
+        "seed": 6306,
+        "validity_failed": []
+      },
+      "b6_hybrid": {
+        "arm": "hybrid",
+        "block": 6,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_205149_rq3snd_premature10_hybrid_6",
+        "seed": 6306,
+        "validity_failed": []
+      },
+      "b6_reconcile": {
+        "arm": "reconcile",
+        "block": 6,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_175039_rq3snd_premature10_reconcile_6",
+        "seed": 6306,
+        "validity_failed": []
+      },
+      "b7_event_only": {
+        "arm": "event_only",
+        "block": 7,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_222232_rq3snd_premature10_event_only_7",
+        "seed": 6307,
+        "validity_failed": []
+      },
+      "b7_hybrid": {
+        "arm": "hybrid",
+        "block": 7,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_235305_rq3snd_premature10_hybrid_7",
+        "seed": 6307,
+        "validity_failed": []
+      },
+      "b7_reconcile": {
+        "arm": "reconcile",
+        "block": 7,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261013_012338_rq3snd_premature10_reconcile_7",
+        "seed": 6307,
+        "validity_failed": []
+      }
+    },
+    "not_evaluable_runs": [
+      "b1_event_only",
+      "b1_hybrid",
+      "b1_reconcile",
+      "b2_event_only",
+      "b2_hybrid",
+      "b2_reconcile",
+      "b3_event_only",
+      "b3_hybrid",
+      "b3_reconcile"
+    ],
+    "pass": true,
+    "recorded_run_checks": {
+      "b1_event_only": {
+        "arm": "event_only",
+        "block": 1,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261003_124808_rq3snd_premature10_event_only_1",
+        "seed": 6301,
+        "validity_failed": []
+      },
+      "b1_hybrid": {
+        "arm": "hybrid",
+        "block": 1,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261003_161604_rq3snd_premature10_hybrid_1",
+        "seed": 6301,
+        "validity_failed": []
+      },
+      "b1_reconcile": {
+        "arm": "reconcile",
+        "block": 1,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {
+          "zero_check_violations": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261003_190310_rq3snd_premature10_reconcile_1",
+        "seed": 6301,
+        "validity_failed": []
+      },
+      "b2_event_only": {
+        "arm": "event_only",
+        "block": 2,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_073244_rq3snd_premature10_event_only_2",
+        "seed": 6302,
+        "validity_failed": []
+      },
+      "b2_hybrid": {
+        "arm": "hybrid",
+        "block": 2,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_003955_rq3snd_premature10_hybrid_2",
+        "seed": 6302,
+        "validity_failed": []
+      },
+      "b2_reconcile": {
+        "arm": "reconcile",
+        "block": 2,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [
+          "zero_pre_bind_successes"
+        ],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_pre_bind_successes": false
+        },
+        "not_evaluable": {
+          "zero_check_violations": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": false,
+        "recorded": true,
+        "run": "20261004_032511_rq3snd_premature10_reconcile_2",
+        "seed": 6302,
+        "validity_failed": []
+      },
+      "b3_event_only": {
+        "arm": "event_only",
+        "block": 3,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_162705_rq3snd_premature10_event_only_3",
+        "seed": 6303,
+        "validity_failed": []
+      },
+      "b3_hybrid": {
+        "arm": "hybrid",
+        "block": 3,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_195358_rq3snd_premature10_hybrid_3",
+        "seed": 6303,
+        "validity_failed": []
+      },
+      "b3_reconcile": {
+        "arm": "reconcile",
+        "block": 3,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {
+          "zero_check_violations": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_121859_rq3snd_premature10_reconcile_3",
+        "seed": 6303,
+        "validity_failed": []
+      }
+    },
+    "run_checks": {
+      "b1_event_only": {
+        "arm": "event_only",
+        "block": 1,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261003_124808_rq3snd_premature10_event_only_1",
+        "seed": 6301,
+        "validity_failed": []
+      },
+      "b1_hybrid": {
+        "arm": "hybrid",
+        "block": 1,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261003_161604_rq3snd_premature10_hybrid_1",
+        "seed": 6301,
+        "validity_failed": []
+      },
+      "b1_reconcile": {
+        "arm": "reconcile",
+        "block": 1,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {
+          "zero_check_violations": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261003_190310_rq3snd_premature10_reconcile_1",
+        "seed": 6301,
+        "validity_failed": []
+      },
+      "b2_event_only": {
+        "arm": "event_only",
+        "block": 2,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_073244_rq3snd_premature10_event_only_2",
+        "seed": 6302,
+        "validity_failed": []
+      },
+      "b2_hybrid": {
+        "arm": "hybrid",
+        "block": 2,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_003955_rq3snd_premature10_hybrid_2",
+        "seed": 6302,
+        "validity_failed": []
+      },
+      "b2_reconcile": {
+        "arm": "reconcile",
+        "block": 2,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [
+          "zero_pre_bind_successes"
+        ],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_pre_bind_successes": false
+        },
+        "not_evaluable": {
+          "zero_check_violations": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": false,
+        "recorded": true,
+        "run": "20261004_032511_rq3snd_premature10_reconcile_2",
+        "seed": 6302,
+        "validity_failed": []
+      },
+      "b3_event_only": {
+        "arm": "event_only",
+        "block": 3,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_162705_rq3snd_premature10_event_only_3",
+        "seed": 6303,
+        "validity_failed": []
+      },
+      "b3_hybrid": {
+        "arm": "hybrid",
+        "block": 3,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {
+          "check_violation_ge_1": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_195358_rq3snd_premature10_hybrid_3",
+        "seed": 6303,
+        "validity_failed": []
+      },
+      "b3_reconcile": {
+        "arm": "reconcile",
+        "block": 3,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {
+          "zero_check_violations": "controller_lan{1,2}.log absent from the run folder: log-based gate not evaluable (recorded era predates the capture)"
+        },
+        "not_evaluable_logs_absent": true,
+        "pass": true,
+        "recorded": true,
+        "run": "20261004_121859_rq3snd_premature10_reconcile_3",
+        "seed": 6303,
+        "validity_failed": []
+      },
+      "b4_event_only": {
+        "arm": "event_only",
+        "block": 4,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_084348_rq3snd_premature10_event_only_4",
+        "seed": 6304,
+        "validity_failed": []
+      },
+      "b4_hybrid": {
+        "arm": "hybrid",
+        "block": 4,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_101839_rq3snd_premature10_hybrid_4",
+        "seed": 6304,
+        "validity_failed": []
+      },
+      "b4_reconcile": {
+        "arm": "reconcile",
+        "block": 4,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_114733_rq3snd_premature10_reconcile_4",
+        "seed": 6304,
+        "validity_failed": []
+      },
+      "b5_event_only": {
+        "arm": "event_only",
+        "block": 5,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_162034_rq3snd_premature10_event_only_5",
+        "seed": 6305,
+        "validity_failed": []
+      },
+      "b5_hybrid": {
+        "arm": "hybrid",
+        "block": 5,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_131951_rq3snd_premature10_hybrid_5",
+        "seed": 6305,
+        "validity_failed": []
+      },
+      "b5_reconcile": {
+        "arm": "reconcile",
+        "block": 5,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_144957_rq3snd_premature10_reconcile_5",
+        "seed": 6305,
+        "validity_failed": []
+      },
+      "b6_event_only": {
+        "arm": "event_only",
+        "block": 6,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_192113_rq3snd_premature10_event_only_6",
+        "seed": 6306,
+        "validity_failed": []
+      },
+      "b6_hybrid": {
+        "arm": "hybrid",
+        "block": 6,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_205149_rq3snd_premature10_hybrid_6",
+        "seed": 6306,
+        "validity_failed": []
+      },
+      "b6_reconcile": {
+        "arm": "reconcile",
+        "block": 6,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_175039_rq3snd_premature10_reconcile_6",
+        "seed": 6306,
+        "validity_failed": []
+      },
+      "b7_event_only": {
+        "arm": "event_only",
+        "block": 7,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_222232_rq3snd_premature10_event_only_7",
+        "seed": 6307,
+        "validity_failed": []
+      },
+      "b7_hybrid": {
+        "arm": "hybrid",
+        "block": 7,
+        "descriptive": {},
+        "failed": [],
+        "gates": {
+          "admit_to_first_in_8_12": true,
+          "attestation_premature_s_10": true,
+          "check_violation_ge_1": true,
+          "in_window_000_ge_10_per_lan": true,
+          "measured_deferral_in_9_11": true,
+          "validity": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261012_235305_rq3snd_premature10_hybrid_7",
+        "seed": 6307,
+        "validity_failed": []
+      },
+      "b7_reconcile": {
+        "arm": "reconcile",
+        "block": 7,
+        "descriptive": {
+          "admit_to_first_in_0_2": true
+        },
+        "failed": [],
+        "gates": {
+          "attestation_premature_s_10": true,
+          "claim_to_first_in_10_22": true,
+          "measured_deferral_in_9_11": true,
+          "run_wide_000_le_1_and_le_0.2pct": true,
+          "validity": true,
+          "zero_check_violations": true,
+          "zero_pre_bind_successes": true
+        },
+        "not_evaluable": {},
+        "not_evaluable_logs_absent": false,
+        "pass": true,
+        "recorded": false,
+        "run": "20261013_012338_rq3snd_premature10_reconcile_7",
+        "seed": 6307,
+        "validity_failed": []
+      }
+    }
+  },
+  "E-P2": {
+    "A vs C": {
+      "cliffs_delta": 1.0,
+      "median_pp": 16.98,
+      "mwu_p": 0.0002913752913752914,
+      "n": 7,
+      "pass": true,
+      "per_block": {
+        "1": {
+          "delta_pp": 13.515132647367238,
+          "status": "ok"
+        },
+        "2": {
+          "delta_pp": 16.4585303753667,
+          "status": "ok"
+        },
+        "3": {
+          "delta_pp": 6.351304010689297,
+          "status": "ok"
+        },
+        "4": {
+          "delta_pp": 24.558010757624153,
+          "status": "ok"
+        },
+        "5": {
+          "delta_pp": 17.975644802322403,
+          "status": "ok"
+        },
+        "6": {
+          "delta_pp": 22.23638738857114,
+          "status": "ok"
+        },
+        "7": {
+          "delta_pp": 16.984282753701386,
+          "status": "ok"
+        }
+      },
+      "positive_blocks": 7
+    },
+    "B vs C": {
+      "cliffs_delta": 1.0,
+      "median_pp": 16.18,
+      "mwu_p": 0.0002913752913752914,
+      "n": 7,
+      "pass": true,
+      "per_block": {
+        "1": {
+          "delta_pp": 16.181320544724635,
+          "status": "ok"
+        },
+        "2": {
+          "delta_pp": 16.713236809024593,
+          "status": "ok"
+        },
+        "3": {
+          "delta_pp": 10.072853336500406,
+          "status": "ok"
+        },
+        "4": {
+          "delta_pp": 14.86028864278677,
+          "status": "ok"
+        },
+        "5": {
+          "delta_pp": 18.951501491847406,
+          "status": "ok"
+        },
+        "6": {
+          "delta_pp": 14.26746315180548,
+          "status": "ok"
+        },
+        "7": {
+          "delta_pp": 19.481889623289153,
+          "status": "ok"
+        }
+      },
+      "positive_blocks": 7
+    }
+  },
+  "E-P3": {
+    "note": "E-P4 retired (2026-10-11 (b) amendment): matched no-fault partners at every seed 6301-6307 give seven same-seed pairs; no unpaired or descriptive damage path exists. C is one-sided per pair (D_s <= 2 pp counts as passing); a partner no-fault-floor breach or base-gate invalidity drops the pair, and two or more lost seeds make a rule's component not assessable (recorded soundness 4.5 rule).",
+    "rules": {
+      "event_only": {
+        "assessable": true,
+        "cliffs_delta": 1.0,
+        "le_2pp_pairs": 0,
+        "lost_pairs": 1,
+        "median_d_pp": 14.38,
+        "mwu_p": 0.0010822510822510823,
+        "pairs": [
+          {
+            "block": 1,
+            "d_s": 5.736152955832589,
+            "none_run": "20261003_104223_rq3snd_none_event_only_1",
+            "premature_run": "20261003_124808_rq3snd_premature10_event_only_1",
+            "seed": 6301,
+            "status": "ok",
+            "u_cell": 16.20199146514936,
+            "u_none": 10.46583850931677
+          },
+          {
+            "block": 2,
+            "d_s": 16.183799244802703,
+            "none_run": "20261004_052835_rq3snd_none_event_only_2",
+            "premature_run": "20261004_073244_rq3snd_premature10_event_only_2",
+            "seed": 6302,
+            "status": "ok",
+            "u_cell": 18.99057658521003,
+            "u_none": 2.806777340407325
+          },
+          {
+            "block": 3,
+            "d_s": 12.571843843877032,
+            "none_run": "20261004_142240_rq3snd_none_event_only_3",
+            "premature_run": "20261004_162705_rq3snd_premature10_event_only_3",
+            "seed": 6303,
+            "status": "ok",
+            "u_cell": 15.069951338199514,
+            "u_none": 2.498107494322483
+          },
+          {
+            "block": 4,
+            "d_s": 21.976981390374654,
+            "none_run": "20261012_080002_rq3snd_none_event_only_4",
+            "premature_run": "20261012_084348_rq3snd_premature10_event_only_4",
+            "seed": 6304,
+            "status": "ok",
+            "u_cell": 27.645760290871316,
+            "u_none": 5.66877890049666
+          },
+          {
+            "block": 5,
+            "none_breach_reason": {
+              "bad_breach": false,
+              "bad_share": 0.005136115834312059,
+              "breach": true,
+              "tail_slow_breach": true,
+              "tail_slow_share": 0.08928501622297799
+            },
+            "none_run": "20261012_153513_rq3snd_none_event_only_5",
+            "premature_run": "20261012_162034_rq3snd_premature10_event_only_5",
+            "seed": 6305,
+            "status": "none_breach"
+          },
+          {
+            "block": 6,
+            "d_s": 22.52805757357538,
+            "none_run": "20261012_183602_rq3snd_none_event_only_6",
+            "premature_run": "20261012_192113_rq3snd_premature10_event_only_6",
+            "seed": 6306,
+            "status": "ok",
+            "u_cell": 25.590971480860148,
+            "u_none": 3.062913907284768
+          },
+          {
+            "block": 7,
+            "d_s": 9.154795870436343,
+            "none_run": "20261012_213730_rq3snd_none_event_only_7",
+            "premature_run": "20261012_222232_rq3snd_premature10_event_only_7",
+            "seed": 6307,
+            "status": "ok",
+            "u_cell": 19.226796517633172,
+            "u_none": 10.072000647196829
+          }
+        ],
+        "pass": true,
+        "positive_pairs": 6,
+        "usable_pairs": 6
+      },
+      "hybrid": {
+        "assessable": true,
+        "cliffs_delta": 0.7142857142857143,
+        "le_2pp_pairs": 2,
+        "lost_pairs": 0,
+        "median_d_pp": 11.66,
+        "mwu_p": 0.15122377622377622,
+        "pairs": [
+          {
+            "block": 1,
+            "d_s": 13.33458252456209,
+            "none_run": "20261003_141130_rq3snd_none_hybrid_1",
+            "premature_run": "20261003_161604_rq3snd_premature10_hybrid_1",
+            "seed": 6301,
+            "status": "ok",
+            "u_cell": 18.868179362506755,
+            "u_none": 5.533596837944664
+          },
+          {
+            "block": 2,
+            "d_s": 3.860667634252538,
+            "none_run": "20261003_223539_rq3snd_none_hybrid_2",
+            "premature_run": "20261004_003955_rq3snd_premature10_hybrid_2",
+            "seed": 6302,
+            "status": "ok",
+            "u_cell": 19.245283018867923,
+            "u_none": 15.384615384615385
+          },
+          {
+            "block": 3,
+            "d_s": 16.410994572164327,
+            "none_run": "20261004_174938_rq3snd_none_hybrid_3",
+            "premature_run": "20261004_195358_rq3snd_premature10_hybrid_3",
+            "seed": 6303,
+            "status": "ok",
+            "u_cell": 18.791500664010623,
+            "u_none": 2.380506091846298
+          },
+          {
+            "block": 4,
+            "d_s": 0.5494741419714835,
+            "none_run": "20261012_093504_rq3snd_none_hybrid_4",
+            "premature_run": "20261012_101839_rq3snd_premature10_hybrid_4",
+            "seed": 6304,
+            "status": "ok",
+            "u_cell": 17.948038176033933,
+            "u_none": 17.39856403406245
+          },
+          {
+            "block": 5,
+            "d_s": -2.8796014557603975,
+            "none_run": "20261012_123220_rq3snd_none_hybrid_5",
+            "premature_run": "20261012_131951_rq3snd_premature10_hybrid_5",
+            "seed": 6305,
+            "status": "ok",
+            "u_cell": 21.129407553248612,
+            "u_none": 24.00900900900901
+          },
+          {
+            "block": 6,
+            "d_s": 14.549373327298355,
+            "none_run": "20261012_200613_rq3snd_none_hybrid_6",
+            "premature_run": "20261012_205149_rq3snd_premature10_hybrid_6",
+            "seed": 6306,
+            "status": "ok",
+            "u_cell": 17.62204724409449,
+            "u_none": 3.072673916796133
+          },
+          {
+            "block": 7,
+            "d_s": 11.657505668191359,
+            "none_run": "20261012_230738_rq3snd_none_hybrid_7",
+            "premature_run": "20261012_235305_rq3snd_premature10_hybrid_7",
+            "seed": 6307,
+            "status": "ok",
+            "u_cell": 21.72440338722094,
+            "u_none": 10.06689771902958
+          }
+        ],
+        "pass": true,
+        "positive_pairs": 6,
+        "usable_pairs": 7
+      },
+      "reconcile": {
+        "assessable": true,
+        "cliffs_delta": -0.14285714285714285,
+        "le_2pp_pairs": 7,
+        "lost_pairs": 0,
+        "median_d_pp": -0.05,
+        "mwu_p": 0.8103146853146853,
+        "pairs": [
+          {
+            "block": 1,
+            "d_s": 0.11893920483087328,
+            "none_run": "20261003_165802_rq3snd_none_reconcile_1",
+            "premature_run": "20261003_190310_rq3snd_premature10_reconcile_1",
+            "seed": 6301,
+            "status": "ok",
+            "u_cell": 2.68685881778212,
+            "u_none": 2.567919612951247
+          },
+          {
+            "block": 2,
+            "d_s": -0.9898161987524023,
+            "none_run": "20261004_012115_rq3snd_none_reconcile_2",
+            "premature_run": "20261004_032511_rq3snd_premature10_reconcile_2",
+            "seed": 6302,
+            "status": "ok",
+            "u_cell": 2.5320462098433296,
+            "u_none": 3.521862408595732
+          },
+          {
+            "block": 3,
+            "d_s": -4.679630238492889,
+            "none_run": "20261004_101526_rq3snd_none_reconcile_3",
+            "premature_run": "20261004_121859_rq3snd_premature10_reconcile_3",
+            "seed": 6303,
+            "status": "ok",
+            "u_cell": 8.718647327510217,
+            "u_none": 13.398277566003106
+          },
+          {
+            "block": 4,
+            "d_s": 0.3965052936158271,
+            "none_run": "20261012_110213_rq3snd_none_reconcile_4",
+            "premature_run": "20261012_114733_rq3snd_premature10_reconcile_4",
+            "seed": 6304,
+            "status": "ok",
+            "u_cell": 3.0877495332471634,
+            "u_none": 2.6912442396313363
+          },
+          {
+            "block": 5,
+            "d_s": -1.1397941296705318,
+            "none_run": "20261012_140449_rq3snd_none_reconcile_5",
+            "premature_run": "20261012_144957_rq3snd_premature10_reconcile_5",
+            "seed": 6305,
+            "status": "ok",
+            "u_cell": 2.177906061401207,
+            "u_none": 3.3177001910717387
+          },
+          {
+            "block": 6,
+            "d_s": 0.4458948433935759,
+            "none_run": "20261012_170531_rq3snd_none_reconcile_6",
+            "premature_run": "20261012_175039_rq3snd_premature10_reconcile_6",
+            "seed": 6306,
+            "status": "ok",
+            "u_cell": 3.35458409228901,
+            "u_none": 2.9086892488954343
+          },
+          {
+            "block": 7,
+            "d_s": -0.048755112999303574,
+            "none_run": "20261013_003819_rq3snd_none_reconcile_7",
+            "premature_run": "20261013_012338_rq3snd_premature10_reconcile_7",
+            "seed": 6307,
+            "status": "ok",
+            "u_cell": 2.2425137639317847,
+            "u_none": 2.2912688769310883
+          }
+        ],
+        "pass": true,
+        "positive_pairs": 3,
+        "usable_pairs": 7
+      }
+    }
+  },
+  "command": "completion-premature",
+  "failures": [],
+  "family": "rq3_admission_modes",
+  "none_partners": 21,
+  "pass": true,
+  "premature_runs": 21,
+  "recorded_bands": {
+    "a_b_admit_to_first_s": [
+      8,
+      12
+    ],
+    "c_claim_to_first_s": [
+      10,
+      22
+    ],
+    "c_descriptive_admit_to_first_s": [
+      0,
+      2
+    ]
+  },
+  "runs": 42
+}

@@ -1,0 +1,238 @@
+{
+  "campaign": "rq3_admission_modes",
+  "contrasts": {
+    "none:direct_vs_discovery": {
+      "all": {
+        "cliffs_d": -1.0,
+        "median_x_s": 0.0004940032958984375,
+        "median_y_s": 5.5107104778289795,
+        "mwu_p": 0.0001554001554001554,
+        "n_x": 8,
+        "n_y": 8
+      },
+      "fast": {
+        "cliffs_d": -1.0,
+        "median_x_s": 0.0004940032958984375,
+        "median_y_s": 5.5107104778289795,
+        "mwu_p": 0.0001554001554001554,
+        "n_x": 8,
+        "n_y": 8
+      },
+      "mid": null,
+      "slow": null
+    },
+    "none:direct_vs_discovery_15": {
+      "all": {
+        "cliffs_d": -1.0,
+        "median_x_s": 0.0004940032958984375,
+        "median_y_s": 7.772303581237793,
+        "mwu_p": 0.00404040404040404,
+        "n_x": 8,
+        "n_y": 4
+      },
+      "fast": {
+        "cliffs_d": -1.0,
+        "median_x_s": 0.0004940032958984375,
+        "median_y_s": 7.772303581237793,
+        "mwu_p": 0.00404040404040404,
+        "n_x": 8,
+        "n_y": 4
+      },
+      "mid": null,
+      "slow": null
+    },
+    "none:discovery_vs_discovery_15": {
+      "all": {
+        "cliffs_d": -0.25,
+        "median_x_s": 5.5107104778289795,
+        "median_y_s": 7.772303581237793,
+        "mwu_p": 0.5696969696969697,
+        "n_x": 8,
+        "n_y": 4
+      },
+      "fast": {
+        "cliffs_d": -0.25,
+        "median_x_s": 5.5107104778289795,
+        "median_y_s": 7.772303581237793,
+        "mwu_p": 0.5696969696969697,
+        "n_x": 8,
+        "n_y": 4
+      },
+      "mid": null,
+      "slow": null
+    }
+  },
+  "provenance": {
+    "run_dirs": [
+      "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20261013_033743_rq3_camp_direct_7",
+      "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20261013_035209_rq3_camp_disc_7",
+      "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20261013_040546_rq3_probe_cell12_direct_6",
+      "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20261013_042031_rq3_probe_cell12_disc_6",
+      "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/metrics/20261013_043402_rq3_disc15_7"
+    ],
+    "tool": "tools/rq3_stratified_analysis.py"
+  },
+  "purpose": "per-backend readiness-admission interval tables aggregated per rule (full-identity <arm>:<fault>) and stratum (plan \u00a78)",
+  "rules": [
+    "direct:none",
+    "discovery:none",
+    "discovery_15:none"
+  ],
+  "runs": [
+    {
+      "backends": 4,
+      "gap_timeout_median": 0.0,
+      "ready_to_admit_median_s": 0.00398409366607666,
+      "rule": "direct:none",
+      "run": "20261013_033743_rq3_camp_direct_7",
+      "spawn_to_first_median_s": 1.9293245077133179,
+      "strata": {
+        "fast": 4
+      },
+      "useful_share_median": 1.0
+    },
+    {
+      "backends": 4,
+      "gap_timeout_median": 0.0,
+      "ready_to_admit_median_s": 4.247171998023987,
+      "rule": "discovery:none",
+      "run": "20261013_035209_rq3_camp_disc_7",
+      "spawn_to_first_median_s": 6.158980488777161,
+      "strata": {
+        "fast": 4
+      },
+      "useful_share_median": 1.0
+    },
+    {
+      "backends": 4,
+      "gap_timeout_median": 0.0,
+      "ready_to_admit_median_s": -0.0004960298538208008,
+      "rule": "direct:none",
+      "run": "20261013_040546_rq3_probe_cell12_direct_6",
+      "spawn_to_first_median_s": 1.872941017150879,
+      "strata": {
+        "fast": 4
+      },
+      "useful_share_median": 1.0
+    },
+    {
+      "backends": 4,
+      "gap_timeout_median": 0.0,
+      "ready_to_admit_median_s": 6.570557475090027,
+      "rule": "discovery:none",
+      "run": "20261013_042031_rq3_probe_cell12_disc_6",
+      "spawn_to_first_median_s": 8.34768009185791,
+      "strata": {
+        "fast": 4
+      },
+      "useful_share_median": 1.0
+    },
+    {
+      "backends": 4,
+      "gap_timeout_median": 0.0,
+      "ready_to_admit_median_s": 7.772303581237793,
+      "rule": "discovery_15:none",
+      "run": "20261013_043402_rq3_disc15_7",
+      "spawn_to_first_median_s": 9.9826500415802,
+      "strata": {
+        "fast": 4
+      },
+      "useful_share_median": 1.0
+    }
+  ],
+  "summary": {
+    "direct:none": {
+      "arm": "direct",
+      "fault": "none",
+      "gap_timeout_median": 0.0,
+      "n_backends": 8,
+      "per_stratum": {
+        "all": {
+          "n": 8,
+          "ready_to_admit_median_s": 0.0004940032958984375,
+          "spawn_to_first_median_s": 1.907119631767273
+        },
+        "fast": {
+          "n": 8,
+          "ready_to_admit_median_s": 0.0004940032958984375,
+          "spawn_to_first_median_s": 1.907119631767273
+        },
+        "mid": {
+          "n": 0,
+          "ready_to_admit_median_s": null,
+          "spawn_to_first_median_s": null
+        },
+        "slow": {
+          "n": 0,
+          "ready_to_admit_median_s": null,
+          "spawn_to_first_median_s": null
+        }
+      },
+      "ready_to_admit_median_s": 0.0004940032958984375,
+      "spawn_to_first_median_s": 1.907119631767273,
+      "useful_share_median": 1.0
+    },
+    "discovery:none": {
+      "arm": "discovery",
+      "fault": "none",
+      "gap_timeout_median": 0.0,
+      "n_backends": 8,
+      "per_stratum": {
+        "all": {
+          "n": 8,
+          "ready_to_admit_median_s": 5.5107104778289795,
+          "spawn_to_first_median_s": 7.244256496429443
+        },
+        "fast": {
+          "n": 8,
+          "ready_to_admit_median_s": 5.5107104778289795,
+          "spawn_to_first_median_s": 7.244256496429443
+        },
+        "mid": {
+          "n": 0,
+          "ready_to_admit_median_s": null,
+          "spawn_to_first_median_s": null
+        },
+        "slow": {
+          "n": 0,
+          "ready_to_admit_median_s": null,
+          "spawn_to_first_median_s": null
+        }
+      },
+      "ready_to_admit_median_s": 5.5107104778289795,
+      "spawn_to_first_median_s": 7.244256496429443,
+      "useful_share_median": 1.0
+    },
+    "discovery_15:none": {
+      "arm": "discovery_15",
+      "fault": "none",
+      "gap_timeout_median": 0.0,
+      "n_backends": 4,
+      "per_stratum": {
+        "all": {
+          "n": 4,
+          "ready_to_admit_median_s": 7.772303581237793,
+          "spawn_to_first_median_s": 9.9826500415802
+        },
+        "fast": {
+          "n": 4,
+          "ready_to_admit_median_s": 7.772303581237793,
+          "spawn_to_first_median_s": 9.9826500415802
+        },
+        "mid": {
+          "n": 0,
+          "ready_to_admit_median_s": null,
+          "spawn_to_first_median_s": null
+        },
+        "slow": {
+          "n": 0,
+          "ready_to_admit_median_s": null,
+          "spawn_to_first_median_s": null
+        }
+      },
+      "ready_to_admit_median_s": 7.772303581237793,
+      "spawn_to_first_median_s": 9.9826500415802,
+      "useful_share_median": 1.0
+    }
+  }
+}

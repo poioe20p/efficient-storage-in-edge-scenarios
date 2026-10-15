@@ -1,0 +1,4 @@
+stratum,n_event_only,n_hybrid,n_reconcile,median_event_only_s,median_hybrid_s,median_reconcile_s,c_minus_max_ab_s,mwu_p_a_vs_c,cliffs_delta_a_vs_c,mwu_p_b_vs_c,cliffs_delta_b_vs_c,direction_a_before_c,direction_b_before_c,descriptive,source
+fast,12,12,14,4.077798008918762,3.0847294330596924,9.982462048530579,5.904664039611816,0.00019224296445452538,-0.8690476190476191,1.748693564640469e-05,-1.0,true,true,false,completion_intact.json:E-I1.strata.fast
+slow,22,22,19,13.691316366195679,13.672183513641357,19.780274152755737,6.088957786560059,5.0060103840010584e-08,-1.0,5.0060103840010584e-08,-1.0,true,true,false,completion_intact.json:E-I1.strata.slow
+all,34,34,33,13.189430117607117,13.154566049575806,15.499085187911987,2.3096550703048706,0.0012961873093169096,-0.45811051693404636,0.0006035294445085881,-0.48841354723707664,true,true,true,completion_intact.json:E-I1.strata.all

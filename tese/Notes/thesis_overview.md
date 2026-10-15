@@ -158,12 +158,13 @@ This instrumentation distinguishes the time to create a container from the time 
 The **final RQ campaigns are complete and are the primary evidence** (the
 earlier, pre-reframe RQ1/RQ2/RQ3 campaigns remain supporting/calibration only):
 
-- **RQ3 — readiness admission (complete).** Direct lifecycle notification vs
+- **RQ3 — readiness admission (recorded campaign; four-mode matrix completing).** Direct lifecycle notification vs
   periodic discovery, n=6/arm × 2 = 12 runs: readiness→admission 0.001 s vs
   6.984 s (p < 0.0001, d = −1.000); spawn→first ~6 s sooner (p = 0.0005);
   scale-decision→usable capacity 2.17 s vs 6.01 s at rate-12 (p = 0.0022,
   d = −1.000); gap-window user-harm consequence null (0.000 at every load).
   Storage-replica extension evaluated and closed as null.
+  Extended to the four-mode matrix (A--D, intact/lost/premature, seven seed-matched blocks; C4 executing 2026-10-13).
   Evidence: `tese/research_questions/rq3/rq3_evaluation_conclusions.md`.
 - **RQ1 — telemetry modes (complete).** The four telemetry modes (push,
   delayed push, polling, and sampled push), 4 arms × n=7 = 28 runs: lossy
@@ -241,14 +242,11 @@ Primary measurements include:
 
 **Evidence status — claim boundary:** the compute scale-up benefit is robust (p50 collapses 40–1000× in 12/12 aligned compute-bound replicates) and the storage reserve mechanism + tier-CPU relief are reproduced (12/12; storage CPU ~66–71 % → ~42–49 %). The **user-visible storage p95 benefit is NOT statistically demonstrated** (pre-registered gate not met; CI includes 1.0 for the storage-first and bottleneck-aware data-bound cells; documented causes: PRE/POST window-length asymmetry and the bottleneck-aware arm's post-relief compute churn). Wrong-tier scaling costs are real (compute-first on data-bound demand degrades service; storage-first on compute-bound demand wastes resources). The classifier commits to the detected tier (88–93 %). Two runs were excluded as documented MEMCG OOM platform incidents (256 MB and 512 MB edge-memory caps) — reported as a platform limitation.
 
-### RQ3 - readiness admission to traffic
+### RQ3 - readiness admission modes
 
-> **For newly created compute backends that satisfy the same application-readiness criterion, how does direct lifecycle notification versus periodic discovery affect the time until a ready backend contributes usable capacity?**
+> **When a newly provisioned backend becomes ready, how do the four admission modes (backend notification, notification with a fallback check, periodic polling, and notification with a confirmation check) affect whether and when the new capacity starts serving requests and what users experience, under three message conditions: the message arrives intact, never arrives, or arrives before the backend can serve?**
 
-The experiment compares:
-
-- direct registration of a backend after a verified application-readiness event; and
-- periodic discovery of the same readiness state, with direct registration suppressed until the discovery result arrives.
+The experiment compares four admission modes: backend notification (A), notification with a fallback check (B, the control), periodic polling (C), and notification with a confirmation check (D), over seven seed-matched blocks per message condition (intact, lost, premature).
 
 The experiment is limited to compute backends because the current storage path has a distinct MongoDB SECONDARY readiness event. Both conditions use the same readiness probe, routing cost function, load-balancing weights, pool state, workload, and resource limits. Warm-lease priority and slow-start ramps are disabled in both conditions. The experiment does not compare the controller with Kubernetes, HAProxy, or another external load balancer. It isolates only the readiness admission mechanism.
 
@@ -256,7 +254,7 @@ The experiment is limited to compute backends because the current storage path h
 
 The request driver schedules fresh TCP connections after backend readiness. The RQ3 experiment uses a dedicated flow-isolation mode in which each measurement request receives a unique connection tuple and the controller removes its corresponding VIP flow after the response. Existing flows are excluded before the timing interval begins. This guarantees one fresh backend-selection event per measured request and prevents flow affinity from being mistaken for a readiness-admission effect.
 
-This RQ is motivated by SDN load-balancing literature that generally assumes an already available backend pool.
+This RQ is motivated by the scaling loop itself: provisioned capacity becomes usable capacity only when it is admitted to traffic. The reviewed work recognises the delay (Kurma) and manages pool membership separately (Dreibholz), but does not isolate the admission step.
 
 Primary measurements include:
 

@@ -1,0 +1,134 @@
+{
+  "generated_utc": "2026-10-14T21:30:27Z",
+  "metric": "adm_flow.claim_to_first_median_s",
+  "definition": "median over the run's admitted added backends of (first successful response - t_claim), t_claim = t_bind - N by construction (N = EDGE_READY_PREMATURE_S, attested lead)",
+  "source_module": "/home/testop/efficient-storage-in-edge-scenarios/source/scripts/testing/analysis/rq3/readiness_robustness.py",
+  "source_sha256": "2beff30285d92a1ce6ddcd0b1cdea9c9d1cff09032320e8aee2e156e284bad0e",
+  "metrics_root": "/home/testop/rq3snd_frozen2/source/scripts/testing/metrics",
+  "ordinals": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "arms": {
+    "wake_verify": {
+      "runs": [
+        {
+          "ordinal": 1,
+          "run": "20261004_223834_rq3snd_premature10_wake_verify_1",
+          "n_used": 6,
+          "claim_to_first_median_s": 11.30203104019165,
+          "admit_to_first_median_s": 0.8334589004516602
+        },
+        {
+          "ordinal": 2,
+          "run": "20261005_004258_rq3snd_premature10_wake_verify_2",
+          "n_used": 5,
+          "claim_to_first_median_s": 11.145286083221436,
+          "admit_to_first_median_s": 0.9842729568481445
+        },
+        {
+          "ordinal": 3,
+          "run": "20261005_024604_rq3snd_premature10_wake_verify_3",
+          "n_used": 6,
+          "claim_to_first_median_s": 11.37701940536499,
+          "admit_to_first_median_s": 0.9866780042648315
+        },
+        {
+          "ordinal": 4,
+          "run": "20261014_080222_rq3snd_premature10_wake_verify_4",
+          "n_used": 5,
+          "claim_to_first_median_s": 10.564817905426025,
+          "admit_to_first_median_s": 0.44377684593200684
+        },
+        {
+          "ordinal": 5,
+          "run": "20261014_100501_rq3snd_premature10_wake_verify_5",
+          "n_used": 5,
+          "claim_to_first_median_s": 10.985399961471558,
+          "admit_to_first_median_s": 0.6206128597259521
+        },
+        {
+          "ordinal": 6,
+          "run": "20261014_113752_rq3snd_premature10_wake_verify_6",
+          "n_used": 5,
+          "claim_to_first_median_s": 10.631042003631592,
+          "admit_to_first_median_s": 0.31828904151916504
+        },
+        {
+          "ordinal": 7,
+          "run": "20261014_132213_rq3snd_premature10_wake_verify_7",
+          "n_used": 5,
+          "claim_to_first_median_s": 10.808247089385986,
+          "admit_to_first_median_s": 0.37520909309387207
+        }
+      ],
+      "n_runs": 7,
+      "median_over_runs": 10.985399961471558,
+      "pooled_n": 37,
+      "pooled_median": 10.985399961471558
+    },
+    "reconcile": {
+      "runs": [
+        {
+          "ordinal": 1,
+          "run": "20261003_190310_rq3snd_premature10_reconcile_1",
+          "n_used": 5,
+          "claim_to_first_median_s": 19.761295080184937,
+          "admit_to_first_median_s": 0.6151680946350098
+        },
+        {
+          "ordinal": 2,
+          "run": "20261004_032511_rq3snd_premature10_reconcile_2",
+          "n_used": 5,
+          "claim_to_first_median_s": 19.869011878967285,
+          "admit_to_first_median_s": 0.6735639572143555
+        },
+        {
+          "ordinal": 3,
+          "run": "20261004_121859_rq3snd_premature10_reconcile_3",
+          "n_used": 6,
+          "claim_to_first_median_s": 14.734655499458313,
+          "admit_to_first_median_s": 0.6558924913406372
+        },
+        {
+          "ordinal": 4,
+          "run": "20261012_114733_rq3snd_premature10_reconcile_4",
+          "n_used": 7,
+          "claim_to_first_median_s": 12.62476396560669,
+          "admit_to_first_median_s": 0.8025422096252441
+        },
+        {
+          "ordinal": 5,
+          "run": "20261012_144957_rq3snd_premature10_reconcile_5",
+          "n_used": 5,
+          "claim_to_first_median_s": 19.596397161483765,
+          "admit_to_first_median_s": 1.3155491352081299
+        },
+        {
+          "ordinal": 6,
+          "run": "20261012_175039_rq3snd_premature10_reconcile_6",
+          "n_used": 6,
+          "claim_to_first_median_s": 16.360512018203735,
+          "admit_to_first_median_s": 0.997207522392273
+        },
+        {
+          "ordinal": 7,
+          "run": "20261013_012338_rq3snd_premature10_reconcile_7",
+          "n_used": 5,
+          "claim_to_first_median_s": 19.465574979782104,
+          "admit_to_first_median_s": 0.7151730060577393
+        }
+      ],
+      "n_runs": 7,
+      "median_over_runs": 19.465574979782104,
+      "pooled_n": 39,
+      "pooled_median": 16.662925004959106
+    }
+  },
+  "note": "E-W3 read (premature cell): median_over_runs is the reported arm number; pooled_median is descriptive (per-backend points pooled across runs). Pilot ordinals 1-3 of wake_verify are the recorded runs, reused, never relaunched."
+}

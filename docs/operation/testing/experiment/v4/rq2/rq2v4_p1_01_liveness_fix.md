@@ -8,6 +8,11 @@
 > [`preparation.md`](preparation.md) (autopsy findings, D1–D7).
 > **Provenance:** both 2026-10-11 autopsies; every anchor below re-verified
 > against the code at draft time (line numbers are the pre-patch state).
+> **Post-draft correction (2026-10-11, raw-artifact re-audit):** the §12.3
+> RQ1-archive claims were found *wrong* (in-episode culls exist in the
+> archived probes and in v2) and the section was rewritten; §12.4/§5
+> carry the matching caveats. The fix itself is unaffected and remains
+> necessary; the RQ1 v3 final campaign is clean by direct audit.
 
 ## 0. Goal
 
@@ -346,7 +351,10 @@ The delivery stamp is the A2/A0 edit in §3.
   itself remains tier-scoped by B5. **Semantic change (intended):** the
   lookback deque now spans the last N *evidenced* windows, so suppression
   extends in wall-clock time across blackouts — exactly the
-  capacity-protection the guard exists for.
+  capacity-protection the guard exists for. (Post-draft audit, §12.3: the
+  guard as-shipped was intact but leaky on the pre-fix platform — blackout
+  windows fed it `overload=False` and disarmed it, which is the observed
+  mid-episode cull path the fix closes; no change to this rationale.)
 - **`update_storage_stats` / storage heartbeat branch** — the heartbeat
   payload carries real instantaneous measurements (connections, CPU, RAM,
   lag). For a primary, `_repl_lag_and_state` returns `0.0` in the real
@@ -656,14 +664,14 @@ battery and the P5 campaign use these files:
 
 The four **transport deltas** `rq2v4_transport_{ep,delayed,poll,sampled}.env`
 carry only the RQ1 transport keys (copied from
-`docs/operation/testing/experiment/v2/rq1/env/`) and exist for the P1.4
-RQ1-mode smoke set (§12.1).
+`docs/operation/testing/experiment/v2/rq1/env/`). They are **RQ1-owned** and
+out of the RQ2 battery scope — kept so a requested RQ1 check can run without
+creating new variant files (§12.1).
 
 **Launcher (new)** — `source/scripts/testing/rq2v4_launch_run.sh`:
 `<mode> <label> <seed> [extra_env_file ...]`, merges canonical + mode delta
 + optional transport deltas (later files win), shapes resources, runs the
-make targets. Used by P1.3 (smoke), P1.4 (battery + RQ1-mode smoke set) and
-the P5 campaign.
+make targets. Used by P1.3 (smoke), P1.4 (battery) and the P5 campaign.
 
 **Tests (1 new)** — `source/scripts/testing/rq2v4_p1_02_liveness_selftest.py`
 (§8).
@@ -678,15 +686,14 @@ it in place per rung, as planned). No other config changes:
 
 **Battery gate pins (pre-registered here, inherited by P4.1):**
 
-- Gate (c) relief — treatment window (add+30 s … add+180 s) vs pre-add
-  window (add−180 s … add); primary signal per tier: compute lanes → mean
-  window `avg_cpu_percent` of the lane's edge servers; storage lanes → mean
-  window CPU of the lane's storage members. Relief ratio = post/pre means;
-  **threshold ≤ 0.75 on both lanes** (v3 db anchor observed 0.565–0.66).
-- Gate (d) unlock — lock present: per-lane client p95 ≥ 1 s in ≥ 80 % of
-  pre-add windows; cleared: per-lane client p95 < 1 s in ≥ 80 % of treatment
-  windows.
-- Gates (a)/(b)/(e)/(f) as written in `rq2v4_plan.md` P1.4.
+- Gate (c) relief + unlock (`comp`@2.5) — relief: treatment window
+  (add+30 s … add+180 s) vs pre-add window (add−180 s … add); primary
+  signal: mean window `avg_cpu_percent` of the tier's serving units, both
+  sides of the press. Relief ratio = post/pre means; **threshold ≤ 0.75**
+  (v3 db anchor observed 0.565–0.66). Unlock: lock present = per-side
+  client p95 ≥ 1 s in ≥ 80 % of pre-add windows; cleared = p95 < 1 s in
+  ≥ 80 % of treatment windows.
+- Gates (a)/(b)/(d)/(e) as written in `rq2v4_plan.md` P1.4.
 
 **Deployment precondition (lockstep):** the VM checkout commit and the
 `local_state_server` image are updated together — the controller runs from
@@ -710,10 +717,11 @@ disable the guards.
    `request_evidence` key and, when a heartbeat lands in it,
    `servers[<mac>].heartbeat_only`. Low-rate smoke (telemetry continuous,
    no startup regressions).
-3. P1.4: 13-run battery per `rq2v4_plan.md` — 9 gate runs launched through
-   the merge shim (`rq2v4_mode_*` deltas over the canonical override) plus
-   the 4-run RQ1-mode smoke set (one per `rq2v4_transport_*` delta) — full
-   retention, 1 Hz host sampler; artifact `rq2v4_p1_05_verification.md`.
+3. P1.4: 5-run lean battery per `rq2v4_plan.md` — `none`/`comp`/`stor` at
+   the hard compute rung (2.5) + the data-bound re-anchor pair (`none`,
+   `stor`) — launched through the merge shim (`rq2v4_mode_*` deltas over
+   the canonical override), full retention, 1 Hz host sampler; artifact
+   `rq2v4_p1_05_verification.md`.
 
 ## 12. Delivery-mode compatibility and RQ1 impact (2026-10-11)
 
@@ -722,12 +730,14 @@ disable the guards.
 The fix touches no delivery source. All five decode paths
 (`event_preserving`, `delayed_event_preserving`, `poll`, `sampled_push`,
 `zmq`) validate the same model, and the new fields are additive with
-pre-fix defaults, so both RQ1's four modes and RQ2's three scaling modes
-remain producible. The mode transports are re-proven on the fixed build by
-the P1.4 RQ1-mode smoke set (4 runs, `rq2v4_transport_*.env`): each asserts
-its delivery signature (ep: contiguous; delayed: every window, late; poll:
-cadence = POLL_INTERVAL_S; sampled: every SAMPLE_EVERY-th window) plus
-continuous presence and zero cull rows.
+pre-fix defaults, so RQ1's four modes and RQ2's three scaling modes
+remain producible. **RQ1's modes are RQ1-owned and outside the RQ2
+battery scope.** If a re-proof is ever requested, it is: run each transport
+(the existing RQ1 arm env files, or the `rq2v4_transport_*.env` deltas
+prepared for this purpose, via the launcher), then assert each delivery
+signature from the window/ack logs (ep: contiguous; delayed: every window,
+late; poll: cadence = POLL_INTERVAL_S; sampled: every SAMPLE_EVERY-th
+window) plus continuous presence and zero cull rows.
 
 ### 12.2 What changes for the modes (the point of the fix)
 
@@ -751,25 +761,46 @@ All 12 locally archived RQ1 delivery runs
 the defect signature:
 
 - Scale-down decisions while demand was above 10 % of the run's peak
-  window: **zero in every run**. All removal rows per run (33–215) sit at
-  zero/low-demand windows, i.e. the post-drop reclaim phase.
-- Those removals are almost entirely absence-driven (`absent` rows ≈
-  scale-down rows; e.g. ep_1 70/70, delayed_1 81/83, sp_1 125/125,
-  ls_2 215/215) — the pre-fix reclaim path, not the graceful
-  underutilisation path.
+  window: the draft's original "zero in every run" was **wrong** — the
+  demand-alignment it rested on mis-attributed the archived runs' time
+  bases. Re-verified against the raw artifacts on 2026-10-11: **11 removal
+  completions inside `compute_plateau`** across three runs
+  (ep_1 6 · delayed_2 2 · sp_2 3), at episode demand of 216–310 of the
+  451–519 window peak (42–66 %) and with windows flagged `overload=True`.
+- Of those, **7 are absence-driven culls of compute nodes that were
+  actively serving** at decision time (`reason='absent'` alerts in
+  `controller_*.log`; 279–308 requests in the removed node's last delivered
+  window) — e.g. ep_1 `edge_server_lan2_dyn2` removed 21:53:34 after 304
+  req/window, immediately after the log's own churn-guard line ("LAN
+  overloaded (recent) — suppressing absent-cleanup + scale-down"), i.e.
+  the guard was bypassed by a no-evidence window. Excluding the
+  metric-driven storage culls, the spurious set is 2 (ep_1) + 1
+  (delayed_2) + 2 (sp_2).
 
 Interpretation: RQ1's *load-rise* measurements (scale-up response,
-delivered share, information age — the episode the RQ answers) were not
-affected by the defect; the churn guard held during the rise and no live
-unit was removed mid-episode. RQ1's *teardown*, however, ran through the
-absence path (mode-dependent by construction), which the fix replaces with
-heartbeat-backed liveness; on the fixed platform teardown would run through
-the policy's graceful scale-down instead.
+delivered share, information age — the first ~30–86 s of the episode) were
+not affected: the spurious culls cluster in the episode's second half
+(starts at ≥ +303 s of the 600 s plateau), after the usable-capacity
+figure is taken. But the pre-fix removals are **not teardown-only and not
+mode-independent**: they execute during the episode under sustained load
+(following delivery blackout/lull windows), and their frequency tracks the
+delivery arm (audit: A 6 · B 3 · C 1 · D 1; v2 valid-run repeats 08-06,
+same recipe: 27 in-episode removals, of which by arm — ep 19 · delayed 6 ·
+ls 2 · sp 0 at equal spawn volume, i.e. pre-fix lifecycle behaviour was
+measurably entangled with the RQ1 treatment itself, which is precisely
+what the fix removes). RQ1 v3's final 28-run campaign is nevertheless
+clean by direct audit (0 in-episode removals; only 5 removals within
++120 s *after* episode end) — its 180 s episode ends before the pre-fix
+cull regime engages (earliest observed archived cull start: +303 s of a
+600 s plateau), not because the absence path was absent. v3's record
+therefore stands; the pre-fix *probe/v2* record carries the mode-correlated
+in-episode churn above.
 
 ### 12.4 Decision (D9)
 
 The archived RQ1 results stand as the record of the pre-fix platform; the
-v4 record documents this behaviour change; the RQ1-mode smoke set (P1.4)
-re-proves mode producibility on the fixed build. Teardown replication under
-the fixed semantics (a 4-arm RQ1 re-run) is parked, not planned — revisit
-only on author request.
+v4 record documents this behaviour change. The RQ1 v3 final campaign is
+clean by audit (§12.3). Any re-proof of the fixed platform for RQ1 is the
+4 transport runs (RQ1-owned, out of the RQ2 battery scope), plus a 4-arm
+RQ1 re-run if teardown/mid-episode replication is ever wanted — parked,
+not planned, revisit only on request.

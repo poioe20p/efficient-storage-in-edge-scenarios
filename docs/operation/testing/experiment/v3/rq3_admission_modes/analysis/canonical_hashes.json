@@ -1,0 +1,12 @@
+{
+  "current_state_integrated_env": {
+    "note": "canonical override baseline; not modified by this campaign",
+    "path": "source/scripts/testing/controller_env_overrides/current_state_integrated.env",
+    "sha256": "09cdaf6392ae6c9b2c5618103193c4749348a2891ba5d974dcb126b2e6f74041"
+  },
+  "phases_json": {
+    "path": "source/scripts/testing/phases.json",
+    "profile": "family: baseline 60 s @1.0 -> compute_plateau 600 s @2.0 (pure service_pressure) -> recovery_gap -> demand_drop -> idle_tail",
+    "sha256": "57bccc12bebb98dfeb920c417d343e734763cd9a747f917b8177ee04977c7aa2"
+  }
+}

@@ -34,6 +34,13 @@ RATE="$5"
 [[ "$LABEL" =~ ^rq3tim_(none|loss_all)_(event_only|hybrid|reconcile)_[0-9]+$ ]] \
     || die "invalid label (expect rq3tim_<cell>_<arm>_<ordinal|block>)"
 [[ "$SEED" =~ ^[0-9]+$ ]] || die "invalid seed"
+
+# Globally unique labels (run_matrix.md; plan §5.1: both matrix launchers
+# refuse duplicate labels): a label that already has a run folder under
+# metrics/ is refused before any action.
+existing_run="$(find "$REPO_ROOT/source/scripts/testing/metrics" -mindepth 1 -maxdepth 1 \
+    -type d -name "*_${LABEL}" -print -quit 2>/dev/null || true)"
+[[ -z "$existing_run" ]] || die "duplicate label already has a run folder: $existing_run"
 python3 - "$RATE" "$REPO_ROOT/source/scripts/testing/phases.json" <<'PY' || die "rate outside the 2.0/2.5/3.0 ladder or phases.json mismatch"
 import json
 import sys

@@ -1,0 +1,435 @@
+{
+  "E-L1": {
+    "assessable_blocks": [
+      1,
+      2,
+      3,
+      5,
+      6
+    ],
+    "block7": {
+      "assessable": false,
+      "delta_slow_pp": 1.24,
+      "onset_delta_slow_pp": 6.5
+    },
+    "cliffs_delta": 1.0,
+    "delta_ge_5pp_blocks": 5,
+    "denominator_assessable": [
+      1,
+      2,
+      3,
+      5,
+      6
+    ],
+    "denominator_blocks": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "median_pp": 7.64,
+    "mwu_p": 0.003968253968253968,
+    "onset_delta_ge_5pp_blocks": 5,
+    "onset_median_pp": 28.01,
+    "pass": true
+  },
+  "E-L2": {
+    "a_blocks": 5,
+    "b_blocks": 5,
+    "block7": null,
+    "c_blocks": 5,
+    "pass": true,
+    "per_block": {
+      "1": {
+        "a_zero_admit_abandon_ge_2_zero_success": true,
+        "b_all_probe_fallback_ge_1_per_lan": true,
+        "c_all_probe_ge_1_per_lan": true,
+        "relief_completion_ok": true
+      },
+      "2": {
+        "a_zero_admit_abandon_ge_2_zero_success": true,
+        "b_all_probe_fallback_ge_1_per_lan": true,
+        "c_all_probe_ge_1_per_lan": true,
+        "relief_completion_ok": true
+      },
+      "3": {
+        "a_zero_admit_abandon_ge_2_zero_success": true,
+        "b_all_probe_fallback_ge_1_per_lan": true,
+        "c_all_probe_ge_1_per_lan": true,
+        "relief_completion_ok": true
+      },
+      "5": {
+        "a_zero_admit_abandon_ge_2_zero_success": true,
+        "b_all_probe_fallback_ge_1_per_lan": true,
+        "c_all_probe_ge_1_per_lan": true,
+        "relief_completion_ok": true
+      },
+      "6": {
+        "a_zero_admit_abandon_ge_2_zero_success": true,
+        "b_all_probe_fallback_ge_1_per_lan": true,
+        "c_all_probe_ge_1_per_lan": true,
+        "relief_completion_ok": true
+      }
+    },
+    "relief_block_count": 5,
+    "relief_blocks": [
+      1,
+      2,
+      3,
+      5,
+      6
+    ]
+  },
+  "E-L3": {
+    "block7": {
+      "assessable": false,
+      "event_only_slow": 0.0303,
+      "le_25pct": true
+    },
+    "blocks_le_25pct": 5,
+    "event_only_slow": [
+      0.106,
+      0.1439,
+      0.0834,
+      0.101,
+      0.1366
+    ],
+    "median": 0.10599480229536218,
+    "pass": true
+  },
+  "E-L4": {
+    "clean": 19,
+    "denominator": 21,
+    "none_cell_healthy": false,
+    "note": "recorded H-T3 run-level floor reported exactly as recorded (16/18, none_cell_healthy=false where it applies; blocks 3 and 5 transients stay recorded, never re-chased); conformance requires the recorded outcome reproduced and block 7 clean (plan \u00a77.1 E-I4 / \u00a77.2 E-L4, \u00a79 NA != stop)",
+    "per_run": [
+      {
+        "bad_rate_full_plateau": 0.007238540431172818,
+        "block": 1,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260908_225207_rq3tim_none_event_only_1",
+        "tail_slow": 0.013693331270307906
+      },
+      {
+        "bad_rate_full_plateau": 0.0072908672294704525,
+        "block": 1,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_002141_rq3tim_none_hybrid_1",
+        "tail_slow": 0.00998181607149766
+      },
+      {
+        "bad_rate_full_plateau": 0.007779522065236351,
+        "block": 1,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_014508_rq3tim_none_reconcile_1",
+        "tail_slow": 0.010987735520563315
+      },
+      {
+        "bad_rate_full_plateau": 0.00728959575878065,
+        "block": 2,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_061753_rq3tim_none_event_only_2",
+        "tail_slow": 0.01488152757914267
+      },
+      {
+        "bad_rate_full_plateau": 0.009365190094175095,
+        "block": 2,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_030852_rq3tim_none_hybrid_2",
+        "tail_slow": 0.007229008813978661
+      },
+      {
+        "bad_rate_full_plateau": 0.0063143206000348855,
+        "block": 2,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_045550_rq3tim_none_reconcile_2",
+        "tail_slow": 0.009168278529980657
+      },
+      {
+        "bad_rate_full_plateau": 0.008719003940989782,
+        "block": 3,
+        "floor_ok": true,
+        "recorded_transient": true,
+        "run": "20260909_090208_rq3tim_none_event_only_3",
+        "tail_slow": 0.01316095068514361
+      },
+      {
+        "bad_rate_full_plateau": 0.011875904643984445,
+        "block": 3,
+        "floor_ok": false,
+        "recorded_transient": true,
+        "run": "20260909_102456_rq3tim_none_hybrid_3",
+        "tail_slow": 0.011213796836935927
+      },
+      {
+        "bad_rate_full_plateau": 0.007935815819307579,
+        "block": 3,
+        "floor_ok": true,
+        "recorded_transient": true,
+        "run": "20260909_073922_rq3tim_none_reconcile_3",
+        "tail_slow": 0.011361001623000232
+      },
+      {
+        "bad_rate_full_plateau": 0.008198580075706037,
+        "block": 4,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_114731_rq3tim_none_event_only_4",
+        "tail_slow": 0.011996142719382836
+      },
+      {
+        "bad_rate_full_plateau": 0.008562957795605163,
+        "block": 4,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_143115_rq3tim_none_hybrid_4",
+        "tail_slow": 0.011991054904380013
+      },
+      {
+        "bad_rate_full_plateau": 0.006923372048411287,
+        "block": 4,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_130855_rq3tim_none_reconcile_4",
+        "tail_slow": 0.012991532304837025
+      },
+      {
+        "bad_rate_full_plateau": 0.009454038025466597,
+        "block": 5,
+        "floor_ok": true,
+        "recorded_transient": true,
+        "run": "20260909_171709_rq3tim_none_event_only_5",
+        "tail_slow": 0.013697573021568854
+      },
+      {
+        "bad_rate_full_plateau": 0.007864815848214286,
+        "block": 5,
+        "floor_ok": true,
+        "recorded_transient": true,
+        "run": "20260909_155334_rq3tim_none_hybrid_5",
+        "tail_slow": 0.01103224810985959
+      },
+      {
+        "bad_rate_full_plateau": 0.008397053175517614,
+        "block": 5,
+        "floor_ok": false,
+        "recorded_transient": true,
+        "run": "20260909_184210_rq3tim_none_reconcile_5",
+        "tail_slow": 0.042888605540744175
+      },
+      {
+        "bad_rate_full_plateau": 0.008579948729574665,
+        "block": 6,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_225150_rq3tim_none_event_only_6",
+        "tail_slow": 0.013699687415582912
+      },
+      {
+        "bad_rate_full_plateau": 0.00861482656993879,
+        "block": 6,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_212845_rq3tim_none_hybrid_6",
+        "tail_slow": 0.011029695333590436
+      },
+      {
+        "bad_rate_full_plateau": 0.008024842119953945,
+        "block": 6,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20260909_200601_rq3tim_none_reconcile_6",
+        "tail_slow": 0.012813585488228483
+      },
+      {
+        "bad_rate_full_plateau": 0.006231889117760011,
+        "block": 7,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20261011_181732_rq3tim_none_event_only_7",
+        "tail_slow": 0.0073922130195835595
+      },
+      {
+        "bad_rate_full_plateau": 0.004816417702080134,
+        "block": 7,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20261011_194319_rq3tim_none_hybrid_7",
+        "tail_slow": 0.009239214473480748
+      },
+      {
+        "bad_rate_full_plateau": 0.004956629491945477,
+        "block": 7,
+        "floor_ok": true,
+        "recorded_transient": false,
+        "run": "20261012_000419_rq3tim_none_reconcile_7",
+        "tail_slow": 0.008714850104578202
+      }
+    ],
+    "provided": 21,
+    "recorded_floor": {
+      "clean": 16,
+      "recorded_runs": 18,
+      "transient_blocks": [
+        3,
+        5
+      ]
+    },
+    "recorded_qualification": {
+      "block7_clean": true,
+      "breaching_blocks": [
+        3,
+        5
+      ],
+      "conforms": true,
+      "na": false,
+      "recorded_clean": 16,
+      "recorded_runs": 18,
+      "reproduced": true
+    }
+  },
+  "block_rows": {
+    "1": {
+      "assessable": true,
+      "control_tails": {
+        "hybrid": 0.009700858004174074,
+        "reconcile": 0.012293656009587506
+      },
+      "controls_tail_ok": true,
+      "delta_slow": 0.06997164704358369,
+      "driver_clean": true,
+      "event_only_slow": 0.10599480229536218,
+      "exclusion": null,
+      "floors_ok": true,
+      "onset_delta_slow": 0.2800889104124342,
+      "present": true
+    },
+    "2": {
+      "assessable": true,
+      "control_tails": {
+        "hybrid": 0.00939203030185908,
+        "reconcile": 0.008893700939638838
+      },
+      "controls_tail_ok": true,
+      "delta_slow": 0.10874470708194928,
+      "driver_clean": true,
+      "event_only_slow": 0.14385995623632386,
+      "exclusion": null,
+      "floors_ok": true,
+      "onset_delta_slow": 0.2516978107427489,
+      "present": true
+    },
+    "3": {
+      "assessable": true,
+      "control_tails": {
+        "hybrid": 0.011825629927345803,
+        "reconcile": 0.01388460351743289
+      },
+      "controls_tail_ok": true,
+      "delta_slow": 0.06213626312153417,
+      "driver_clean": true,
+      "event_only_slow": 0.083381313792201,
+      "exclusion": null,
+      "floors_ok": true,
+      "onset_delta_slow": 0.25113700527265453,
+      "present": true
+    },
+    "4": {
+      "assessable": false,
+      "control_tails": {
+        "hybrid": 0.012307573594660288,
+        "reconcile": 0.04080370942812983
+      },
+      "controls_tail_ok": false,
+      "delta_slow": 0.04969807415709798,
+      "driver_clean": true,
+      "event_only_slow": 0.09970505593465855,
+      "exclusion": "recorded_exclusion_seed_5204",
+      "floors_ok": true,
+      "onset_delta_slow": 0.25945229809747195,
+      "present": true
+    },
+    "5": {
+      "assessable": true,
+      "control_tails": {
+        "hybrid": 0.012353304508956145,
+        "reconcile": 0.01157809424568716
+      },
+      "controls_tail_ok": true,
+      "delta_slow": 0.07639593868276734,
+      "driver_clean": true,
+      "event_only_slow": 0.10099511173184357,
+      "exclusion": null,
+      "floors_ok": true,
+      "onset_delta_slow": 0.30838619447993665,
+      "present": true
+    },
+    "6": {
+      "assessable": true,
+      "control_tails": {
+        "hybrid": 0.014092119995366975,
+        "reconcile": 0.012269465236515164
+      },
+      "controls_tail_ok": true,
+      "delta_slow": 0.09990070465147768,
+      "driver_clean": true,
+      "event_only_slow": 0.1365817902581197,
+      "exclusion": null,
+      "floors_ok": true,
+      "onset_delta_slow": 0.2910207139635842,
+      "present": true
+    },
+    "7": {
+      "assessable": false,
+      "control_tails": {
+        "hybrid": 0.008130081300813009,
+        "reconcile": 0.020150153654646594
+      },
+      "controls_tail_ok": false,
+      "delta_slow": 0.01243172255648297,
+      "driver_clean": true,
+      "event_only_slow": 0.030296676800503197,
+      "exclusion": "controls_tail_slow_gt_2pp",
+      "floors_ok": true,
+      "onset_delta_slow": 0.06498813327962111,
+      "present": true
+    }
+  },
+  "blocks": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "command": "completion-lost",
+  "exit_codes": {
+    "0": "all gated components pass; no NA",
+    "2": "a gated component failed or is NA (report)",
+    "3": "analyzer/argument error (STOP)"
+  },
+  "failures": [],
+  "family": "rq3_admission_modes",
+  "gated_components": {
+    "E-L1": true,
+    "E-L2": true,
+    "E-L3": true,
+    "E-L4_conformance": true
+  },
+  "na": false,
+  "na_components": [],
+  "note": "recorded block-4 (seed 5204) exclusion applied; accept counts restate the recorded family rules on the fixed six-block denominator; the added block 7 is reported per block (plan \u00a77.2). A voided timing run is quarantined as `_7_void` and re-run under its planned label (recorded \u00a79 mechanic; `_void` folders never match the label regex). The E-L4 floor is reported exactly as recorded (16/18, none_cell_healthy=false where it applies) as a qualification of the recorded intact set; conformance requires the recorded outcome reproduced plus a clean block 7 (\u00a79 NA != stop)",
+  "pass": true,
+  "rate": "2.0",
+  "runs": 21
+}

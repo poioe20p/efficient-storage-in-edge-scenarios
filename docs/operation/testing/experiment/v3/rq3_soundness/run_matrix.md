@@ -4,6 +4,11 @@ Parent plan: [`experiment_plan.md`](experiment_plan.md) · Host: `cloud-vm-rq3`
 · Frozen base: current HEAD at tag time; tag `rq3snd-preflight-<date>`
 recorded in `rq3snd_protected_surface.json`. Full reset between runs.
 
+> **Completion (2026-10-11, pre-registered):** the premature 10 s-lead cells
+> are extended to seven seed-matched blocks (seeds 6304–6307) with matched
+> no-fault partners by [`../rq3_admission_modes/`](../rq3_admission_modes/)
+> (Family 6); the recorded blocks 1–3 here stay as-is.
+
 Launch (wrapper): `bash source/scripts/testing/rq3snd_p1_01_launch_run.sh <arm> <fault> <label> <seed>`
 The launcher asserts the frozen Family-4 phase profile (600 s plateau /
 rate 2.0 / sp 1.0), known arm/fault, unique label, quota 0.12; composes the
@@ -31,11 +36,13 @@ Arms: `event_only`, `hybrid`, `reconcile`, `wake_verify` (optional).
 | Use | Seeds | Note |
 | --- | --- | --- |
 | E core | 6301–6303 | n=3 per cell; ≥2/3 rule |
-| Reserved | 6304–6306 | plan amendment only (no tie-break extension in this campaign) |
+| Reserved | 6304–6306 | reserved by this plan (no tie-break extension in this campaign); **used by the Family-6 completion extension** (`rq3_admission_modes`, pre-registered 2026-10-11) |
+| Extension | 6307 | **newly assigned by the Family-6 completion plan** (no recorded run in this campaign) |
 | Preflight | 6351–6354 | distinct from E seeds |
 
-6xxx verified unused in v3 docs at plan time (no prior campaign uses this
-block). `RANDOM_SEED` fixed per run.
+6xxx verified unused in v3 docs at this plan's time (no prior campaign uses
+this block; the Family-6 extension assigns 6304–6307 on top). `RANDOM_SEED`
+fixed per run.
 
 ## Cells × arms (runs per cell)
 

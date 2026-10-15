@@ -1,0 +1,300 @@
+{
+  "E-S1": {
+    "direct_before_discovery_every_backend": true,
+    "direct_event_sourced": true,
+    "direct_initial_mix": {
+      "offered": 1244,
+      "share": 1.0,
+      "successes": 1244,
+      "total_000": 0,
+      "unattributed_000": 0
+    },
+    "direct_median_s": 1.9293245077133179,
+    "direct_sources": [
+      "event"
+    ],
+    "direct_spawn_to_first_success_s": [
+      1.8884341716766357,
+      1.97021484375,
+      2.5390288829803467,
+      1.5984501838684082
+    ],
+    "discovery_initial_mix": {
+      "offered": 1722,
+      "share": 1.0,
+      "successes": 1722,
+      "total_000": 0,
+      "unattributed_000": 0
+    },
+    "discovery_median_s": 6.158980488777161,
+    "discovery_probe_sourced": true,
+    "discovery_sources": [
+      "probe"
+    ],
+    "discovery_spawn_to_first_success_s": [
+      8.894236087799072,
+      8.65479588508606,
+      3.5290160179138184,
+      3.6631650924682617
+    ],
+    "handover_vs_anchor": {
+      "anchor_http000_fast_fails": 0,
+      "anchor_useful_share": 1.0
+    },
+    "leg": "spawn -> first successful response (2026-10-13 (l) re-scope)",
+    "ordering_pairs": [
+      {
+        "lan": 1,
+        "x_before_y": true,
+        "x_container": "edge_server_lan1_dyn3",
+        "x_s": 1.8884341716766357,
+        "y_container": "edge_server_lan1_dyn3",
+        "y_s": 8.894236087799072
+      },
+      {
+        "lan": 1,
+        "x_before_y": true,
+        "x_container": "edge_server_lan1_dyn4",
+        "x_s": 1.97021484375,
+        "y_container": "edge_server_lan1_dyn5",
+        "y_s": 8.65479588508606
+      },
+      {
+        "lan": 2,
+        "x_before_y": true,
+        "x_container": "edge_server_lan2_dyn3",
+        "x_s": 2.5390288829803467,
+        "y_container": "edge_server_lan2_dyn3",
+        "y_s": 3.5290160179138184
+      },
+      {
+        "lan": 2,
+        "x_before_y": true,
+        "x_container": "edge_server_lan2_dyn4",
+        "x_s": 1.5984501838684082,
+        "y_container": "edge_server_lan2_dyn4",
+        "y_s": 3.6631650924682617
+      }
+    ],
+    "pass": true,
+    "present": true,
+    "ready_to_admit_leg": {
+      "diagnostic": "admission-log app_ready_ts == admitted_ts for every backend of both camp runs (0.000 s); the sources (event vs probe) and the handover read correctly, so this is instrument degeneracy, not a mechanism deviation \u2014 reported, never gating",
+      "direct_le_0_05_every": true,
+      "direct_values_s": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "discovery_in_0_10_every": false,
+      "discovery_values_s": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "leg": "app_ready_ts -> admitted_ts",
+      "status": "unmeasurable in this build (instrument degeneracy; 2026-10-12 (h) cause, reconfirmed for the C3 runs 2026-10-13 (l))"
+    },
+    "ready_to_admit_leg_unmeasurable": true
+  },
+  "E-S2": {
+    "anchor_direct_median_s": 2.17,
+    "anchor_discovery_median_s": 6.01,
+    "direct_median_s": 1.872941017150879,
+    "direct_scale_to_usable_s": [
+      1.977626085281372,
+      1.6808381080627441,
+      1.9258050918579102,
+      1.8200769424438477
+    ],
+    "direct_vs_discovery_every_backend": true,
+    "discovery_median_s": 8.984179973602295,
+    "discovery_scale_to_usable_s": [
+      7.106716871261597,
+      5.350032091140747,
+      10.861643075942993,
+      11.729246854782104
+    ],
+    "driver_clean": true,
+    "floors_ok": true,
+    "gap_null_ok": true,
+    "gap_window_bad": 0,
+    "metric": "scale decision (decision-log scale_up) -> first 2xx, attributed via backend_id (v2 analysis_focus.md)",
+    "ordering_pairs": [
+      {
+        "lan": 1,
+        "x_before_y": true,
+        "x_container": "edge_server_lan1_dyn3",
+        "x_s": 1.977626085281372,
+        "y_container": "edge_server_lan1_dyn3",
+        "y_s": 7.106716871261597
+      },
+      {
+        "lan": 1,
+        "x_before_y": true,
+        "x_container": "edge_server_lan1_dyn4",
+        "x_s": 1.6808381080627441,
+        "y_container": "edge_server_lan1_dyn4",
+        "y_s": 5.350032091140747
+      },
+      {
+        "lan": 2,
+        "x_before_y": true,
+        "x_container": "edge_server_lan2_dyn3",
+        "x_s": 1.9258050918579102,
+        "y_container": "edge_server_lan2_dyn3",
+        "y_s": 10.861643075942993
+      },
+      {
+        "lan": 2,
+        "x_before_y": true,
+        "x_container": "edge_server_lan2_dyn4",
+        "x_s": 1.8200769424438477,
+        "y_container": "edge_server_lan2_dyn4",
+        "y_s": 11.729246854782104
+      }
+    ],
+    "pass": true,
+    "present": true,
+    "window_attested": {
+      "direct": "4096 clients=3 edge_cpus=0.30 mongo_pool=1",
+      "discovery": "4096 clients=3 edge_cpus=0.30 mongo_pool=1"
+    },
+    "window_expected": 4096
+  },
+  "E-S3": {
+    "descriptive": true,
+    "driver_clean": true,
+    "expected_band_s": [
+      10.0,
+      20.0
+    ],
+    "floors_ok": true,
+    "median_s": 0.0,
+    "present": true,
+    "quantization_within_expected_band": null,
+    "quantization_within_period_scale": null,
+    "ready_to_admit_leg_note": "registered ready -> admit leg reads 0.000 s for every backend (instrument degeneracy, 2026-10-12 (h)/(l)); band check not assessable",
+    "ready_to_admit_leg_unmeasurable": true,
+    "ready_to_admit_s": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "sources": [
+      "probe"
+    ]
+  },
+  "anchors": {
+    "camp": {
+      "cliffs_d": -1.0,
+      "ready_to_admit_direct_s": 0.001,
+      "ready_to_admit_discovery_s": 6.984,
+      "scope": "set-level 12 runs / 47 backends",
+      "spawn_to_first_success_direct_median_s": 1.93,
+      "spawn_to_first_success_discovery_median_s": 6.16
+    },
+    "cell12": {
+      "cliffs_d": -1.0,
+      "gap_null": "6x6 all-zero",
+      "mwu_p": 0.0022,
+      "scale_to_first_success_direct_s": 2.17,
+      "scale_to_first_success_discovery_s": 6.01,
+      "window": 4096
+    },
+    "disc15": {
+      "poll_s": 15.0,
+      "precedent_10s_s": 9.6,
+      "precedent_15s_s": 15.2
+    }
+  },
+  "command": "completion-support",
+  "descriptive_findings": [
+    "E-S3 registered ready -> admit leg unmeasurable in this build (instrument degeneracy, 2026-10-12 (h)/(l)); band check not assessable \u2014 descriptive only"
+  ],
+  "exit_codes": {
+    "0": "E-S1 and E-S2 direction/consistency checks pass",
+    "2": "a direction/consistency check failed",
+    "3": "analyzer/argument error (STOP)"
+  },
+  "failures": [],
+  "family": "rq3_admission_modes",
+  "pass": true,
+  "runs": {
+    "camp_direct": "20261013_033743_rq3_camp_direct_7",
+    "camp_discovery": "20261013_035209_rq3_camp_disc_7",
+    "cell12_direct": "20261013_040546_rq3_probe_cell12_direct_6",
+    "cell12_discovery": "20261013_042031_rq3_probe_cell12_disc_6",
+    "disc15_discovery": "20261013_043402_rq3_disc15_7"
+  },
+  "set_runs": {
+    "camp_direct": {
+      "backends": 4,
+      "cancel_rate": 0.007076139258420606,
+      "completed": {
+        "baseline": 117,
+        "compute_spike": 3214
+      },
+      "driver_clean": true,
+      "floors_ok": true,
+      "gap_window_bad": 0,
+      "present": true,
+      "run": "20261013_033743_rq3_camp_direct_7"
+    },
+    "camp_discovery": {
+      "backends": 4,
+      "cancel_rate": 0.010475651189127973,
+      "completed": {
+        "baseline": 116,
+        "compute_spike": 3207
+      },
+      "driver_clean": true,
+      "floors_ok": true,
+      "gap_window_bad": 0,
+      "present": true,
+      "run": "20261013_035209_rq3_camp_disc_7"
+    },
+    "cell12_direct": {
+      "backends": 4,
+      "cancel_rate": 0.0051047619047619045,
+      "completed": {
+        "baseline": 117,
+        "compute_spike": 12772
+      },
+      "driver_clean": true,
+      "floors_ok": true,
+      "gap_window_bad": 0,
+      "present": true,
+      "run": "20261013_040546_rq3_probe_cell12_direct_6"
+    },
+    "cell12_discovery": {
+      "backends": 4,
+      "cancel_rate": 0.005948295584534431,
+      "completed": {
+        "baseline": 119,
+        "compute_spike": 12745
+      },
+      "driver_clean": true,
+      "floors_ok": true,
+      "gap_window_bad": 0,
+      "present": true,
+      "run": "20261013_042031_rq3_probe_cell12_disc_6"
+    },
+    "disc15_discovery": {
+      "backends": 4,
+      "cancel_rate": 0.01158519355750212,
+      "completed": {
+        "baseline": 118,
+        "compute_spike": 3208
+      },
+      "driver_clean": true,
+      "floors_ok": true,
+      "gap_window_bad": 0,
+      "present": true,
+      "run": "20261013_043402_rq3_disc15_7"
+    }
+  }
+}

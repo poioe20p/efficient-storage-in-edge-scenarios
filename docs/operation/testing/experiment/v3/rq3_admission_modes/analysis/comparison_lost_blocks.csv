@@ -1,0 +1,9 @@
+row_kind,block,delta_slow_pp,onset_delta_slow_pp,assessable,event_only_slow_pct,control_tail_hybrid_pct,control_tail_reconcile_pct,exclusion,median_delta_slow_pp,median_onset_delta_slow_pp,blocks_ge_5pp,onset_blocks_ge_5pp,assessable_blocks,denominator_blocks,median_event_only_slow_pct,event_only_blocks_le_25pct,mwu_p,cliffs_delta,source
+block,1,7.0,28.01,true,10.6,0.97,1.23,,,,,,,,,,,,completion_lost.json:block_rows.1
+block,2,10.87,25.17,true,14.39,0.94,0.89,,,,,,,,,,,,completion_lost.json:block_rows.2
+block,3,6.21,25.11,true,8.34,1.18,1.39,,,,,,,,,,,,completion_lost.json:block_rows.3
+block,4,4.97,25.95,false,9.97,1.23,4.08,recorded_exclusion_seed_5204,,,,,,,,,,,completion_lost.json:block_rows.4
+block,5,7.64,30.84,true,10.1,1.24,1.16,,,,,,,,,,,,completion_lost.json:block_rows.5
+block,6,9.99,29.1,true,13.66,1.41,1.23,,,,,,,,,,,,completion_lost.json:block_rows.6
+block,7,1.24,6.5,false,3.03,0.81,2.02,controls_tail_slow_gt_2pp,,,,,,,,,,,completion_lost.json:block_rows.7
+"summary (blocks 1-6, block 4 recorded exclusion)",,,,5/6 blocks assessable,,,,,7.64,28.01,5,5,5,6,10.6,5,0.003968253968253968,1.0,completion_lost.json:E-L1;E-L3

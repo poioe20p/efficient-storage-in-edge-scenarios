@@ -13,6 +13,12 @@ Read-only artifact analysis. Subcommands:
   soundness-damage    Family 5 (rq3_soundness) damage tables (U / D_s / D-bar)
   soundness-preflight Family 5 (rq3_soundness) P1 gates R1-R3b and lock JSON
   soundness-crossover Family 5 (rq3_soundness) lead-N fits, N*, H-S1..H-S4
+  completion-intact   Family 6 (rq3_admission_modes) E-I1..E-I4 (7-block intact)
+  completion-lost     Family 6 (rq3_admission_modes) E-L1..E-L4 (7-block lost)
+  completion-premature Family 6 (rq3_admission_modes) E-P1..E-P3 (7 seed-matched
+                      premature 10 s-lead pairs; E-P4 retired 2026-10-11 (b))
+  completion-support  Family 6 (rq3_admission_modes) E-S1..E-S3 (added
+                      supporting-set replicates, per set)
 
 Family 3 measures the visible/bounded QoE consequence of readiness-event
 loss under a uniform EDGE_CPUS quota ladder; see
@@ -2155,13 +2161,22 @@ def _soundness_int(value: Any) -> int | None:
 
 
 def soundness_check_violations(run_dir: Path) -> dict[str, Any]:
+    """CHECK VIOLATION counts per LAN controller log. `logs_absent` marks a
+    folder carrying neither controller LAN log — the recorded era predates
+    that capture, so the log-based gates are then not evaluable, never
+    silently passed or failed (plan §7.3 E-P1, 2026-10-13 (j))."""
     per_lan: dict[str, int] = {}
+    logs_present = False
     for lan in (1, 2):
         path = run_dir / f"controller_lan{lan}.log"
-        count = (path.read_text(encoding="utf-8", errors="replace").count("CHECK VIOLATION")
-                 if path.exists() else 0)
-        per_lan[f"lan{lan}"] = count
-    return {**per_lan, "total": sum(per_lan.values())}
+        if path.exists():
+            logs_present = True
+            per_lan[f"lan{lan}"] = path.read_text(
+                encoding="utf-8", errors="replace").count("CHECK VIOLATION")
+        else:
+            per_lan[f"lan{lan}"] = 0
+    return {**per_lan, "total": sum(per_lan.values()),
+            "logs_absent": not logs_present}
 
 
 def soundness_run_metrics(run_dir: Path) -> dict[str, Any]:
@@ -3278,6 +3293,2089 @@ def _combined_status(components: dict[str, Any]) -> str:
     return "pass"
 
 
+# ---------------------------------------------------------------------------
+# Family 6 (rq3_admission_modes): seven-block completion campaign.
+#
+# Binding contract: docs/operation/testing/experiment/v3/rq3_admission_modes/
+# experiment_plan.md §7.1/§7.2/§7.3/§7.4 + §8 + run_matrix.md. The campaign
+# completes the Family-4 cells to 7 seed-matched blocks (block 7, seed 5207),
+# extends the premature 10 s-lead cells to blocks 4-7 (seeds 6304-6307) with
+# matched no-fault partners added by the 2026-10-11 (b) amendment, and raises
+# the intact-source supporting sets to seven runs (5 new runs). Findings
+# restated from the recorded family rules keep the fixed pre-registered
+# denominators; the added seventh block is reported per block under the same
+# rules and never re-scopes an accept count (plan §7).
+# ---------------------------------------------------------------------------
+COMPLETION_BLOCKS = (1, 2, 3, 4, 5, 6, 7)
+COMPLETION_LOST_DENOM_BLOCKS = (1, 2, 3, 4, 5, 6)  # fixed pre-registered denominator
+COMPLETION_LOST_RECORDED_EXCLUSION = 4  # seed 5204 (reconcile control tail 4.08 %)
+COMPLETION_LOST_SEEDS = {1: 5201, 2: 5202, 3: 5203, 4: 5204,
+                         5: 5205, 6: 5206, 7: 5207}
+COMPLETION_PREMATURE_SEEDS = {1: 6301, 2: 6302, 3: 6303, 4: 6304,
+                              5: 6305, 6: 6306, 7: 6307}
+COMPLETION_PREMATURE_RECORDED_BLOCKS = (1, 2, 3)  # keep their recorded attestations
+COMPLETION_PREMATURE_NEW_MIN_BLOCK = 4            # blocks 4-7 are the 12 new runs
+COMPLETION_PREMATURE_MAX_LOST_PAIRS = 1           # recorded soundness 4.5 rule
+COMPLETION_ASSESSABLE_MIN_BLOCKS = 5              # NA below 5/7 assessable (plan §9)
+COMPLETION_DENOM_MIN_HITS = 4                     # E-L1/E-L3 accept count x/6
+COMPLETION_DENOM_MIN_HITS_5 = 5                   # E-L2/E-P3 accept count x/6 -> x/7
+COMPLETION_RECORDED_FLOOR = {
+    # Recorded H-T3 outcome for the intact set (plan §7.1 E-I4): 16 of the 18
+    # recorded runs were clean; the two breaches are the single-window
+    # transients in blocks 3 and 5, which remain recorded and are never
+    # re-chased. The floor is a qualification of the recorded set, not a
+    # construction that makes a green verdict impossible.
+    "clean": 16, "recorded_runs": 18, "transient_blocks": (3, 5),
+}
+COMPLETION_FAST_BIND_S = 1.0
+COMPLETION_SLOW_BIND_S = 5.0
+COMPLETION_POLL_PERIOD_S = 10.0
+COMPLETION_DISC15_POLL_S = 15.0
+COMPLETION_INITIAL_WINDOW_S = 30.0  # v2 useful_initial_share window tail
+COMPLETION_INTACT_RUNS_EXPECTED = 21  # 3 arms x 7 blocks (E-I4 denominator)
+# Recorded anchors, restated for the report only (never re-derived here):
+# v2 fixed-image handover quality (12 runs / 47 backends), v2 set statistics
+# (E-S1/E-S2) and the disc15 quantization precedent (E-S3).
+COMPLETION_HANDOVER_ANCHORS = {
+    "campaign": "v2 fixed-image (12 runs / 47 backends)",
+    "useful_share": 1.000,
+    "http000_fast_fails": 0,
+}
+# E-I1 re-scope (2026-10-12 (h)): the gated intact leg is spawn -> first
+# successful response; the ready -> admission leg is unmeasurable in this
+# build (instrument degeneracy — it read ~0.000 s for all three arms across
+# the intact set). Recorded same-regime anchor for the gated leg: 11.27 s
+# (direct) vs 17.70 s (discovery), exact p = 0.0005; the earlier regime-note
+# d = -0.837 belongs to the adjacent admit -> first-routed interval. Block-7
+# runs keep their planned `_7` labels (a voided run is quarantined as
+# `_7_void` and re-run under the planned label per the recorded §9 mechanic;
+# the `_void` folders never match the label regex).
+COMPLETION_INTACT_ANCHORS = {
+    "leg": "spawn -> first successful response",
+    "campaign": "recorded timing campaign (same regime)",
+    "direct_median_s": 11.27, "discovery_median_s": 17.70, "mwu_p": 0.0005,
+    "note": ("d = -0.837 (earlier regime note) belongs to the adjacent "
+             "admit -> first-routed interval; the C1 stage screen read "
+             "A 13.19 / B 13.15 / C 15.36 s on this leg (spawn -> first "
+             "routed 74.58 / 73.97 / 81.13 s)"),
+}
+COMPLETION_SUPPORT_ANCHORS = {
+    "camp": {"ready_to_admit_direct_s": 0.001, "ready_to_admit_discovery_s": 6.984,
+             "cliffs_d": -1.000, "scope": "set-level 12 runs / 47 backends",
+             # 2026-10-13 (l) E-S1 re-scope: the gated leg is spawn -> first
+             # successful response (the registered ready -> admit leg is
+             # unmeasurable in this build); C3 screen probe values.
+             "spawn_to_first_success_direct_median_s": 1.93,
+             "spawn_to_first_success_discovery_median_s": 6.16},
+    "cell12": {"scale_to_first_success_direct_s": 2.17,
+               "scale_to_first_success_discovery_s": 6.01,
+               "mwu_p": 0.0022, "cliffs_d": -1.000, "gap_null": "6x6 all-zero",
+               "window": 4096},
+    "disc15": {"poll_s": COMPLETION_DISC15_POLL_S,
+               "precedent_10s_s": 9.6, "precedent_15s_s": 15.2},
+}
+COMPLETION_SUPPORT_LABEL_RE = re.compile(
+    r"(rq3_camp_(?:direct|disc)|rq3_probe_cell12_(?:direct|disc)|rq3_disc15)_(\d+)$")
+# (h)/(l) instrument-degeneracy marker: the registered ready -> admit leg
+# reads 0.000 s (identical `app_ready_ts`/`admitted_ts` values) for every
+# backend of the completion build, so it is reported as a note, never gating.
+COMPLETION_DEGENERATE_LEG_EPS_S = 1e-9
+# 2026-10-13 (m) wake-and-verify un-parking: label families and anchors.
+# The wake `none` cell carries the premature-cell partners at ordinals 1-7
+# (seeds 6301-6307; 1-3 are the recorded pilots) and the intact/lost family
+# at ordinals 8-14 (seeds 5201-5207, mirroring COMPLETION_LOST_SEEDS) — the
+# snd launcher refuses duplicate labels, so the two seed families must not
+# share ordinals. Loss/intact pairs are ordinal-matched (8..14).
+COMPLETION_WAKE_ORDINALS = (8, 9, 10, 11, 12, 13, 14)
+COMPLETION_WAKE_SEED_FAMILY = {8: 5201, 9: 5202, 10: 5203, 11: 5204,
+                               12: 5205, 13: 5206, 14: 5207}
+# Frozen code (`readiness_gate.py`): with `READINESS_EVENT_DROP_MODE=all` the
+# wake probe never fires (`wake_verify_wall_s` is None) and the event-absence
+# fallback admits with propagation=direct -> `admit_source="probe_fallback"`.
+COMPLETION_WAKE_MECHANISM_SOURCE = "probe_fallback"
+COMPLETION_WAKE_LOSS_TIMING_ANCHOR_S = 21.0   # recorded hybrid loss recovery
+COMPLETION_WAKE_NEAR_TIE_S = 2.0              # descriptive wake-vs-event_only read
+
+
+def completion_support_label_parts(run_name: str) -> tuple[str, str, str] | None:
+    """('camp'|'cell12'|'disc15', 'direct'|'discovery', ordinal)."""
+    match = COMPLETION_SUPPORT_LABEL_RE.search(run_name)
+    if match is None:
+        return None
+    prefix, ordinal = match.group(1), match.group(2)
+    sets = {"rq3_camp_direct": ("camp", "direct"),
+            "rq3_camp_disc": ("camp", "discovery"),
+            "rq3_probe_cell12_direct": ("cell12", "direct"),
+            "rq3_probe_cell12_disc": ("cell12", "discovery"),
+            "rq3_disc15": ("disc15", "discovery")}
+    name, arm = sets[prefix]
+    return name, arm, ordinal
+
+
+def _completion_ordinal(ordinal: str) -> int:
+    text = ordinal.rstrip("r")
+    return int(text)
+
+
+def _completion_edge_log_fields(run_dir: Path, container: str) -> dict[str, Any]:
+    """Per-backend bind stall + true app-ready epoch from the edge log.
+
+    Mirrors tools/rq3_stratified_analysis._parse_edge_log: the covariate is
+    the `bind-timing make_server(bind+listen)=X s` line when present, else the
+    start->listen gap on legacy runs; the true app-ready anchor is the
+    `app ready: MongoDB ping OK` line (plan §7.1 start-up class).
+    """
+    path = run_dir / "service_logs" / f"{container}.log"
+    out: dict[str, Any] = {"bind_s": None, "ready_epoch": None, "log_present": path.exists()}
+    if not path.exists():
+        return out
+    start_t = listen_t = None
+    bind_s = None
+    ready = None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        ts = soundness_log_line_ts(line)
+        if start_t is None and "Starting edge-server" in line and ts is not None:
+            start_t = ts
+        if bind_s is None and "bind-timing" in line:
+            match = re.search(r"make_server\(bind\+listen\)=([0-9.]+)s", line)
+            if match:
+                bind_s = float(match.group(1))
+        if listen_t is None and "edge-server listening" in line and ts is not None:
+            listen_t = ts
+        if ready is None and "app ready: MongoDB ping" in line and ts is not None:
+            ready = ts
+    if bind_s is not None:
+        out["bind_s"] = bind_s
+    elif start_t is not None and listen_t is not None:
+        out["bind_s"] = listen_t - start_t
+    out["ready_epoch"] = ready
+    return out
+
+
+def completion_bind_stratum(bind_s: float | None) -> str:
+    """Start-up class (plan §8): fast <1.0 s, slow >=5.0 s; the [1, 5) band is
+    recorded and included in the pooled "all" stratum only."""
+    if bind_s is None:
+        return "unknown"
+    if bind_s < COMPLETION_FAST_BIND_S:
+        return "fast"
+    if bind_s >= COMPLETION_SLOW_BIND_S:
+        return "slow"
+    return "mid"
+
+
+def _completion_first_flows(run_dir: Path, containers: set[str]) -> dict[str, dict[str, float]]:
+    """First routed request and first successful response per admitted backend."""
+    out: dict[str, dict[str, float]] = {container: {} for container in containers}
+    for row in request_rows(run_dir):
+        backend = str(row.get("backend_id") or "")
+        if backend not in out:
+            continue
+        sent = row["_sent"]
+        entry = out[backend]
+        if "first_routed_s" not in entry or sent < entry["first_routed_s"]:
+            entry["first_routed_s"] = sent
+        if is_completed(row) and is_success(row):
+            if "first_success_s" not in entry or sent < entry["first_success_s"]:
+                entry["first_success_s"] = sent
+    return out
+
+
+def completion_backend_records(run_dir: Path) -> list[dict[str, Any]]:
+    """Per-admitted-backend interval record for the intact/support reads.
+
+    ready -> admit: admission-log `app_ready_ts` -> `admitted_ts` (plan §8),
+    with the service-log true-ready anchor as the documented fallback; spawn ->
+    first success and admit -> first routed request from client_requests.csv
+    by `backend_id`; start-up class from the per-backend bind record.
+    """
+    records: list[dict[str, Any]] = []
+    for row in admission_rows(run_dir):
+        if row.get("result") != "admitted" or row.get("_admitted_ts") is None:
+            continue
+        container = str(row.get("container") or "")
+        log = _completion_edge_log_fields(run_dir, container)
+        app_ready = timestamp(row.get("app_ready_ts"))
+        ready_source = "admission_log"
+        if app_ready is None:
+            app_ready = row.get("_true_ready")
+            ready_source = "service_log"
+        admitted = row.get("_admitted_ts")
+        spawn = timestamp(row.get("spawn_started_ts"))
+        ready_to_admit = (admitted - app_ready
+                          if admitted is not None and app_ready is not None else None)
+        flows: dict[str, float] = {}
+        record = {
+            "run": run_dir.name, "container": container, "lan": row.get("lan"),
+            "admit_source": str(row.get("admit_source") or ""),
+            "bind_s": log["bind_s"],
+            "stratum": completion_bind_stratum(log["bind_s"]),
+            "ready_source": ready_source,
+            "ready_to_admit_s": ready_to_admit,
+            "spawn_to_admitted_s": (admitted - spawn
+                                    if admitted is not None and spawn is not None else None),
+            "spawn_started_ts": spawn, "admitted_ts": admitted,
+            "_flows": flows,
+        }
+        records.append(record)
+    by_container = {record["container"]: record for record in records}
+    flows = _completion_first_flows(run_dir, set(by_container))
+    for record in records:
+        entry = flows.get(record["container"], {})
+        record.update({
+            "admitted_to_first_routed_s": (
+                entry["first_routed_s"] - record["admitted_ts"]
+                if "first_routed_s" in entry and record["admitted_ts"] is not None
+                else None),
+            "spawn_to_first_success_s": (
+                entry["first_success_s"] - record["spawn_started_ts"]
+                if "first_success_s" in entry and record["spawn_started_ts"] is not None
+                else None),
+            "spawn_to_first_routed_s": (
+                entry["first_routed_s"] - record["spawn_started_ts"]
+                if "first_routed_s" in entry and record["spawn_started_ts"] is not None
+                else None),
+            "first_routed_sent_s": entry.get("first_routed_s"),
+            "first_success_sent_s": entry.get("first_success_s"),
+        })
+        record.pop("_flows", None)
+    return records
+
+
+def _completion_exact_mwu(x: list[float], y: list[float]) -> float:
+    """Exact two-sided MWU p (exhaustive permutation) with the campaign's
+    tie-corrected normal-approximation fallback above ~1e6 partitions.
+
+    The module-level ``exact_mwu`` enumerates every partition unconditionally,
+    which is only feasible for the small E/P-stage delta lists; the E-I1
+    pooled-backend contrast (dozens of values) uses this guarded variant,
+    mirroring tools/rq3_stratified_analysis.py (same U statistic, standard
+    asymptotically-exact fallback).
+    """
+    n1, n2 = len(x), len(y)
+    if n1 == 0 or n2 == 0:
+        return float("nan")
+    allv = x + y
+    order = sorted(range(len(allv)), key=lambda index: allv[index])
+    ranked = [0.0] * len(allv)
+    i = 0
+    while i < len(allv):
+        j = i
+        while j + 1 < len(allv) and allv[order[j + 1]] == allv[order[i]]:
+            j += 1
+        avg = (i + j) / 2 + 1
+        for k in range(i, j + 1):
+            ranked[order[k]] = avg
+        i = j + 1
+
+    def u_for(selection) -> float:
+        return sum(ranked[k] for k in selection) - n1 * (n1 + 1) / 2
+
+    observed = u_for(range(n1))
+    total_n = n1 + n2
+    if math.comb(total_n, n1) <= 1_000_000:
+        total = extreme = 0
+        for selection in itertools.combinations(range(total_n), n1):
+            total += 1
+            if abs(u_for(selection) - n1 * n2 / 2) >= abs(observed - n1 * n2 / 2):
+                extreme += 1
+        return extreme / total
+    mean = n1 * n2 / 2.0
+    ties: dict[float, int] = {}
+    for value in allv:
+        ties[value] = ties.get(value, 0) + 1
+    tie_corr = sum(count ** 3 - count for count in ties.values())
+    var = (n1 * n2 / 12.0) * ((total_n + 1) - tie_corr / (total_n * (total_n - 1)))
+    if var <= 0:
+        return float("nan")
+    z = (abs(observed - mean) - 0.5) / math.sqrt(var)  # continuity correction
+    return 2.0 * (1.0 - 0.5 * (1.0 + math.erf(z / math.sqrt(2.0))))
+
+
+def _completion_contrast(xs: list[float], ys: list[float]) -> dict[str, Any]:
+    """Exact MWU + Cliff's delta for x-before-y direction reads."""
+    return {
+        "n_x": len(xs), "n_y": len(ys),
+        "median_x": statistics.median(xs) if xs else None,
+        "median_y": statistics.median(ys) if ys else None,
+        "mwu_p": _completion_exact_mwu(xs, ys) if xs and ys else None,
+        "cliffs_d": cliffs(xs, ys) if xs and ys else None,
+        "x_before_y_every": (cliffs(xs, ys) == -1.0) if xs and ys else None,
+    }
+
+
+def _completion_health_floor(paths: list[Path],
+                             expected: int = COMPLETION_INTACT_RUNS_EXPECTED
+                             ) -> dict[str, Any]:
+    """E-I4/E-L4: the recorded H-T3 run-level floor (bad <=1 % full plateau AND
+    plateau-tail slow <=2 pp) over the explicit 21-run denominator (3 arms x
+    7 blocks).
+
+    The floor is reported exactly as recorded (16/18 clean;
+    ``none_cell_healthy=false`` where it applies) as a qualification of the
+    recorded set: the recorded blocks 3 and 5 transients stay recorded and are
+    never re-chased. The campaign conformance read is
+    ``recorded_qualification.conforms`` = the recorded 18-run outcome
+    reproduces (16 clean, breaches only in blocks 3/5) AND the fresh block-7
+    runs pass the same per-run gate; a fresh breach outside the recorded
+    transients (or on block 7) fails it. The floor never re-scopes an accept
+    count to the surviving subset.
+    """
+    per_run: list[dict[str, Any]] = []
+    clean = 0
+    for path in paths:
+        label = timing_label_parts(path.name)
+        block = int(label[2]) if label is not None else None
+        metrics = qoe_run_metrics(path)
+        bad = _pooled_bad(metrics)
+        tail = timing_tail_slow(path)
+        ok = (bad is not None and bad <= CONTROL_BAD_MAX
+              and tail is not None and tail <= SLOW_CONTROL_MAX)
+        if ok:
+            clean += 1
+        per_run.append({
+            "run": path.name, "block": block,
+            "bad_rate_full_plateau": bad, "tail_slow": tail,
+            "floor_ok": bool(ok),
+            "recorded_transient": block in COMPLETION_RECORDED_FLOOR["transient_blocks"],
+        })
+    recorded_runs = [entry for entry in per_run
+                     if entry["block"] in (1, 2, 3, 4, 5, 6)]
+    new_runs = [entry for entry in per_run if entry["block"] == 7]
+    recorded_clean = sum(1 for entry in recorded_runs if entry["floor_ok"])
+    breaching_blocks = sorted({entry["block"] for entry in recorded_runs
+                               if not entry["floor_ok"]})
+    reproduced = bool(
+        len(recorded_runs) == COMPLETION_RECORDED_FLOOR["recorded_runs"]
+        and recorded_clean == COMPLETION_RECORDED_FLOOR["clean"]
+        and tuple(breaching_blocks)
+        == tuple(COMPLETION_RECORDED_FLOOR["transient_blocks"]))
+    new_clean = all(entry["floor_ok"] for entry in new_runs) if new_runs else None
+    conforms = None
+    if recorded_runs and new_runs:
+        conforms = bool(reproduced and new_clean)
+    elif not recorded_runs and new_runs:
+        # Only the fresh block-7 runs supplied: the recorded outcome cannot be
+        # re-verified here, so the qualification read is NA (never a fail).
+        conforms = None
+    return {
+        "denominator": expected, "provided": len(paths), "clean": clean,
+        "none_cell_healthy": bool(len(paths) == expected and clean == expected),
+        "per_run": per_run,
+        "recorded_floor": dict(COMPLETION_RECORDED_FLOOR),
+        "recorded_qualification": {
+            "recorded_runs": len(recorded_runs),
+            "recorded_clean": recorded_clean,
+            "breaching_blocks": breaching_blocks,
+            "reproduced": reproduced,
+            "block7_clean": new_clean,
+            "conforms": conforms,
+            "na": conforms is None,
+        },
+        "note": ("recorded H-T3 run-level floor reported exactly as recorded "
+                 "(16/18, none_cell_healthy=false where it applies; blocks 3 "
+                 "and 5 transients stay recorded, never re-chased); conformance "
+                 "requires the recorded outcome reproduced and block 7 clean "
+                 "(plan §7.1 E-I4 / §7.2 E-L4, §9 NA != stop)"),
+    }
+
+
+def _completion_intact_inputs(args: argparse.Namespace
+                              ) -> tuple[dict[tuple[int, str], Path],
+                                         dict[int, Path], list[str]]:
+    """Split the completion-intact input set (plan §7.1 + §7.5, 2026-10-13 (m)).
+
+    Accepted: the `rq3tim_none_*` timing runs (as before) and the optional
+    wake-and-verify intact runs `rq3snd_none_wake_verify_8..14` — the wake
+    `none` cell's 8-14 ordinals are the 5201-5207 seed family (its 1-7
+    ordinals are the premature-cell partners and are refused here). Any other
+    input is a problem (STOP)."""
+    runs: dict[tuple[int, str], Path] = {}
+    wake: dict[int, Path] = {}
+    problems: list[str] = []
+    for path_text in args.run_dir:
+        path = Path(path_text)
+        parts = timing_label_parts(path.name)
+        if parts is not None:
+            label_cell, arm, block = parts
+            if label_cell != "none":
+                problems.append(f"wrong cell for none read: {path.name}")
+                continue
+            key = (int(block), arm)
+            if key in runs:
+                problems.append(f"duplicate run for block/arm {key}: {path.name}")
+                continue
+            runs[key] = path
+            continue
+        wake_parts = soundness_label_parts(path.name)
+        if wake_parts is None:
+            problems.append(f"cannot parse label: {path.name}")
+            continue
+        cell, arm, ordinal = wake_parts
+        if arm != "wake_verify" or cell != "none":
+            problems.append(
+                f"non-timing input is not a wake_verify none run: {path.name}")
+            continue
+        try:
+            block = _completion_ordinal(ordinal)
+        except ValueError:
+            problems.append(f"cannot parse block ordinal: {path.name}")
+            continue
+        if block not in COMPLETION_WAKE_ORDINALS:
+            problems.append(
+                f"wake_verify none ordinal {block} is not an intact input "
+                f"(expected {COMPLETION_WAKE_ORDINALS[0]}.."
+                f"{COMPLETION_WAKE_ORDINALS[-1]}; ordinals 1-7 are the "
+                f"premature-cell partners): {path.name}")
+            continue
+        if block in wake:
+            problems.append(
+                f"duplicate wake_verify none ordinal {block}: {path.name}")
+            continue
+        wake[block] = path
+    return runs, wake, problems
+
+
+def _completion_wake_loss_read(run_dir: Path) -> dict[str, Any]:
+    """One-pass E-W2 read (plan §7.5): plateau slow-class share over offered
+    and the admission-source mix (`probe_fallback` is the expected wake-under-
+    loss mechanism, frozen `readiness_gate.py`)."""
+    rows = request_rows(run_dir)
+    bounds = phase_bounds(run_dir)
+    slow_share = None
+    window = bounds.get(PHASE)
+    if window is not None:
+        lo, hi = window
+        plateau = [row for row in rows
+                   if row.get("phase") == PHASE and lo <= row["_sent"] <= hi]
+        unit = soundness_u(plateau)
+        if unit["offered"]:
+            slow_share = unit["classes"]["slow"] / unit["offered"]
+    sources: dict[str, int] = {}
+    for row in admission_rows(run_dir):
+        key = str(row.get("admit_source") or "")
+        sources[key] = sources.get(key, 0) + 1
+    return {"slow_share": slow_share, "sources": sources, "rows": len(rows)}
+
+
+def _completion_wake_mechanism_ok(sources: dict[str, int]) -> bool:
+    keys = {key for key, count in sources.items() if key and count}
+    return keys == {COMPLETION_WAKE_MECHANISM_SOURCE}
+
+
+def _completion_timing_runs(args: argparse.Namespace, cell: str
+                            ) -> tuple[dict[tuple[int, str], Path], list[str]]:
+    runs: dict[tuple[int, str], Path] = {}
+    problems: list[str] = []
+    for path_text in args.run_dir:
+        path = Path(path_text)
+        parts = timing_label_parts(path.name)
+        if parts is None:
+            problems.append(f"cannot parse timing label: {path.name}")
+            continue
+        label_cell, arm, block = parts
+        if label_cell != cell:
+            problems.append(f"wrong cell for {cell} read: {path.name}")
+            continue
+        key = (int(block), arm)
+        if key in runs:
+            problems.append(f"duplicate run for block/arm {key}: {path.name}")
+            continue
+        runs[key] = path
+    return runs, problems
+
+
+def _completion_intact_blocks(runs: dict[tuple[int, str], Path]
+                              ) -> dict[int, dict[str, Path]]:
+    blocks: dict[int, dict[str, Path]] = {}
+    for (block, arm), path in runs.items():
+        blocks.setdefault(block, {})[arm] = path
+    return blocks
+
+
+def completion_intact_command(args: argparse.Namespace) -> int:
+    """E-I1..E-I4: the completed seven-block intact cells (plan §7.1).
+
+    E-I1 gates the **spawn -> first successful response** leg, per start-up
+    class (2026-10-12 (h) re-scope: the ready -> admission leg is unmeasurable
+    in this build — instrument degeneracy — and is reported as a note only).
+    Block-7 runs keep their planned `_7` labels; a voided run is quarantined
+    as `_7_void` (never matched by the set-selection regex) per the recorded
+    §9 mechanic.
+
+    Exit codes (documented in run_matrix.md and plan §11): 0 = every gated
+    component passes (E-I1 fast/slow strata direction; E-I4 recorded-floor
+    conformance) with no NA; 2 = a gated component failed or is NA (a report
+    signal — NA != stop); 3 = analyzer/argument error (STOP). E-I2/E-I3 are
+    descriptive and never gate. The E-I4 floor is reported exactly as recorded
+    (16/18, none_cell_healthy=false where it applies) as a qualification of
+    the recorded set; the between-arm contrast (E-I1) is untouched by it.
+    """
+    runs, wake_none, problems = _completion_intact_inputs(args)
+    if problems:
+        raise ValueError("; ".join(problems))
+    blocks = _completion_intact_blocks(runs)
+    arms = ("event_only", "hybrid", "reconcile")
+
+    backend_records: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for (block, arm), path in runs.items():
+        backend_records[(block, arm)] = completion_backend_records(path)
+
+    # E-I1 -- per-backend spawn -> first successful response (2026-10-12 (h)
+    # re-scope), pooled over the assessable blocks, contrasted within start-up
+    # class (A vs C primary, B vs C secondary; exact MWU + Cliff's delta;
+    # medians reported). The ready -> admission leg is unmeasurable in this
+    # build and is reported as an informational note below.
+    assessable_blocks = [block for block in sorted(blocks)
+                         if all(arm in blocks[block] for arm in arms)
+                         and all(backend_records.get((block, arm)) for arm in arms)]
+    stratum_names = ("all", "fast", "slow")
+    # Primary gating strata per plan §7.1: fast-binding vs slow-binding only;
+    # the pooled "all" stratum (which includes the recorded [1, 5) s mid band)
+    # is descriptive and never gates.
+    primary_strata = ("fast", "slow")
+    e_i1: dict[str, Any] = {
+        "assessable_blocks": assessable_blocks,
+        "strata": {}, "primary_strata": list(primary_strata),
+        "primary_strata_evidence": 0,
+        "primary_strata_ok": 0, "secondary_strata_ok": 0,
+    }
+    pooled: dict[str, dict[str, list[float]]] = {
+        name: {arm: [] for arm in arms} for name in stratum_names}
+    pooled_ready_to_admit: dict[str, dict[str, list[float]]] = {
+        name: {arm: [] for arm in arms} for name in stratum_names}
+    for block in assessable_blocks:
+        for arm in arms:
+            for record in backend_records[(block, arm)]:
+                value = record["spawn_to_first_success_s"]
+                ready_value = record["ready_to_admit_s"]
+                stratum = record["stratum"]
+                if value is not None:
+                    pooled["all"][arm].append(value)
+                    if stratum in ("fast", "slow"):
+                        pooled[stratum][arm].append(value)
+                if ready_value is not None:
+                    pooled_ready_to_admit["all"][arm].append(ready_value)
+                    if stratum in ("fast", "slow"):
+                        pooled_ready_to_admit[stratum][arm].append(ready_value)
+    source_mix = {arm: {} for arm in arms}
+    for arm in arms:
+        counts: dict[str, int] = {}
+        for (block, run_arm), path in runs.items():
+            if run_arm != arm:
+                continue
+            for record in backend_records[(block, arm)]:
+                counts[record["admit_source"]] = counts.get(record["admit_source"], 0) + 1
+        total = sum(counts.values())
+        source_mix[arm] = {
+            "sources": counts, "total": total,
+            "event_fraction": (counts.get("event", 0) / total) if total else None,
+        }
+    level_flags = {"c_later_by_one_period": None,
+                   "a_median_lt_c": None, "b_median_lt_c": None}
+    for name in stratum_names:
+        entry: dict[str, Any] = {}
+        for arm in arms:
+            values = pooled[name][arm]
+            entry[f"n_{arm}"] = len(values)
+            entry[f"median_{arm}"] = statistics.median(values) if values else None
+        entry["primary_a_vs_c"] = _completion_contrast(
+            pooled[name]["event_only"], pooled[name]["reconcile"])
+        entry["secondary_b_vs_c"] = _completion_contrast(
+            pooled[name]["hybrid"], pooled[name]["reconcile"])
+        median_a = entry["median_event_only"]
+        median_b = entry["median_hybrid"]
+        median_c = entry["median_reconcile"]
+        entry["direction_a_before_c"] = bool(
+            median_a is not None and median_c is not None and median_a < median_c)
+        entry["direction_b_before_c"] = bool(
+            median_b is not None and median_c is not None and median_b < median_c)
+        entry["c_delta_over_ab_s"] = (
+            median_c - max(median_a, median_b)
+            if median_a is not None and median_b is not None
+            and median_c is not None else None)
+        usable = (entry["primary_a_vs_c"]["n_x"] > 0
+                  and entry["primary_a_vs_c"]["n_y"] > 0)
+        if name in primary_strata:
+            if usable:
+                e_i1["primary_strata_evidence"] += 1
+                if entry["direction_a_before_c"]:
+                    e_i1["primary_strata_ok"] += 1
+                if (entry["secondary_b_vs_c"]["n_x"] > 0
+                        and entry["direction_b_before_c"]):
+                    e_i1["secondary_strata_ok"] += 1
+        else:
+            entry["descriptive"] = True
+        e_i1["strata"][name] = entry
+    all_entry = e_i1["strata"]["all"]
+    # C-band adapted to the gated leg: C's median later than A/B by
+    # approximately one check period — the recorded-valid band is (0, 10 s]
+    # (recorded same-regime anchor delta 6.43 s; C1 screen delta ≈2.2 s).
+    delta_all = all_entry["c_delta_over_ab_s"]
+    level_flags["c_later_by_one_period"] = bool(
+        delta_all is not None and 0.0 < delta_all <= COMPLETION_POLL_PERIOD_S)
+    level_flags["a_median_lt_c"] = all_entry["direction_a_before_c"]
+    level_flags["b_median_lt_c"] = all_entry["direction_b_before_c"]
+    ready_all = pooled_ready_to_admit["all"]
+    e_i1.update({
+        "leg": "spawn -> first successful response",
+        "anchors": COMPLETION_INTACT_ANCHORS,
+        "source_mix": source_mix,
+        "b_event_fraction_ge_80pct": (
+            source_mix["hybrid"]["event_fraction"] is not None
+            and source_mix["hybrid"]["event_fraction"] >= 0.80),
+        "level_flags": level_flags,
+        "ready_to_admit_leg": {
+            "leg": "app_ready_ts -> admitted_ts",
+            "status": "unmeasurable in this build (instrument degeneracy)",
+            "medians_s": {arm: (statistics.median(ready_all[arm])
+                                if ready_all[arm] else None)
+                          for arm in arms},
+            "values_s": {arm: sorted(ready_all[arm]) for arm in arms},
+            "diagnostic": ("reads ~0.000 s for all three arms across the "
+                           "intact set; the service-log trace shows C's "
+                           "≈2.9 s quantization instead — reported as a note, "
+                           "never gating (plan §7.1, 2026-10-12 (h))"),
+        },
+        "assessable_ok": len(assessable_blocks) >= COMPLETION_ASSESSABLE_MIN_BLOCKS,
+    })
+    e_i1["pass"] = bool(
+        e_i1["assessable_ok"] and e_i1["primary_strata_evidence"] > 0
+        and e_i1["primary_strata_ok"] == e_i1["primary_strata_evidence"]
+        and e_i1["secondary_strata_ok"] == e_i1["primary_strata_evidence"])
+
+    # E-I2 -- handover quality (descriptive, no gate): admit -> first routed
+    # request, spawn -> first success, the v2 initial-mix share and zero
+    # unattributed 000 fast-fails.
+    e_i2: dict[str, Any] = {"anchors": COMPLETION_HANDOVER_ANCHORS, "modes": {}}
+    for arm in arms:
+        admit_to_first: list[float] = []
+        spawn_to_first: list[float] = []
+        unattributed_000 = 0
+        total_000 = 0
+        for (block, run_arm), path in runs.items():
+            if run_arm != arm:
+                continue
+            records = backend_records[(block, arm)]
+            windows: list[tuple[float, float]] = []
+            for record in records:
+                if record["admitted_to_first_routed_s"] is not None:
+                    admit_to_first.append(record["admitted_to_first_routed_s"])
+                if record["spawn_to_first_success_s"] is not None:
+                    spawn_to_first.append(record["spawn_to_first_success_s"])
+                if record["spawn_started_ts"] is not None \
+                        and record["admitted_ts"] is not None:
+                    windows.append((record["spawn_started_ts"],
+                                    record["admitted_ts"] + COMPLETION_INITIAL_WINDOW_S))
+            offered = successes = 0
+            for row in request_rows(path):
+                classification = soundness_class_of(row)
+                if classification == "000":
+                    total_000 += 1
+                    backend = str(row.get("backend_id") or "")
+                    if backend in ("", "unknown"):
+                        unattributed_000 += 1
+                if classification in ("canceled", "dropped"):
+                    continue
+                if any(lo <= row["_sent"] < hi for lo, hi in windows):
+                    offered += 1
+                    if classification in ("good", "slow"):
+                        successes += 1
+            e_i2["modes"].setdefault(arm, {"initial_windows": []})
+            e_i2["modes"][arm]["initial_windows"].append({
+                "run": path.name, "offered": offered, "successes": successes})
+        per_arm: dict[str, Any] = e_i2["modes"][arm]
+        per_arm["admit_to_first_median_s"] = (
+            statistics.median(admit_to_first) if admit_to_first else None)
+        per_arm["admit_to_first_n"] = len(admit_to_first)
+        per_arm["spawn_to_first_success_median_s"] = (
+            statistics.median(spawn_to_first) if spawn_to_first else None)
+        per_arm["spawn_to_first_success_n"] = len(spawn_to_first)
+        offered_all = sum(item["offered"] for item in per_arm["initial_windows"])
+        success_all = sum(item["successes"] for item in per_arm["initial_windows"])
+        per_arm["initial_mix_share"] = (success_all / offered_all) if offered_all else None
+        per_arm["unattributed_000"] = unattributed_000
+        per_arm["total_000"] = total_000
+        per_arm["zero_unattributed_000"] = unattributed_000 == 0
+    e_i2["pass"] = all(e_i2["modes"][arm]["zero_unattributed_000"] for arm in arms)
+    e_i2["spawn_to_first_note"] = (
+        "the spawn -> first-success interval reported here carries the gated "
+        "E-I1 direction check (2026-10-12 (h)); its numbers stay descriptive "
+        "in this block")
+
+    # E-I3 -- redistribution onset (descriptive): the first served request
+    # reaches the new backend and how much is redistributed, per mode.
+    e_i3: dict[str, Any] = {"modes": {}, "note": "descriptive only (plan §7.1 E-I3)"}
+    for arm in arms:
+        first_routed: list[float] = []
+        redistributed = plateau_offered = 0
+        for (block, run_arm), path in runs.items():
+            if run_arm != arm:
+                continue
+            records = backend_records[(block, arm)]
+            containers = {record["container"] for record in records}
+            spawns = [record["spawn_started_ts"] for record in records
+                      if record["spawn_started_ts"] is not None]
+            flows = _completion_first_flows(path, containers)
+            for entry in flows.values():
+                if "first_routed_s" in entry and spawns:
+                    first_routed.append(entry["first_routed_s"] - min(spawns))
+            bounds = phase_bounds(path)
+            start, end = bounds[PHASE]
+            for row in request_rows(path):
+                if row.get("phase") != PHASE or not (start <= row["_sent"] <= end):
+                    continue
+                plateau_offered += 1
+                if str(row.get("backend_id") or "") in containers:
+                    redistributed += 1
+        e_i3["modes"][arm] = {
+            "spawn_to_first_routed_median_s": (statistics.median(first_routed)
+                                               if first_routed else None),
+            "n_backends_with_flow": len(first_routed),
+            "redistributed_share": (redistributed / plateau_offered)
+            if plateau_offered else None,
+        }
+
+    # E-I4 -- recorded H-T3 run-level floor over the explicit 21-run denominator.
+    e_i4 = _completion_health_floor(
+        [blocks[block][arm] for block in sorted(blocks) for arm in arms
+         if arm in blocks[block]])
+
+    # E-W1 (2026-10-13 (m)): wake-and-verify intact direction on the same (h)
+    # leg. Gated: in every primary stratum the wake spawn -> first-success
+    # median is earlier than periodic (reconcile); wake vs event_only is
+    # reported descriptively (near-tie expected: the event wake adds only a
+    # probe round-trip).
+    e_w1: dict[str, Any] = {
+        "present": bool(wake_none),
+        "leg": "spawn -> first successful response",
+        "runs_provided": len(wake_none),
+        "assessable_ok": len(wake_none) >= COMPLETION_ASSESSABLE_MIN_BLOCKS,
+        "primary_strata": list(primary_strata),
+        "strata": {},
+    }
+    if wake_none:
+        wake_pooled: dict[str, list[float]] = {"all": [], "fast": [], "slow": []}
+        per_run: dict[str, Any] = {}
+        for ordinal, path in sorted(wake_none.items()):
+            records = completion_backend_records(path)
+            values = [record["spawn_to_first_success_s"] for record in records
+                      if record["spawn_to_first_success_s"] is not None]
+            per_run[str(ordinal)] = {
+                "ordinal": ordinal,
+                "seed": COMPLETION_WAKE_SEED_FAMILY.get(ordinal),
+                "run": path.name, "backends": len(records),
+                "median_s": statistics.median(values) if values else None,
+            }
+            for record in records:
+                value = record["spawn_to_first_success_s"]
+                if value is None:
+                    continue
+                wake_pooled["all"].append(value)
+                if record["stratum"] in ("fast", "slow"):
+                    wake_pooled[record["stratum"]].append(value)
+        e_w1["per_run"] = per_run
+        evidence = ok = 0
+        for name in primary_strata:
+            wake_values = wake_pooled[name]
+            c_values = pooled[name]["reconcile"]
+            a_values = pooled[name]["event_only"]
+            entry: dict[str, Any] = {
+                "wake_n": len(wake_values), "reconcile_n": len(c_values),
+                "wake_median_s": (statistics.median(wake_values)
+                                  if wake_values else None),
+                "reconcile_median_s": (statistics.median(c_values)
+                                       if c_values else None),
+                "event_only_median_s": (statistics.median(a_values)
+                                        if a_values else None),
+            }
+            if wake_values and c_values:
+                evidence += 1
+                entry["direction_wake_before_reconcile"] = bool(
+                    entry["wake_median_s"] < entry["reconcile_median_s"])
+                entry["median_gap_s"] = (entry["reconcile_median_s"]
+                                         - entry["wake_median_s"])
+                if entry["direction_wake_before_reconcile"]:
+                    ok += 1
+            if wake_values and a_values:
+                entry["vs_event_only_median_gap_s"] = abs(
+                    entry["wake_median_s"] - entry["event_only_median_s"])
+                entry["vs_event_only_near_tie"] = bool(
+                    entry["vs_event_only_median_gap_s"] <= COMPLETION_WAKE_NEAR_TIE_S)
+            e_w1["strata"][name] = entry
+        e_w1["primary_strata_evidence"] = evidence
+        e_w1["primary_strata_ok"] = ok
+        e_w1["pass"] = bool(
+            e_w1["assessable_ok"]
+            and evidence == len(primary_strata)
+            and ok == evidence)
+        e_w1["note"] = (
+            "wake earlier than periodic in every primary stratum on the (h) "
+            "leg, gated; wake vs event_only is descriptive (near-tie expected "
+            "— the event wake adds a probe round-trip); the recorded pilot "
+            "no-fault cost (+0.2/+3.1 pp at two seeds) is re-resolved by this "
+            "set (plan §7.5 E-W1)")
+    else:
+        e_w1["note"] = ("wake_verify intact runs not provided — E-W1 not "
+                        "evaluated (provide rq3snd_none_wake_verify_8..14)")
+
+    gated = {
+        "E-I1": e_i1["pass"],
+        "E-I4_conformance":
+            e_i4["recorded_qualification"]["conforms"] is True,
+    }
+    if e_w1["present"]:
+        gated["E-W1"] = e_w1["pass"]
+    na_components = []
+    if len(assessable_blocks) < COMPLETION_ASSESSABLE_MIN_BLOCKS:
+        na_components.append("E-I1 (fewer than 5/7 blocks assessable)")
+    if e_i4["recorded_qualification"]["na"]:
+        na_components.append("E-I4 (recorded-outcome conformance not verifiable)")
+    if e_w1["present"] and not e_w1["assessable_ok"]:
+        na_components.append(
+            f"E-W1 (fewer than 5/7 wake runs provided: {e_w1['runs_provided']})")
+    report = {
+        "family": "rq3_admission_modes", "command": "completion-intact",
+        "rate": getattr(args, "rate", "2.0"),
+        "runs": len(runs), "blocks": sorted(blocks),
+        "E-I1": e_i1, "E-I2": e_i2, "E-I3": e_i3, "E-I4": e_i4, "E-W1": e_w1,
+        "wake_runs": len(wake_none),
+        "gated_components": gated,
+        "na_components": na_components,
+        "failures": [],
+        "descriptive_findings": [],
+        "exit_codes": {"0": "all gated components pass; no NA",
+                       "2": "a gated component failed or is NA (report)",
+                       "3": "analyzer/argument error (STOP)"},
+        "note": ("seven-block completion; E-I1 gates the spawn -> first-"
+                 "success leg (2026-10-12 (h); the ready -> admission leg is "
+                 "unmeasurable in this build and is a note only); the E-I4 "
+                 "floor is reported exactly "
+                 "as recorded (16/18, none_cell_healthy=false where it "
+                 "applies) as a qualification of the recorded set, and the "
+                 "conformance read requires the recorded outcome reproduced "
+                 "plus a clean block 7; accept counts restate the recorded "
+                 "family rules on their fixed pre-registered denominators "
+                 "(plan §7, §9 NA != stop)"),
+    }
+    if not e_i1["pass"]:
+        report["failures"].append(
+            "E-I1 direction (A and B earlier than C by median, per start-up "
+            "class, on the spawn -> first-success leg) not reproduced")
+    if e_i4["recorded_qualification"]["conforms"] is False:
+        report["failures"].append(
+            "E-I4 recorded-qualification conformance failed (a fresh breach "
+            "outside the recorded blocks 3/5 transients, or block 7 not clean)")
+    if e_w1["present"] and not e_w1["pass"]:
+        report["failures"].append(
+            "E-W1 wake vs reconcile direction on the spawn -> first-success "
+            "leg not reproduced in every primary stratum")
+    report["descriptive_findings"] = [
+        flag for flag, passed in (
+            ("E-I2 unattributed 000 rows present", e_i2["pass"]),
+            ("E-I2 initial-mix share below the recorded 1.000 anchor",
+             all((e_i2["modes"][arm]["initial_mix_share"] or 0.0) >=
+                 COMPLETION_HANDOVER_ANCHORS["useful_share"]
+                 for arm in arms)),
+        ) if not passed]
+    report["pass"] = all(gated.values()) and not na_components
+    report["na"] = bool(na_components)
+    if na_components:
+        report["failures"].append("NA: " + "; ".join(na_components))
+    write_json(Path(args.out), report)
+    print(json.dumps({"pass": report["pass"],
+                      "assessable_blocks": assessable_blocks,
+                      "gated": gated, "na_components": na_components,
+                      "E-W1_pass": (e_w1["pass"] if e_w1["present"] else None),
+                      "e_i4_clean": e_i4["clean"],
+                      "e_i4_none_cell_healthy": e_i4["none_cell_healthy"],
+                      "failures": report["failures"],
+                      "descriptive_findings": report["descriptive_findings"]},
+                     indent=2, default=str))
+    return 0 if report["pass"] else 2
+
+
+def completion_lost_command(args: argparse.Namespace) -> int:
+    """E-L1..E-L4: the completed seven-block lost cells (plan §7.2).
+
+    The recorded block-4 (seed 5204) exclusion is applied; the accept counts
+    restate the recorded H-T1/H-T2 rules on the fixed six-block denominator
+    and the added block 7 is reported per block under the same rules (the
+    per-block report never re-scopes an accept count).
+
+    Exit codes (documented in run_matrix.md and plan §11): 0 = every gated
+    component passes (E-L1, E-L2, E-L3; E-L4 recorded-floor conformance) with
+    no NA; 2 = a gated component failed or is NA (a report signal — NA !=
+    stop); 3 = analyzer/argument error (STOP). The E-L4 floor is reported
+    exactly as recorded (16/18, none_cell_healthy=false where it applies) as
+    a qualification of the recorded intact set; the between-arm contrasts are
+    untouched by it.
+    """
+    runs: dict[tuple[int, str], Path] = {}
+    none_runs: dict[tuple[int, str], Path] = {}
+    wake_loss: dict[int, Path] = {}
+    wake_none: dict[int, Path] = {}
+    problems: list[str] = []
+    for path_text in args.run_dir:
+        path = Path(path_text)
+        parts = timing_label_parts(path.name)
+        if parts is not None:
+            label_cell, arm, block = parts
+            key = (int(block), arm)
+            target = None
+            if label_cell == "loss_all":
+                target = runs
+            elif label_cell == "none":
+                target = none_runs
+            if target is None:
+                problems.append(f"unexpected cell for completion-lost: {path.name}")
+                continue
+            if key in target:
+                problems.append(f"duplicate run for block/arm {key}: {path.name}")
+                continue
+            target[key] = path
+            continue
+        wake_parts = soundness_label_parts(path.name)
+        if wake_parts is None:
+            problems.append(f"cannot parse label: {path.name}")
+            continue
+        cell, arm, ordinal = wake_parts
+        if arm != "wake_verify" or cell not in ("loss_all", "none"):
+            problems.append(
+                f"non-timing input is not a wake_verify loss/none run: {path.name}")
+            continue
+        try:
+            block = _completion_ordinal(ordinal)
+        except ValueError:
+            problems.append(f"cannot parse block ordinal: {path.name}")
+            continue
+        if block not in COMPLETION_WAKE_ORDINALS:
+            problems.append(
+                f"wake_verify {cell} ordinal {block} is not a lost input "
+                f"(expected {COMPLETION_WAKE_ORDINALS[0]}.."
+                f"{COMPLETION_WAKE_ORDINALS[-1]}; ordinals 1-7 are the "
+                f"premature-cell partners): {path.name}")
+            continue
+        target = wake_loss if cell == "loss_all" else wake_none
+        if block in target:
+            problems.append(
+                f"duplicate wake_verify {cell} ordinal {block}: {path.name}")
+            continue
+        target[block] = path
+    if problems:
+        raise ValueError("; ".join(problems))
+
+    blocks = _completion_intact_blocks(runs)
+    arms = ("event_only", "hybrid", "reconcile")
+    block_rows: dict[int, dict[str, Any]] = {}
+    for block in sorted(blocks):
+        present = all(arm in blocks[block] for arm in arms)
+        entry: dict[str, Any] = {"present": present, "assessable": False,
+                                 "exclusion": None}
+        if not present:
+            entry["exclusion"] = "missing_arm"
+            block_rows[block] = entry
+            continue
+        infos = {arm: _campaign_run_rates(blocks[block][arm]) for arm in arms}
+        seeds = [run_seed(blocks[block][arm]) for arm in arms]
+        if seeds[0] is not None and COMPLETION_LOST_SEEDS.get(block) is not None \
+                and any(seed != COMPLETION_LOST_SEEDS[block] for seed in seeds):
+            entry["seed_mismatch"] = seeds
+        floors = all(info["floors_ok"] and info["driver_clean"]
+                     for info in infos.values())
+        tails = {arm: timing_tail_slow(blocks[block][arm])
+                 for arm in ("hybrid", "reconcile")}
+        controls_tail_ok = all(value is not None and value <= SLOW_CONTROL_MAX
+                               for value in tails.values())
+        delta = None
+        if infos["event_only"]["slow"] is not None \
+                and infos["hybrid"]["slow"] is not None \
+                and infos["reconcile"]["slow"] is not None:
+            delta = infos["event_only"]["slow"] - max(infos["hybrid"]["slow"],
+                                                      infos["reconcile"]["slow"])
+        onsets = {arm: timing_onset_slow(blocks[block][arm]) for arm in arms}
+        onset_delta = None
+        if all(onsets[arm] is not None for arm in arms):
+            onset_delta = onsets["event_only"] - max(onsets["hybrid"],
+                                                     onsets["reconcile"])
+        entry.update({
+            "floors_ok": floors, "driver_clean": all(info["driver_clean"]
+                                                     for info in infos.values()),
+            "control_tails": tails, "controls_tail_ok": controls_tail_ok,
+            "delta_slow": delta, "onset_delta_slow": onset_delta,
+            "event_only_slow": infos["event_only"]["slow"],
+        })
+        if block == COMPLETION_LOST_RECORDED_EXCLUSION:
+            entry["exclusion"] = "recorded_exclusion_seed_5204"
+        elif not floors:
+            entry["exclusion"] = "floors_or_driver_clean"
+        elif not controls_tail_ok:
+            entry["exclusion"] = "controls_tail_slow_gt_2pp"
+        elif delta is None or onset_delta is None:
+            entry["exclusion"] = "missing_slow"
+        else:
+            entry["assessable"] = True
+        block_rows[block] = entry
+
+    denom = [block for block in COMPLETION_LOST_DENOM_BLOCKS
+             if block_rows.get(block, {}).get("assessable")]
+    extra = [block for block in COMPLETION_BLOCKS
+             if block not in COMPLETION_LOST_DENOM_BLOCKS
+             and block_rows.get(block, {}).get("assessable")]
+    assessable_all = denom + extra
+    deltas = [block_rows[block]["delta_slow"] for block in denom]
+    onset_deltas = [block_rows[block]["onset_delta_slow"] for block in denom]
+    hits = sum(1 for value in deltas if value >= CONTRAST_PP)
+    onset_hits = sum(1 for value in onset_deltas if value >= CONTRAST_PP)
+    median = statistics.median(deltas) if deltas else None
+    onset_median = statistics.median(onset_deltas) if onset_deltas else None
+    e_l1 = {
+        "denominator_blocks": list(COMPLETION_LOST_DENOM_BLOCKS),
+        "assessable_blocks": assessable_all,
+        "denominator_assessable": denom,
+        "delta_ge_5pp_blocks": hits,
+        "onset_delta_ge_5pp_blocks": onset_hits,
+        "median_pp": round(median * 100.0, 2) if median is not None else None,
+        "onset_median_pp": (round(onset_median * 100.0, 2)
+                            if onset_median is not None else None),
+        "mwu_p": (exact_mwu(deltas, [0.0] * len(deltas)) if deltas else None),
+        "cliffs_delta": (cliffs(deltas, [0.0] * len(deltas)) if deltas else None),
+        "block7": None,
+    }
+    block7 = block_rows.get(7, {})
+    if block7.get("delta_slow") is not None:
+        e_l1["block7"] = {
+            "delta_slow_pp": round(block7["delta_slow"] * 100.0, 2),
+            "onset_delta_slow_pp": (round(block7["onset_delta_slow"] * 100.0, 2)
+                                    if block7.get("onset_delta_slow") is not None
+                                    else None),
+            "assessable": bool(block7.get("assessable")),
+        }
+    e_l1["pass"] = bool(
+        len(denom) >= COMPLETION_ASSESSABLE_MIN_BLOCKS  # 5 of the 6-block set
+        and hits >= COMPLETION_DENOM_MIN_HITS
+        and median is not None and median >= CONTRAST_PP
+        and onset_hits >= COMPLETION_DENOM_MIN_HITS
+        and onset_median is not None and onset_median >= CONTRAST_PP)
+
+    # E-L2 -- mechanism + relief completion (recorded H-T2 accept counts x/6).
+    e_l2: dict[str, Any] = {"per_block": {}, "relief_blocks": []}
+    for block in sorted(blocks):
+        entry = block_rows[block]
+        if not entry.get("assessable"):
+            continue
+        mechanism = qoe_mechanism(blocks[block]["event_only"])
+        relief = timing_relief_metrics(blocks[block]["event_only"])
+        hybrid_mech = qoe_mechanism(blocks[block]["hybrid"])
+        reconcile_mech = qoe_mechanism(blocks[block]["reconcile"])
+        a_ok = (mechanism["admitted_total"] == 0
+                and all(mechanism["per_lan_abandoned"][lan] >= 2 for lan in (1, 2))
+                and relief["new_backend_successes"] == 0)
+        b_ok = (hybrid_mech["admitted_total"] >= 1
+                and hybrid_mech["probe_fallback_admitted"] == hybrid_mech["admitted_total"]
+                and all(hybrid_mech["per_lan_admitted"][lan] >= 1 for lan in (1, 2)))
+        c_ok = (reconcile_mech["admitted_total"] >= 1
+                and reconcile_mech["probe_admitted"] == reconcile_mech["admitted_total"]
+                and all(reconcile_mech["per_lan_admitted"][lan] >= 1 for lan in (1, 2)))
+        relief_ok = all(entry["control_tails"].get(arm) is not None
+                        and entry["control_tails"][arm] <= SLOW_CONTROL_MAX
+                        for arm in ("hybrid", "reconcile"))
+        if relief_ok and block in COMPLETION_LOST_DENOM_BLOCKS:
+            e_l2["relief_blocks"].append(block)
+        e_l2["per_block"][str(block)] = {
+            "a_zero_admit_abandon_ge_2_zero_success": a_ok,
+            "b_all_probe_fallback_ge_1_per_lan": b_ok,
+            "c_all_probe_ge_1_per_lan": c_ok,
+            "relief_completion_ok": relief_ok,
+        }
+    denom_items = [e_l2["per_block"][str(block)]
+                   for block in COMPLETION_LOST_DENOM_BLOCKS
+                   if str(block) in e_l2["per_block"]]
+    e_l2["a_blocks"] = sum(1 for item in denom_items
+                           if item["a_zero_admit_abandon_ge_2_zero_success"])
+    e_l2["b_blocks"] = sum(1 for item in denom_items
+                           if item["b_all_probe_fallback_ge_1_per_lan"])
+    e_l2["c_blocks"] = sum(1 for item in denom_items
+                           if item["c_all_probe_ge_1_per_lan"])
+    e_l2["relief_block_count"] = len(e_l2["relief_blocks"])
+    e_l2["block7"] = e_l2["per_block"].get("7")
+    e_l2["pass"] = bool(
+        e_l2["a_blocks"] >= COMPLETION_DENOM_MIN_HITS_5
+        and e_l2["b_blocks"] >= COMPLETION_DENOM_MIN_HITS_5
+        and e_l2["c_blocks"] >= COMPLETION_DENOM_MIN_HITS_5
+        and e_l2["relief_block_count"] >= COMPLETION_DENOM_MIN_HITS_5)
+
+    # E-L3 -- boundedness of the trusting rule (recorded H-T1 accept count);
+    # the added block 7 is reported per block under the same rule.
+    event_slows = [block_rows[block]["event_only_slow"] for block in denom
+                   if block_rows[block].get("event_only_slow") is not None]
+    bounded_hits = sum(1 for value in event_slows if value <= SLOW_BOUNDED_EVENT_MAX)
+    bounded_median = statistics.median(event_slows) if event_slows else None
+    e_l3 = {
+        "event_only_slow": [round(value, 4) for value in event_slows],
+        "median": bounded_median,
+        "blocks_le_25pct": bounded_hits,
+        "block7": None,
+        "pass": bool(len(event_slows) >= 4 and bounded_hits >= COMPLETION_DENOM_MIN_HITS
+                     and bounded_median is not None
+                     and bounded_median <= SLOW_BOUNDED_EVENT_MAX),
+    }
+    block7_entry = block_rows.get(7, {})
+    if block7_entry.get("event_only_slow") is not None:
+        e_l3["block7"] = {
+            "event_only_slow": round(block7_entry["event_only_slow"], 4),
+            "le_25pct": block7_entry["event_only_slow"] <= SLOW_BOUNDED_EVENT_MAX,
+            "assessable": bool(block7_entry.get("assessable")),
+        }
+
+    # E-L4 -- recorded H-T3 floor on the no-fault (intact) runs.
+    e_l4 = (_completion_health_floor([path for _, path in sorted(none_runs.items())])
+            if none_runs else {
+                "denominator": COMPLETION_INTACT_RUNS_EXPECTED, "provided": 0,
+                "clean": 0, "none_cell_healthy": False, "per_run": [],
+                "recorded_floor": dict(COMPLETION_RECORDED_FLOOR),
+                "recorded_qualification": {
+                    "recorded_runs": 0, "recorded_clean": 0,
+                    "breaching_blocks": [], "reproduced": False,
+                    "block7_clean": None, "conforms": None, "na": True},
+                "note": "intact (none-cell) runs not provided to completion-lost",
+            })
+
+    # E-W2 (2026-10-13 (m)): wake-and-verify recovery under loss. The event
+    # is dropped, so the 20 s event-absence fallback admits (frozen code:
+    # `admit_source="probe_fallback"` with direct propagation). Gated: the
+    # per-block paired slow-share delta vs its own none partner is <= 2 pp in
+    # >= 5/7 blocks (no user harm); the mechanism source and the ~21 s
+    # recovery timing (recorded hybrid anchor) are recorded alongside.
+    e_w2: dict[str, Any] = {
+        "present": bool(wake_loss),
+        "runs_provided": len(wake_loss),
+        "partners_provided": len(wake_none),
+        "leg": "event dropped -> 20 s fallback probe -> admission",
+        "mechanism_source_expected": COMPLETION_WAKE_MECHANISM_SOURCE,
+        "timing_anchor_s": COMPLETION_WAKE_LOSS_TIMING_ANCHOR_S,
+        "seed_family": dict(COMPLETION_WAKE_SEED_FAMILY),
+    }
+    if wake_loss:
+        pairs: list[dict[str, Any]] = []
+        deltas: list[float] = []
+        lost = 0
+        sources_loss: dict[str, int] = {}
+        sources_none: dict[str, int] = {}
+        loss_admit_first: list[float] = []
+        loss_claim_first: list[float] = []
+        for ordinal in COMPLETION_WAKE_ORDINALS:
+            loss_path = wake_loss.get(ordinal)
+            none_path = wake_none.get(ordinal)
+            entry: dict[str, Any] = {
+                "block": COMPLETION_WAKE_ORDINALS.index(ordinal) + 1,
+                "ordinal": ordinal,
+                "seed": COMPLETION_WAKE_SEED_FAMILY.get(ordinal)}
+            if loss_path is None or none_path is None:
+                entry["status"] = ("missing_none_partner" if loss_path is not None
+                                   else "missing_run")
+                lost += 1
+                pairs.append(entry)
+                continue
+            entry["run"] = loss_path.name
+            entry["none_run"] = none_path.name
+            metrics = soundness_run_metrics(loss_path)
+            none_metrics = soundness_run_metrics(none_path)
+            health = none_metrics.get("none_health")
+            if not none_metrics.get("valid", True) or (health and health["breach"]):
+                entry["status"] = "partner_breach"
+                entry["partner_health"] = health
+                lost += 1
+                pairs.append(entry)
+                continue
+            actual_seeds = [value for value in (metrics.get("seed"),
+                                                none_metrics.get("seed"))
+                            if value is not None]
+            if actual_seeds and any(
+                    value != COMPLETION_WAKE_SEED_FAMILY.get(ordinal)
+                    for value in actual_seeds):
+                entry["seed_mismatch"] = actual_seeds
+            loss_read = _completion_wake_loss_read(loss_path)
+            none_read = _completion_wake_loss_read(none_path)
+            for key, count in loss_read["sources"].items():
+                sources_loss[key] = sources_loss.get(key, 0) + count
+            for key, count in none_read["sources"].items():
+                sources_none[key] = sources_none.get(key, 0) + count
+            if loss_read["slow_share"] is None or none_read["slow_share"] is None:
+                entry["status"] = "missing_slow"
+                pairs.append(entry)
+                continue
+            delta_pp = (loss_read["slow_share"] - none_read["slow_share"]) * 100.0
+            entry.update({
+                "loss_slow_pp": round(loss_read["slow_share"] * 100.0, 4),
+                "none_slow_pp": round(none_read["slow_share"] * 100.0, 4),
+                "delta_pp": round(delta_pp, 4),
+                "le_2pp": bool(delta_pp <= SOUNDNESS_F2_MAX_PP),
+                "status": "ok",
+            })
+            if delta_pp <= SOUNDNESS_F2_MAX_PP:
+                deltas.append(delta_pp)
+            admit_first = (metrics.get("adm_flow") or {}).get("admit_to_first_median_s")
+            claim_first = (metrics.get("adm_flow") or {}).get("claim_to_first_median_s")
+            if admit_first is not None:
+                loss_admit_first.append(admit_first)
+            if claim_first is not None:
+                loss_claim_first.append(claim_first)
+            entry["admit_to_first_median_s"] = admit_first
+            entry["claim_to_first_median_s"] = claim_first
+            pairs.append(entry)
+        usable = sum(1 for pair in pairs if pair.get("status") == "ok")
+        le_2pp = sum(1 for pair in pairs if pair.get("le_2pp"))
+        median_delta = statistics.median(
+            [pair["delta_pp"] for pair in pairs
+             if pair.get("status") == "ok"]) if usable else None
+        e_w2.update({
+            "pairs": pairs,
+            "usable_pairs": usable,
+            "lost_pairs": lost,
+            "le_2pp_pairs": le_2pp,
+            "median_delta_pp": (round(median_delta, 4)
+                                if median_delta is not None else None),
+            "assessable": bool(lost <= COMPLETION_PREMATURE_MAX_LOST_PAIRS),
+            "mechanism_sources_loss": dict(sorted(sources_loss.items())),
+            "mechanism_sources_none": dict(sorted(sources_none.items())),
+            "mechanism_source_ok": _completion_wake_mechanism_ok(sources_loss),
+            "recovery_admit_to_first_median_s": (
+                statistics.median(loss_admit_first) if loss_admit_first else None),
+            "recovery_claim_to_first_median_s": (
+                statistics.median(loss_claim_first) if loss_claim_first else None),
+        })
+        e_w2["pass"] = bool(
+            e_w2["assessable"] and usable >= COMPLETION_ASSESSABLE_MIN_BLOCKS
+            and le_2pp >= COMPLETION_DENOM_MIN_HITS_5)
+        e_w2["note"] = (
+            "per-block paired slow-share delta (loss vs its own none partner, "
+            "full plateau) <= 2 pp in >= 5/7 blocks — no user harm, gated; the "
+            "recovery rides the 20 s event-absence fallback "
+            "(`probe_fallback`) and its timing is reported against the "
+            "recorded hybrid ~21 s anchor (descriptive; plan §7.5 E-W2)")
+    else:
+        e_w2["note"] = ("wake_verify loss runs not provided — E-W2 not "
+                        "evaluated (provide rq3snd_loss_all_wake_verify_8..14 "
+                        "with the none partners expected)")
+
+    gated = {
+        "E-L1": e_l1["pass"], "E-L2": e_l2["pass"], "E-L3": e_l3["pass"],
+        "E-L4_conformance":
+            e_l4["recorded_qualification"]["conforms"] is True,
+    }
+    if e_w2["present"]:
+        gated["E-W2"] = e_w2["pass"]
+    na_components = []
+    if len(assessable_all) < COMPLETION_ASSESSABLE_MIN_BLOCKS:
+        na_components.append("assessable blocks (<5/7)")
+    if e_l4["recorded_qualification"]["na"]:
+        na_components.append("E-L4 (recorded-outcome conformance not verifiable)")
+    if e_w2["present"] and not e_w2["assessable"]:
+        na_components.append("E-W2 (two or more wake loss pairs lost)")
+    report = {
+        "family": "rq3_admission_modes", "command": "completion-lost",
+        "rate": getattr(args, "rate", "2.0"),
+        "runs": len(runs), "blocks": sorted(blocks),
+        "block_rows": {str(block): block_rows[block] for block in sorted(blocks)},
+        "E-L1": e_l1, "E-L2": e_l2, "E-L3": e_l3, "E-L4": e_l4, "E-W2": e_w2,
+        "wake_runs": len(wake_loss), "wake_partners": len(wake_none),
+        "gated_components": gated,
+        "na_components": na_components,
+        "failures": [],
+        "exit_codes": {"0": "all gated components pass; no NA",
+                       "2": "a gated component failed or is NA (report)",
+                       "3": "analyzer/argument error (STOP)"},
+        "note": ("recorded block-4 (seed 5204) exclusion applied; accept "
+                 "counts restate the recorded family rules on the fixed "
+                 "six-block denominator; the added block 7 is reported per "
+                 "block (plan §7.2). A voided timing run is quarantined as "
+                 "`_7_void` and re-run under its planned label (recorded §9 "
+                 "mechanic; `_void` folders never match the label regex). "
+                 "The E-L4 floor is reported exactly as "
+                 "recorded (16/18, none_cell_healthy=false where it applies) "
+                 "as a qualification of the recorded intact set; conformance "
+                 "requires the recorded outcome reproduced plus a clean "
+                 "block 7 (§9 NA != stop). E-W2 (2026-10-13 (m)) adds the "
+                 "wake-and-verify loss read on its own ordinal family "
+                 "(8-14 -> seeds 5201-5207)"),
+    }
+    if not e_l1["pass"]:
+        report["failures"].append("E-L1 headline contrast not reproduced")
+    if not e_l2["pass"]:
+        report["failures"].append("E-L2 mechanism/relief accept counts not reproduced")
+    if not e_l3["pass"]:
+        report["failures"].append("E-L3 boundedness accept count not reproduced")
+    if e_l4["recorded_qualification"]["conforms"] is False:
+        report["failures"].append(
+            "E-L4 recorded-qualification conformance failed (a fresh breach "
+            "outside the recorded blocks 3/5 transients, or block 7 not clean)")
+    if e_w2["present"] and not e_w2["pass"]:
+        report["failures"].append(
+            "E-W2 wake loss paired slow-share delta > 2 pp in more than "
+            "2/7 blocks (or not assessable)")
+    if e_w2["present"] and not e_w2["mechanism_source_ok"]:
+        report["descriptive_findings"].append(
+            "E-W2 mechanism source not the recorded `probe_fallback` (found: "
+            f"{sorted(e_w2['mechanism_sources_loss'])}) — a finding, not a "
+            "rerun trigger")
+    report["pass"] = all(gated.values()) and not na_components
+    report["na"] = bool(na_components)
+    if na_components:
+        report["failures"].append("NA: " + "; ".join(na_components))
+    write_json(Path(args.out), report)
+    print(json.dumps({"pass": report["pass"],
+                      "assessable_blocks": assessable_all,
+                      "gated": gated, "na_components": na_components,
+                      "e_l4_clean": e_l4["clean"],
+                      "E-W2_pass": (e_w2["pass"] if e_w2["present"] else None),
+                      "E-W2_le_2pp_pairs": e_w2.get("le_2pp_pairs"),
+                      "failures": report["failures"]}, indent=2, default=str))
+    return 0 if report["pass"] else 2
+
+
+def _completion_premature_runs(args: argparse.Namespace):
+    premature: dict[tuple[int, str], Path] = {}
+    none: dict[tuple[int, str], Path] = {}
+    problems: list[str] = []
+    for path_text in args.run_dir:
+        path = Path(path_text)
+        parts = soundness_label_parts(path.name)
+        if parts is None:
+            problems.append(f"cannot parse soundness label: {path.name}")
+            continue
+        cell, arm, ordinal = parts
+        try:
+            block = _completion_ordinal(ordinal)
+        except ValueError:
+            problems.append(f"cannot parse block ordinal: {path.name}")
+            continue
+        if (arm == "wake_verify" and cell == "none"
+                and block in COMPLETION_WAKE_ORDINALS):
+            problems.append(
+                f"wake_verify none ordinal {block} belongs to the intact/lost "
+                f"family (completion-intact / completion-lost), not "
+                f"completion-premature: {path.name}")
+            continue
+        if block not in COMPLETION_BLOCKS:
+            problems.append(f"block {block} outside 1..7: {path.name}")
+            continue
+        target = premature if cell == "premature10" else none if cell == "none" else None
+        if target is None:
+            problems.append(f"unexpected cell for completion-premature: {path.name}")
+            continue
+        key = (block, arm)
+        if key in target:
+            problems.append(f"duplicate run for block/arm {key}: {path.name}")
+            continue
+        target[key] = path
+    return premature, none, problems
+
+
+def _completion_premature_run_check(run: dict[str, Any]) -> dict[str, Any]:
+    """E-P1 per-new-run checks (plan §7.3): validity + attestation + the
+    false-claim signature (A/B) or the immunity signature (C), plus the
+    recorded cell band.
+
+    Log-based gates (`check_violation_ge_1`, `zero_check_violations`) are not
+    evaluable when the run folder carries neither `controller_lan1.log` nor
+    `controller_lan2.log` — the recorded-era folders predate that capture
+    (2026-10-13 (j)). A not-evaluable gate is reported explicitly (it is
+    excluded from `gates`/`failed`) and is never counted as passed or failed.
+    """
+    arm = run["arm"]
+    deferrals = [value for value in run["deferrals_s"] if value is not None]
+    pre = run["f2"]["pre_by_n"][str(run["n"])]
+    gates: dict[str, bool] = {
+        "validity": bool(run["valid"]),
+        "attestation_premature_s_10": bool(
+            run["attestation"]["present"]
+            and run["attestation"]["knobs"].get("EDGE_READY_PREMATURE_S") == 10
+            and _soundness_int(run["env_knobs"].get("EDGE_READY_PREMATURE_S")) == 10),
+        "measured_deferral_in_9_11": bool(
+            deferrals and len(deferrals) == len(run["deferrals_s"])
+            and all(9.0 <= value <= 11.0 for value in deferrals)),
+    }
+    not_evaluable: dict[str, str] = {}
+    logs_absent = bool(run["check_violations"].get("logs_absent"))
+    logs_reason = ("controller_lan{1,2}.log absent from the run folder: "
+                   "log-based gate not evaluable (recorded era predates the capture)")
+    if arm in ("event_only", "hybrid"):
+        gates["in_window_000_ge_10_per_lan"] = bool(
+            pre["http000"]["lan1"] >= 10 and pre["http000"]["lan2"] >= 10)
+        if logs_absent:
+            not_evaluable["check_violation_ge_1"] = logs_reason
+        else:
+            gates["check_violation_ge_1"] = run["check_violations"]["total"] >= 1
+        gates["admit_to_first_in_8_12"] = bool(
+            run["adm_flow"]["admit_to_first_median_s"] is not None
+            and 8.0 <= run["adm_flow"]["admit_to_first_median_s"] <= 12.0)
+    else:
+        gates["run_wide_000_le_1_and_le_0.2pct"] = bool(
+            run["run_wide"]["http000"] <= 1
+            and run["run_wide"]["http000_share"] is not None
+            and run["run_wide"]["http000_share"] <= 0.002)
+        gates["zero_pre_bind_successes"] = run["pre_bind_successes"] == 0
+        if logs_absent:
+            not_evaluable["zero_check_violations"] = logs_reason
+        else:
+            gates["zero_check_violations"] = run["check_violations"]["total"] == 0
+        gates["claim_to_first_in_10_22"] = bool(
+            run["adm_flow"]["claim_to_first_median_s"] is not None
+            and 10.0 <= run["adm_flow"]["claim_to_first_median_s"] <= 22.0)
+    failed = [name for name, ok in gates.items() if not ok]
+    # The C admit->first band is descriptive (plan §7.3 R2(d) sanity): it is
+    # reported and never gates.
+    descriptive = {}
+    if arm == "reconcile":
+        descriptive["admit_to_first_in_0_2"] = bool(
+            run["adm_flow"]["admit_to_first_median_s"] is not None
+            and 0.0 <= run["adm_flow"]["admit_to_first_median_s"] <= 2.0)
+    return {
+        "run": run["run"], "arm": arm, "block": _completion_ordinal(run["ordinal"]),
+        "seed": run["seed"], "gates": gates, "failed": failed,
+        "descriptive": descriptive, "not_evaluable": not_evaluable,
+        "not_evaluable_logs_absent": logs_absent,
+        "validity_failed": [name for name, ok in run["validity"].items() if not ok],
+        "pass": not failed,
+    }
+
+
+def _completion_delta_stats(deltas: list[float]) -> dict[str, Any]:
+    hits = sum(1 for value in deltas if value > 0.0)
+    median = statistics.median(deltas) if deltas else None
+    return {
+        "n": len(deltas), "positive_blocks": hits,
+        "median_pp": round(median * 100.0, 2) if median is not None else None,
+        "mwu_p": (exact_mwu(deltas, [0.0] * len(deltas)) if deltas else None),
+        "cliffs_delta": (cliffs(deltas, [0.0] * len(deltas)) if deltas else None),
+    }
+
+
+def completion_premature_command(args: argparse.Namespace) -> int:
+    """E-P1..E-P3: the completed premature 10 s-lead cells, seven same-seed
+    pairs (recorded blocks 1-3 + amendment blocks 4-7). E-P4 is retired: with
+    matched partners at every extension seed there is no unpaired/descriptive
+    damage path (2026-10-11 (b) amendment)."""
+    premature, none, problems = _completion_premature_runs(args)
+    if problems:
+        raise ValueError("; ".join(problems))
+    if not premature:
+        raise ValueError("completion-premature needs the rq3snd_premature10_* runs")
+
+    records: dict[tuple[int, str], dict[str, Any]] = {}
+    for key, path in premature.items():
+        records[key] = soundness_run_metrics(path)
+    none_records: dict[tuple[int, str], dict[str, Any]] = {}
+    for key, path in none.items():
+        none_records[key] = soundness_run_metrics(path)
+
+    # E-P1 -- per-run validity + attestation. The 12 new runs (blocks 4-7) are
+    # evaluated fresh; the recorded blocks 1-3 keep their recorded
+    # soundness-campaign attestations but still count toward assessability
+    # only when their evaluated checks pass (presence is not credit).
+    e_p1: dict[str, Any] = {"run_checks": {}, "new_run_checks": {},
+                            "recorded_run_checks": {}, "cells": {}}
+    for (block, arm), run in sorted(records.items()):
+        entry = _completion_premature_run_check(run)
+        entry["recorded"] = block in COMPLETION_PREMATURE_RECORDED_BLOCKS
+        name = f"b{block}_{arm}"
+        e_p1["run_checks"][name] = entry
+        if block >= COMPLETION_PREMATURE_NEW_MIN_BLOCK:
+            e_p1["new_run_checks"][name] = entry
+        else:
+            e_p1["recorded_run_checks"][name] = entry
+    cell_arms = ["event_only", "hybrid", "reconcile"]
+    if any(arm == "wake_verify" for (_, arm) in records):
+        cell_arms.append("wake_verify")
+    e_p1["wake_verify_present"] = "wake_verify" in cell_arms
+    for arm in cell_arms:
+        passing = sum(
+            1 for block in COMPLETION_BLOCKS
+            if e_p1["run_checks"].get(f"b{block}_{arm}", {}).get("pass"))
+        recorded_passing = sum(
+            1 for block in COMPLETION_PREMATURE_RECORDED_BLOCKS
+            if e_p1["run_checks"].get(f"b{block}_{arm}", {}).get("pass"))
+        new_passing = sum(
+            1 for block in COMPLETION_BLOCKS
+            if block >= COMPLETION_PREMATURE_NEW_MIN_BLOCK
+            and e_p1["run_checks"].get(f"b{block}_{arm}", {}).get("pass"))
+        e_p1["cells"][arm] = {
+            "recorded_blocks_passing": recorded_passing,
+            "new_runs_passing": new_passing,
+            "passing_blocks": passing,
+            "assessable_blocks": passing,
+            "assessable": bool(passing >= COMPLETION_ASSESSABLE_MIN_BLOCKS),
+        }
+    e_p1["pass"] = all(e_p1["cells"][arm]["assessable"] for arm in cell_arms)
+    e_p1["not_evaluable_runs"] = sorted(
+        name for name, entry in e_p1["run_checks"].items()
+        if entry.get("not_evaluable"))
+
+    # E-P2 -- rule separation on all 7 blocks: per-block delta_s = U(x) - U(y)
+    # (F2 window at the run's own N = 10). 2026-10-13 (m): wake_verify adds
+    # the gated "wake vs A" damage contrast (U(A) - U(D)) and the descriptive
+    # wake-vs-periodic read (D vs C, near-tie expected).
+    def u(run: dict[str, Any]) -> float | None:
+        return run["f2"]["u_by_n"].get(str(run["n"]), {}).get("u_pct")
+
+    contrasts: list[tuple[str, str, str, bool]] = [
+        ("A vs C", "event_only", "reconcile", True),
+        ("B vs C", "hybrid", "reconcile", True),
+    ]
+    if "wake_verify" in cell_arms:
+        contrasts += [
+            ("A vs D (wake vs A damage contrast)", "event_only", "wake_verify",
+             True),
+            ("D vs C (wake vs periodic, descriptive)", "wake_verify",
+             "reconcile", False),
+        ]
+    e_p2: dict[str, Any] = {}
+    for label, arm, reference, gated_flag in contrasts:
+        deltas: list[float] = []
+        per_block: dict[str, Any] = {}
+        for block in COMPLETION_BLOCKS:
+            x = records.get((block, arm))
+            y = records.get((block, reference))
+            if x is None or y is None:
+                per_block[str(block)] = {"delta": None, "status": "missing_run"}
+                continue
+            ux, uy = u(x), u(y)
+            delta = (ux - uy) if ux is not None and uy is not None else None
+            if delta is not None:
+                deltas.append(delta / 100.0)  # u_pct values are percent points
+            per_block[str(block)] = {"delta_pp": delta, "status": "ok"
+                                     if delta is not None else "missing_u"}
+        stats = _completion_delta_stats(deltas)
+        stats["per_block"] = per_block
+        stats["gated"] = gated_flag
+        stats["reference"] = reference
+        if gated_flag:
+            stats["pass"] = bool(stats["n"] >= COMPLETION_ASSESSABLE_MIN_BLOCKS
+                                 and stats["positive_blocks"]
+                                 >= COMPLETION_DENOM_MIN_HITS_5
+                                 and stats["median_pp"] is not None
+                                 and stats["median_pp"] >= CONTRAST_PP * 100.0)
+        else:
+            stats["pass"] = None
+            stats["near_tie"] = bool(
+                stats["median_pp"] is not None
+                and abs(stats["median_pp"]) <= COMPLETION_WAKE_NEAR_TIE_S)
+        e_p2[label] = stats
+
+    # E-P3 -- paired damage on the seven seed-matched pairs (no unpaired path).
+    e_p3: dict[str, Any] = {"rules": {}}
+    for arm in cell_arms:
+        pairs: list[dict[str, Any]] = []
+        ds: list[float] = []
+        for block in COMPLETION_BLOCKS:
+            record = records.get((block, arm))
+            partner = none_records.get((block, arm))
+            entry: dict[str, Any] = {"block": block,
+                                     "seed": COMPLETION_PREMATURE_SEEDS[block]}
+            if record is None or partner is None:
+                entry["status"] = "missing_partner" if record is not None else "missing_run"
+                pairs.append(entry)
+                continue
+            entry["premature_run"] = record["run"]
+            entry["none_run"] = partner["run"]
+            if not partner.get("valid", True):
+                entry["status"] = "partner_invalid"
+                entry["partner_invalidity"] = {
+                    name: ok for name, ok in (partner.get("validity") or {}).items()
+                    if not ok}
+                pairs.append(entry)
+                continue
+            health = partner.get("none_health")
+            if health and health["breach"]:
+                entry["status"] = "none_breach"
+                entry["none_breach_reason"] = health
+                pairs.append(entry)
+                continue
+            u_cell, u_none = _soundness_pair_u(record, partner, "premature10")
+            if u_cell is None or u_none is None:
+                entry["status"] = "missing_u"
+                pairs.append(entry)
+                continue
+            entry.update({"u_cell": u_cell, "u_none": u_none,
+                          "d_s": u_cell - u_none, "status": "ok"})
+            ds.append(entry["d_s"] / 100.0)
+            pairs.append(entry)
+        median = statistics.median(ds) if ds else None
+        positives = sum(1 for value in ds if value > 0.0)
+        # One-sided C criterion (per pair): D_s <= 2 pp counts as passing —
+        # the recorded seeds {0.12, -0.99, -4.68} score 3/3 under this rule.
+        le_2pp = sum(1 for value in ds if value * 100.0 <= SOUNDNESS_F2_MAX_PP)
+        lost_pairs = len(pairs) - len(ds)
+        rule: dict[str, Any] = {
+            "pairs": pairs, "usable_pairs": len(ds), "lost_pairs": lost_pairs,
+            "median_d_pp": round(median * 100.0, 2) if median is not None else None,
+            "positive_pairs": positives, "le_2pp_pairs": le_2pp,
+            "mwu_p": (exact_mwu(ds, [0.0] * len(ds)) if ds else None),
+            "cliffs_delta": (cliffs(ds, [0.0] * len(ds)) if ds else None),
+            # Recorded soundness §4.5 rule: two or more lost seeds (a partner
+            # breach or a missing/unusable pair counts as lost) make the
+            # paired-damage component not assessable.
+            "assessable": bool(lost_pairs <= COMPLETION_PREMATURE_MAX_LOST_PAIRS),
+        }
+        if arm in ("event_only", "hybrid"):
+            rule["pass"] = bool(
+                rule["assessable"]
+                and median is not None and median * 100.0 >= CONTRAST_PP * 100.0
+                and positives >= COMPLETION_DENOM_MIN_HITS_5)
+        else:
+            # C: one-sided per-pair criterion (plan §7.3) — D_s <= 2 pp counts
+            # as passing; there is no median bar.
+            rule["pass"] = bool(
+                rule["assessable"]
+                and le_2pp >= COMPLETION_DENOM_MIN_HITS_5)
+        e_p3["rules"][arm] = rule
+    e_p3["note"] = (
+        "E-P4 retired (2026-10-11 (b) amendment): matched no-fault partners "
+        "at every seed 6301-6307 give seven same-seed pairs; no unpaired or "
+        "descriptive damage path exists. C is one-sided per pair (D_s <= 2 pp "
+        "counts as passing); a partner no-fault-floor breach or base-gate "
+        "invalidity drops the pair, and two or more lost seeds make a rule's "
+        "component not assessable (recorded soundness 4.5 rule). 2026-10-13 "
+        "(m): wake_verify (D) is paired the same way and follows the same "
+        "one-sided per-pair criterion as C.")
+
+    report = {
+        "family": "rq3_admission_modes", "command": "completion-premature",
+        "runs": len(records) + len(none_records),
+        "premature_runs": len(records), "none_partners": len(none_records),
+        "E-P1": e_p1, "E-P2": e_p2, "E-P3": e_p3,
+        "wake_verify_present": "wake_verify" in cell_arms,
+        "recorded_bands": {
+            "a_b_admit_to_first_s": [8, 12], "c_claim_to_first_s": [10, 22],
+            "c_descriptive_admit_to_first_s": [0, 2],
+        },
+        "failures": [],
+    }
+    if not e_p1["pass"]:
+        report["failures"].append("E-P1: fewer than 5/7 assessable blocks for a cell")
+    for label, stats in e_p2.items():
+        if stats.get("gated", True) and not stats["pass"]:
+            report["failures"].append(f"E-P2 {label} contrast not reproduced")
+    for arm, rule in e_p3["rules"].items():
+        if not rule["pass"]:
+            report["failures"].append(f"E-P3 paired damage not reproduced for {arm}")
+    report["pass"] = bool(e_p1["pass"]
+                          and all(stats["pass"] for stats in e_p2.values()
+                                  if stats.get("gated", True))
+                          and all(rule["pass"] for rule in e_p3["rules"].values()))
+    if any(not rule["assessable"] for rule in e_p3["rules"].values()):
+        report["na"] = True
+        report["failures"].append(
+            "NA: fewer than 5/7 seed-matched pairs usable for a rule")
+        report["pass"] = False
+    write_json(Path(args.out), report)
+    print(json.dumps({"pass": report["pass"],
+                      "E-P1_pass": e_p1["pass"],
+                      "E-P1_log_gates_not_evaluable": e_p1["not_evaluable_runs"],
+                      "E-P2": {key: (stats["pass"] if stats.get("gated", True)
+                                     else "descriptive")
+                               for key, stats in e_p2.items()},
+                      "E-P3": {arm: rule["pass"]
+                               for arm, rule in e_p3["rules"].items()},
+                      "failures": report["failures"]}, indent=2, default=str))
+    return 0 if report["pass"] else 2
+
+
+def _completion_initial_mix(path: Path,
+                            records: list[dict[str, Any]]) -> dict[str, Any]:
+    """v2 useful_initial_share read: successes / offered over the union of the
+    per-backend [spawn_started, admitted + 30 s] windows, plus the
+    unattributed (backend-less) 000 fast-fail count."""
+    windows = [(record["spawn_started_ts"],
+                record["admitted_ts"] + COMPLETION_INITIAL_WINDOW_S)
+               for record in records
+               if record["spawn_started_ts"] is not None
+               and record["admitted_ts"] is not None]
+    offered = successes = unattributed_000 = total_000 = 0
+    for row in request_rows(path):
+        classification = soundness_class_of(row)
+        if classification == "000":
+            total_000 += 1
+            if str(row.get("backend_id") or "") in ("", "unknown"):
+                unattributed_000 += 1
+        if classification in ("canceled", "dropped"):
+            continue
+        if any(lo <= row["_sent"] < hi for lo, hi in windows):
+            offered += 1
+            if classification in ("good", "slow"):
+                successes += 1
+    return {
+        "offered": offered, "successes": successes,
+        "share": (successes / offered) if offered else None,
+        "unattributed_000": unattributed_000, "total_000": total_000,
+    }
+
+
+def _completion_support_run_stats(path: Path) -> dict[str, Any]:
+    records = completion_backend_records(path)
+    rows = request_rows(path)
+    bounds = phase_bounds(path)
+    decisions = _completion_scale_decisions(path)
+    for record in records:
+        lan_decisions = decisions.get(int(record.get("lan") or 0), [])
+        admitted = record.get("admitted_ts")
+        # The recorded anchor attributes the latest decision-log scale_up at or
+        # before the backend's admission to that backend (v2 analysis_focus.md
+        # column table: scale-decision -> first_success, via backend_id).
+        prior = [ts for ts in lan_decisions
+                 if admitted is not None and ts <= admitted]
+        decision_ts = max(prior) if prior else None
+        record["scale_decision_ts"] = decision_ts
+        record["scale_to_first_success_s"] = (
+            record["first_success_sent_s"] - decision_ts
+            if record.get("first_success_sent_s") is not None
+            and decision_ts is not None else None)
+    total = len(rows)
+    canceled = sum(1 for row in rows
+                   if str(row.get("status") or "") in ("canceled", "dropped"))
+    completed_in = {}
+    for name in ("baseline", "compute_spike"):
+        window = bounds.get(name)
+        if window is None:
+            completed_in[name] = 0
+            continue
+        lo, hi = window
+        completed_in[name] = sum(
+            1 for row in rows
+            if row.get("phase") == name and lo <= row["_sent"] <= hi
+            and is_completed(row))
+    gap_bad = 0
+    for record in records:
+        if record["admitted_ts"] is None or record["first_success_sent_s"] is None:
+            continue
+        lo, hi = record["admitted_ts"], record["first_success_sent_s"]
+        for row in rows:
+            if lo <= row["_sent"] < hi and soundness_class_of(row) in (
+                    "timeout", "000", "fail5xx"):
+                gap_bad += 1
+    return {
+        "run": path.name,
+        "backends": [
+            {key: record[key] for key in (
+                "container", "lan", "admit_source", "bind_s", "stratum",
+                "ready_to_admit_s", "spawn_to_first_success_s",
+                "admitted_to_first_routed_s", "scale_to_first_success_s")}
+            for record in records],
+        "window_attested": _completion_attested_window(path),
+        "cancel_rate": (canceled / total) if total else None,
+        "driver_clean": (canceled / total) < SOUNDNESS_CANCEL_MAX if total else False,
+        "completed": completed_in,
+        "floors_ok": bool(completed_in["compute_spike"] >= 2000
+                          and completed_in["baseline"] >= 100),
+        "gap_window_bad": gap_bad,
+        "initial_mix": _completion_initial_mix(path, records),
+    }
+
+
+def _completion_lan_pairing(x_records: list[dict[str, Any]],
+                            y_records: list[dict[str, Any]],
+                            metric: str) -> list[dict[str, Any]]:
+    """Per-LAN k-th-vs-k-th admitted-backend pairing (both runs ordered by
+    admitted_ts): the plan's "direct earlier than discovery in every backend"
+    read for the added supporting replicates, never a cross-set max/min bound.
+    Backends without the metric are excluded; unpaired extras are reported by
+    the caller via the per-LAN counts."""
+    pairs: list[dict[str, Any]] = []
+    for lan in (1, 2):
+        xs = sorted((record for record in x_records
+                     if record.get("lan") == lan and record.get(metric) is not None),
+                    key=lambda record: record.get("admitted_ts") or 0.0)
+        ys = sorted((record for record in y_records
+                     if record.get("lan") == lan and record.get(metric) is not None),
+                    key=lambda record: record.get("admitted_ts") or 0.0)
+        for x_record, y_record in zip(xs, ys):
+            pairs.append({
+                "lan": lan,
+                "x_container": x_record.get("container"),
+                "y_container": y_record.get("container"),
+                "x_s": x_record[metric], "y_s": y_record[metric],
+                "x_before_y": x_record[metric] < y_record[metric],
+            })
+    return pairs
+
+
+def _completion_scale_decisions(run_dir: Path) -> dict[int, list[float]]:
+    """decision-log `scale_up` timestamps per LAN (the recorded metric's
+    'scale decision' anchor: decision-log `scale_up` -> first 2xx, attributed
+    via backend_id; v2 analysis_focus.md column table)."""
+    decisions: dict[int, list[float]] = {1: [], 2: []}
+    for lan in (1, 2):
+        path = run_dir / f"decision_log_lan{lan}.csv"
+        if not path.exists():
+            continue
+        for row in read_csv(path):
+            if str(row.get("action_type") or "") != "scale_up":
+                continue
+            ts = as_float(row.get("ts"))
+            if ts is not None:
+                decisions[lan].append(ts)
+    return {lan: sorted(values) for lan, values in decisions.items()}
+
+
+def _completion_attested_window(run_dir: Path) -> str | None:
+    """INFLIGHT_WINDOW recorded by the supporting launcher, when present."""
+    path = run_dir / "rq3adm_profile_attestation.txt"
+    if not path.exists():
+        return None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("inflight_window="):
+            return line.split("=", 1)[1].strip()
+    return None
+
+
+def completion_support_command(args: argparse.Namespace) -> int:
+    """E-S1..E-S3: the added replicates of the intact-source supporting sets
+    (plan §7.4 / §4.2). Each set is read within itself; samples are never
+    pooled across sets, and the set-level statistics remain the certified v2
+    values (restated as anchors, not recomputed)."""
+    runs: dict[tuple[str, str], tuple[int, Path]] = {}
+    problems: list[str] = []
+    for path_text in args.run_dir:
+        path = Path(path_text)
+        parts = completion_support_label_parts(path.name)
+        if parts is None:
+            problems.append(f"cannot parse support label: {path.name}")
+            continue
+        name, arm, ordinal = parts
+        key = (name, arm)
+        if key in runs:
+            # Duplicate run identities are refused, never last-wins: two runs
+            # parsing to the same set/arm (a replicate plus a rerun) would
+            # silently poison the per-set read.
+            problems.append(
+                f"duplicate run identity {name}/{arm}: "
+                f"{runs[key][1].name} and {path.name}")
+            continue
+        runs[key] = (int(ordinal), path)
+    if problems:
+        raise ValueError("; ".join(problems))
+    if not runs:
+        raise ValueError("completion-support needs the added replicate run folders")
+
+    stats: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, (_, path) in runs.items():
+        stats[key] = _completion_support_run_stats(path)
+
+    report: dict[str, Any] = {"family": "rq3_admission_modes",
+                              "command": "completion-support",
+                              "anchors": COMPLETION_SUPPORT_ANCHORS,
+                              "runs": {f"{name}_{arm}": path.name
+                                       for (name, arm), (_, path) in runs.items()},
+                              "E-S1": None, "E-S2": None, "E-S3": None,
+                              "failures": [], "descriptive_findings": [],
+                              "exit_codes": {
+                                  "0": "E-S1 and E-S2 direction/consistency "
+                                       "checks pass",
+                                  "2": "a direction/consistency check failed",
+                                  "3": "analyzer/argument error (STOP)"}}
+
+    # E-S1 -- per-backend admission campaign, 2026-10-13 (l) re-scope
+    # (mirrors the 2026-10-12 (h) amendment; same instrument degeneracy): the
+    # registered ready -> admit leg reads exactly 0.000 s for both mechanisms
+    # (admission-log `app_ready_ts` == `admitted_ts`), so the gate rides the
+    # measurable spawn -> first successful response leg with the same
+    # per-backend pairing/direction style; the registered leg is reported as a
+    # note and never gates.
+    direct = stats.get(("camp", "direct"))
+    discovery = stats.get(("camp", "discovery"))
+    e_s1: dict[str, Any] = {"present": bool(direct and discovery)}
+    if direct and discovery:
+        dv = [record["spawn_to_first_success_s"] for record in direct["backends"]
+              if record["spawn_to_first_success_s"] is not None]
+        qv = [record["spawn_to_first_success_s"] for record in discovery["backends"]
+              if record["spawn_to_first_success_s"] is not None]
+        ready_dv = [record["ready_to_admit_s"] for record in direct["backends"]
+                    if record["ready_to_admit_s"] is not None]
+        ready_qv = [record["ready_to_admit_s"] for record in discovery["backends"]
+                    if record["ready_to_admit_s"] is not None]
+        d_sources = {record["admit_source"] for record in direct["backends"]}
+        q_sources = {record["admit_source"] for record in discovery["backends"]}
+        ordering_pairs = _completion_lan_pairing(
+            direct["backends"], discovery["backends"], "spawn_to_first_success_s")
+        ready_unmeasurable = bool(ready_dv and ready_qv) and all(
+            value <= COMPLETION_DEGENERATE_LEG_EPS_S
+            for value in (*ready_dv, *ready_qv))
+        e_s1.update({
+            "leg": "spawn -> first successful response (2026-10-13 (l) re-scope)",
+            "direct_spawn_to_first_success_s": dv,
+            "discovery_spawn_to_first_success_s": qv,
+            "direct_median_s": statistics.median(dv) if dv else None,
+            "discovery_median_s": statistics.median(qv) if qv else None,
+            "direct_sources": sorted(d_sources), "discovery_sources": sorted(q_sources),
+            "direct_event_sourced": d_sources == {"event"},
+            "discovery_probe_sourced": q_sources == {"probe"},
+            "ordering_pairs": ordering_pairs,
+            "direct_before_discovery_every_backend": bool(ordering_pairs)
+            and all(pair["x_before_y"] for pair in ordering_pairs),
+            "direct_initial_mix": direct["initial_mix"],
+            "discovery_initial_mix": discovery["initial_mix"],
+            "handover_vs_anchor": {
+                "anchor_useful_share": COMPLETION_HANDOVER_ANCHORS["useful_share"],
+                "anchor_http000_fast_fails":
+                    COMPLETION_HANDOVER_ANCHORS["http000_fast_fails"],
+            },
+            "ready_to_admit_leg": {
+                "leg": "app_ready_ts -> admitted_ts",
+                "status": ("unmeasurable in this build (instrument degeneracy; "
+                           "2026-10-12 (h) cause, reconfirmed for the C3 runs "
+                           "2026-10-13 (l))") if ready_unmeasurable else "measured",
+                "direct_values_s": ready_dv, "discovery_values_s": ready_qv,
+                "direct_le_0_05_every": bool(ready_dv)
+                and all(value <= 0.05 for value in ready_dv),
+                "discovery_in_0_10_every": bool(ready_qv)
+                and all(0.0 < value <= COMPLETION_POLL_PERIOD_S for value in ready_qv),
+                "diagnostic": ("admission-log app_ready_ts == admitted_ts for every "
+                               "backend of both camp runs (0.000 s); the sources "
+                               "(event vs probe) and the handover read correctly, so "
+                               "this is instrument degeneracy, not a mechanism "
+                               "deviation — reported, never gating"),
+            },
+            "ready_to_admit_leg_unmeasurable": ready_unmeasurable,
+        })
+        e_s1["pass"] = bool(
+            e_s1["direct_event_sourced"] and e_s1["discovery_probe_sourced"]
+            and e_s1["direct_before_discovery_every_backend"])
+    else:
+        e_s1["pass"] = False
+
+    # E-S2 -- higher-rate arm: scale decision -> usable capacity direction,
+    # the recorded gap-window null, driver clean at window 4096.
+    c_direct = stats.get(("cell12", "direct"))
+    c_discovery = stats.get(("cell12", "discovery"))
+    e_s2: dict[str, Any] = {"present": bool(c_direct and c_discovery)}
+    if c_direct and c_discovery:
+        dv = [record["scale_to_first_success_s"] for record in c_direct["backends"]
+              if record["scale_to_first_success_s"] is not None]
+        qv = [record["scale_to_first_success_s"] for record in c_discovery["backends"]
+              if record["scale_to_first_success_s"] is not None]
+        ordering_pairs = _completion_lan_pairing(
+            c_direct["backends"], c_discovery["backends"],
+            "scale_to_first_success_s")
+        e_s2.update({
+            "metric": "scale decision (decision-log scale_up) -> first 2xx, "
+                      "attributed via backend_id (v2 analysis_focus.md)",
+            "direct_scale_to_usable_s": dv, "discovery_scale_to_usable_s": qv,
+            "ordering_pairs": ordering_pairs,
+            "direct_vs_discovery_every_backend": bool(ordering_pairs)
+            and all(pair["x_before_y"] for pair in ordering_pairs),
+            "direct_median_s": statistics.median(dv) if dv else None,
+            "discovery_median_s": statistics.median(qv) if qv else None,
+            "anchor_direct_median_s":
+                COMPLETION_SUPPORT_ANCHORS["cell12"]["scale_to_first_success_direct_s"],
+            "anchor_discovery_median_s":
+                COMPLETION_SUPPORT_ANCHORS["cell12"]["scale_to_first_success_discovery_s"],
+            "gap_window_bad": c_direct["gap_window_bad"] + c_discovery["gap_window_bad"],
+            "gap_null_ok": (c_direct["gap_window_bad"] + c_discovery["gap_window_bad"]) == 0,
+            "driver_clean": c_direct["driver_clean"] and c_discovery["driver_clean"],
+            "floors_ok": c_direct["floors_ok"] and c_discovery["floors_ok"],
+            "window_expected": COMPLETION_SUPPORT_ANCHORS["cell12"]["window"],
+            "window_attested": {"direct": c_direct.get("window_attested"),
+                                "discovery": c_discovery.get("window_attested")},
+        })
+        e_s2["pass"] = bool(
+            e_s2["direct_vs_discovery_every_backend"] and e_s2["gap_null_ok"]
+            and e_s2["driver_clean"] and e_s2["floors_ok"])
+    else:
+        e_s2["pass"] = False
+
+    # E-S3 -- poll-interval sensitivity (descriptive): the 15 s poll's
+    # quantization scales with the period; the expected band is ~one period
+    # (10-20 s). Report-only: the band never gates. 2026-10-13 (l): the
+    # registered leg is the same degenerate one as E-S1 — when it reads
+    # 0.000 s the band check is not assessable and is reported as a note.
+    disc15 = stats.get(("disc15", "discovery"))
+    e_s3: dict[str, Any] = {"present": bool(disc15), "descriptive": True,
+                            "expected_band_s": [COMPLETION_DISC15_POLL_S - 5.0,
+                                                COMPLETION_DISC15_POLL_S + 5.0]}
+    if disc15:
+        values = [record["ready_to_admit_s"] for record in disc15["backends"]
+                  if record["ready_to_admit_s"] is not None]
+        median = statistics.median(values) if values else None
+        band = e_s3["expected_band_s"]
+        degenerate = bool(values) and all(
+            value <= COMPLETION_DEGENERATE_LEG_EPS_S for value in values)
+        e_s3.update({
+            "ready_to_admit_s": values,
+            "median_s": median,
+            "ready_to_admit_leg_unmeasurable": degenerate,
+            "ready_to_admit_leg_note": (
+                "registered ready -> admit leg reads 0.000 s for every backend "
+                "(instrument degeneracy, 2026-10-12 (h)/(l)); band check not "
+                "assessable") if degenerate else None,
+            "quantization_within_expected_band": (
+                None if degenerate else bool(
+                    median is not None and band[0] <= median <= band[1])),
+            "quantization_within_period_scale": (
+                None if degenerate else bool(
+                    median is not None and 0.0 < median
+                    <= 2.0 * COMPLETION_DISC15_POLL_S)),
+            "sources": sorted({record["admit_source"]
+                               for record in disc15["backends"]}),
+            "floors_ok": disc15["floors_ok"], "driver_clean": disc15["driver_clean"],
+        })
+    else:
+        e_s3["quantization_within_expected_band"] = None
+
+    report["E-S1"], report["E-S2"], report["E-S3"] = e_s1, e_s2, e_s3
+    report["set_runs"] = {f"{name}_{arm}": _completion_support_run_report(stats, name, arm)
+                          for (name, arm) in stats}
+    for name, section in (("E-S1", e_s1), ("E-S2", e_s2)):
+        if section.get("present") and not section["pass"]:
+            report["failures"].append(f"{name} direction/consistency check failed")
+        elif not section.get("present"):
+            report["failures"].append(f"{name} run(s) not provided")
+    report["pass"] = bool(e_s1.get("pass") and e_s2.get("pass"))
+    if disc15:
+        if e_s3.get("quantization_within_expected_band") is False:
+            report["descriptive_findings"].append(
+                "E-S3 quantization outside the expected ~one-period band "
+                "(descriptive only — a finding, not a rerun trigger)")
+        elif e_s3.get("ready_to_admit_leg_unmeasurable"):
+            report["descriptive_findings"].append(
+                "E-S3 registered ready -> admit leg unmeasurable in this build "
+                "(instrument degeneracy, 2026-10-12 (h)/(l)); band check not "
+                "assessable — descriptive only")
+    write_json(Path(args.out), report)
+    print(json.dumps({"pass": report["pass"],
+                      "E-S1_pass": e_s1.get("pass"), "E-S2_pass": e_s2.get("pass"),
+                      "E-S3_descriptive": (
+                          {"present": True,
+                           "verdict": (
+                               "not_assessable_leg_unmeasurable"
+                               if e_s3.get("ready_to_admit_leg_unmeasurable")
+                               else ("within_band"
+                                     if e_s3.get("quantization_within_expected_band")
+                                     else "out_of_band")),
+                           "within_expected_band":
+                               e_s3.get("quantization_within_expected_band"),
+                           "median_s": e_s3.get("median_s"),
+                           "expected_band_s": e_s3.get("expected_band_s")}
+                          if e_s3.get("present") else None),
+                      "failures": report["failures"]}, indent=2, default=str))
+    return 0 if report["pass"] else 2
+
+
+def _completion_support_run_report(stats: dict[tuple[str, str], dict[str, Any]],
+                                   name: str, arm: str) -> dict[str, Any]:
+    entry = stats.get((name, arm))
+    if entry is None:
+        return {"present": False}
+    return {
+        "present": True, "run": entry["run"],
+        "backends": len(entry["backends"]),
+        "floors_ok": entry["floors_ok"], "driver_clean": entry["driver_clean"],
+        "cancel_rate": entry["cancel_rate"],
+        "gap_window_bad": entry["gap_window_bad"],
+        "completed": entry["completed"],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -3339,6 +5437,24 @@ def build_parser() -> argparse.ArgumentParser:
     soundness_crossover.add_argument("--damage-json", required=True)
     soundness_crossover.add_argument("--out", required=True)
     soundness_crossover.set_defaults(func=soundness_crossover_command)
+    intact = sub.add_parser("completion-intact")
+    intact.add_argument("--run-dir", nargs="+", required=True)
+    intact.add_argument("--rate", default="2.0")
+    intact.add_argument("--out", required=True)
+    intact.set_defaults(func=completion_intact_command)
+    lost = sub.add_parser("completion-lost")
+    lost.add_argument("--run-dir", nargs="+", required=True)
+    lost.add_argument("--rate", default="2.0")
+    lost.add_argument("--out", required=True)
+    lost.set_defaults(func=completion_lost_command)
+    premature = sub.add_parser("completion-premature")
+    premature.add_argument("--run-dir", nargs="+", required=True)
+    premature.add_argument("--out", required=True)
+    premature.set_defaults(func=completion_premature_command)
+    support = sub.add_parser("completion-support")
+    support.add_argument("--run-dir", nargs="+", required=True)
+    support.add_argument("--out", required=True)
+    support.set_defaults(func=completion_support_command)
     return parser
 
 

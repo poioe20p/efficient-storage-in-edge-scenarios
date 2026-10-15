@@ -92,6 +92,96 @@
 > scaling has been triggered).
 >
 > **2026-10-09 (later 4):** RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in `main.tex` §1.3.
+>
+> **2026-10-11:** storage-technology justification added, placed by house
+> convention (Polónio justifies tool choices in Ch4; Ch3's handoff sentence
+> delegates "the technologies that implement each context" to Ch4).
+> Applied: DR3 extended in Ch3 §3.1 (storage capacity changeable at run
+> time from the platform's own code, while the service keeps serving);
+> Ch4 §4.2.2 gains the opening choice paragraph (MongoDB against MySQL
+> InnoDB Cluster and a PostgreSQL streaming standby, citing three new doc
+> entries: `MySQLDocsAdminAPI`, `MySQLDocsInnoDBCluster`,
+> `PostgreSQLDocsWarmStandby`); §1.5 clause now "whose membership the
+> platform changes at run time"; §2.2.4 soft touch ("relational deployments
+> have traditionally grown by enlarging a single server"); §2.2.2 gains the
+> SDN adoption sentence. The earlier §2.2.4 three-block restructure
+> proposal was dropped — §2.2.4 stays pure technology background.
+>
+> **2026-10-11 (later):** OpenFlow choice justification, same house pattern
+> as the storage one. Ch4 §4.1 gains the choice paragraph before the
+> data-plane description: fit (elementary standard-field steering, kernel
+> connection tracking) and scope (P4's custom parsers, in-switch state,
+> and in-band telemetry serve network-level questions the thesis does not
+> ask — every evaluated decision is taken in the controller). Cost
+> arguments (toolchain, P4Runtime) were dropped after review: development
+> cost is not a criterion. Ch6 TODO blocks gain the P4 lines — Limitations
+> (data plane fixed to the OpenFlow feature set; no programmable data
+> plane; no in-band telemetry; steering relies on kernel conntrack) and
+> Future work (P4-based steering/telemetry into the network; a faithful
+> rebuild would need in-switch state). §2.2.2 gains the background sentence
+> after the Waseem one (header fields fixed by the standard; P4 lets the
+> operator write the program; `Liatifis2023AdvancingSDNOpenFlowP4Survey`).
+>
+> **2026-10-11 (later 2):** Chapter 3 requirements rework (approved): the six
+> design requirements are replaced by ten (DR1-DR10): domain-scoped control;
+> single-process control loop (incl. load balancing); dual-tier demand-driven
+> elasticity; stable addresses with network-enforced steering; two-level load
+> distribution; hierarchical reporting with freshness bounds; lifecycle-safe
+> capacity changes; non-blocking steering; instrumented transitions;
+> configurable interfaces. Chapter intro map rewritten (3.2: DR1/DR4/DR5;
+> 3.3: DR3/DR7; 3.4: DR6/DR10; 3.5: DR2/DR8/DR9). Purged from Ch3:
+> aggregation tuning provenance, the 5 s/12 s polling calibration sentence,
+> the mode-cell arithmetic numbers (now value-free), the fault-comparison
+> quota rationale, the Sec 3.2.3 deployment-scope paragraph, and the
+> scattered per-campaign value pointers (single Chapter 4 pointer kept in
+> Sec 3.3.1). Sec 4.1 '(DR1)' changed to '(DR2)'; Sec 4.2.2 '(DR3)' verified
+> still correct. Parked: Ch5 quota-rationale clause; Ch4 Sec 4.3 cadence
+> half-sentence; Ch5 relocation decision for the 5 s/12 s sentence.
+>
+> **2026-10-11 (later 3):** Chapter 3 requirements-alignment audit applied
+> (approved). Technology names removed from the Ch3 design text: 'OVS data
+> plane' -> 'software data plane' (two places), 'through ZMQ' dropped,
+> 'MongoDB' dropped from the component list, the latency decomposition and
+> the storage subsection (the choice remains Chapter 4's). VIP instance names
+> dropped from Ch3; the collective VIP_SERVER/VIP_DATA names remain.
+> 'WSM cost' -> 'weighted cost'; 'cached resource metrics' -> 'reported
+> resource state'; the warm-lease/slow-start campaign clause dropped
+> (held-constant facts remain in Ch4 Sec 4.2.2 and Ch5); 'as configured per
+> campaign' -> 'configurable as the mean or the median'; drain wording
+> 'network attachment removed' -> 'released'; 'In the experiments' ->
+> 'The evaluated storage action'; the aggregator cadence values removed from
+> Ch3 and stated in Ch4 Sec 4.3 ('a summary of the preceding 10 s every
+> 10 s'); the routing-state consumer sentence simplified. The read-after-write
+> statement stays in its scoped evaluation form. The now-unused
+> \acro{OVS} and \acro{WSM} definitions were removed, and the Ch4 'an OVS
+> port' mention expanded to 'an Open vSwitch port'. Parked: Ch5
+> quota-rationale clause; Ch5 relocation decision for the 5 s/12 s sentence.
+>
+> **2026-10-11 (later 4):** Chapter 3 scaling-policy trims (approved):
+> the eligibility parenthetical in Sec 3.3.1 removed (step 1 of the ordered
+> evaluation already states it) and the fig:decision_engine_flow caption
+> shortened to the four-stage one-liner. Chapter 4 aligned to the Ch3
+> cleanups: drain sentence trimmed to the completion condition; reserve
+> paragraph trimmed to the implementation facts (activated member already
+> joined and servable; replacement prepared once the slot is free); the
+> consistency-contract echo dropped (Ch3 owns it); the summaries-feed
+> sentence simplified to 'the two consumers of Section 3.4'; the control
+> events / same decision path echo deleted; the alerts-queue echo deleted;
+> the rules-on-removal conntrack echo trimmed; figure comment 'OVS bridge'
+> -> 'Open vSwitch bridge'. Pair alignments: Ch3 Sec 3.3.1 'cached resource
+> metrics ... Section 3.2' -> 'reported resource state ... Section 3.2.2';
+> Ch4 Sec 4.4 cost-function pointer to Section 3.2.2.
+>
+> **2026-10-11 (later 5):** Chapter 5 adjustments. The fault-comparison
+> quota rationale (removed from Ch3 Sec 3.3.2) now opens the RQ3 event-loss
+> paragraph ('the reduced headroom is deliberate: the fault comparison runs
+> at a reduced per-backend CPU quota, so the existing nodes carry thin spare
+> capacity and the cost of a lost admission is exposed rather than absorbed
+> by slack'). The Appendix A load-balancing note now points at Sec 3.2.2
+> and says 'weighted cost', aligned with the Ch3/Ch4 cost-function
+> pointers. Decision recorded: the 5 s/12 s polling-calibration sentence
+> stays deleted; relocation into Ch5 would require locating and re-verifying
+> its calibration runs.
 
 ---
 

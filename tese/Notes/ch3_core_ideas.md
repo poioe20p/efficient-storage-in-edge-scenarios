@@ -21,7 +21,7 @@ interfaces of the demand-to-capacity chain.
   measurable; no superiority claim over other orchestrators.
 - The demand-to-capacity chain is the spine: delivery (RQ1) → selection (RQ2)
   → admission (RQ3).
-- DR1–DR6 state what the design must guarantee; the chapter intro maps each
+- DR1–DR10 state what the design must guarantee; the chapter intro maps each
   requirement to the section that realises it.
 - Labels to keep: Tier 0/1 are platform capabilities; cross-domain service
   placement is a held-constant capability; cross-domain storage placement is
@@ -77,7 +77,7 @@ interfaces of the demand-to-capacity chain.
   replenishment; a joining member is admitted only when it can serve reads;
   removal = LIFO among platform-added members only, under the idle condition.
 - Provisioned ≠ usable (DR4); the chain is instrumented to the first successful
-  request (DR6).
+  request (DR9).
 
 ## 5. Selection (load balancing)
 
@@ -118,3 +118,25 @@ interfaces of the demand-to-capacity chain.
   (§5.4 provenance note), and container start-up variability (fast/slow-binding
   strata). Also: "no burst replay" is now stated in Ch3, and the action budget
   and classification margin have Ch3 anchors — no Ch5 item should be new.
+
+## 8. Ch3 requirements rework (2026-10-11)
+
+- DR1-DR10 replace the previous six requirements (main.tex Sec 3.1; see the
+  thesis_structure.md changelog entry of 2026-10-11 later 2).
+- Ch3 purged of Ch4/Ch5 material: aggregation tuning provenance, the 5 s/12 s
+  polling calibration sentence, mode-cell numbers, the fault-quota rationale,
+  the deployment-scope paragraph, and scattered value pointers (one Chapter 4
+  pointer kept in Sec 3.3.1).
+- Intro map: 3.2 (DR1, DR4, DR5), 3.3 (DR3, DR7), 3.4 (DR6, DR10),
+  3.5 (DR2, DR8, DR9).
+- Parked items closed (2026-10-11 later 5): the quota rationale moved to Ch5
+  Sec 5.4 (RQ3 event-loss paragraph); the 5 s/12 s sentence stays deleted
+  (no relocation without its calibration runs re-verified).
+- Follow-up (2026-10-11 later 3): technology names removed from Ch3 (OVS,
+  ZMQ, MongoDB), VIP instance names dropped, campaign clauses trimmed; the
+  aggregator cadence value now lives in Ch4 Sec 4.3 and Ch5.
+- Follow-up (2026-10-11 later 4): Ch3 Sec 3.3.1 eligibility parenthetical
+  trimmed and the decision-flow caption shortened; Ch4 trimmed of Ch3
+  duplications (drain wording, reserve paragraph, contract echo, consumer
+  sentence, control-events echo, alerts-queue echo, conntrack re-statement)
+  and its cost-function pointer now targets Sec 3.2.2.
