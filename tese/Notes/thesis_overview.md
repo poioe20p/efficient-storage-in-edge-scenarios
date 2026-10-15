@@ -242,7 +242,7 @@ Primary measurements include:
 
 **Evidence status — claim boundary:** the compute scale-up benefit is robust (p50 collapses 40–1000× in 12/12 aligned compute-bound replicates) and the storage reserve mechanism + tier-CPU relief are reproduced (12/12; storage CPU ~66–71 % → ~42–49 %). The **user-visible storage p95 benefit is NOT statistically demonstrated** (pre-registered gate not met; CI includes 1.0 for the storage-first and bottleneck-aware data-bound cells; documented causes: PRE/POST window-length asymmetry and the bottleneck-aware arm's post-relief compute churn). Wrong-tier scaling costs are real (compute-first on data-bound demand degrades service; storage-first on compute-bound demand wastes resources). The classifier commits to the detected tier (88–93 %). Two runs were excluded as documented MEMCG OOM platform incidents (256 MB and 512 MB edge-memory caps) — reported as a platform limitation.
 
-### RQ3 - readiness admission modes
+### RQ3 - readiness admission modes under three message conditions
 
 > **When a newly provisioned backend becomes ready, how do the four admission modes (backend notification, notification with a fallback check, periodic polling, and notification with a confirmation check) affect whether and when the new capacity starts serving requests and what users experience, under three message conditions: the message arrives intact, never arrives, or arrives before the backend can serve?**
 

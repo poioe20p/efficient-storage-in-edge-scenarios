@@ -1,10 +1,12 @@
 # RQ2 v4 — P5.4 data-bound (db) regime report
 
-> **Status:** db regime **closed — 25/30 runs valid** (24 core + 1 replacement),
-> **5 excluded** under §5.5(i) D2 (in-episode container OOM kills: 4 core
-> runs + 1 replacement; replacement attempted for 2 of the 5 slots — one
-> clean, one also killed; withheld for `stor_db_48` and `none_db_42`, and a
-> 2nd for seed 43 = author decision — escalation recorded in §6). All
+> **Status:** db regime **closed — 28/30 runs valid**, **5 excluded** under
+> §5.5(i) D2 (in-episode container OOM kills: 4 core runs + 1 replacement).
+> The escalation (5 exclusions; replacements withheld for `stor_db_48` /
+> `none_db_42` / the seed-43 second) was resolved by **author decision D20
+> (2026-10-15): n=7 mandated — three top-ups authorised and executed**
+> (`both_db_43_r2`, `stor_db_48_r1`, `none_db_42_r1` — all valid; kernel
+> sweeps clean; §6.1). All
 > numbers below are as-measured; **cell-level
 > verdicts are pending P6 (analyzer)** per the campaign division of labour.
 > Authored 2026-10-15 by the campaign close-out operator (read-only analysis;
@@ -12,22 +14,24 @@
 > **Config (frozen db seat):** `EDGE_CPUS 1.20`, `STORAGE_CPUS 0.15`,
 > episode `data_bound_episode` 480 s @ rate 5.0/client, frac 1.0, mix
 > `{content_lookup 0.9, feed_ranking 0.1}` (per-run `phases_snapshot.json`
-> matches — D3 True in all 30 runs), pool 6 (launcher default; the v3
+> matches — D3 True in all 33 runs), pool 6 (launcher default; the v3
 > pool-12 caveat is carried, plan §7 Q3/Q7), `SCALEUP_POLICY=dual`,
-> `TELEMETRY_SOURCE=zmq`, `HASH_WORK_FACTOR=25000` (pins present in all 30
+> `TELEMETRY_SOURCE=zmq`, `HASH_WORK_FACTOR=25000` (pins present in all 33
 > env snapshots), SS off; seeds 42–48, replacements `_r1` for seeds 43
-> (`both`) and 46 (`comp`).
+> (`both`) and 46 (`comp`), plus the D20 top-ups (`both_db_43_r2`,
+> `stor_db_48_r1`, `none_db_42_r1`).
 > **Evidence:** run folders
-> `source/scripts/testing/metrics/<ts>_rq2v4_<mode>_db_<seed>[_r1]` (30),
+> `source/scripts/testing/metrics/<ts>_rq2v4_<mode>_db_<seed>[_r1|_r2]` (33),
 > per-run evidence `~/rq2v4_battery/evidence/rq2v4_<mode>_db_<seed>[_r1].txt`,
 > per-run metric JSONs `~/rq2v4_battery/mx_p5/<label>.json` (`p5mx.py`,
 > rebuilt by `db_finalize.py`), D12 JSONs `~/rq2v4_battery/g1_<label>.json`
-> (`g1lock.py` with `G1_EPISODE=data_bound_episode`; 28 — every db run except
-> the excluded `both_db_43` and `comp_db_46` originals), aux probe outputs
+> (`g1lock.py` with `G1_EPISODE=data_bound_episode`; 28 — every original db
+> run except the excluded `both_db_43` and `comp_db_46` originals; the D20
+> top-up rows' aux/TTR were recomputed independently, §7), aux probe outputs
 > `~/rq2v4_battery/db_aux.txt` + `db_aux_all.txt`, band census
 > `~/rq2v4_battery/band_census.txt`, kernel OOM forensics (journalctl/dmesg),
-> campaign status `rq2v4_run_status.csv` (**final db state: 25 valid / 0
-> pending / 5 excluded**; the 30 db rows exclude the R4 preflight pair
+> campaign status `rq2v4_run_status.csv` (**final db state: 28 valid / 0
+> pending / 5 excluded**; the 33 db rows exclude the R4 preflight pair
 > `*_db_42p`, recorded separately).
 > **Cross-refs:** P6.1 60 s-band artifact
 > ([`rq2v4_p6_01_60s_band_artifact.md`](rq2v4_p6_01_60s_band_artifact.md))
@@ -110,12 +114,14 @@ their cells (43's replacement is also excluded — see §6).
 | 46 | valid | 99.3/99.5 | 0.038/0.067 | 1.87/2.08 | 0.6/0.5 | 1/1 | 3/2 | 91.1/87.0 |
 | 47 | valid | 99.2/99.2 | 0.026/0.048 | 2.10/2.22 | 0.7/0.8 | 1/1 | 3/4 | 89.1/89.1 |
 | 48 | valid | 99.5/99.3 | 0.028/0.054 | 2.04/2.21 | 0.5/0.7 | 1/1 | 3/3 | 89.1/89.1 |
-| **med** | 6/8 rows | **99.35/99.3** | **0.029/0.062** | **2.07/2.21** | **0.55/0.65** | 1/1 | 3/4 | **89.1/88.05** |
+| 43_r2 | valid (D20 top-up) | 99.2/99.2 | 0.028/0.055 | 2.13/2.15 | 0.8/0.7 | 1/1 | 4/3 | 88.9/87.0 |
+| **med** | 7/9 rows | **99.3/99.3** | **0.029/0.058** | **2.10/2.21** | **0.6/0.7** | 1/1 | 3/4 | **89.1/87.0** |
 
 Valid runs: completion ≈ 99.3 % at ~29–78 ms p50 (the co-located db regime
 holds up), timeouts ≤ 0.9 % (G4 ≤ 5 % ✓ on all valid rows). Both tiers
 engage in every valid replicate (1 alert + 2–4 storage activations per
-lane; spawns 1+3 on lan1, 1+2–1+4 on lan2). Medians over the 6 valid rows;
+lane; spawns 1+3 on lan1, 1+2–1+4 on lan2). Medians over the 7 valid rows
+(the `43_r2` top-up row's aux share recomputed independently — §7);
 the two exclusions and their cause class are in §6.
 
 ### 2.2 `comp`@db
@@ -152,14 +158,16 @@ a JSON existed).
 | 46 | valid | 87.5/82.3 | 2.37/3.13 | 20.20/19.85 | 11.8/16.9 | 3/2 | 2.8/42.9 | 2.8/42.9 | 360/60 |
 | 47 | valid | 92.3/93.8 | 2.11/1.89 | 14.52/11.20 | 7.6/6.1 | 2/3 | 0.0/0.0 | 0.0/0.0 | — |
 | 48 | **excluded** | 71.2/87.1 | 2.53/2.14 | 18.12/16.82 | 19.2/12.3 | 3/3 | 31.4/73.5 | 31.4/73.5 | 70/50 |
-| **med** | 6/7 rows | **91.2/93.15** | **2.15/1.97** | **15.92/11.45** | **8.6/6.65** | 3/3 | **1.4/0.0** | **1.4/0.0** | — |
+| 48_r1 | valid (D20 top-up) | 90.2/90.4 | 1.91/1.96 | 16.24/15.56 | 9.6/9.4 | 4/4 | 0.0/0.0 | 0.0/0.0 | — |
+| **med** | 7/8 rows | **90.7/92.7** | **2.11/1.96** | **16.24/11.71** | **9.1/7.2** | 3/3 | **0.0/0.0** | **0.0/0.0** | — |
 
 `stor`@db engages storage only (2–6 activations per lane; **0 compute alerts,
 0 compute spawns** — MC3 ✓) and **does not relieve**: literal shares
-0.0–42.9 %, i.e. **0/6 valid replicates meet the ≥ 80 % criterion on both
-lanes** — the pre-registered D18 outcome (§4). The lane latency sits at
+0.0–42.9 %, i.e. **0/7 valid replicates meet the ≥ 80 % criterion on both
+lanes** (incl. the D20 top-up `stor_db_48_r1` at 0.0/0.0) — the
+pre-registered D18 outcome (§4). The lane latency sits at
 2–3 s p50 / ~10–20 s p95x when unrelieved, and the latency-lock (all-row
-windows, §1) is 95.9–100 % in all 6 valid runs (`stor_db_48` lan2's 91.8 %
+windows, §1) is 95.9–100 % in all 7 valid runs (`stor_db_48` lan2's 91.8 %
 reading is the excluded one).
 
 ### 2.4 `none`@db (press witness, block-level)
@@ -167,19 +175,20 @@ reading is the excluded one).
 | seed | valid | completion % | p50 (s) | p95x (s) | timeout % | member CPU % | halves ge50 lan1/lan2 | storage_above % | lat-lock % |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 42 | **excluded** | 30.4/94.9 | 30.42/0.55 | 8.30/16.38 | 40.8/4.7 | 38.5/62.8 | 56/0, 71/100 | 81.0 | 89.7/51.0 |
+| 42_r1 | valid (D20 top-up) | 89.8/91.9 | 1.83/1.73 | 16.32/11.82 | 10.0/7.9 | 67.8/68.7 | 92/100, 92/100 | 82.4 | 100/100 |
 | 43 | valid | 92.3/93.1 | 1.96/1.72 | 11.54/11.79 | 7.6/6.8 | 68.4/68.7 | 92/100, 92/100 | 87.5 | 100/100 |
 | 44 | valid | 91.2/93.4 | 1.72/1.55 | 14.38/9.97 | 8.6/6.4 | 68.3/69.6 | 92/100, 92/100 | 83.3 | 95.9/91.8 |
 | 45 | valid | 90.8/90.8 | 2.16/2.18 | 16.44/15.72 | 9.0/9.0 | 67.2/68.9 | 92/100, 92/100 | 85.0 | 100/100 |
 | 46 | valid | 93.4/93.7 | 1.83/1.75 | 9.90/9.75 | 6.4/6.2 | 67.5/69.2 | 88/100, 92/100 | 78.9 | 100/100 |
 | 47 | valid | 95.8/96.7 | 1.53/1.29 | 8.74/8.49 | 4.1/3.1 | 68.4/69.7 | 92/100, 92/100 | 84.2 | 100/85.7 |
 | 48 | valid | 92.1/94.7 | 1.90/1.49 | 15.17/9.06 | 7.8/5.1 | 68.4/69.3 | 92/100, 92/100 | 82.4 | 98.0/100 |
-| **med** | 6/7 rows | **92.2/93.55** | **1.87/1.63** | **12.96/9.86** | **7.7/6.3** | **68.4/69.3** | **92/100, 92/100** | 83.75 | 100/100 |
+| **med** | 7/8 rows | **92.1/93.4** | **1.83/1.72** | **14.38/9.97** | **7.8/6.4** | **68.3/69.2** | **92/100, 92/100** | 83.3 | 100/100 |
 
-MC1(db) passes in all 6 valid blocks: member CPU mean 67.2–69.7 % (≥ 50 %),
-held in both halves (h1 88.0–92.0 %), `storage_above_threshold` in
+MC1(db) passes in all 7 valid blocks (block-42 witness restored by the D20
+top-up `none_db_42_r1`, member 67.8/68.7): member CPU mean 67.2–69.7 %
+(≥ 50 %), held in both halves (h1 88.0–92.0 %), `storage_above_threshold` in
 78.9–87.5 % of policy rows; 0 elasticity operations everywhere (0 alerts,
-0 spawns). `none_db_42`'s block witness is incident-excluded — see the
-block-42 reading in §6.1.
+0 spawns). `none_db_42`'s excluded original stays in §6.1.
 
 ## 3. Compute side — D12 anchor absence, aux relief (descriptive; verdict pending P6)
 

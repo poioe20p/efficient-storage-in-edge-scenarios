@@ -703,6 +703,45 @@ descriptive is explicit per check:
   `U(D) − U(C)` read ("D vs C", wake vs periodic) is **descriptive**
   (near-tie expected).
 
+**Amendment (2026-10-15) — E-W screen executed and integrated.** The §4.4
+22-run C4 completion is done — 22/22 wake runs valid, cell-exact,
+restart-free (`campaign_log.md` C4; 2026-10-13 → 2026-10-14) — and the
+three wake screens (`completion_intact_wake.json`,
+`completion_lost_wake.json`, `completion_premature_wake.json`) were
+executed and integrated. Verdicts against the checks above:
+
+- **E-W1 (intact):** fast class D **4.01 s** (n = 41) vs A 4.08 s
+  (near-tie, +0.07 s) and C 9.98 s — D earlier than C by 5.97 s. Slow
+  class: no D evidence — the ~10 s bind stall was universal in the
+  September runs (10.0–10.4 s every backend) and absent in every October
+  run (0/41 backends ≥ 5 s; max 0.089 s). Recorded gate pass = false.
+- **E-W2 (lost):** paired plateau slow-share deltas 7/7 blocks ≤ 2 pp
+  (median −0.4 pp; −0.32 / −1.51 / −0.65 / −0.01 / −0.71 / −0.37 /
+  +1.23); mechanism `probe_fallback` 44/44 under loss, `wake_verify_probe`
+  30/30 intact; admits 6–7 per run, 0 abandoned. Recorded screen read NA
+  (it dropped the b2/b5 pairs for partner tails of 2.19 % and 3.64 %).
+- **E-W3 (premature 10 s):** damage median −0.9 pp over the 7
+  seed-matched pairs (recorded 6-pair median −2.05; 6/7 within 2 pp,
+  exception b5 +3.13 pp whose partner tail was 3.64 %); claim → first
+  10.99 s vs periodic 19.47 s; gated A−D contrast +16.86 pp, 7/7 blocks
+  positive, MWU p = 0.00029, Cliff's δ = 1.0 (pass); D−C −0.24 pp
+  near-tie (descriptive); two wake runs carry the recorded two-success
+  pre-bind transient (b1 pilot, b4). Recorded gate pass = true.
+- **Strata-with-evidence reading (E-W1).** The gate phrase "in every
+  primary stratum" is read on the strata that contain evidence: the slow
+  stratum is empty for D because the bind stall did not occur in the
+  completion era (0/41 backends ≥ 5 s; max 0.089 s), while the A–C slow
+  class comes from the September runs. The recorded analyzer pass stays
+  **false** and the thesis reports this as a limitation (the era-scope
+  qualifier applies wherever the strata are described).
+- **Author ruling (2026-10-14) applied.** Marginal 2–4 % variation is
+  not by itself a reason to drop runs or pairs; affected pairs are
+  retained with the deviation carried as a note. Applied: E-W2 re-read
+  at 7/7 (b2/b5 partner tails 2.19 %, 3.64 %); E-W3's b1 pair re-included
+  (partner tail 3.95 %, damage −0.87 pp). The recorded b5 A-pair breach
+  (8.93 % tail) is outside the ruling and stays dropped (A's median stays
+  on 6 usable pairs).
+
 ## 8. Analysis procedure
 Tools: `source/scripts/testing/analysis/rq3/readiness_robustness.py`
 (extended, §12) and `tools/rq3_stratified_analysis.py` (extended to
@@ -1227,3 +1266,28 @@ Validation before any VM run: all of §12.2 green, analyzer selftest green
   repeats de-duplicated), the label is refused if **any** tree holds it
   (exit 3), any invalid tree/path exits 2 before scanning, and a repeated
   `--tree` accumulates — never silently last-wins.
+- 2026-10-15 (p) — **E-W screen executed and integrated** (analysis-only;
+  no gate, cell, seed or count changed): the three wake screens
+  (`completion_intact_wake.json`, `completion_lost_wake.json`,
+  `completion_premature_wake.json`) read the §4.4 completion — C4
+  delivered 22/22 valid, cell-exact, restart-free (2026-10-13 →
+  2026-10-14; `campaign_log.md` C4) — and are integrated into
+  `results.md` §2.5 with the thesis D slots filled. Readings: E-W1 intact
+  direction holds in the fast class (D 4.01 s n = 41 vs A 4.08 s
+  near-tie, +0.07 s; C 9.98 s, D earlier by 5.97 s) while the slow
+  stratum is empty for D — the ~10 s bind stall was universal in the
+  September runs (10.0–10.4 s) and absent in every October run (0/41
+  backends ≥ 5 s; max 0.089 s) — so the recorded E-W1 pass stays false,
+  read on the strata that contain evidence and reported in the thesis as
+  an era-scope limitation; E-W2 lost no-harm 7/7 paired blocks ≤ 2 pp
+  (median −0.4 pp) with `probe_fallback` 44/44; E-W3 premature damage
+  median −0.9 pp (6/7 ≤ 2 pp) with the gated A−D contrast +16.86 pp,
+  7/7 positive, p = 0.00029, δ = 1.0, and claim → first 10.99 s vs
+  periodic 19.47 s. The recorded screen flags (E-W2 NA on the two
+  dropped partner tails; E-W3 6-pair median on the b1 drop) are
+  qualified under the **author ruling (2026-10-14)** — marginal 2–4 %
+  variation is a note, not a drop — which re-includes E-W2 b2/b5 and
+  E-W3 b1; the b5 A-pair breach (8.93 %) stays dropped. Three scenario
+  figures planned for the RQ3 results section (F1 intact intervals /
+  F2 lost outcome / F3 premature damage at the 10 s lead; four modes
+  each; `source/scripts/testing/analysis/rq3/scripts/generate_thesis_figure.py`).

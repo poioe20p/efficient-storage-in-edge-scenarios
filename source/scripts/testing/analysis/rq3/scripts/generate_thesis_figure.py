@@ -32,6 +32,26 @@ Three renders for the RQ3 results section:
     `tese/images/` for the thesis build. (v1, a two-panel version that
     included the retired false-claim family, was superseded 2026-10-05.)
 
+Completion-era trio (Family 6, added 2026-10-15; the three renders the
+thesis build carries):
+  * `rq3_admission_intervals_v3.png` -- the intact price of checking with
+    all four admission modes: (a) provisioning -> first successful
+    response per backend, per mode and start-up class (the confirmation
+    check has no slow-class backends: the bind stall did not occur in the
+    completion runs); (b) unchanged rate-12 panel. Sources:
+    `.../v3/rq3_admission_modes/analysis/completion_figures_data.json`
+    (panel a) and the v2 cell-12 CSV (panel b).
+  * `rq3_event_loss_outcome_v2.png` -- the lost-message outcome with the
+    four modes over the seven completion blocks: (a) slow share over
+    time (median per 10 s bin), (b) admitted backends per run. Source:
+    the same completion export.
+  * `rq3_premature_damage.png` -- the premature-message damage at the
+    evaluated ten-second lead, per mode: per-pair dots and pair medians
+    against the 2 pp bound. Sources: `.../analysis/
+    completion_premature_full.json` (A/B/C) and
+    `completion_premature_wake.json` (D, with the block-1 pair
+    re-included under the 2026-10-14 ruling).
+
 Style mirrors `source/scripts/testing/analysis/rq1/scripts/generate_thesis_graphs.py`
 (house seaborn-deep palette, 150/200 dpi, black per-run dots).
 
@@ -60,13 +80,23 @@ OUT = ROOT / "docs/operation/testing/experiment/v3/rq3_timing/graphs/thesis"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # seaborn-deep --- the thesis house palette (cf. RQ1/RQ2 figures)
-COLORS = {"event_only": "#C44E52", "hybrid": "#DD8452", "reconcile": "#4C72B0"}
+COLORS = {"event_only": "#C44E52", "hybrid": "#DD8452", "reconcile": "#4C72B0",
+          "wake_verify": "#64B5CD"}
 LABELS = {
-    "event_only": "direct lifecycle notification",
-    "hybrid": "probe fallback variant",
-    "reconcile": "periodic discovery",
+    "event_only": "backend notification",
+    "hybrid": "notification with a fallback check",
+    "reconcile": "periodic polling",
+    "wake_verify": "notification with a confirmation check",
 }
-BLOCKS = [1, 2, 3, 4, 5, 6]
+LABELS_PLOT = {
+    "event_only": "notification only",
+    "hybrid": "notification + fallback check",
+    "reconcile": "periodic polling",
+    "wake_verify": "notification + confirmation check",
+}
+MODE_ORDER = ("event_only", "hybrid", "reconcile", "wake_verify")
+BLOCKS = [1, 2, 3, 4, 5, 6]           # recorded six-block frame (archives)
+COMPL_BLOCKS = [1, 2, 3, 4, 5, 6, 7]  # completion standard: seven blocks
 ONSET_S = 150.0
 BIN_MIN_SERVICE = 10
 RNG = np.random.default_rng(42)
@@ -83,8 +113,21 @@ SND_DAMAGE = SND / "analysis/rq3snd_damage_all.json"
 SND_CROSS = SND / "analysis/rq3snd_crossover_all.json"
 OUT_SND = SND / "graphs/thesis"
 OUT_SND.mkdir(parents=True, exist_ok=True)
-COL_SND = {**COLORS, "wake_verify": "#64B5CD"}
-LABELS_SND = {**LABELS, "wake_verify": "wake-and-verify"}
+COL_SND = COLORS
+LABELS_SND = LABELS
+
+# completion campaign (Family 6): four-mode figure data + screen records
+COMPL = ROOT / "docs/operation/testing/experiment/v3/rq3_admission_modes"
+COMPL_DATA = COMPL / "analysis/completion_figures_data.json"
+COMPL_PREMATURE_FULL = COMPL / "analysis/completion_premature_full.json"
+COMPL_PREMATURE_WAKE = COMPL / "analysis/completion_premature_wake.json"
+OUT_COMPL = COMPL / "graphs/thesis"
+OUT_COMPL.mkdir(parents=True, exist_ok=True)
+
+# wake block-1 pair damage recomputed from the archived runs under the
+# 2026-10-14 ruling (partner tail 3.95 %: retained, not dropped);
+# provenance: results.md section 2.5.
+WAKE_B1_D_S = -0.873
 
 # interval-figure arms: direct lifecycle vs periodic discovery (same colours
 # as the event-loss figure: direct red, discovery blue, fallback orange)
@@ -265,7 +308,7 @@ def panel_intervals_c(ax, probes: dict[str, list[float]],
                    linewidths=0, zorder=4)
         ax.text(x, values.max() + 0.35, f"{median:.2f}", ha="center",
                 fontsize=9.5)
-    ax.set_xticks([0, 1], ["direct\nlifecycle", "periodic\ndiscovery"])
+    ax.set_xticks([0, 1], ["backend\nnotification", "periodic\npolling"])
     for label, arm in zip(ax.get_xticklabels(), ("direct", "discovery")):
         label.set_color(COL_ARM[arm])
     ax.set_ylim(0, 9.5)
@@ -407,11 +450,237 @@ def soundness_figure() -> None:
           f"gate_pass={cross['growth']['gate_pass']}")
 
 
+def load_completion() -> dict:
+    return json.loads(COMPL_DATA.read_text(encoding="utf-8"))
+
+
+def panel_intervals_modes(ax, data: dict, letter: str = "(a)") -> None:
+    """Provisioning -> first successful response per backend, four modes."""
+    groups = [(mode, stratum) for mode in MODE_ORDER
+              for stratum in ("fast", "slow")]
+    xs = [0.0, 1.0, 2.6, 3.6, 5.2, 6.2, 7.8, 8.8]
+    for x, (mode, stratum) in zip(xs, groups):
+        values = np.array(
+            [b["s"] for record in data["intact"].values()
+             if record["arm"] == mode for b in record["backends"]
+             if b["stratum"] == stratum], dtype=float)
+        if len(values) == 0:
+            ax.text(x, 7.0, "no slow-class\nbackends", ha="center",
+                    va="bottom", fontsize=8.2, color="#666")
+            continue
+        median = float(np.median(values))
+        ax.bar(x, median, 0.6, color=COLORS[mode], alpha=0.8,
+               edgecolor="white", zorder=2)
+        ax.errorbar(x, median,
+                    yerr=[[median - values.min()], [values.max() - median]],
+                    fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
+        jitter = RNG.uniform(-0.16, 0.16, len(values))
+        ax.scatter(x + jitter, values, s=13, color="black", alpha=0.75,
+                   linewidths=0, zorder=4)
+        ax.text(x, values.max() + 0.7, f"{median:.1f}", ha="center",
+                fontsize=9)
+    ax.set_xticks(xs, ["fast", "slow"] * 4)
+    for label, (mode, _stratum) in zip(ax.get_xticklabels(), groups):
+        label.set_color(COLORS[mode])
+    ax.set_ylim(0, 27.5)
+    ax.set_ylabel("provisioning \u2192 first success (s)")
+    transform = ax.get_xaxis_transform()
+    mode_short = {"event_only": "notification", "hybrid": "fallback check",
+                  "reconcile": "polling",
+                  "wake_verify": "confirmation check"}
+    for x, mode in zip((0.5, 3.1, 5.7, 8.3), MODE_ORDER):
+        ax.text(x, -0.115, mode_short[mode], transform=transform, ha="center",
+                va="top", fontsize=8.4, color=COLORS[mode])
+    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.text(-0.16, 1.05, letter, transform=ax.transAxes, fontweight="bold",
+            fontsize=11)
+
+
+def intervals_v3_figure() -> None:
+    """Intact intervals with all four modes (v3)."""
+    data = load_completion()
+    probes = load_cell12()
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 4.4))
+    panel_intervals_modes(axes[0], data, letter="(a)")
+    panel_intervals_c(axes[1], probes, letter="(b)")
+    fig.tight_layout()
+    out = OUT_COMPL / "rq3_admission_intervals_v3.png"
+    fig.savefig(out)
+    plt.close(fig)
+    shutil.copyfile(out, ROOT / "tese/images/rq3_admission_intervals_v3.png")
+    print(f"wrote {out} and tese/images/rq3_admission_intervals_v3.png")
+    for mode in MODE_ORDER:
+        for stratum in ("fast", "slow"):
+            values = [b["s"] for record in data["intact"].values()
+                      if record["arm"] == mode for b in record["backends"]
+                      if b["stratum"] == stratum]
+            median = f"{np.median(values):.2f}" if values else "n/a"
+            print(f"  {mode}/{stratum}: n={len(values)} med={median}")
+
+
+def pooled_series_modes(data: dict, mode: str) -> tuple[list[int], list[float]]:
+    """Median slow share (%) per 10 s bin across the seven loss blocks."""
+    buckets: dict[int, list[float]] = {}
+    for record in data["lost"].values():
+        if record["arm"] != mode:
+            continue
+        for point in record["series"]:
+            if point["slow_rate"] is None or point["service"] < BIN_MIN_SERVICE:
+                continue
+            buckets.setdefault(round(point["t_rel"]), []).append(
+                point["slow_rate"])
+    xs = sorted(buckets)
+    ys = [100.0 * float(np.median(buckets[t])) for t in xs]
+    return xs, ys
+
+
+def panel_a_modes(ax, data: dict) -> None:
+    x_last = -60
+    for mode in ("reconcile", "wake_verify", "hybrid", "event_only"):
+        xs, ys = pooled_series_modes(data, mode)
+        x_last = max(x_last, xs[-1])
+        ax.plot(xs, ys, color=COLORS[mode], lw=1.9, label=LABELS_PLOT[mode])
+    ax.axvspan(0, ONSET_S, color="#C44E52", alpha=0.10, lw=0)
+    ax.set_xlabel("time since plateau onset (s)")
+    ax.set_ylabel("slow share (%)")
+    ax.set_xlim(-65, x_last + 5)
+    ax.set_ylim(bottom=0)
+    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.legend(loc="upper right", frameon=False, fontsize=8.6)
+    top = ax.get_ylim()[1]
+    ax.text(ONSET_S - 4, top * 0.985, "onset window", ha="right", va="top",
+            fontsize=9.5, color="#8c4a4a")
+    ax.text(-0.10, 1.045, "(a)", transform=ax.transAxes, fontweight="bold",
+            fontsize=11)
+
+
+def panel_b_modes(ax, data: dict) -> None:
+    for i, mode in enumerate(MODE_ORDER):
+        values = np.array(
+            [data["lost"][f"b{block}_{mode}"]["admissions"]["admitted"]
+             for block in COMPL_BLOCKS], dtype=float)
+        median = float(np.median(values))
+        ax.bar(i, median, 0.5, color=COLORS[mode], alpha=0.85,
+               edgecolor="white", zorder=2)
+        if values.min() != values.max():
+            ax.errorbar(i, median,
+                        yerr=[[median - values.min()],
+                              [values.max() - median]],
+                        fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
+        jitter = np.linspace(-0.12, 0.12, len(values))
+        ax.scatter(i + jitter, values, color="black", s=20, zorder=4)
+        ax.text(i, median + 0.22 if median > 0 else 0.6, f"{int(median)}",
+                ha="center", fontsize=10, fontweight="bold")
+    ax.set_xticks(np.arange(4), ["notification", "fallback\ncheck",
+                                 "polling", "confirmation\ncheck"])
+    for label, mode in zip(ax.get_xticklabels(), MODE_ORDER):
+        label.set_color(COLORS[mode])
+    ax.set_ylabel("admitted backends per run")
+    ax.set_ylim(0, 7.8)
+    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.text(0.03, 0.97, "notification runs: 0 admitted;\n"
+            "32\u201335 candidates per run abandoned",
+            transform=ax.transAxes, va="top", fontsize=8.8)
+    ax.text(-0.16, 1.045, "(b)", transform=ax.transAxes, fontweight="bold",
+            fontsize=11)
+
+
+def event_loss_figure_v2() -> None:
+    """Lost-message outcome with the four modes over seven completion blocks."""
+    data = load_completion()
+    fig, (axa, axb) = plt.subplots(
+        1, 2, figsize=(11.2, 4.4), gridspec_kw={"width_ratios": [1.5, 1]})
+    panel_a_modes(axa, data)
+    panel_b_modes(axb, data)
+    fig.tight_layout()
+    out = OUT_COMPL / "rq3_event_loss_outcome_v2.png"
+    fig.savefig(out)
+    plt.close(fig)
+    shutil.copyfile(out, ROOT / "tese/images/rq3_event_loss_outcome_v2.png")
+    print(f"wrote {out} and tese/images/rq3_event_loss_outcome_v2.png")
+    for mode in MODE_ORDER:
+        admitted = [data["lost"][f"b{b}_{mode}"]["admissions"]["admitted"]
+                    for b in COMPL_BLOCKS]
+        print(f"  {mode}: admitted {admitted}")
+
+
+def premature_damage_figure() -> None:
+    """Premature-message damage at the 10 s lead, per mode (single panel).
+
+    Pair medians and per-pair dots; the block-1 wake pair is re-included
+    under the 2026-10-14 ruling (2-4 % marginal variation is a note, not
+    a drop); the dropped event-only block-5 pair (8.93 % partner tail,
+    outside the ruling) stays dropped.
+    """
+    full = json.loads(COMPL_PREMATURE_FULL.read_text(encoding="utf-8"))
+    wake = json.loads(COMPL_PREMATURE_WAKE.read_text(encoding="utf-8"))
+    rules = dict(full["E-P3"]["rules"])
+    rules["wake_verify"] = wake["E-P3"]["rules"]["wake_verify"]
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.3))
+    for i, mode in enumerate(MODE_ORDER):
+        values = [pair["d_s"] for pair in rules[mode]["pairs"]
+                  if pair.get("status") == "ok"]
+        if mode == "wake_verify":
+            values.append(WAKE_B1_D_S)
+        values = np.array(values, dtype=float)
+        median = float(np.median(values))
+        ax.bar(i, median, 0.5, color=COLORS[mode], alpha=0.85,
+               edgecolor="white", zorder=2)
+        if values.min() != values.max():
+            ax.errorbar(i, median,
+                        yerr=[[median - values.min()],
+                              [values.max() - median]],
+                        fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
+        jitter = RNG.uniform(-0.13, 0.13, len(values))
+        ax.scatter(i + jitter, values, color="black", s=20, alpha=0.85,
+                   linewidths=0, zorder=4)
+        stored = rules[mode].get("median_d_pp")
+        label_value = (float(np.median(values))
+                       if mode == "wake_verify" or stored is None
+                       else float(stored))
+        eps = 1e-9 if label_value >= 0 else -1e-9
+        ax.text(i, values.max() + 0.9, f"{label_value + eps:+.1f}",
+                ha="center", fontsize=9.5, fontweight="bold")
+    ax.axhline(0, color="#888", lw=0.9, zorder=1)
+    ax.axhline(2, color="#5a5a5a", lw=0.9, linestyle=":", zorder=1)
+    ax.text(3.62, 2.65, "2 pp bound", ha="left", fontsize=8.4,
+            color="#5a5a5a")
+    ax.set_xticks(np.arange(4), ["backend\nnotification", "fallback\ncheck",
+                                 "periodic\npolling", "confirmation\ncheck"])
+    for label, mode in zip(ax.get_xticklabels(), MODE_ORDER):
+        label.set_color(COLORS[mode])
+    ax.set_ylabel("episode damage (pp)")
+    ax.set_xlim(-0.55, 4.05)
+    ax.set_ylim(-10, 27)
+    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.text(0.035, 0.045, "claim \u2192 first successful response:\n"
+            "11.0 s (confirmation check) vs 19.5 s (periodic polling)",
+            transform=ax.transAxes, va="bottom", fontsize=8.6)
+    fig.tight_layout()
+    out = OUT_COMPL / "rq3_premature_damage.png"
+    fig.savefig(out)
+    plt.close(fig)
+    shutil.copyfile(out, ROOT / "tese/images/rq3_premature_damage.png")
+    print(f"wrote {out} and tese/images/rq3_premature_damage.png")
+    for mode in MODE_ORDER:
+        values = [pair["d_s"] for pair in rules[mode]["pairs"]
+                  if pair.get("status") == "ok"]
+        if mode == "wake_verify":
+            values.append(WAKE_B1_D_S)
+        print(f"  {mode}: n={len(values)} med={np.median(values):+.2f} pp")
+
+
 def main() -> None:
-    event_loss_figure(load())
-    interval_figure()
-    ordering_figure()
-    soundness_figure()
+    """Render the three thesis-carrying figures of the completion campaign.
+
+    The earlier renders (`interval_figure`, `event_loss_figure`,
+    `ordering_figure`, `soundness_figure`) are archive-only: regenerate
+    them explicitly if ever needed; they are not part of the build.
+    """
+    intervals_v3_figure()
+    event_loss_figure_v2()
+    premature_damage_figure()
 
 
 if __name__ == "__main__":

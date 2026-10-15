@@ -189,8 +189,8 @@ shift is first observed by monitoring and telemetry, which deliver the
 evidence to a decision point. The decision point selects a scaling action,
 such as scaling compute or scaling storage, and the action provisions new
 capacity. Finally the new capacity attains a readiness state (it can answer
-requests, not merely run) and is admitted to traffic (the controller
-starts routing requests to it), which is the point at which it becomes
+requests, not merely run) and starts receiving traffic, which is
+the point at which it becomes
 usable. The chain is therefore a
 timeline through the orchestration system, and its steps are joined by
 interfaces.\footnote{Throughout this dissertation, the
@@ -198,16 +198,17 @@ interfaces.\footnote{Throughout this dissertation, the
 shift to usable capacity. An \emph{interface} is a boundary between two
 steps of the chain at which two functions meet, and what crosses an
 interface is the evidence, the command, or the state that the next step
-acts on. A \emph{handoff delay} is the latency between a function's handover and the
-next step acting on it. The reviewed literature addresses this topic
-mainly at boundaries between functions that run under independent control
-loops, each observing, deciding, and acting on its own. The properties of
-what crosses (the completeness and freshness of the evidence, the match
-between the command and the demand, and whether a ready backend is admitted on its message
-alone, on the message with a bounded re-check, or only through a check)
-are studied here one at a time. A check is the controller asking the
-backend directly whether it can serve. The \emph{coordination gap} is the
-accumulated effect along the chain, which this dissertation does not
+acts on. A \emph{handoff delay} is the latency between a function's 
+handover and the next step acting on it. The reviewed literature addresses
+this topic mainly at boundaries between functions that run under independent
+control loops, each observing, deciding, and acting on its own. The
+properties of what crosses (the completeness and freshness of the evidence,
+the match between the command and the demand, and whether a ready backend
+is admitted on the backend's notification alone, on the notification with
+a fallback check, on the notification with a confirmation check, or through
+periodic polling) are studied here one at a time. A check is the controller
+asking the backend directly whether it can serve. The \emph{coordination gap}
+is the accumulated effect along the chain, which this dissertation does not
 measure as a whole.} The three interfaces between its steps, highlighted in
 Figure~\ref{fig:demand_capacity_chain}, are the subject of this thesis.
 
@@ -227,13 +228,15 @@ auto-scaler provisions capacity, and a load balancer redirects traffic,
 each running under its own control loop and acting on its own view of the
 service. In the reviewed literature, the cost of these crossings is
 acknowledged but never isolated or varied as an independent
-variable~\parencite{Qu2018AutoScalingWebApplicationsClouds,Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
+variable~\parencite{Qu2018AutoScalingWebApplicationsClouds,
+Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
 The crossings also differ in more than latency: telemetry can arrive
 complete and fresh, complete but delayed, or with summaries
 missing~\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork};
 a capacity command can serve the tier that binds the demand or one that
-does not~\parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}; and a
-readiness message can arrive on time, early, or not at all~\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}.
+does not~\parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}; and the
+state that admits a backend to traffic can be late or 
+inaccurate~\parencite{Dreibholz2023TowardsLightweightTaskSchedulingFramework}.
 This thesis isolates the three interfaces and measures the
 effect of each of these properties on its own. The platform built for this
 purpose is organised as two peer \ac{SDN} controllers, one per network domain.
@@ -250,8 +253,9 @@ deployed across two network domains: how telemetry reaches the controller
 (the telemetry mode); whether
 the capacity command serves the tier the demand presses on
 (bottleneck-aware scaling action); and whether a ready backend is
-admitted on its message alone, on the message with a bounded re-check,
-or only through a check (readiness admission).
+admitted on the backend's notification alone, on the notification with a fallback check,
+on the notification with a confirmation check, or through periodic
+polling (readiness admission: when a ready backend starts receiving traffic).
 
     The thesis does not claim that this SDN-based architecture is superior
 to existing orchestration platforms such as Kubernetes or NFV Management
@@ -270,8 +274,8 @@ and by establishing, for each interface, which property of the crossing
 decides the outcome and under which conditions: how telemetry reaches the
 controller, whether the scaling action serves the tier the
 demand presses on, and whether a ready backend is admitted on its
-readiness message alone, on the message with a bounded re-check, or
-only through a periodic check.
+notification alone, on the notification with a fallback check, on the
+notification with a confirmation check, or through periodic polling.
 
     The platform keeps controller-side coordination in-process, with how
 telemetry reaches the controller retained as an explicit, configurable
@@ -295,12 +299,13 @@ This thesis seeks to answer the following three research questions:
     scaling the servers or always scaling the data, affect service
     recovery and resource use?
 
-    \item \textit{RQ3}: When a newly provisioned backend becomes ready,
-    how do the three admission rules (the readiness message alone, the
-    message with a bounded re-check, and a periodic check of the backend)
-    affect whether and when the new capacity starts serving requests and
-    what users experience, under an intact message, a lost message, or a
-    message that arrives before the backend can serve?
+    \item \textit{RQ3}: When a new backend is provisioned,
+    how do the four admission modes (backend notification, notification
+    with a fallback check, periodic polling, and notification with a
+    confirmation check) affect whether and when the new
+    capacity starts serving requests and what users experience, under
+    three message conditions: the message arrives intact, never arrives,
+    or arrives before the backend can serve?
 \end{itemize}
 
 \section{Research Methodology}\label{sec:research_methodology} %DONE
@@ -402,12 +407,12 @@ This dissertation makes the following contributions:
     affects targeted-tier relief, service recovery, and resource use under
     compute-bound and data-access-bound demand (RQ2).
     \item An experimental characterisation of readiness admission,
-    specifically how the three admission rules (the readiness message
-    alone, the message with a bounded re-check, and a periodic check of
-    the backend) affect whether and when the new capacity starts serving
-    requests and what users experience, under an intact message, a lost
-    message, or a message that arrives before the backend can serve
-    (RQ3).
+    specifically how the four admission modes (backend notification,
+    notification with a fallback check, periodic polling, and
+    notification with a confirmation check) affect whether and when the
+    new capacity starts serving requests and what users experience, under
+    three message conditions: the message arrives intact, never arrives,
+    or arrives before the backend can serve (RQ3).
     \item A comparative synthesis of the three interfaces studied
     (telemetry modes, scaling decisions, and readiness admission)
     under their respective controlled workload regimes, identifying which
@@ -870,8 +875,8 @@ placement rather than chosen at runtime from a live observed
 bottleneck. This dissertation isolates that choice, with storage
 scale-up among the actions the controller may take, and measures
 the resulting differences in targeted-tier relief, service recovery,
-and resource use. How that decision is handed to the infrastructure is examined,
-with the other interfaces, in Section~\ref{sec:lit_synthesis}.
+and resource use. How a selected action becomes usable capacity is
+examined next.
 
 \section{Load Balancing and Readiness Admission on SDN}\label{sec:lit_sdn_lb} %DONE
 Load balancing distributes incoming traffic among a set of available
@@ -891,24 +896,44 @@ Figure~\ref{fig:sdn_load_balancing}.
     \label{fig:sdn_load_balancing}
 \end{figure}
 
-    Load balancing is a common application of SDN. At a given routing
-decision, a load-balancing policy operates over the set of backends
-receiving traffic, and the reviewed studies
-concentrate on optimising the distribution of load over that set, using
-criteria such as load, path properties, and resource utilisation
-\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined,Belgaum2020SystematicReviewLoadBalancingTechniques}.
+    Load balancing is a common application of SDN. Belgaum et al. survey
+the field systematically and group its techniques into conventional and
+AI-based families
+\parencite{Belgaum2020SystematicReviewLoadBalancingTechniques}.
+Neghabi et al. classify the mechanisms as static and dynamic, and observe
+that controller state can fall out of step between synchronizations
+\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. Abdelltif
+et al. place the balancer on the controller itself, holding per-server
+load current over the OpenFlow pool
+\parencite{Abdelltif2018SDNLoadBalancingServiceCloud}.
+Taken together, these studies treat load balancing as a selection
+problem. At a given routing decision, the policy decides which backend
+receives the next flow, choosing by criteria such as load, path
+properties, and resource utilisation. The set of backends receiving
+traffic is taken as given.
 
-    Kurma, a load balancer for geo-distributed storage systems, is
+    The membership of that set, however, is not fixed. Backends are
+added as demand rises and removed as it recedes. Capacity becomes usable
+only when traffic can reach it. A scaling action provisions a backend,
+but the provisioned backend serves nothing until it is admitted to the
+set of backends receiving traffic. The scaling loop that began with the
+demand shift closes at that admission, and the time a ready backend
+spends outside the set is therefore an admission delay. The reviewed
+work recognises the time this takes, but does not isolate the admission
+step.
+
+Kurma, a load balancer for geo-distributed storage systems, is
 explicitly designed to operate at a granularity of seconds so that it
 can \enquote{work in tandem with modern elastic controllers, thereby
 reducing over-provisioning and SLO violations incurred during
-provisioning delays} \parencite[p.~386]{Bogdanov2018Kurma}. The delay between
-provisioning and usable capacity is therefore a recognised cost, yet
-the time a backend spends between becoming ready and starting to
-receive traffic is not measured on its own in that evaluation.
+provisioning delays} \parencite[p.~386]{Bogdanov2018Kurma}. The delay
+between provisioning and usable capacity is therefore a recognised 
+cost, yet the time a backend spends between becoming ready and 
+starting to receive traffic is not measured on its own in that 
+evaluation.
 
-    Llorens-Carrodeguas et al. couple auto-scaling with load balancing
-    in an SDN redirector for a transparent VNF cluster, so that
+Llorens-Carrodeguas et al. couple auto-scaling with load balancing
+in an SDN redirector for a transparent VNF cluster, so that
 load balancing operates over a pool of instances that is resized while
 traffic is being served. Their system changes the number of active
 cluster members and removes flow rules for unhealthy instances using
@@ -919,19 +944,7 @@ concern. Its evaluation, however, reports activation for the whole
 system, so the time between a backend becoming ready and starting to
 receive traffic is not isolated in their evaluation.
 
-    The membership of that set, however, is not fixed. Backends are
-added as demand rises and removed as it recedes, and a backend becomes
-usable capacity only once it can serve the application and has
-been admitted to the set of backends receiving traffic. The time a ready
-backend spends outside that set is therefore an admission delay, and the
-load-balancing studies reviewed here take the set as given, so they do
-not measure it. Indeed, Neghabi et al.
-record failure management as a concern that the mechanisms their
-survey covers have not taken into account, so failure-driven changes
-to the set of backends receiving traffic remain unaddressed
-\parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}. 
-    Outside those studies, managing the pool itself is an established
-problem. Dreibholz and
+Managing the pool itself is an established problem. Dreibholz and
 Mazumdar apply the IETF Reliable Server Pooling framework to a pool
 spanning edge and multi-cloud resources. A member registers to the pool
 when it joins and de-registers when it leaves, while a registrar keeps
@@ -942,22 +955,27 @@ that inaccuracy is left to the load-balancing layer, in policies that
 discount stale pool state
 \parencite[p.~6]{Dreibholz2023TowardsLightweightTaskSchedulingFramework}.
 
-The set of backends receiving traffic and the true serving state of its
-backends can therefore fall out of step in one of two directions. When a change reaches the
-routing plane late or not at all, ready capacity stays outside the set,
-and the nodes already serving carry the demand without it. When a backend is in the
-set while it cannot serve the traffic it receives, the requests routed
-to it fail.
+Neghabi et al. record failure management as a concern that the
+mechanisms their survey covers have not taken into account, so
+failure-driven changes to the set of backends receiving traffic remain
+unaddressed \parencite{Neghabi2018LoadBalancingMechanismsSoftwareDefined}.
 
-    This dissertation treats admission into that set as the variable: the
-three admission rules require different evidence before a backend is
-admitted (the readiness message alone, the message with a bounded
-re-check, or a periodic check of the backend). The comparison measures
-how they affect whether and when the new capacity starts serving
-requests and what users
-experience, under an intact message, a lost message, or a message that
-arrives before the backend can serve. Chapter~\ref{ch:results}
-evaluates the three rules under one regime.
+The set of backends receiving traffic and the true serving state of its
+backends can therefore fall out of step in one of two directions. When 
+a change reaches the routing plane late or not at all, ready capacity 
+stays outside the set, and the nodes already serving carry the demand 
+without it. When a backend is in the set while it cannot serve the 
+traffic it receives, the requests routed to it fail.
+
+This dissertation treats admission into that set as the variable: the
+four admission modes require different evidence before a backend is
+admitted (backend notification, notification with a fallback check,
+periodic polling, and notification with a confirmation check). The
+comparison measures how they affect whether and when the new capacity
+starts serving requests and what users experience, under three message
+conditions: the message arrives intact, never arrives, or arrives
+before the backend can serve. Chapter~\ref{ch:results} evaluates the
+four modes under one regime.
 
 \section{SDN-Based Orchestration Platforms}\label{sec:lit_sdn_orchestration} %DONE
 Resource orchestration is the management layer that keeps a running
@@ -1099,7 +1117,11 @@ OneEdge breaks end-to-end deployment latency into scheduling, network, and
 container creation without attributing it to a single handoff
 \parencite{Saurez2021OneEdge}, and Llorens-Carrodeguas et al. report
 only whole-system activation
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}. The
+\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}. Pool
+membership management acknowledges that propagating state changes takes
+time, but leaves the mitigation to the selecting layer rather than
+measuring the interval
+\parencite{Dreibholz2023TowardsLightweightTaskSchedulingFramework}. The
 closest reviewed precedent is AdapPF, which varies monitoring freshness and
 measures a downstream consequence, but without separating late from missing
 updates and not in a stateful service
@@ -1141,12 +1163,13 @@ three interfaces and the question each leaves open.
         recovery, and resource use relative to fixed single-tier
         policies, and where do the effects concentrate? \\
         Ready backend to traffic (RQ3) &
-        When a newly provisioned backend becomes ready, how do the three
-        admission rules (the readiness message alone, the message with a
-        bounded re-check, and a periodic check of the backend) affect
-        whether and when the new capacity starts serving requests and what
-        users experience, under an intact message, a lost message, or a
-        message that arrives before the backend can serve? \\
+        When a newly provisioned backend becomes ready, how do the four
+        admission modes (backend notification, notification with a
+        fallback check, periodic polling, and notification with a
+        confirmation check) affect whether and when the new
+        capacity starts serving requests and what users experience, under
+        three message conditions: the message arrives intact, never
+        arrives, or arrives before the backend can serve? \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -1241,7 +1264,7 @@ presented in the remainder of the chapter.
     request served by new capacity can be reconstructed.
 
     \item \textit{Configurable interfaces.} Telemetry delivery, the capacity
-    action choice, and the admission rule must be independently selectable
+    action choice, and the admission mode must be independently selectable
     configurations of the platform.
 \end{enumerate}
 
@@ -1509,16 +1532,19 @@ applies the policy defined in Section~\ref{sec:scaling_policy}.
     A newly provisioned compute replica is recorded through an explicit
 registration step and becomes eligible for load balancing only
 once it is visible in the routing pool. How readiness
-reaches that pool is configurable: it may be propagated by a direct
-lifecycle notification from the replica, or discovered by the controller
-through periodic probes, and the design may additionally bound the damage
-of a lost notification. A fallback probe re-derives readiness after a
-configured window, between the pure event-coupled and pure polling styles.
-The notification may also serve only to wake an immediate probe, so that
-it opens the check but does not admit on its own. Because the direct
-rule admits on the claim itself, a claim that arrives before the replica
-can serve would reach the routing pool unchecked, while the probe-based
-rules re-derive readiness before admitting.
+reaches that pool is configurable, and four admission modes are
+evaluated. Backend notification admits on the message the backend
+sends, without a check. Notification with a fallback check admits on the
+same message, and a check after a configured wait recovers a message
+that never arrives. Periodic polling ignores the message and checks the
+backend on a fixed interval. Notification with a confirmation check
+lets the message wake a check, so that it opens the check but does not
+admit on its own. Because the modes that admit on the message trust it,
+a message that arrives before the replica can serve would reach the
+routing pool unchecked, while the modes that check re-derive readiness
+before admitting. The modes are measured under three message conditions,
+each held for the whole run: the message arrives intact, never arrives,
+or arrives before the backend can serve.
 Because load balancing steers new flows while installed flows remain
 where they were placed (Section~\ref{sec:control_workflow}), admission also
 marks the point at which the new backend can begin to share the load.
@@ -1547,7 +1573,8 @@ member, and the consistency contract is primary writes with eventually
 consistent secondary reads. The evaluation does not rely on read-after-write
 semantics. Storage scale-up is a membership change. The controller provisions
 a new storage member, which joins the set as a non-voting secondary, and
-admits it to the data path only once the member can serve reads. Preparation is decoupled from the reaction: a readied member is held in
+admits it to the data path only once the member can serve reads. Preparation 
+is decoupled from the reaction: a readied member is held in
 reserve outside the routing pool, and the storage scale-up is
 the activation of this prepared reserve, which removes the initial readiness wait
 from the reaction path. A new reserve is prepared immediately afterwards.
@@ -1607,9 +1634,9 @@ decision logic remain unchanged, so any difference in how the controller
 scales is attributed to the evidence it received rather than to the
 mechanism that carried it.
 
-    Inside the controller, the summaries feed two consumers. The first is load
-    balancing, whose candidate state is updated from the summaries. The second is
-    the decision engine, which evaluates each summary with the scaling policy of
+Inside the controller, the summaries feed two consumers. The first is load
+balancing, whose candidate state is updated from the summaries. The second is
+the decision engine, which evaluates each summary with the scaling policy of
 Section~\ref{sec:scaling_policy} and emits a typed,
 prioritised action request once a tier's condition is sustained. Requests that
 add or preserve resources take precedence over requests that remove capacity.
@@ -1635,7 +1662,8 @@ per-summary evaluation, from the eligibility check to the request emissions.
 action (compute or storage), which is the scaling interface of the demand-to-capacity chain. 
 In the bottleneck-aware configuration, that choice distinguishes between compute-bound and
 data-access-bound demand and scales the matching tier when it leads by the
-configured classification margin, resolving close scores towards storage. A per-tier action budget can bound its actions,
+configured classification margin, resolving close scores towards storage. 
+A per-tier action budget can bound its actions,
 and the action taken and the actions rejected are recorded as evidence. The
 platform's lifecycle notifications, such as the completion of a drain or the
 readiness of a storage member, reach the same decision path, so that
@@ -1838,12 +1866,12 @@ into a draining state, and a readiness endpoint. The readiness predicate
 is a real service round-trip, and the endpoint answers 200 only while a
 MongoDB ping against the domain's virtual data address succeeds. The
 server binds before readiness is declared, so the predicate means
-servability and the readiness claim cannot precede the socket. After each
+servability and the readiness message cannot precede the socket. After each
 request the replica pushes one telemetry record: the request's outcome and
 timing (its total time, and the MongoDB time split into reads and writes)
 and its own CPU and memory use, read from the container's cgroup files so the
-numbers describe the container rather than the host. With the
-readiness event enabled it also emits an \texttt{app\_ready} control event
+numbers describe the container rather than the host. With readiness
+messages enabled it also emits an \texttt{app\_ready} control event
 when the predicate first succeeds.
 
 The controller provisions a replica by starting its container with the
@@ -1860,34 +1888,38 @@ a propagation mode.
 
 \begin{itemize}
     \item \texttt{off}. The replica is admitted as soon as it is
-    provisioned, and no readiness rule applies.
-    \item \texttt{direct}. The replica is admitted on the
-    \texttt{app\_ready} event itself, with no probe before admission. A
-    fallback wait bounds how long the gate waits for the event before it
-    probes anyway, so a lost notification has a recovery path.
-    \item \texttt{discovery}. The event is ignored and the controller
-    probes the readiness endpoint at a fixed poll interval, admitting on
-    the first successful probe.
-    \item Wake-and-verify, a sub-mode of the direct rule. The event wakes
-    a probe and admission requires the probe to pass, and the fallback
-    wait applies when no event arrives.
+    provisioned, and no readiness mode applies.
+    \item Backend notification (\texttt{direct}, the fallback wait beyond
+    the abandonment bound). The replica is admitted on the
+    \texttt{app\_ready} message itself, with no check before admission,
+    and nothing re-checks it.
+    \item Notification with a fallback check (\texttt{direct}, a 20~s
+    fallback wait). The replica is admitted on the message, and a check
+    after the wait recovers a message that never arrives.
+    \item Periodic polling (\texttt{discovery}). The message is ignored
+    and the controller checks the readiness endpoint at the fixed polling
+    interval, admitting on the first check that passes.
+    \item Notification with a confirmation check. The message wakes a
+    check and admission requires the check to pass, and the fallback wait
+    applies when no message arrives
+    (\texttt{READINESS\_WAKE\_VERIFY\_MODE}\allowbreak\texttt{=}\allowbreak\texttt{probe}).
 \end{itemize}
 
-% FIGURE: readiness-gate decision flow. A readiness claim from a pending
-% replica on the left, the rule branches in the middle (direct admission,
-% the fallback probe after the event wait, discovery polling, and
-% wake-and-verify), and admission into the routing pool or abandonment on
-% the right. Label each admitted edge with the source recorded in the
-% admission log.
+% FIGURE: readiness-gate decision flow. A readiness message from a pending
+% replica on the left, the mode branches in the middle (backend
+% notification, the fallback check after the wait, periodic polling, and
+% the confirmation check), and admission into the routing pool or
+% abandonment on the right. Label each admitted edge with the source
+% recorded in the admission log.
 
-Probes retry at a fixed interval with their own timeout. A replica that is
-not admitted within the abandonment bound is abandoned and fully torn
-down. Every admission records its source in the admission log, the event,
-a poll, a fallback probe, or a wake-and-verify probe. A probe that
-disagrees with an event-driven admission is recorded as a warning and the
-admission stands, because the event already admitted the replica. The
-wake-and-verify rule never admits unverified. The admission decision is
-summarised in Algorithm~\ref{alg:readiness_admission}.
+Checks retry at a fixed interval with their own timeout. A replica that
+is not admitted within the abandonment bound is abandoned and fully torn
+down. Every admission records its source in the admission log, the
+message, a poll, a fallback check, or a confirmation check. A check that
+disagrees with an admission made on the message is recorded as a warning
+and the admission stands, because the message already admitted the
+replica. The confirmation check never admits unverified. The admission
+decision is summarised in Algorithm~\ref{alg:readiness_admission}.
 
 % Algorithm floats follow the chapter-indexed numbering used for tables and
 % figures (the counter setup lives here rather than in the preamble).
@@ -1901,11 +1933,12 @@ summarised in Algorithm~\ref{alg:readiness_admission}.
         \If{mode is \texttt{off}}
             \State admit the replica
         \ElsIf{mode is \texttt{discovery}}
-            \State probe \texttt{/ready} on each poll and admit on the first success
+            \State check \texttt{/ready} on each poll and admit on the first success
         \Else \Comment{\texttt{direct}}
-            \State admit the replica on the \texttt{app\_ready} event
-            \State without an event after the fallback wait: probe and admit on success
-            \State with wake-and-verify: the event wakes a probe, and admission requires it to pass
+            \State admit the replica on the \texttt{app\_ready} message
+            \State without a message after the fallback wait: check and admit on success
+            \State with the confirmation check: the message wakes a check, and admission
+            into the routing backend pool requires it to pass
         \EndIf
         \State abandon and tear down a replica not admitted within the abandonment bound
     \end{algorithmic}
@@ -2142,9 +2175,9 @@ order, and delivery delay are logged per summary and match the configured
 mode, and the aggregator's overhead and per-summary payload stay bounded
 and constant across modes. The readiness path is additionally exercised
 with the fault instrumentation of the fault-robustness experiments, where
-a replica can be configured to claim readiness before it can serve, to
+a replica can be configured to report readiness before it can serve, to
 answer workload requests with errors while the readiness predicate stays
-satisfied, or to lose its readiness event entirely. The instrumentation
+satisfied, or to lose its readiness message entirely. The instrumentation
 and its values are listed in Appendix~\ref{app:campaign_config}. The
 empirical characterisation of the three interfaces is presented in
 Chapter~\ref{ch:results}.
@@ -2405,13 +2438,13 @@ question.
     intervals from verified readiness to admission, from admission to the
     first routed request, and from provisioning to the first successful
     response, and the relief of the existing nodes once the new backend
-    begins serving. How much a lost notification costs is measured under
-    readiness-event loss: the slow-share, the fraction of served requests
+    begins serving. The cost of a lost message is measured in the
+    slow-share, the fraction of served requests
     that time out or exceed one second, over the full plateau (the
     campaign's demand episode), the onset window (the first 150~s of the
-    plateau), and the plateau tail (the last 300~s of the plateau); and the
-    number of admissions, the candidates abandoned and
-    torn down. How much a premature claim costs is read as the change
+    plateau), and the plateau tail (the last 300~s of the plateau), and in
+    the number of admissions, the candidates abandoned and
+    torn down. The cost of a premature message is read as the change
     in the same user-visible measure against a matched no-fault run.
     A backend counts as admitted when it becomes visible in the routing pool, not
     when its registration is recorded.
@@ -2427,7 +2460,7 @@ manipulation. Each campaign varies exactly one interface of the
 demand-to-capacity chain and holds the other two constant, so that the
 measured differences are attributable to the interface under test. The
 policies compared within a campaign are baselines that encode architectural
-properties, such as a fixed single-tier scaling policy or a periodic discovery
+properties, such as a fixed single-tier scaling policy or a periodic polling
 mechanism, and not competing aspects. Each campaign was pre-registered with the
 treatments, primary outcomes, screening rules, and analysis tests all fixed
 before data collection. 
@@ -2486,11 +2519,11 @@ readiness to admission, compared within the backend's measured start-up
 class (fast- or slow-binding): on this testbed the socket bind
 intermittently stalls for several seconds when a backend starts during an
 active run, a shared platform cost recorded per backend, random across
-backends and equal across the compared rules, which the within-class
+backends and equal across the compared modes, which the within-class
 comparison removes. It reports
 its event-loss comparison as differences
 in the slow share, in percentage points, within each matched block, and its
-premature-claim comparison as per-rule damage against a matched no-fault
+premature-message comparison as per-mode damage against a matched no-fault
 run. It reports no confidence intervals, because its pre-registered checks were
 thresholds and agreement across blocks. No correction is made for testing
 several contrasts at once, because each campaign fixed a small number of
@@ -3000,45 +3033,31 @@ its workloads, and its resource limits. The platform behaviours
 observed at those limits are carried to Chapter~\ref{ch:conclusions} as
 limitations and future work.
 
-\section{Readiness Admission to Traffic (RQ3)}\label{sec:results_rq3_readiness}
+\section{Readiness Admission Modes under Three Message Conditions (RQ3)}\label{sec:results_rq3_readiness}
 
-This section evaluates readiness admission, the step that turns a
-newly provisioned backend into usable capacity, spanning how fast the
-controller admits the backend into the routing pool for load distribution
-while everything works, and what each rule does when the readiness claim
-is lost or early.
+This section evaluates readiness admission: when a newly provisioned
+backend is admitted into the routing pool and starts receiving traffic.
+The backend sends a message when it can serve, and each mode turns that
+message into traffic differently. The four modes are compared under
+three message conditions, each against its pre-registered expectation,
+with the readiness criterion, the
+load-balancing policy, the workload, and the resource limits held fixed
+within each compared set, so that the mode is the only
+variable (Table~\ref{tab:rq3_design}).
 
-All rules observe the same verified-readiness state
-(Table~\ref{tab:rq3_design}), with the readiness criterion, the
-load-balancing policy, the workload, and the resource limits held
-fixed within each compared set, leaving the admission rule as the only
-variable.
+The modes pair the direct approach with a safeguard. Backend notification
+admits on the message alone and nothing re-checks it, its fallback
+sitting beyond the abandonment bound. Notification with a fallback check
+is event-driven with a fallback for a lost message: it waits 20~s for
+the message and checks the backend if none arrives. Periodic polling
+ignores the message and checks the backend every 10~s. Notification with
+a confirmation check treats the message as a prompt: it wakes a check,
+and admission requires the check to pass. A check passes only once the
+backend can serve.
 
-The rules differ in the evidence they trust. Direct lifecycle
-notification admits on the readiness message the backend sends, without
-re-checking. The probe fallback variant waits 20~s for that message and
-otherwise probes the backend. Periodic discovery ignores the message and
-probes on a 10~s poll. Wake-and-verify lets the message wake a probe and
-admits only if the probe passes. The probe is the readiness health check
-the controller sends, and it passes only once the backend can serve. The
-direct rule's 130~s fallback timer never fires, because the controller
-abandons a backend that is not admitted within 120~s, so the rule
-depends entirely on the message.
-
-The pre-registered expectation was that the rules would separate exactly
-where their evidence fails. First, while the readiness event is intact,
-direct lifecycle notification should admit new backends earlier, with
-that head start showing only in when the redistribution begins, not in
-how the nodes behave once admission occurs. Second, under total event
-loss with reduced headroom, a lost event without a recovery path should
-leave the new capacity ready but unused, at a decisive but bounded cost
-to service quality, while both re-deriving rules recover and relief
-completes. Third, a premature readiness claim should expose the trusting
-rules while the waiting rules absorb it.
-The claim can arrive before the backend can serve, and the rules were
-measured under that failure, with damage reported in the same measure as
-above, the change in the share of requests that fail, time out, or
-exceed one second against a matched no-fault run.
+The conditions reproduce how a message can behave in practice: it
+arrives when sent, it never arrives, or it arrives before the backend
+can serve.
 
 \begin{table}[H]
     \centering
@@ -3049,34 +3068,35 @@ exceed one second against a matched no-fault run.
         \toprule
         Item & Design \\
         \midrule
-        Treatment & Readiness-admission coordination: direct lifecycle
-        notification versus periodic discovery (10~s poll), with a probe
-        fallback variant and a wake-and-verify variant; the first three rules
-        are measured with an intact readiness-event source, under total event
-        loss, and under a premature readiness claim (2/5/10~s), while
-        wake-and-verify is measured under the premature claim at the
-        ten-second lead. \\
-        Held constant & Readiness criterion (same probe), load-balancing
+        Treatment & Readiness-admission coordination, compared across four
+        admission modes: backend notification, notification with a fallback
+        check (the control, which recovers a lost message without verifying
+        it), periodic polling, and notification with a confirmation check. \\
+        Message conditions & Each condition is held for the whole run.
+        Intact: the message arrives as sent. Lost: every message is dropped.
+        Premature: the message arrives before the backend can serve, at a
+        ten-second lead in the evaluated matrix. \\
+        Held constant & Readiness criterion (the same check), load-balancing
         policy, routing weights, pool state, workload shape, per-backend CPU
         quota (fixed within each compared set, with per-set quota values
         listed in Appendix~\ref{app:campaign_config}). \\
-        Workload & Admission timing with an intact event source; fault
+        Workload & Admission timing with an intact message; fault
         comparison on a baseline followed by a 600~s compute-bound plateau (rate
         2.0 per client, pure service pressure) under fixed reduced headroom
-        (per-backend CPU quota 0.12); the premature-claim runs reuse the
+        (per-backend CPU quota 0.12); the premature-message runs reuse the
         same plateau. \\
         Experimental unit & Run; the fault comparison is per block,
         admission intervals additionally analysed per backend within runs. \\
-        Replication & Three admission configurations and two fault arms in
-        six blocks (36 runs, seeds 5201--5206), arm order rotated per block;
-        the admission timing is characterised on separate intact-source
-        campaigns, each with its own fixed workload and quota: a per-backend
-        campaign of six runs per mechanism, a higher-rate arm of six runs per
-        mechanism at 12.0 requests per second per client, a seven-run-per-rule
-        campaign for the relief comparison, and a poll-interval sensitivity arm
-        of six runs reported descriptively; a premature-claim grid runs four
-        rules over three seed-matched blocks (seeds 6301--6303), arm order
-        rotated per block. Samples are never pooled across these sets. \\
+        Replication & Four admission modes over three message conditions,
+        seven seed-matched blocks per mode (intact and lost at seeds
+        5201--5207; premature at seeds 6301--6307, each block paired with a
+        matched no-fault run), arm order rotated per block; the admission
+        timing is characterised on separate intact-source campaigns, each
+        with its own fixed workload and quota: a per-backend campaign of
+        seven runs per mechanism, a higher-rate arm of six runs per mechanism
+        at 12.0 requests per second per client, a relief comparison of seven
+        runs per mode, and a poll-interval sensitivity arm of seven runs
+        reported descriptively. Samples are never pooled across these sets. \\
         Exclusions & One block excluded from the fault comparison (no-fault
         control tail breach); pre-registered health floors on the no-fault
         arm. \\
@@ -3087,115 +3107,131 @@ exceed one second against a matched no-fault run.
         percentage points (pp), over the full plateau and the onset window
         (at least 5~pp per window; medians at least 7~pp),
         exact Mann--Whitney U of the per-block differences, relief completion on the
-        plateau tail, and boundedness of the lifecycle-only degradation 
-        (slow share at most 25~\%). Timing failure: per-rule damage in the common user-visible
-        measure against a same-seed no-fault run, read as a trend across the
-        2/5/10~s leads. \\
-        Expectations & While the readiness event is intact, the direct
-        lifecycle configuration admits earlier in every start-up class, the
-        admission interval is bounded by the configured poll period, and the
-        new-backend load and the relief of the existing nodes are unchanged between the
-        rules once admission occurs. Under total event loss with reduced
-        headroom, a decisive slow-share difference for the lifecycle-only
-        configuration over the full plateau and the onset window, at least
+        plateau tail, and boundedness of the backend-notification degradation 
+        (slow share at most 25~\%). Premature message: per-mode damage in the common user-visible
+        measure against a same-seed no-fault run, at the evaluated ten-second
+        lead. \\
+        Expectations & While the message is intact, backend notification
+        admits earlier in every start-up class, the admission interval is
+        bounded by the configured polling period, and the new-backend load
+        and the relief of the existing nodes are unchanged between the modes
+        once admission occurs. When the message is lost under reduced
+        headroom, a decisive slow-share difference for backend notification
+        over the full plateau and the onset window, at least
         5~pp per window (medians at least 7~pp), bounded overall (slow share at most
         25~\%), no
-        redistribution by the lifecycle-only configuration, recovery by both
-        re-deriving rules with relief completing on the plateau tail, and the
+        redistribution under backend notification, recovery by the modes that
+        re-derive readiness with relief completing on the plateau tail, and the
         no-fault arm holding the pre-registered health floors. Under a
-        premature claim, the trusting rules are exposed while the waiting
-        rules hold their no-fault level. \\
+        premature message, the modes that admit on it are exposed while the
+        modes that check hold their no-fault level. \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-With everything working, the difference between the rules is the one the
-design implies. Direct lifecycle notification admits the backend the
-moment its message arrives, while periodic discovery waits for its next
-poll. The measured gap is complete, with a median of 0.001~s against
-6.984~s from verified readiness to admission ($\delta = -1.000$, earlier in
-every backend), with the full chain in Table~\ref{tab:rq3_delays} and
+While the message is intact, the expectation was that the modes that
+admit on the message would admit earlier in every start-up class, that
+the checking mode would wait at most one polling period, and that the
+modes would not differ once admission occurred. Notification with a
+fallback check behaves like backend notification while the message
+arrives, because its fallback only fires when none does, so the priced
+contrast is between admitting on the message and checking for it. The
+measured gap is complete, with a median of 0.001~s against 6.984~s from
+verified readiness to admission ($\delta = -1.000$, earlier in every
+backend), with the full chain in Table~\ref{tab:rq3_delays} and
 Figure~\ref{fig:rq3_admission_intervals}. The head start reached the
 user end to end. Provisioning to the first successful response was about
-six seconds shorter under direct notification (11.27~s against 17.70~s,
+six seconds shorter under backend notification (11.27~s against 17.70~s,
 exact $p = 0.0005$), and relief reached the loaded tier about four
 seconds sooner (scaling decision to usable capacity 2.17~s against
-6.01~s, exact $p = 0.0022$). Once admitted, both rules served the first
-request in about a second. The load then left the existing nodes by the
-same amount under both rules (relief $p = 0.209$), so the rule changes
-when the redistribution begins, not how much it moves. A pre-registered
-poll-interval sensitivity arm (six runs at a 15~s interval) showed the
-delay scaling with the poll period: the admission interval 15.22~s
-against 9.62~s at the 10~s interval, and the time from the scaling
-decision to usable capacity 16.97~s against 11.45~s, both rising by
-about the added five seconds (descriptive, Cliff's $\delta = -0.444$).
-No user-visible cost of the seconds-level delay appeared in any
-tested healthy regime, and the interval stayed inside the spare capacity of
-the existing nodes, the margin that the event-loss part of the campaign
-deliberately removes.
+6.01~s, exact $p = 0.0022$). Once admitted, both modes served the first
+request in about a second, and the load left the existing nodes by the
+same amount under both (relief $p = 0.209$): the mode changes when the
+redistribution begins, not how much it moves. The expectation held. The
+checking mode pays its polling granularity and nothing more, as the
+pre-registered poll-interval sensitivity arm shows (six runs at a 15~s
+interval: the admission interval 15.22~s against 9.62~s at the 10~s
+interval, and the time from the scaling decision to usable capacity
+16.97~s against 11.45~s, both rising by about the added five seconds;
+descriptive, Cliff's $\delta = -0.444$), and the delay stayed inside the
+spare capacity of the existing nodes, the margin that the lost-message
+part of the campaign deliberately removes. No user-visible cost of the
+seconds-level delay appeared in any tested healthy regime.
+The confirmation check kept that pace. Its backends reached the first
+successful response in a median of 4.0~s against 4.1~s under backend
+notification, a near-tie, and close to six seconds before periodic
+polling (10.0~s). The comparison covers the fast-binding class only,
+because the intermittent bind stall of the recorded campaign did not
+occur in the completion runs (no backend bound slower than a tenth of a
+second), so the slow class carries no reading for this mode.
 
 \begin{table}[H]
     \centering
     \caption{Admission-chain intervals and healthy-regime outcomes (intact
-    readiness-event source; direct lifecycle notification versus periodic
-    discovery). Medians over runs and per-backend intervals as marked;
+    message; backend notification versus periodic polling). Medians over
+    runs and per-backend intervals as marked;
     exact Mann--Whitney $p$-values as pre-registered.}
     \label{tab:rq3_delays}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
-    \begin{tabular}{p{0.32\textwidth} c c p{0.32\textwidth}}
+    \begin{tabular}{p{0.26\textwidth} c c p{0.28\textwidth}}
         \toprule
-        Interval & Direct & Periodic & Test \\
+        Interval & Backend notification & Periodic polling & Test \\
         \midrule
         Verified readiness$\to$admission (s) & 0.001 & 6.984 & $\delta = -1.000$; earlier in every start-up class \\
         Provisioning$\to$first successful response (s) & 11.27 & 17.70 & exact $p = 0.0005$, $\delta = -0.594$ \\
         Scaling decision$\to$usable capacity (s) & 2.17 & 6.01 & exact $p = 0.0022$, $\delta = -1.000$ \\
         Admission$\to$first routed request (s) & 0.4--1.2 & 0.4--1.2 & confirmatory; not separated \\
-        Relief of the existing nodes (per-run median, pp; seven runs per rule) & 16.0 & 19.3 & exact $p = 0.209$; not separated \\
+        Relief of the existing nodes (per-run median, pp; seven runs per mode) & 16.0 & 19.3 & exact $p = 0.209$; not separated \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/rq3_admission_intervals_v2.png}
-    \caption{Admission-chain intervals of the intact-source campaign.
-    (a) Provisioning to first successful response per backend (medians
-    1.7 and 11.5~s against 9.2 and 18.3~s; exact $p = 0.0005$ pooled,
-    complete separation within classes). (b) Scaling decision to usable
-    capacity per run (the higher-rate arm, 12.0 requests per second per
-    client, six runs per mechanism; medians 2.17 against 6.01~s; exact
-    $p = 0.0022$, $\delta = -1.000$). Start-up class is the backend's
+    \includegraphics[width=0.9\textwidth]{images/rq3_admission_intervals_v3.png}
+    \caption{Admission-chain intervals under an intact message, all four
+    admission modes. (a) Provisioning to first successful response per
+    backend over the seven seed-matched blocks (fast-binding class medians
+    4.1, 3.1, 10.0 and 4.0~s; slow class 13.7, 13.7 and 19.8~s, with no
+    confirmation-check backends, because the stall did not occur in the
+    completion runs). (b) Scaling decision to usable capacity per run (the
+    recorded higher-rate arm, 12.0 requests per second per client, six runs
+    per mechanism; medians 2.17 against 6.01~s; exact $p = 0.0022$,
+    $\delta = -1.000$). Start-up class is the backend's
     measured socket bind time, under a second on some backends and several
     seconds on others; the stall is an intermittent platform cost at spawn,
-    equal across the rules, and held fixed by the within-class comparison.
+    equal across the modes, and held fixed by the within-class comparison.
     Black dots are individual
     backends (a) and runs (b); coloured bars and marks are medians;
     whiskers span the min--max range.}
     \label{fig:rq3_admission_intervals}
 \end{figure}
 
-When the readiness event is lost under reduced headroom, the rules
-diverge in kind (Table~\ref{tab:rq3_fault} and
+When the message is lost under reduced headroom, the expectation was
+that a mode without a re-derivation path would leave the new capacity
+dark at a decisive but bounded cost, while the modes that re-derive
+readiness would recover and relief would complete. The modes diverge in
+kind (Table~\ref{tab:rq3_fault} and
 Figure~\ref{fig:rq3_event_loss_outcome}). The reduced headroom is
 deliberate: the fault comparison runs at a reduced per-backend CPU quota,
 so the existing nodes carry thin spare capacity and the cost of a lost
-admission is exposed rather than absorbed by slack. A rule that admits only on the
-event never learns the backend is ready, so the direct rule admitted no
+admission is exposed rather than absorbed by slack. A mode that admits only on the
+message never learns the backend is ready, so backend notification admitted no
 backend in any loss run, every candidate abandoned and torn down (32--35
-per block). Both re-deriving rules recover, because they observe
-readiness again through their own probes. The fallback variant admitted
-after its fallback window, about 21~s after provisioning, and periodic
-discovery within one poll period, beginning about four seconds sooner
-(medians 17.1~s against 21.4~s). In the premature-claim grid's loss runs
-(seeds 6301--6303), periodic discovery also recovered through its poll,
+per block). The modes that re-derive readiness recover, because they observe
+it again through their own checks. Notification with a fallback check admitted
+after its fallback wait, about 21~s after provisioning, and periodic
+polling within one polling period, beginning about four seconds sooner
+(medians 17.1~s against 21.4~s). In the premature grid's loss runs
+(seeds 6301--6303), periodic polling also recovered through its check,
 landing
 $+1.3$~pp from its matched no-fault runs.
 
-The consequence reached users. On the direct lifecycle configuration the
+The consequence reached users. Under backend notification the
 slow share, the fraction of served requests that timed out or exceeded
 one second, rose to 8.3--14.4~\% over the plateau, concentrated in the
-onset window, where the difference against the recovering rules had a
+onset window, where the difference against the recovering modes had a
 median of 28.0~pp (full plateau 7.64~pp, exact $p = 0.0040$), and it
 stayed bounded at a 10.6~\% plateau median, under the pre-registered
 ceiling of 25~\% on the slow share. The
@@ -3204,8 +3240,8 @@ removed was the spare capacity, not the service.
 
 \begin{table}[H]
     \centering
-    \caption{Readiness-admission configurations under total event loss
-    (event-loss part of the RQ3 campaign; six blocks, plateau pooled).
+    \caption{Admission modes under a lost message
+    (the RQ3 campaign; six blocks, plateau pooled).
     Admitted = visibility in the routing pool; abandoned
     candidates in parentheses. Plateau tail = slow share over the last
     300~s of the plateau; $^{\ast}$block~4 is excluded from the fault
@@ -3216,143 +3252,144 @@ removed was the spare capacity, not the service.
     \setlength{\tabcolsep}{2pt}
     \begin{tabular}{p{0.19\textwidth} p{0.15\textwidth} c c p{0.17\textwidth}}
         \toprule
-        Configuration & Re-derivation & Admitted (abandoned) & Plateau slow (\%) & Plateau tail (\%) \\
+        Mode & Re-derivation & Admitted (abandoned) & Plateau slow (\%) & Plateau tail (\%) \\
         \midrule
-        Direct lifecycle notification & none; fallback inert & 0 (32--35) & 8.3--14.4 & 1.0--1.3, except b2: 11.4 \\
-        Probe fallback variant & 20~s fallback probe & 4--6 (0) & 1.9--3.6 & $\le$1.5 \\
-        Periodic discovery & 10~s poll & 4--5 (0) & 2.0--5.0 & $\le$1.4, except b4$^{\ast}$: 4.08 \\
+        Backend notification & none; fallback inert & 0 (32--35) & 8.3--14.4 & 1.0--1.3, except b2: 11.4 \\
+        Notification with a fallback check & 20~s fallback check & 4--6 (0) & 1.9--3.6 & $\le$1.5 \\
+        Periodic polling & 10~s poll & 4--5 (0) & 2.0--5.0 & $\le$1.4, except b4$^{\ast}$: 4.08 \\
+        Notification with a confirmation check & 20~s absence fallback & 6--7 (0) & 1.1--4.1 & 0.7--3.7 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{images/rq3_event_loss_outcome.png}
-    \caption{Under total readiness-event loss with reduced headroom, only
-    the configurations that can re-derive readiness recover. (a) Slow share
-    (served requests timed out or slower than 1~s), median across the six
-    seed blocks per 10~s bin; the shaded band marks the onset window (first
-    150~s after the plateau starts). (b) Admitted backends per run (dots,
-    one per block; bars, medians; whiskers, the min--max range). In the six
-    direct-lifecycle runs no backend was admitted and 32--35 candidates per
-    run were abandoned and torn down, while the fallback variant and
-    periodic discovery admit through their re-check paths and relief
-    completes; no-fault runs admit 4--6 backends on every configuration,
-    with zero abandoned candidates.}
+    \includegraphics[width=0.95\textwidth]{images/rq3_event_loss_outcome_v2.png}
+    \caption{Under a lost message with reduced headroom, only
+    the modes that can re-derive readiness recover. (a) Slow share
+    (served requests timed out or slower than 1~s), median across the seven
+    seed-matched blocks per 10~s bin; the shaded band marks the onset window
+    (first 150~s after the plateau starts). (b) Admitted backends per run
+    (dots, one per block; bars, medians; whiskers, the min--max range). In the
+    seven backend-notification runs no backend was admitted and 32--35
+    candidates per run were abandoned and torn down, while the fallback
+    check, periodic polling and the confirmation check admit through their
+    own checks (medians 5, 5 and 6 backends) with relief completing;
+    no-fault runs admit on every mode, with zero abandoned candidates.}
     \label{fig:rq3_event_loss_outcome}
 \end{figure}
 
-One qualifier bounds the event-loss reading. Its pre-registered
-conjunction was not fully met, the shortfall confined to two marginal
-no-fault window breaches in the health-floor count that do not touch the
-comparison, with the block-4 exclusion resting on a separate pre-registered
-control-tail check recorded in Table~\ref{tab:rq3_fault}.
+The expectation held. Backend notification admitted no backend and paid
+a bounded but decisive cost to users, while the modes that re-derive
+readiness recovered and relief completed. The separation follows from
+what each mode can re-derive: a dropped message is unrecoverable for a
+mode that admits only on it, its fallback sitting beyond the abandonment
+bound, while the fallback check and the periodic poll observe readiness
+again through their own checks. One qualifier bounds the reading: the
+pre-registered conjunction was not fully met, the shortfall confined to
+two marginal no-fault window breaches in the health-floor count that do
+not touch the comparison, with the block-4 exclusion resting on a
+separate pre-registered control-tail check recorded in
+Table~\ref{tab:rq3_fault}.
+The confirmation check recovered through the same absence fallback,
+admitting 6--7 backends per run with none abandoned. Its paired slow
+share against its own fault-free partners stayed within the 2~pp bound
+in every one of the seven blocks (median change $-0.4$~pp), so the
+recovery carried no user cost.
 
-Under a premature claim, the rules separated by what their evidence
-can verify. A rule that admits on the claim sends traffic to a backend
-that cannot yet accept it, and the damage scales with how early the
-claim came.
-In the direct lifecycle configuration it rose with 
-the lead, from a median of $+4.1$~pp at two seconds to $+8.1$ and $+12.6$~pp at five
-and ten, and the transport failures inside the claim window rose in the
-same order (55--181 at two seconds, 865--997 at ten). The probe fallback
-variant shared the exposure, because its backup path reacts to a claim
-that never arrives, not to one that arrives early, and it admitted a
-present but premature claim as true (medians $-0.8$, $+8.6$ and
-$+13.3$~pp). Periodic discovery stayed at its no-fault level across the
-whole grid, with no positive reading above $+0.12$~pp and no window
-failures in any seed. Its probe cannot pass before the backend can
-serve, so the timing of the claim has nothing to act on. The
-wake-and-verify variant, which also admits only through its probe, held
-the same flat line at ten seconds ($-0.3$ and $-3.4$~pp), at a
-cost of $+0.2$ and $+3.1$~pp on the no-fault runs at those two seeds, the second
-over the pre-registered $+2$~pp descriptive bound (a third seed measured
-$+0.5$~pp, its damage comparison removed by the pre-registered exclusion).
-
-The pre-registered expectations were met where they committed
-(Table~\ref{tab:rq3_soundness} and Figure~\ref{fig:rq3_soundness_damage}).
-Exposure followed what each rule's evidence verifies. The trusting rules
-paid for the premature claim in proportion to its lead, while the rules
-that probe absorbed it, with periodic discovery keeping no positive
-damage above $+0.12$~pp and no recorded violations across the grid. The
-crossover pattern appeared in the direction and shape it named,
-with the crossing at the smallest tested lead in all three seeds and the
-fallback variant's growth interval clearing the pre-registered threshold,
-but the pre-registered growth gate was not passed at this replication,
-so the crossing is carried descriptively and its confidence is limited
-by the three-seed replication.
+Under a premature message at the evaluated lead of ten seconds, the
+expectation was that the modes that admit on the message would be
+exposed while the modes that check would absorb it
+(Table~\ref{tab:rq3_soundness} and
+Figure~\ref{fig:rq3_premature_damage}). Damage is read in the same
+user-visible measure as above: the change in the share of requests that
+fail, time out, or exceed one second, against a matched no-fault run. Backend
+notification carried a median damage of $+14.4$~pp against its matched
+no-fault runs, positive in all six usable pairs, with one pair dropped
+for a breach of the no-fault health floors. Notification with a fallback
+check shared the exposure (median $+11.7$~pp, positive in six of seven
+pairs). Periodic polling stayed at its no-fault level (median
+$-0.1$~pp, within the $2$~pp bound in all seven pairs). The same-fault
+contrasts confirm the separation, $+17.0$~pp and $+16.2$~pp over the
+seven blocks, positive in every block in both. The expectation held, and
+the justification is the evidence each mode trusts: the fallback check
+reacts to a message that never arrives, not to one that arrives early,
+so it shares the exposure, while the periodic poll's check cannot pass
+before the backend can serve, so the timing of the message has nothing
+to act on.
+The confirmation check was immune in the same way: a median damage of
+$-0.9$~pp over the seven seed-matched pairs, within the $2$~pp bound in
+six of them (the exception a $+3.1$~pp pair). It admitted at true
+servability, reaching the first successful response 11.0~s after the
+message against 19.5~s under periodic polling. Backend notification was
+$+16.9$~pp more damaged than it, positive in every block, and its own
+damage against periodic polling is a near-tie ($-0.2$~pp). Two of its
+runs carried the small pre-bind transient recorded for the pilot (two
+early successes), reported per run; the cell stays assessable.
 
 \begin{table}[H]
     \centering
-    \caption{Pre-registered criteria of the premature-claim grid
-    and their outcomes (three seeds per rule and lead, values are seed medians of
-    the per-seed damage, computed from the archived runs). The crossover
-    criterion is carried descriptively, because its strict growth test was
-    not passed at this replication.}
+    \caption{User-visible damage of the admission modes under a premature
+    message at the evaluated ten-second lead (seven seed-matched pairs per
+    mode). Damage is the change, in percentage points, in the share of
+    requests that fail, time out, or exceed one second, against a matched
+    no-fault run; medians over the seven seed-matched pairs. A positive
+    reading means
+    the fault run's share was above that of its no-fault partner.}
     \label{tab:rq3_soundness}
     \footnotesize
     \setlength{\tabcolsep}{4pt}
-    \begin{tabular}{p{0.24\textwidth} p{0.30\textwidth} p{0.38\textwidth}}
+    \begin{tabular}{p{0.40\textwidth} c c c}
         \toprule
-        Criterion & Pre-registered threshold & Observed \\
+        Mode & Median damage (pp) & Positive pairs & Within 2~pp \\
         \midrule
-        Claim-admitting rules exposed & In-window transport failures at
-        least 10 per domain at every lead, at least two of three seeds &
-        The direct rule 55--181 at two seconds against 865--997 at ten,
-        with damage medians of $+4.1$, $+8.1$ and $+12.6$~pp. The fallback
-        variant shares the exposure ($-0.8$, $+8.6$ and $+13.3$~pp). Three
-        of three seeds \\
-        Probing rules absorb the premature claim & Premature-claim damage at
-        most 2~pp, on the same seeds & Periodic discovery kept no positive
-        reading above $+0.12$~pp and no window failures in any seed, and
-        wake-and-verify held $-0.3$ and $-3.4$~pp at ten seconds, at a
-        cost of $+0.2$ and $+3.1$~pp on the no-fault runs, the second over the
-        $+2$~pp descriptive bound (a third seed measured $+0.5$~pp, its
-        damage comparison removed by the pre-registered exclusion) \\
-        Crossover across the claim lead & Growth test passed and crossing
-        band reported & Trend present, with the direct rule at
-        $+1.0$~pp/s and the fallback variant interval clearing the
-        threshold. The strict growth test was not passed at three seeds.
-        The crossing sits at the smallest tested lead in all three seeds
-        and is carried descriptively \\
+        Backend notification & $+14.4$ & 6/6 & 0 \\
+        Notification with a fallback check & $+11.7$ & 6/7 & 2 \\
+        Periodic polling & $-0.1$ & 3/7 & 7/7 \\
+        Notification with a confirmation check & $-0.9$ & 1/7 & 6/7 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.72\textwidth]{images/rq3_soundness_damage_v2.png}
-    \caption{User-visible damage of the admission rules against the
-    premature-claim lead (two, five and ten seconds), with seed medians as
-    lines and individual seeds as dots. Damage is the change, in
-    percentage points, in the share of requests that fail, time out, or
-    exceed one second, against a matched no-fault run. A negative reading
-    means the fault run's share was below that of its no-fault partner,
-    within the run-to-run variation. The trusting rules price the lead
-    while the waiting rules stay flat. The crossing sits at the smallest
-    tested lead in all three seeds and is carried descriptively, because
-    the strict growth test was not passed at this replication. The
-    wake-and-verify variant appears at ten seconds at two seeds, its third
-    removed by the pre-registered no-fault exclusion.}
-    \label{fig:rq3_soundness_damage}
+    \includegraphics[width=0.72\textwidth]{images/rq3_premature_damage.png}
+    \caption{User-visible damage of the four admission modes under a
+    premature message at the evaluated ten-second lead. Bars are the
+    medians over the usable pairs, dots the individual seed-matched pairs,
+    and the dotted line the pre-registered $2$~pp bound; a positive reading
+    means the fault run's share of slow requests was above that of its
+    no-fault partner. The confirmation check admits at true servability,
+    which also places it first to a first successful response after the
+    message (11.0~s against 19.5~s under periodic polling).}
+    \label{fig:rq3_premature_damage}
 \end{figure}
 
-In conclusion, while
-the readiness event was intact, the admission interval was bounded by the
-discovery interval and passed without user-visible cost. When the event was
-lost under reduced headroom, the lifecycle-only configuration paid a
-bounded service-quality cost while both re-deriving rules recovered. And
-when the claim arrived early, the rules separated by what their evidence
-can see. A premature claim cost the trusting rules in proportion to its
-lead while the waiting rules priced it at nothing. Readiness-admission
+Across the pre-registered criteria, the set closes as follows: the
+intact direction, the one-period band, and the post-admission
+invariance held; the lost separation and boundedness held, with the
+full conjunction missed on two marginal no-fault breaches; and the
+premature criterion held in both directions, the modes that admit on
+the message exposed and the modes that check holding their no-fault
+level. For the confirmation check, the intact direction and the lost
+no-harm reading held in the classes with evidence, and the premature
+criterion held outright, its admission landing at true servability.
+
+In sum, while the message was intact, the admission interval was bounded by the
+polling period and passed without user-visible cost. When the message was
+lost under reduced headroom, backend notification paid a
+bounded service-quality cost while the modes that re-derive readiness
+recovered. And when the message arrived early, the modes separated by
+what their evidence can see. A premature message cost the modes that
+admit on it while the modes that check priced it at nothing. Readiness-admission
 coordination is therefore at once a latency choice (about seven seconds
 of added delay while everything works) and a reliability choice, deciding
 whether a ready backend's capacity is delayed or lost when the
-notification is lost, and whether a premature notification reaches
+message is lost, and whether a premature message reaches
 traffic before the backend can serve. Because admission fills the
 routing pool, the same choice sets what the load distribution can rely
-on when load has triggered the scaling. A lost event hides ready
-capacity from the pool. A premature claim exposes capacity that cannot
+on when load has triggered the scaling. A lost message hides ready
+capacity from the pool. A premature message exposes capacity that cannot
 yet absorb traffic. The reported effects hold for the evaluated
 two-domain testbed, its workloads, and its resource limits.
 
@@ -3414,13 +3451,12 @@ Chapter~\ref{ch:conclusions}.
         reported unmet \\
         Readiness admission (RQ3) & Loss without re-derivation leaves
         capacity dark (zero admissions, six of six blocks), and a
-        premature claim damages only the rules that admit on it (damage
-        medians up to $+13.3$~pp) while the probing rules stay flat & The loss
+        premature message damages only the modes that admit on it (damage
+        medians up to $+14.4$~pp) while the modes that check stay flat & The loss
         cost under the reduced headroom the campaign fixed, and
-        premature-claim damage scaling with the claim lead for the trusting
-        rules while the waiting rules stay flat (trend carried, strict
-        growth test not passed at three seeds) & The strict growth criterion of
-        the crossover test and the event-loss reading's full pre-registered
+        premature-message damage for the modes that admit on the message
+        while the modes that check stay flat at the evaluated ten-second
+        lead & The lost-message reading's full pre-registered
         conjunction (two marginal no-fault window breaches) \\
         \bottomrule
     \end{tabular}
@@ -3438,7 +3474,7 @@ built a capacity-bound queue in the served tier. Where no queue formed,
 the compute action recovered nothing and the provisioning itself left a
 tail. The admission
 delay cost nothing while the nodes held spare capacity, and the lost
-notification consumed that margin under the reduced headroom the
+message consumed that margin under the reduced headroom the
 campaign fixed. On the evaluated testbed, the three interfaces decide how a
 demand shift is weathered, not how the service performs once the shift has
 passed.
@@ -3459,11 +3495,11 @@ late-episode tail in both compute-scaling arms, and on the
 data-access-bound episode the bottleneck-aware arm's additional compute
 action coincided with a tail spike in two of its five replicates, so
 provisioning is not invisible to users while an episode is
-live. In the admission interface, latency and reliability are separate. The
-faster mechanism saved about seven seconds while the platform was healthy, and
-the same mechanism lost the admission entirely when its single notification
-was dropped, while the re-deriving rules turned the same loss into a
-bounded delay, and a premature notification cost only the rules that
+live. In the admission interface, latency and reliability are separate. Backend
+notification saved about seven seconds while the platform was healthy, and
+lost the admission entirely when its single message
+was dropped, while the modes that re-derive readiness turned the same loss into a
+bounded delay, and a premature message cost only the modes that
 admitted on it. Because admission fills the routing pool, the choice also
 sets what the load distribution can rely on once scaling has been
 triggered.
@@ -3475,8 +3511,8 @@ and within 2--22~\% across the action episodes depending on the regime (the
 storage-only policy at the low end, the compute-adding policies at the high
 end), with memory near 70~MB everywhere. The records differ as designed:
 about 335 deliveries per run under push and delayed push against about
-105--114 under polling and sampled push, probe records in place of events under
-discovery admission, and eight or six compute scale-ups per run where the
+105--114 under polling and sampled push, check records in place of messages under
+periodic polling, and eight or six compute scale-ups per run where the
 compute policies acted (configuration medians in
 Table~\ref{tab:app_config_control_cost}).
 
@@ -3562,7 +3598,7 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 %  - Demand variation (§1.1): §5.1 demand model and the block/seed design
 %    that the conditioned effects rest on.
 %  - Loss or delay of evidence (§1.1): RQ1 loss-vs-delay separation; RQ3
-%    lost notification; RQ2 delayed relief.
+%    lost message; RQ2 delayed relief.
 %  - Cloud, mobile and traffic context (§1.1): background only, no measured
 %    claim.
 
@@ -3577,7 +3613,7 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 % wide-area performance claim. Single window size;
 % statistical power (n=3 per condition); RQ1/RQ2/RQ3 rely on required extensions and are
 % designed, not fully measured (thesis_overview.md §6); the old RQ2 slowstart result (~31 s,
-% n=9) is supporting calibration evidence for RQ3's periodic-discovery condition, not final
+% n=9) is supporting calibration evidence for RQ3's periodic-polling condition, not final
 % evidence; MongoDB-specific mechanisms (Double-VIP); no end-to-end coordination penalty is
 % claimed — per-interface results are synthesized only under a matched schema.
 % Cross-domain service placement: requests can be served by the peer domain's
@@ -3754,9 +3790,9 @@ weights.\par}
         Action & storage-only, data-access-bound & reserve activations & 15.6~\% & 69~MB \\
         Action & bottleneck-aware, data-access-bound & 6 compute scale-ups and reserve activations & 22.3~\% & 70~MB \\
         Action & no action (comparator) & none & 2.2 / 17.0~\% & 66 / 69~MB \\
-        Admission & direct lifecycle & 4 events & 10.9~\% & 67~MB \\
-        Admission & periodic discovery, 10~s & 4 probe records & 11.5~\% & 66~MB \\
-        Admission & periodic discovery, 15~s & 4 probe records & 11.0~\% & 66~MB \\
+        Admission & backend notification & 4 events & 10.9~\% & 67~MB \\
+        Admission & periodic polling, 10~s & 4 check records & 11.5~\% & 66~MB \\
+        Admission & periodic polling, 15~s & 4 check records & 11.0~\% & 66~MB \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -3777,14 +3813,14 @@ medians across that configuration's runs.\par}
         \toprule
         Knob & Meaning \\
         \midrule
-        \texttt{READINESS\_PROPAGATION} & Compute-admission mode. \texttt{off} registers a replica immediately, \texttt{direct} admits on the \texttt{app\_ready} event, and \texttt{discovery} probes on the poll interval. \\
-        \texttt{READINESS\_EVENT\_FALLBACK\_S} & Direct mode. The time the gate waits for the event before probing anyway. 20~s in the reported admission runs and 130~s in the fault-robustness event-only configuration, where probing cannot begin before the abandonment bound. \\
-        \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Discovery probe interval. 10~s in the primary arms and 15~s in the sensitivity arm. \\
-        \texttt{READINESS\_WAKE\_VERIFY\_MODE} & \texttt{probe} enables the wake-and-verify rule on the direct base. The event wakes a probe, and admission requires the probe to pass. \\
+        \texttt{READINESS\_PROPAGATION} & Compute-admission mode. \texttt{off} registers a replica immediately, \texttt{direct} admits on the \texttt{app\_ready} message, and \texttt{discovery} checks on the polling interval. \\
+        \texttt{READINESS\_EVENT\_FALLBACK\_S} & Direct mode. The time the gate waits for the message before checking anyway. 20~s in the reported admission runs and 130~s in the backend-notification configuration, where the check cannot begin before the abandonment bound. \\
+        \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Polling interval. 10~s in the primary arms and 15~s in the sensitivity arm. \\
+        \texttt{READINESS\_WAKE\_VERIFY\_MODE} & \texttt{probe} enables the confirmation check on the direct base. The message wakes a check, and admission requires the check to pass. \\
         \texttt{READINESS\_PROBE\_TIMEOUT\_S}, \texttt{\_RETRY\_S}, \texttt{\_MAX\_S} & Probe timeout (5~s), retry interval (1~s), and abandonment bound (120~s). \\
-        \texttt{EDGE\_READY\_PREMATURE\_S} & Fault instrumentation. The replica claims readiness this many seconds before it can serve, 2, 5, and 10~s in the premature-claim grid. \\
+        \texttt{EDGE\_READY\_PREMATURE\_S} & Fault instrumentation. The replica reports readiness this many seconds before it can serve, ten seconds in the evaluated premature runs. \\
         \texttt{EDGE\_READY\_SEMANTIC\_LIE\_S} & Fault instrumentation. Workload requests fail while the readiness predicate stays satisfied, for this window counted from bind (1200~s). \\
-        \texttt{READINESS\_EVENT\_DROP\_MODE} & Fault instrumentation. The readiness event is dropped entirely. \\
+        \texttt{READINESS\_EVENT\_DROP\_MODE} & Fault instrumentation. The readiness message is dropped entirely. \\
         \texttt{TELEMETRY\_SOURCE} & Telemetry mode source. \texttt{event\_preserving} implements push, \texttt{delayed\_event\_preserving} implements delayed push (\texttt{DELAY\_S}, 30~s), \texttt{poll} implements polling (\texttt{POLL\_INTERVAL\_S}, 30~s in the campaign), and \texttt{sampled\_push} implements sampled push (\texttt{SAMPLE\_EVERY}, every third summary); \texttt{zmq} is the platform's raw push default. \\
         \texttt{VIP\_FLOW\_ISOLATION}, \texttt{EDGE\_FLOW\_ISOLATION} & One fresh routing decision per measured request, with per-connection service-path flows. \\
         \bottomrule

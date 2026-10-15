@@ -1,15 +1,15 @@
 # Results — RQ3 Admission Modes (Readiness-Admission Completion Campaign)
 
-**Date**: 2026-10-13 · **Plan**: [experiment_plan.md](experiment_plan.md) · **Matrix**: [run_matrix.md](run_matrix.md) · **Run log**: [campaign_log.md](campaign_log.md) · **Host**: `cloud-vm-rq3` · **Executed**: 38 runs, 2026-10-11 → 2026-10-13
+**Date**: 2026-10-13 · **Revised**: 2026-10-15 (C4 + E-W screen integration) · **Plan**: [experiment_plan.md](experiment_plan.md) · **Matrix**: [run_matrix.md](run_matrix.md) · **Run log**: [campaign_log.md](campaign_log.md) · **Host**: `cloud-vm-rq3` · **Executed**: 60 runs, 2026-10-11 → 2026-10-14
 
-Analysis-only record (no runs, no configuration changes). Screen inputs (final archived, `analysis/`): `completion_intact.json`, `completion_lost.json` (2026-10-12 02:47Z), `completion_premature_full.json` (2026-10-13 02:28Z), `completion_support.json` (2026-10-13 04:56Z); provenance `platform_identity.json`, `platform_identity_provision_check.json`, `canonical_hashes.json`, `family_profile_restore.json`. Every number below is quoted from these records; screen fractions are re-expressed in pp/% at 2 dp.
+Analysis-only record (no runs, no configuration changes). Screen inputs (final archived, `analysis/`): `completion_intact.json`, `completion_lost.json` (2026-10-12 02:47Z), `completion_premature_full.json` (2026-10-13 02:28Z), `completion_support.json` (2026-10-13 04:56Z), and the C4/E-W screens `completion_intact_wake.json`, `completion_lost_wake.json`, `completion_premature_wake.json` (2026-10-15) with their figure-data companion `completion_figures_data.json` and the timing record `wake_claim_to_first.json`; provenance `platform_identity.json`, `platform_identity_provision_check.json`, `canonical_hashes.json`, `family_profile_restore.json`. Every number below is quoted from these records; screen fractions are re-expressed in pp/% at 2 dp.
 
 ## 1. Scope & provenance
 
 | Item | Record |
 |---|---|
 | Campaign | RQ3 Admission Modes — readiness-admission completion (Family 6, 7-block standardisation) |
-| Dates | 2026-10-11 18:10:54Z (C1 first launch) → 2026-10-13 04:44:06Z (C3 end); family-profile restore 04:46:44Z; support screen 04:56Z |
+| Dates | 2026-10-11 18:10:54Z (C1 first launch) → 2026-10-14 13:56:43Z (C4 last run end); family-profile restore 2026-10-13 04:46:44Z; support screen 04:56Z; C4 verification complete 2026-10-14 14:05Z |
 | Host | `cloud-vm-rq3` |
 | Timing execution tree | `~/rq3tim_frozen` @ `852a8a3` (tag `rq3tim-preflight-20260908`) — C1 + replacement re-runs |
 | Soundness execution tree | `~/rq3snd_frozen2` @ `541fb22` (tag `rq3snd-preflight-20261003`) — C2 |
@@ -18,10 +18,10 @@ Analysis-only record (no runs, no configuration changes). Screen inputs (final a
 | P0 gates | `c1_c2_gate` = MATCH (2026-10-11); `c3_gate` = UNDEFINED in that record (support-set snapshots not yet recorded — blocks C3 only) → resolved MATCH by `platform_identity_provision_check.json` (2026-10-12 08:01Z) |
 | Waiver | timing image item **WAIVED** (non-blocking; timing-reference identity = recorded commit/worktree + admission-path hashes) |
 | Canonical config (unmodified) | `phases.json` sha256 `57bccc12bebb98dfeb920c417d343e734763cd9a747f917b8177ee04977c7aa2`; `current_state_integrated.env` sha256 `000d6a3641bcc260c596ddb9c946e2344476c90731efbc8d547f1854b09634cf` (`canonical_hashes.json`) |
-| Runs | C1 6 + 3 replacement re-runs (3 quarantined `*_void`) = 9; C2 24 (12 faulted + 12 matched partners); C3 5 — **38 executed** |
-| Analysis inputs | 21 intact (`rq3tim_none_*`); 21 lost (`rq3tim_loss_all_*` + the same 21 no-fault runs for E-L4); 21 premature + 21 no-fault partners; 5 support replicates |
+| Runs | C1 6 + 3 replacement re-runs (3 quarantined `*_void`) = 9; C2 24 (12 faulted + 12 matched partners); C3 5; C4 22 wake runs (7 intact + 7 loss at seeds 5201–5207, 4 paired premature blocks at seeds 6304–6307, 3+3 recorded pilots reused at seeds 6301–6303) — **60 executed** |
+| Analysis inputs | 21 intact (`rq3tim_none_*`); 21 lost (`rq3tim_loss_all_*` + the same 21 no-fault runs for E-L4); 21 premature + 21 no-fault partners; 5 support replicates; the E-W screen adds 14 wake runs (`rq3snd_none_wake_verify_8..14`, `rq3snd_loss_all_wake_verify_8..14`) and 14 premature-cell wake runs (7 faulted + 7 partners; pilots 1–3 reused) |
 
-### Amendments chronology (plan §14 rows (b)–(l))
+### Amendments chronology (plan §14 rows (b)–(p))
 
 | Row | Date | Change |
 |---|---|---|
@@ -36,6 +36,10 @@ Analysis-only record (no runs, no configuration changes). Screen inputs (final a
 | (j) | 2026-10-13 | C2 stage-screen fix: log-based E-P1 gates **not evaluable** when `controller_lan{1,2}.log` is absent (recorded era) — reported, never passed or failed |
 | (k) | 2026-10-13 | `restore-family` made tree-agnostic (hash-verified byte copy instead of `git checkout`) |
 | (l) | 2026-10-13 | C3 supporting-screen leg re-scope: E-S1 gate on spawn → first-success; E-S3 band check not assessable when its leg is degenerate |
+| (m) | 2026-10-13 | wake-and-verify un-parked as the fourth mode (D): 22-run C4 completion of the four-mode matrix; leads 2 s/5 s stay pilot-only |
+| (n) | 2026-10-13 | (m) review-round documentation fixes (no gate, cell, seed or count changed) |
+| (o) | 2026-10-13 | DRIFT-clause coherence + `--tree` repeatability (no gate, cell, seed or count changed) |
+| (p) | 2026-10-15 | E-W screen executed and integrated (analysis-only): E-W1/E-W2/E-W3 and the E-P2 extension; 2026-10-14 author ruling applied (2–4 % variation is a note, not a drop); three scenario figures produced |
 
 ## 2. Per-condition results
 
@@ -235,7 +239,11 @@ E-P2 extension (D): U(A) − U(D) **+16.86 pp**, 7/7 positive, MWU p = 0.00029, 
 9. **E-I4/E-L4 recorded qualification** — the recorded H-T3 outcome is restated exactly as recorded (16/18 clean, `none_cell_healthy` = false; blocks 3 and 5 transients never re-chased); the 21-run denominator adds 19/21 clean; conformance = reproduced + block-7 clean. (`E-I4`, `E-L4.recorded_qualification`.)
 10. **`restore-family` incident (C3 batch end)** — the campaign tree's `git checkout` implementation failed and reverted the working-tree profile; recovered by verified byte copy (`57bccc12…`), assertion re-run PASS; the launcher was not modified in-stage and is flagged for review (amendment (k)). (`family_profile_restore.json`; `campaign_log.md` C3 incident.)
 11. **P0 provenance qualifiers** — the 2026-10-11 identity record carries `c3_gate` UNDEFINED (support-set snapshots not yet recorded) blocking only C3; resolved MATCH on 2026-10-12. The timing image item is WAIVED, non-blocking. (`platform_identity.json`, `platform_identity_provision_check.json`.)
-12. **No outstanding NA/failed components** — `na` = false with empty `na_components` (intact, lost); `failures` = [] (premature: 21 faulted + 21 partners = 42 runs; support: 5 runs). Nothing else is outstanding; the only remaining item of note is the descriptive E-S3 degeneracy note (item 6).
+12. **No outstanding NA/failed components (primary screen)** — `na` = false with empty `na_components` (intact, lost); `failures` = [] (premature: 21 faulted + 21 partners = 42 runs; support: 5 runs). The wake screen's recorded flags are qualified in items 13–15; the descriptive E-S3 degeneracy note (item 6) stands.
+13. **E-W1 recorded gate false — era-scoped reading** — the completion runs carry no bind stall (0/41 wake backends ≥ 5 s; max 0.089 s across the seven runs), so the slow-binding stratum is empty for the confirmation check while the A–C slow class comes from the September runs (~10.0–10.4 s binds, universal). The gate's "every primary stratum" is read on strata with evidence: the fast-class direction holds (4.01 s vs A 4.08 s near-tie; C 9.98 s, 5.97 s later). Carried to the thesis as a stated limitation. (`completion_intact_wake.json` `E-W1.*`; bind distribution read from the per-run edge logs.)
+14. **E-W2 recorded NA — retained under the ruling** — two pairs were dropped for no-fault partner tails of 2.19 % (b2) and 3.64 % (b5); the 2026-10-14 ruling (2–4 % marginal variation is a note, not a drop) retains both, giving **7/7 pairs ≤ 2 pp** (median −0.4 pp; mechanism `probe_fallback` 44/44 under loss, `wake_verify_probe` 30/30 intact; admits 6–7 per run, zero abandoned). (`completion_lost_wake.json` `E-W2.*`; b2/b5 deltas recomputed from the archived runs.)
+15. **E-W3 recorded pass — b1 re-included; b5 A-pair stays dropped** — the wake block-1 pair was dropped by the recorded screen (partner tail 3.95 %) and is re-included under the ruling (damage −0.87 pp; seven-pair median −0.9 pp); the event-only block-5 pair (8.93 % tail) is outside the ruling and stays dropped (A median on 6 usable pairs). Two wake runs carry the recorded two-success pre-bind transient (b1 pilot, b4) and the cell stays assessable. Gated extension: U(A) − U(D) +16.86 pp, 7/7 positive, δ = 1.0, p = 0.00029. (`completion_premature_wake.json` `E-P3.rules.wake_verify`, `E-P1.*`, `E-P2."A vs D …"`.)
+16. **Figures** — the three scenario renders (F1 `rq3_admission_intervals_v3.png`, F2 `rq3_event_loss_outcome_v2.png`, F3 `rq3_premature_damage.png`) are produced by `source/scripts/testing/analysis/rq3/scripts/generate_thesis_figure.py` from `completion_figures_data.json` (via `completion_figures_export.py`) and the screen JSONs; superseded renders moved to `tese/images/unused/`.
 
 ## 5. Component verdicts (final screens)
 
@@ -255,5 +263,8 @@ E-P2 extension (D): U(A) − U(D) **+16.86 pp**, 7/7 positive, MWU p = 0.00029, 
 | E-S1 (supporting per-backend direction) | gated | **met** | 4/4 backends; 1.93 vs 6.16 s; sources correct |
 | E-S2 (supporting higher-rate direction) | gated | **met** | 4/4 backends; 1.873 vs 8.984 s; null + floors ok |
 | E-S3 (poll-interval sensitivity) | descriptive | n/a (band not assessable) | ready→admit leg degenerate; note recorded |
+| E-W1 (wake intact direction) | gated | **not met as recorded** (era-scoped) | fast class: D 4.01 s vs C 9.98 s (5.97 s earlier); vs A +0.07 s near-tie; slow stratum empty (no bind stall in the completion era) — read on strata with evidence |
+| E-W2 (wake lost no-harm) | gated | **met under the 2026-10-14 ruling** | 7/7 pairs ≤ 2 pp (median −0.4 pp); mechanism exact; 6–7 admitted, 0 abandoned |
+| E-W3 (wake premature immunity) | gated | **met** | median −0.9 pp over 7 pairs; 6/7 ≤ 2 pp; claim→first 10.99 s vs 19.47 s; A−D +16.86 pp, 7/7, δ = 1.0 |
 
-No component is NA-as-failed; the campaign's pre-registered component set is met as recorded above.
+No primary-screen component is NA-as-failed; the campaign's pre-registered component set is met as recorded above, and the wake screen's three components carry the qualifiers of §4 items 13–15.

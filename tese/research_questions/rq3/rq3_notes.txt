@@ -219,3 +219,19 @@ sentence + fault-table row, premature sentences + damage-table row,
 criteria close); build green, no new boxes. results.md §2.5 + T1-T4 D
 rows written; the three wake JSONs (+ the four pre-existing completion
 JSONs) synced to the workstation analysis folder.
+
+(2026-10-16 q) §5.4 clarity pass (author-approved directives). Section
+retitled "Readiness Admission Modes under Three Message Conditions (RQ3)"
+(modes x conditions; overview heading mirrored). Opening rewritten: states
+readiness admission in its simplest form with routing-pool context
+("admitted into the routing pool and starts receiving traffic"), states
+the comparison design explicitly (four modes under three message
+conditions; mode = the only variable within a set), then a compact
+pre-table block: each mode with its one-line rationale (direct path;
+event-driven with a fallback for a lost message; timer checks; message as
+a prompt) and one sentence for the conditions' reality link (the message
+arrives when sent, never arrives, or arrives before the backend can
+serve). Guard recorded: readiness is grounded as "the backend sends a
+message when it can serve" -- NOT "as soon as provisioned" (provisioning
+starts the container; readiness means it can serve). Build green, no new
+boxes; TOC carries the new title.
