@@ -1,8 +1,8 @@
 # RQ2 v4 — P5.5 campaign summary (cb / mx / db rollup)
 
-> **Status:** campaign **run phase complete** — **86 run folders** (84 core
-> + 2 replacements) + the R4 preflight pair; screening closed 2026-10-15:
-> **81 valid / 5 excluded** (all 5 db, one mechanism — §4). All numbers are
+> **Status:** campaign **run phase complete** — **89 run folders** (84 core
+> + 2 replacements + 3 D20 top-ups) + the R4 preflight pair; screening closed 2026-10-15/16:
+> **84 valid / 5 excluded** (all 5 db, one mechanism — §4). All numbers are
 > as-measured rollups of the frozen per-run tools; **cell-level verdicts are
 > pending P6 (analyzer)** — this document deliberately carries no ✓/✗ cell
 > language. Authored 2026-10-15 by the campaign close-out operator
@@ -18,9 +18,9 @@
 > `SCALEUP_POLICY=dual`, `TELEMETRY_SOURCE=zmq`, `HASH_WORK_FACTOR=25000`,
 > SS off; seeds 42–48. (D13: mx@0.05 and db@0.15 storage presses are
 > quota-relative — never pooled across regimes.)
-> **Status CSV (`rq2v4_run_status.csv`):** 88 rows = 2 R4-preflight + 86
-> campaign = **81 valid / 0 pending / 5 excluded** (cb 28/28, mx 28/28,
-> db 25/30).
+> **Status CSV (`rq2v4_run_status.csv`):** 91 rows = 2 R4-preflight + 89
+> campaign = **84 valid / 0 pending / 5 excluded** (cb 28/28, mx 28/28,
+> db 28/33).
 
 ## 1. Per regime × mode rollup (medians over the cell's valid runs; as measured)
 
@@ -34,10 +34,10 @@
 | mx | comp | 7 | 0 | 98.6/98.3 | 0.009/0.010 | 6.89/7.23 | 24.6/28.6 | 1.3/1.7 |
 | mx | stor | 7 | 0 | 76.7/75.7 | 8.93/9.23 | 22.4/22.5 | 100/100 | 22.9/24.1 |
 | mx | none | 7 | 0 | 72.3/71.0 | 10.0/10.2 | 23.2/23.5 | 98.4/100 | 27.3/28.6 |
-| db | both | 6 | 2 | 99.35/99.3 | 0.029/0.062 | 2.07/2.21 | 16.3/17.4† | 0.55/0.65 |
+| db | both | 7 | 2 | 99.3/99.3 | 0.028/0.058 | 2.10/2.21 | 16.3/16.3† | 0.6/0.7 |
 | db | comp | 7 | 1 | 99.8/99.8 | 0.027/0.049 | 1.21/1.31 | 14.3/16.3† | 0.2/0.2 |
-| db | stor | 6 | 1 | 91.2/93.15 | 2.15/1.97 | 15.9/11.5 | 100/100† | 8.6/6.65 |
-| db | none | 6 | 1 | 92.2/93.55 | 1.87/1.63 | 12.96/9.86 | 100/100† | 7.7/6.3 |
+| db | stor | 7 | 1 | 90.7/92.7 | 1.91/1.77 | 16.24/11.71 | 100/100† | 9.1/7.2 |
+| db | none | 7 | 1 | 92.1/93.4 | 1.58/1.54 | 14.38/9.97 | 100/100† | 7.8/6.4 |
 
 Lock % = hash-kind windowed p95 ≥ 1 s (p5check convention) for cb/mx.
 †db has **no hash rows** (lookup-only mix): hash lock reads 0.0 and the
@@ -68,9 +68,9 @@ profile.
 **TTR (frozen D12 endpoint: first `ComputeAlert` → first p95 < 1 s window),
 medians per cell:** cb both **57/104 s**, cb comp **67/106 s**; mx both
 **74/95 s**, mx comp **79/101 s**; db (same endpoint, descriptive, since
-the anchor rule yields no share) both **50.5/51.0 s**, comp **44/50 s**.
+the anchor rule yields no share) both **54/51 s**, comp **44/50 s**.
 **db aux relief share** (alert-anchored, descriptive substitute for the
-unevaluable D12 share, P5.04 §1/§3): both **5/6**, comp **7/7** at ≥ 80 %
+unevaluable D12 share, P5.04 §1/§3): both **6/7**, comp **7/7** at ≥ 80 %
 both lanes; shares 87.0–93.5 % in the meeting runs.
 **P6.1 context (quoted, not recomputed):** the ≈ 8–10 s per-minute VIP
 re-arm band caps any lane's relief share at ≈ 84–87 % on cb; its
@@ -84,8 +84,8 @@ pass under it** — registered as a diagnostic, not a gate redefinition
 | --- | --- | --- | --- |
 | mx | both | **1/7** (win-max 0/7) | s42 only (98.0/98.0); thin pre-add baselines; P5.3 §4 |
 | mx | stor | **0/7** | pre-registered D18 outcome (P5.3 §2.3) |
-| db | both | **4/6** (win-max 4/6) | misses s45 (2.9/54.3), s48 (100/11.8); P5.04 §4 |
-| db | stor | **0/6** | pre-registered D18 outcome (P5.04 §4) |
+| db | both | **5/7** (win-max 5/7) | misses s45 (2.9/54.3), s48 (100/11.8); s44-lan2 79.4–80.0 borderline flagged; D20 top-up s43_r2 ✓; P5.04 §4 |
+| db | stor | **0/7** | pre-registered D18 outcome; incl. D20 top-up `stor_db_48_r1` at 0.0/0.0 (P5.04 §4) |
 
 Post-ready sampled-read shares stay descriptive everywhere (≈ 1
 sample/window; D18: reads move only via newly born connections — `stor`
@@ -94,7 +94,7 @@ the compute spawn). Note: the plan's claim table (§2.2) still shows
 `storage relief ✓ (D14)` for the db `stor` cell (the `stor`@mx cell is
 already "measured, not assumed" there); D18 (registered 2026-10-14, P5.2 /
 [`rq2v4_p5_02_read_path_pinning.md`](rq2v4_p5_02_read_path_pinning.md))
-supersedes it for fixed-edge-set runs — the measured 0/7 and 0/6
+supersedes it for fixed-edge-set runs — the measured 0/7 and 0/7
 are the post-D18 expectations, and P6 is asked to reconcile the stale row.
 One P3-pilot row (`mx_both` 82.0/95.7 %) is recorded as
 **not reproducible** from archived artifacts (P5.3 §4.1) — flagged for P6,
@@ -106,7 +106,7 @@ not adjusted here.
 | --- | --- | --- |
 | cb | hash-lock 93.8–100 % of episode windows | 7/7 |
 | mx | member CPU 38.8–40.9 % (≥ 33 leg), storage_above 98.4–100 %, hash-lock 95.3–100 % | 7/7 |
-| db | member CPU 67.2–69.7 % (≥ 50 leg), halves ge50 88–92 %/100 %, storage_above 78.9–87.5 %; latency-lock 85.7–100 % | 6/7 — block 42 witness incident-excluded (P5.04 §6.1); press property carried by the 6 clean blocks + R4 preflight (66.8/68.5) |
+| db | member CPU 67.2–69.7 % (≥ 50 leg), halves ge50 88–92 %/100 %, storage_above 78.9–87.5 %; latency-lock 85.7–100 % | 7/7 — block-42 witness restored by the D20 top-up `none_db_42_r1` (member 67.8/68.7); prior 6/7 reading superseded (P5.04 §2.4/§6.1) |
 
 `none` runs execute 0 elasticity operations in every block/regime; MC4
 halves hold in all valid blocks (cb per its D16/D17 screening records,
@@ -125,16 +125,18 @@ cgroup OOM kills** (256 MB cap) — §4. No cb/mx run was excluded.
 | `stor_db_48` | stor@db | excluded | OOM 21:03:19 (`n1`, 1 s restart); completion 71.2/87.1 |
 | `none_db_42` | none@db | excluded | OOM 23:50:56 (`n1`, absent ~4.5 min); MC1/MC4 fail as consequence |
 | `comp_db_46_r1` | comp@db | **valid** | clean replacement, folder 20261015_003439 — cell back to n=7 |
+| `both_db_43_r2` | both@db | **valid** | D20 top-up (folder 20261015_212335); completion 99.2/99.2; kernel sweep clean |
+| `stor_db_48_r1` | stor@db | **valid** | D20 top-up (folder 20261015_214836); completion 90.2/90.4; kernel sweep clean |
+| `none_db_42_r1` | none@db | **valid** | D20 top-up (folder 20261015_221248); press witness restored; kernel sweep clean |
 
-Replacements used: **2** (the two queued at D19; filling the three remaining
-slots would reach 5 replacements and exceed plan §5.5's ">4 → stop and
-escalate" rule — the slots await an
-author decision). db exclusions **5** exceed D19(c)'s
-registered stop-and-escalate threshold ("if db exclusions exceed 4"):
-`stor_db_48`, `none_db_42`,
-`both_db_43` cells stand at **n=6 pending the author's decision** (budget /
-per-cell caps / acceptance). The R4 preflight pair (`*_db_42p`, folders
-20261012_215009 / 20261012_221616) sits outside the 86-run tally by design.
+**Resolution (D20, author 2026-10-15):** n=7 mandated — three top-ups
+authorised and executed (all valid, kernel sweeps clean 21:18–22:31Z);
+both/stor/none@db back to **n=7**; replacements used = **5 of ≤14**
+(author exception to §5.5's ">4 stop" rule recorded in D20). Prior state
+(superseded): db exclusions **5** exceeded D19(c)'s stop-and-escalate
+threshold and the three cells stood at n=6 pending author decision. The R4
+preflight pair (`*_db_42p`, folders 20261012_215009 / 20261012_221616) sits
+outside the 89-run tally by design.
 
 ## 4. Platform findings that frame the campaign (cross-references)
 
@@ -155,7 +157,9 @@ per-cell caps / acceptance). The R4 preflight pair (`*_db_42p`, folders
    were invisible to the per-run poller and are kernel-log-only. This is the
    campaign's only incident mechanism and the only source of exclusions
    (§3); `both_db_43`'s cause was reclassified from the earlier F2 reading
-   (P5.04 §6), D19(a) superseded on mechanism.
+   (P5.04 §6), D19(a) superseded on mechanism. **D20 (author 2026-10-15):
+   n=7 mandated** — three top-ups executed and valid; exclusions confirmed
+   as the incident class.
 4. **G4 wording tension (`stor`@db)** — carried in P5.04 §5.1 for P6.
 
 ## 5. Wall-clock, run counts, execution notes

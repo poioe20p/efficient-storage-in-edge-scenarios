@@ -287,17 +287,18 @@ storage unrelieved; storage-only relieves nothing reliably).
 
 ## Phase 5 — Campaign execution (VM)
 
-1. **P5.1 Preflight** — image/config hashes, seeds, canonical snapshots
-   captured per run, launcher dry-run, **disk-headroom check for full
-   retention** of the whole campaign.
-2. **P5.2 Blocks in counterbalanced order, regime-major** (fewer canonical
-   phases edits, cleaner batches) — passive monitoring; per-run screening;
-   incident protocol (document, exclude, rerun slots); **full retention
-   until analysis completes** (slim-archive only after P6, per the Part D
-   lesson).
-3. **P5.3 Campaign log** + run-matrix status maintained per run.
+**DONE 2026-10-16** — 89 campaign folders (84 core + 2 replacements + 3 D20
+top-ups), **84 valid / 5 excluded** (all 5 db, OOM-incident class; D20 n=7
+top-ups executed). Close-out artifacts: P5.03 (mx), P5.04 (db), P5.05
+(campaign summary), `rq2v4_run_status.csv`. `phases.json` restored; full
+retention on `cloud-vm-rq2`.
 
-**Exit:** all valid runs collected; exclusions documented with causes.
+1. **P5.1 Preflight** ✅ (D17).
+2. **P5.2 Blocks in counterbalanced order** ✅ (cb 28/28, mx 28/28, db
+   28/33 valid; incidents D19/D20 documented).
+3. **P5.3 Campaign log** ✅ (driver log + status CSV + regime reports).
+
+**Exit:** ✅ all valid runs collected; exclusions documented with causes.
 
 ---
 

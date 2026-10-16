@@ -208,7 +208,8 @@ and is reported below together with the aux alert-anchored share
 | 46 | 15:35:23/15:35:17 | 91.1/87.0 | 47/54 |
 | 47 | 20:32:40/20:32:45 | 89.1/89.1 | 55/51 |
 | 48 | 21:45:24/21:45:28 | 89.1/89.1 | 54/51 |
-| **med (6 valid)** | — | **89.1/88.05** | **50.5/51.0** |
+| 43_r2 | 21:25:12/21:25:07 | 88.9/87.0 | 60/70 |
+| **med (7 valid)** | — | **89.1/87.0** | **54/51** |
 | **`comp`@db** | | | |
 | 42 | 22:59:43/22:59:47 | 89.1/87.0 | 55/62 |
 | 43 | 10:43:07/10:43:02 | 93.3/89.1 | 37/53 |
@@ -223,30 +224,34 @@ and is reported below together with the aux alert-anchored share
 same 10 s window (negative by construction of the windowed endpoint).
 
 **Reading (descriptive; pending P6):** every valid `both`/`comp` db run
-reaches p95 < 1 s by its first alert window or within 32–63 s of it, on
-both lanes (`both` median 50.5/51.0 s; `comp` median 44/50 s), and the aux
+reaches p95 < 1 s by its first alert window or within 32–70 s of it, on
+both lanes (`both` median 54/51 s; `comp` median 44/50 s), and the aux
 post-alert relief share stays ≥ 80 % on both lanes in **`comp` 7/7** and
-**`both` 5/6** (`both_db_42` 73.9/68.9 is the only miss — its alert lands
+**`both` 6/7** (`both_db_42` 73.9/68.9 is the only miss — its alert lands
 26 s into the episode and its first minutes include the storage activation
 lag). Meeting-run aux shares 87.0–93.5 % sit at/above the cb band-capped
 range (≈ 84–87 %, P6.1 §3); per P6.1 §5 the artifact is referenced as-is —
 nothing is recomputed here, and no db row was adjusted for band windows.
-The episode latency-lock (§1) is 10.2–18.4 % in the valid
-`comp` runs, 12.2–18.4 % in the valid `both` runs except `both_db_42`
-(30.6/36.7 %), versus 85.7–100 % in every valid `none`/`stor` run — the
-aligned arms are decisively de-locked relative to the comparators, measured
-on the same all-row window convention.
+The episode latency-lock (§1) is 12.2–16.3 % in the valid
+`comp`/`both` runs except `both_db_42` (30.6/36.7 %), versus 85.7–100 % in
+every valid `none`/`stor` run — the aligned arms are decisively de-locked
+relative to the comparators, measured on the same all-row window
+convention.
 
 ## 4. Storage legs — `both`@db (G2 claim) and `stor`@db (D18 outcome)
 
 **`both`@db (G2 cell).** D14 literal shares per valid replicate: 86.1/97.1,
-100/80.0, 2.9/54.3, 100/88.2, 100/94.4, 100/11.8 → **4/6 replicates meet
-the ≥ 80 % both-lane criterion** (misses: s45 lan1 2.9 %, s48 lan2 11.8 %;
-the win-max variant yields the same 4/6 replicate count on this set).
+100/80.0, 2.9/54.3, 100/88.2, 100/94.4, 100/11.8, plus the D20 top-up
+`both_db_43_r2` at 100/97.1 (recomputed independently — §7) → **5/7
+replicates meet the ≥ 80 % both-lane criterion** (misses: s45 lan1 2.9 %,
+s48 lan2 11.8 %; s44's lan2 reads 79.4–80.0 depending on window-boundary
+handling — a threshold-borderline replicate flagged for P6; the win-max
+variant yields the same 5/7 count).
 The literal TTR (first post-ready window meeting the criterion, per lane)
-reads 10 s in 9 of the 12 valid-run lane readings, 60 s in `both_db_42`
-lan1, and 210 s in the two slowest lanes — `both_db_45` lan1 and
-`both_db_48` lan2, both belonging to replicate-misses.
+reads 10 s in 9 of the 14 valid-run lane readings, 60 s in `both_db_42`
+lan1 and `43_r2` lan1, 70 s in `43_r2` lan2, and 210 s in the two slowest
+lanes — `both_db_45` lan1 and `both_db_48` lan2, both belonging to
+replicate-misses.
 Post-ready sampled-read shares (≈ 1
 sample/window; descriptive) show a minority of post-activation members
 receiving reads in some runs (e.g. `both_db_42` lan1 07/09 → 21.4 + 7.1 %;
@@ -255,9 +260,11 @@ spawn → new edge pools → new connections re-pin), and with the P5.3 §4
 caveat that member CPU is a delivery-bound signal at this seat. Thin
 pre-add baselines (3–5 windows) apply as in P5.3.
 
-**`stor`@db — no relief (D18, registered).** 0/6 valid replicates meet the
-criterion in either variant (max reading 42.9 % in `stor_db_46` lan2);
-medians 1.4/0.0 (lan1/lan2, valid rows). With a fixed edge set, no new client connections are born
+**`stor`@db — no relief (D18, registered).** 0/7 valid replicates meet the
+criterion in either variant (max reading 42.9 % in `stor_db_46` lan2; the
+D20 top-up `stor_db_48_r1` reads 0.0/0.0 — its sibling's 31.4/73.5 in the
+excluded original was boundary noise at the collapsed tail);
+medians 0.0/0.0 (lan1/lan2, valid rows). With a fixed edge set, no new client connections are born
 after the press starts, so the members admitted by storage scaling receive
 no reads — storage read paths are pinned to the connections existing at
 activation ([`rq2v4_p5_02_read_path_pinning.md`](rq2v4_p5_02_read_path_pinning.md),
@@ -282,9 +289,9 @@ persisting member CPU above).
 | MC2 engagement | `both`: 1 alert + 2–4 reserve activations per lane, all runs; `comp`: compute-side alerts 1/1 (descriptive; adds meet MC5/M2), **0 storage engagements**; `stor`: 2–6 activations, 0 compute ops; `none`: 0 ops |
 | MC3 specificity | `comp`@db: 0 storage engagements + member ≥ 50 % in 93.9–95.9 % of episode windows (≥ 60 ✓); `stor`@db: 0 compute alerts/spawns ✓ |
 | MC4 margin (`none`) | PASS 6/7 (halves ge50: lan1 88.0–92.0 %, lan2 100 % in every valid block; sustained) |
-| MC5 liveness contract | PASS: 0 `triggering removal` lines in 29/30 runs; `comp_db_46` (excluded) has the 1 correct dead-unit absence-cleanup of its OOM'd dyn unit — the D19 log line is the P1 fix working (§6) |
+| MC5 liveness contract | PASS: 0 `triggering removal` lines in 32/33 runs; `comp_db_46` (excluded) has the 1 correct dead-unit absence-cleanup of its OOM'd dyn unit — the D19 log line is the P1 fix working (§6) |
 | G4 health ceiling (timeouts ≤ 5 %) | `both`@db valid rows ≤ 0.9 % ✓; `comp` exempt; `stor`@db 6.1–16.9 % in all valid rows — **wording tension carried from screening, §5.1 below**; `none` exempt |
-| D3 config pins | PASS all 30 (phases snapshot == db shape; `dual=True zmq=True hash25k=True`) |
+| D3 config pins | PASS all 33 (phases snapshot == db shape; `dual=True zmq=True hash25k=True`) |
 
 ### 5.1 G4 wording tension (`stor`@db) — for P6 adjudication
 
@@ -347,16 +354,23 @@ cause is corrected to §5.5(i) D2-OOM in the status CSV and D19(a) is
 | `stor_db_48` | excluded | (i) D2-OOM; replacement withheld |
 | `none_db_42` | excluded | (i) D2-OOM (+ MC1/MC4 consequence); replacement withheld |
 | `comp_db_46_r1` | **valid** | clean replacement (folder 20261015_003439) — comp@db cell back to n=7 |
+| `both_db_43_r2` | **valid** | D20 top-up (third seed-43 attempt, folder 20261015_212335): completion 99.2/99.2; kernel sweep clean |
+| `stor_db_48_r1` | **valid** | D20 top-up (folder 20261015_214836): completion 90.2/90.4; reserve 4/4; kernel sweep clean |
+| `none_db_42_r1` | **valid** | D20 top-up (folder 20261015_221248): block-42 press witness restored (member 67.8/68.7); kernel sweep clean |
 
-- **Escalation:** db exclusions = **5**, exceeding D19(c)'s registered
-  stop-and-escalate threshold ("if db exclusions exceed 4"); two replacements
-  were queued and run for the slots that had one (one clean, one also
-  killed). Filling all three remaining slots would take the regime to
-  **5 replacements**, exceeding plan §5.5's ">4 replacements → stop that
-  regime and escalate" rule — so the withhold is that rule's default until
-  the author signs off (the ≤14 budget and per-cell caps of 2 are not the
-  binding limits). `stor_db_48`, `none_db_42`, `both_db_43` cells therefore
-  run at n=6 until the author decides (replacement sign-off or acceptance).
+- **Resolution (D20, author 2026-10-15):** the escalation below was carried to
+  the author; **n=7 was mandated** — three top-ups authorised and executed
+  (all valid, kernel sweeps clean 21:18–22:31Z). Both/stor/none@db are back
+  to **n=7**; replacements used = **5 of ≤14** (author exception to §5.5's
+  ">4 stop" rule recorded in D20). The five exclusions stand as recorded
+  (incident class, not treatment effect).
+- **Historical escalation record (superseded by D20):** db exclusions = **5**,
+  exceeding D19(c)'s registered stop-and-escalate threshold ("if db
+  exclusions exceed 4"); two replacements were queued and run for the slots
+  that had one (one clean, one also killed). Filling all three remaining
+  slots would take the regime to **5 replacements**, exceeding plan §5.5's
+  ">4 replacements → stop that regime and escalate" rule — the withhold was
+  that rule's default until the author signed off.
 - **`none_db_42` block reading (plan §5.1):** two readings exist — (a) witness-run
   incident only (this CSV: row excluded; the other three seed-42 runs stand
   on their own gates, which all pass); (b) the plan's literal "MC1 failure
@@ -374,9 +388,13 @@ cause is corrected to §5.5(i) D2-OOM in the status CSV and D19(a) is
   → valid (tension note, §5.1) and the five §6.1 exclusions set/refined;
   exclude causes cite journalctl/container_events evidence read on 2026-10-15.
 - **Status CSV final state (`rq2v4_run_status.csv`, on `cloud-vm-rq2`):**
-  88 rows = 2 R4-preflight + 86 campaign; campaign = **81 valid / 5
-  excluded** (all 5 db; cb/mx 56/56 valid); db subset = 25 valid / 5
-  excluded. No `pending_review` rows remain.
+  91 rows = 2 R4-preflight + 89 campaign; campaign = **84 valid / 5
+  excluded** (all 5 db; cb/mx 56/56 valid); db subset = 28 valid / 5
+  excluded. No `pending_review` rows remain. The D20 top-up rows carry the
+  mandated n=7 note; their aux/D14/lat-lock numbers in §§2–4 were recomputed
+  in the main session with the frozen conventions (reproduction checks passed
+  on known rows to ≤2 pp at window boundaries; the s44-lan2 borderline is
+  flagged in §4).
 - **Analysis scripts on `cloud-vm-rq2` (all read-only):** `p5mx.py`,
   `g1lock.py` (+ `G1_EPISODE`), `db_finalize.py`, close-out probes
   `closeout_db_aux.py`, `closeout_client_windows.py`,
@@ -388,8 +406,10 @@ cause is corrected to §5.5(i) D2-OOM in the status CSV and D19(a) is
   excluded originals spot-checked per-minute) — the sampler is not a
   confound for any db reading.
 - **Run history:** db batch 2026-10-14T10:36→16:17 (halted at `comp_db_46`),
-  resume 18:24:17 → complete 2026-10-15T00:53:37Z (`driver.log`); first/last
-  db folders `20261014_104130` / `20261015_003439`.
+  resume 18:24:17 → complete 2026-10-15T00:53:37Z (`driver.log`); D20 top-up
+  batch 2026-10-15T21:18:16→22:31:44Z (`launch_topups.sh`, all rc=0, all
+  valid); first/last db folders `20261014_104130` /
+  `20261015_221248_rq2v4_none_db_42_r1`.
 
 ## 8. Pointers for P6 (analyzer)
 
@@ -402,9 +422,10 @@ cause is corrected to §5.5(i) D2-OOM in the status CSV and D19(a) is
    (author replacements pending) and the thin-baseline caveat.
 3. **G4 wording tension for `stor`@db** (§5.1): resolve the ≤ 5 % timeout
    ceiling vs the 6.1–16.9 % measured in a D18-unrelieved cell.
-4. **OOM class escalation** (§6): confirm exclusions; approve/deny
-   replacements for `stor_db_48` / `none_db_42` / `both_db_43` (2nd); decide
-   the `none_db_42` block reading.
+4. **OOM class escalation** (§6): **resolved — D20 (author 2026-10-15)**:
+   exclusions confirmed; three top-ups executed, all valid; all db cells at
+   n=7; block-42 press witness restored (reading (a) of §6.1 — witness-run
+   incident only — is the operative one).
 5. **P6.1 inheritance**: db aux shares use the same as-is + artifact
    handling; no db row was adjusted for band windows.
 6. If D19's `both_db_43` mechanism note is amended, mirror it in
