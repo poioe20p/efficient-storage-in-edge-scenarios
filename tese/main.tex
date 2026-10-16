@@ -214,7 +214,7 @@ Figure~\ref{fig:demand_capacity_chain}, are the subject of this thesis.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/demand_to_capacity_chain_v2.png}
+    \includegraphics[width=0.9\textwidth]{images/src/demand_to_capacity_chain.drawio.png}
     \caption{The demand-to-capacity chain: from a demand shift to usable
     capacity, with the three interfaces studied in this dissertation
     highlighted.}
@@ -451,8 +451,8 @@ implementation.
 
 \item \textit{Chapter 5} presents the experimental results. Following the
 demand-to-capacity chain, the experimental campaigns address the telemetry modes
-(RQ1), bottleneck-aware scaling action selection (RQ2), and readiness admission
-to traffic (RQ3), followed by a synthesis across the three interfaces.
+(RQ1), the bottleneck-aware scaling action (RQ2), and the readiness admission
+modes (RQ3), followed by a synthesis across the three interfaces.
 
 \item \textit{Chapter 6} concludes the dissertation, restating the findings and the
 contributions, discussing the limitations of the work, and outlining directions for future
@@ -641,7 +641,7 @@ decoupling is illustrated in Figure~\ref{fig:sdn_architecture}.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/sdn_architecture_v3.png}
+    \includegraphics[width=0.9\textwidth]{images/src/sdn_architecture.drawio.png}
     \caption{Software-Defined Networking architecture: the control plane is
     decoupled from the data plane and programs the forwarding devices through
     the OpenFlow protocol.}
@@ -686,7 +686,7 @@ members of a set and the replication paths between them.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/mongodb_replica_set_v3.png}
+    \includegraphics[width=0.9\textwidth]{images/src/mongodb_replica_set.drawio.png}
     \caption{MongoDB replica set: a primary member serving the clients and
     secondary members to which the data is replicated.}
     \label{fig:mongodb_replica_set}
@@ -889,7 +889,7 @@ Figure~\ref{fig:sdn_load_balancing}.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/sdn_load_balancing_v3.png}
+    \includegraphics[width=0.9\textwidth]{images/src/sdn_load_balancing.drawio.png}
     \caption{Load balancing in an SDN network: the controller installs
     forwarding rules that distribute client traffic among the available
     backends.}
@@ -1185,28 +1185,28 @@ designed to make the questions askable and measurable.
 
 \chapter{Architecture and Design}\label{ch:system_architecture}
 This chapter presents the architecture and design of the proposed
-cross-layer \ac{SDN} orchestration platform for stateful edge services.
+orchestration platform for edge services.
 The design provides a platform that runs controller-side telemetry
 consumption, elasticity coordination, and traffic steering in one controller
 process per domain. The telemetry mode, the scaling decision,
-and the lifecycle transitions from scaling action to traffic admission
+and the transitions from scaling action to traffic admission
 remain explicit observation points. 
 
     Section~\ref{sec:design_requirements} defines the requirements that guided
 the proposed solution, and Section~\ref{sec:architecture_overview} presents
-the two-domain architecture and its communication paths
-(Figure~\ref{fig:architecture_overview}).
+the layered organisation of the platform and its two-domain deployment
+(Figure~\ref{fig:platform_layers}).
 Section~\ref{sec:elastic_allocation} describes the distributed elastic
 allocation of compute and storage resources, Section~\ref{sec:monitoring_decision}
 the monitoring and decision engine, and Section~\ref{sec:control_workflow}
 the control workflow. Together, these sections realise the design
 requirements: the domain organisation and the data paths (DR1, DR4, DR5),
-the elastic allocation and the capacity lifecycle (DR3, DR7), the
+the elastic allocation and the capacity changes (DR3, DR7), the
 observation and decision path (DR6, DR10), and the execution contexts and
 instrumented chain of the control workflow (DR2, DR8, DR9).
 
 \section{Design Requirements}\label{sec:design_requirements}
-The platform was designed to support stateful edge services whose demand and
+The platform was designed to support edge services whose demand and
 resource requirements vary over time. The requirements below follow from the
 coordination problem and the research gaps established in
 Chapter~\ref{ch:literature_review}, and guide the design
@@ -1219,7 +1219,7 @@ presented in the remainder of the chapter.
     operation of a domain must not depend on a central entity.
 
     \item \textit{Single-process control loop.} Telemetry consumption, the
-    scaling decision, load balancing, and the lifecycle actions must run in
+    scaling decision, load balancing, and the capacity changes must run in
     the same controller process, sharing their state directly rather than
     through inter-service handoffs.
 
@@ -1246,7 +1246,7 @@ presented in the remainder of the chapter.
     beyond a bound must be treated as absent, so that the controller acts
     only on capacity it can observe.
 
-    \item \textit{Lifecycle-safe capacity changes.} Capacity must enter and
+    \item \textit{Staged capacity changes.} Capacity must enter and
     leave service through staged transitions. Added capacity must be
     provisioned and registered before it can receive traffic, and removed
     capacity must be withdrawn from routing and drained of in-flight requests
@@ -1269,15 +1269,25 @@ presented in the remainder of the chapter.
 \end{enumerate}
 
 \section{Architecture}\label{sec:architecture_overview}
+Within each domain the platform is organised in three layers
+(Figure~\ref{fig:platform_layers}). The control layer holds the controller,
+which consumes the telemetry summaries, performs load balancing, and decides
+the scaling actions. The data plane layer holds the software switch, which
+forwards the client requests and the storage traffic once the controller
+installs the forwarding rules. The resource layer holds the edge servers that
+serve requests, the storage members that hold the service state, and the
+telemetry aggregator that forms the summaries for the controller.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{images/architecture_overview_v2.png}
-    \caption{Architecture of the proposed platform: two network domains whose
-    clients, data planes, edge servers, storage tiers, and aggregators are
-    coordinated by peer SDN controllers, with host-local control paths and an
-    emulated inter-domain data link between the domains.}
-    \label{fig:architecture_overview}
+    \includegraphics[width=\textwidth]{images/src/platform_layers.drawio.png}
+    \caption{Layered organisation of the platform in one network domain: the
+    controller of the control layer consumes the telemetry summaries and
+    issues the forwarding rules to the switch and the capacity changes to
+    the resources. The data plane layer carries the client requests and the
+    storage traffic, and the resource layer holds the edge servers, the
+    storage members, and the telemetry aggregator.}
+    \label{fig:platform_layers}
 \end{figure}
 
 \subsection{Two-Domain Organisation}
@@ -1286,7 +1296,7 @@ The platform is organised as two network domains connected by an emulated
 inter-domain data link, representing the two sites of the evaluated
 deployment. Each domain contains client workloads, a software data plane,
 a pool of containerised edge servers, a replicated storage tier, a
-telemetry aggregator, and an \ac{SDN} controller. The peer
+telemetry aggregator, and a controller. The peer
 controllers exchange topology information, and each consumes the telemetry
 summaries produced by the aggregators of both domains. Each controller runs
 telemetry consumption, elasticity coordination, and traffic steering in the
@@ -1332,7 +1342,7 @@ Figure~\ref{fig:vip_routing_sequence} walks through the resulting sequence.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/vip_routing_sequence_v2.png}
+    \includegraphics[width=0.9\textwidth]{images/src/vip_routing_sequence_no_logos.drawio.png}
     \caption{Double-VIP routing sequence: a client request addressed to
     \texttt{VIP\_SERVER} triggers load balancing in the controller, and
     the edge server's storage reads through \texttt{VIP\_DATA} trigger load
@@ -1375,7 +1385,7 @@ interface, shown in Figure~\ref{fig:telemetry_delivery_paths}.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{images/telemetry_delivery_paths_v2.png}
+    \includegraphics[width=\textwidth]{images/src/telemetry_delivery_paths.drawio.png}
     \caption{Control and telemetry paths: edge servers and storage members
     send observations to the per-domain telemetry aggregator, whose
     summaries reach both peer controllers through a configurable
@@ -1399,7 +1409,7 @@ described in turn.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/elastic_allocation.png}
+    \includegraphics[width=0.9\textwidth]{images/src/elastic_allocation.drawio.png}
     \caption{Elastic allocation of resources: each tier is scaled on its own
     observation signals, with compute replicas provisioned and drained and
     storage members added and removed through replica-set membership, both
@@ -1650,7 +1660,7 @@ per-summary evaluation, from the eligibility check to the request emissions.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{images/decision_engine_flow_v2.png}
+    \includegraphics[width=\textwidth]{images/src/decision_engine_flow.drawio.png}
     \caption{The per-summary evaluation, in the fixed order of
     Section~\ref{sec:scaling_policy}: the eligibility check, then the
     degradation score, then the scale-up condition, and otherwise the idle
@@ -1665,7 +1675,7 @@ data-access-bound demand and scales the matching tier when it leads by the
 configured classification margin, resolving close scores towards storage. 
 A per-tier action budget can bound its actions,
 and the action taken and the actions rejected are recorded as evidence. The
-platform's lifecycle notifications, such as the completion of a drain or the
+platform's capacity events, such as the completion of a drain or the
 readiness of a storage member, reach the same decision path, so that
 admission and release follow the same flow as the actions themselves.
 
@@ -1696,16 +1706,16 @@ that is never admitted within the abandonment bound, is abandoned and torn
 down instead of being admitted. Without readiness admission,
 compute replicas are registered as soon as they are provisioned and no
 readiness bound applies, so a replica that never becomes usable is reclaimed
-only by the ordinary lifecycle checks.
+only by the ordinary capacity checks.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{images/control_workflow_v5.png}
+    \includegraphics[width=\textwidth]{images/src/control_workflow.drawio.png}
     \caption{The control workflow, drawn as a UML diagram. The
     demand-to-capacity chain runs across three contexts in the same process:
     the packet context, the observation context, and the action context. The
     contexts do not block one another and they exchange state through shared
-    structures (the telemetry state, the action queue, the lifecycle state, and
+    structures (the telemetry state, the action queue, the capacity state, and
     the routing pools).
     The numbered stages match the chain in
     Figure~\ref{fig:demand_capacity_chain} and show the provisioning
@@ -1718,8 +1728,8 @@ only by the ordinary lifecycle checks.
     State crosses these contexts mostly through shared structures rather than
 through direct calls. The observation context writes the telemetry state
 and the action requests, and the action context owns the infrastructure
-changes and records the lifecycle state of each in-flight operation. The
-routing pools are updated with the lifecycle transitions: a unit enters them
+changes and records the state of each in-flight capacity change. The
+routing pools are updated with the capacity transitions: a unit enters them
 when it is admitted and leaves them on removal, while a readied member held
 in reserve remains outside them until activation. The packet context reads 
 both on each flow decision. Because the packet context is not blocked by
@@ -2343,22 +2353,22 @@ the workload of each campaign.
     applies the demand shift under test.}
     \label{tab:campaign_workloads}
     \footnotesize
-    \begin{tabular}{p{0.20\textwidth} p{0.34\textwidth} p{0.38\textwidth}}
+    \begin{tabular}{p{0.24\textwidth} p{0.32\textwidth} p{0.34\textwidth}}
         \toprule
         Campaign & Phase sequence & Demand episode \\
         \midrule
-        Telemetry modes (RQ1) & Baseline (60~s) $\rightarrow$ load rise
+        Telemetry Modes (RQ1) & Baseline (60~s) $\rightarrow$ load rise
         (180~s) $\rightarrow$ recovery gap (120~s) $\rightarrow$
         demand drop (420~s) $\rightarrow$ idle tail (420~s) & Rate 1.2 per
         client, all clients active; mixed load: 30~\% service pressure,
         35~\% content lookups, 15~\% feed ranking, 10~\% each of updates and
         aggregations \\
-        Scaling action (RQ2) & Baseline (30 or 60~s) $\rightarrow$ one of two
+        Bottleneck-Aware Scaling Action (RQ2) & Baseline (30 or 60~s) $\rightarrow$ one of two
         episodes $\rightarrow$ recovery gap (60 or 120~s) $\rightarrow$
         demand drop (360 or 420~s) & Compute-bound: 600~s at rate 1.5 per
         client, pure service pressure. Data-access-bound: 480~s at rate 5.0
         per client, 90~\% content lookups \\
-        Readiness admission (RQ3) & Baseline (60~s) $\rightarrow$
+        Readiness Admission Modes under Three Message Conditions (RQ3) & Baseline (60~s) $\rightarrow$
         compute-bound plateau (600~s) $\rightarrow$ recovery gap (120~s)
         $\rightarrow$ demand drop (420~s) $\rightarrow$ idle tail (420~s) &
         Rate 2.0 per client, pure service pressure; per-backend CPU quota
@@ -3421,11 +3431,11 @@ Chapter~\ref{ch:conclusions}.
     \label{tab:synthesis}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
-    \begin{tabular}{p{0.13\textwidth} p{0.29\textwidth} p{0.28\textwidth} p{0.24\textwidth}}
+    \begin{tabular}{p{0.17\textwidth} p{0.28\textwidth} p{0.27\textwidth} p{0.22\textwidth}}
         \toprule
         Interface & Robust & Conditional & Not established \\
         \midrule
-        Telemetry modes (RQ1) & Loss of intermediate evidence. New
+        Telemetry Modes (RQ1) & Loss of intermediate evidence. New
         capacity became usable nearly three times later than under push,
         and the episode p95 penalty was about ninefold, with complete
         separation in every replicate & Delay:
@@ -3433,7 +3443,7 @@ Chapter~\ref{ch:conclusions}.
         with two of seven delayed push runs collapsing to the level of
         polling and sampled push & The full ordering A $<$ B $<$ C $\approx$ D, and polling
         versus sampling not separated (C $\approx$ D) \\
-        Scaling action (RQ2) & Storage action under data-access-bound
+        Bottleneck-Aware Scaling Action (RQ2) & Storage action under data-access-bound
         demand. Tier relief in every storage-only domain (12/12) and
         in most bottleneck-aware domains (8/10), with user-visible
         benefit over inaction (labelled comparison); the classifier
@@ -3450,7 +3460,7 @@ Chapter~\ref{ch:conclusions}.
         then the bottleneck-aware action, then no action), and the
         pre-registered storage tail-latency test,
         reported unmet \\
-        Readiness admission (RQ3) & Loss without re-derivation leaves
+        Readiness Admission Modes under Three Message Conditions (RQ3) & Loss without re-derivation leaves
         capacity dark (zero admissions in every loss run), and a
         premature message damages only the modes that admit on it (damage
         medians up to $+14.4$~pp) while the modes that check stay flat & The loss
@@ -3691,7 +3701,7 @@ regimes or evidence sets, the arms state the value per regime or set.
     \setlength{\tabcolsep}{4pt}
     \begin{tabular}{p{0.19\textwidth} p{0.235\textwidth} p{0.235\textwidth} p{0.235\textwidth}}
         \toprule
-        Parameter & Telemetry modes (RQ1) & Scaling action (RQ2) & Readiness admission (RQ3) \\
+        Parameter & Telemetry Modes (RQ1) & Bottleneck-Aware Scaling Action (RQ2) & Readiness Admission Modes under Three Message Conditions (RQ3) \\
         \midrule
         Compute replica CPU quota (vCPU) & 0.25 & 0.15 (compute-bound arms) / 1.20 (data-bound arms) & 0.12 (fault arms); 0.15 / 0.30 (intact-source sets) \\
         Compute replica memory limit & 256~MB & 256~MB $\rightarrow$ 512~MB (from run~15; platform hardening) & 256~MB \\

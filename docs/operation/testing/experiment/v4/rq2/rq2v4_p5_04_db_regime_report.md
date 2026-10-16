@@ -430,3 +430,18 @@ cause is corrected to §5.5(i) D2-OOM in the status CSV and D19(a) is
    handling; no db row was adjusted for band windows.
 6. If D19's `both_db_43` mechanism note is amended, mirror it in
    [`preparation.md`](preparation.md) (this report's §6 is the evidence).
+
+
+## 9. Post-fix follow-up (2026-10-16)
+
+**Author directive D21 (2026-10-16):** the D18 constraint documented in this
+report is addressed by an authorised platform fix (admission-time epoch
+renewal: storage admission now triggers graceful Mongo-connection renewal on
+the edge servers, so newly admitted members can receive reads) plus a
+recalibrated db seat (member quota lowered so storage is the first-binding
+resource). A new campaign (`rq2v5`, 56 runs: mx + db) will re-measure the
+storage cells under the fix, gated on the author's hard goals (t_db reduction
+and same-tier relief under storage-only scale-up; client benefit not
+required). This report remains the **pre-fix diagnosis record**; v5 numbers
+must never be pooled with the v4 rows here. Plan:
+[`../../v5/rq2/rq2v5_plan.md`](../../v5/rq2/rq2v5_plan.md).

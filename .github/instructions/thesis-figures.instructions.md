@@ -11,8 +11,10 @@ whenever a figure is created, revised, referenced, or moved.
 ## Generation
 
 - **Never generate a thesis figure with an AI image model.** Every figure is
-  drawn in draw.io: a `.drawio` source in `tese/images/src/` and its PNG render
-  in `tese/images/`.
+  drawn in draw.io and kept as one **editable PNG**:
+  `tese/images/src/<name>.drawio.png`, the render with the diagram XML
+  embedded. `main.tex` includes that file directly, so revising a figure never
+  changes the LaTeX.
 - The visual and syntax standard is `tese/images/src/STYLE.md` — read it before
   drawing and use its icon vocabulary, palette, line language, and typography.
   Figures of the interaction or process genre (§8/§9 of STYLE.md) carry a
@@ -27,11 +29,15 @@ whenever a figure is created, revised, referenced, or moved.
 
 ## Validate and export
 
-1. `python tools/check_drawio_style.py tese/images/src/<figure>.drawio` must pass.
-2. Export:
-   `draw.io.exe -x -f png -s 2 -o tese/images/<figure>.png tese/images/src/<figure>.drawio`.
-   Figures can also be regenerated via
-   `source/scripts/testing/analysis/diagram_thesis_drawio.py`.
+1. `python tools/check_drawio_style.py <source>.drawio` must pass. The editable
+   PNG carries the diagram XML: extract it to a scratch `.drawio` (or keep the
+   working source in `temp/`) to run the checker.
+2. Export the editable PNG — cropped to content, 1x scale, diagram embedded —
+   to `tese/images/src/<figure>.drawio.png`. The draw.io app's export (Crop,
+   "include a copy of my diagram") is the reference; this build's CLI drops the
+   trailing IEND chunk when `-e` is used, so export plain and embed the diagram
+   with `python tools/build_editable_png.py <render.png> <source> <out.png>`,
+   then reopen the result.
 
 ## Naming and placement
 
@@ -40,8 +46,10 @@ whenever a figure is created, revised, referenced, or moved.
   and floats are distributed through the section, never clustered at its
   end. `main.tex` uses `[H]` for figures, so source order is rendered order;
   tables that should not drift use `[H]` as well.
-- Never overwrite an existing render: a revised figure gets a new versioned
-  name (`_v2`, `_v3`, …) and `main.tex` (or the generator script) is updated.
+- Revise a figure in place: edit the diagram inside
+  `tese/images/src/<figure>.drawio.png` and re-export over the same path, so
+  `main.tex` never changes; git holds the previous state. The `_vN` naming
+  applies to the legacy renders under `tese/images/`.
 - `tese/images/` holds only images referenced by the build (`main.tex`,
-  `preamble.sty`). Superseded renders move to `tese/images/unused/`; superseded
-  sources move to `tese/images/src/superseded/`.
+  `preamble.sty`). Superseded legacy renders move to `tese/images/unused/`;
+  superseded legacy sources move to `tese/images/src/superseded/`.

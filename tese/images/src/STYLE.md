@@ -6,8 +6,14 @@ figure. Any new figure must pass `python tools/check_drawio_style.py <file>`.
 
 ## 0. Non-negotiable rules
 
-1. One `.drawio` source per figure in `tese/images/src/`, one PNG render in `tese/images/`.
-2. Never overwrite an existing image: a revised figure gets a new name.
+1. One **editable PNG** per figure in `tese/images/src/` — `<name>.drawio.png`, the
+   render with the diagram XML embedded, so the draw.io app opens and re-exports
+   it in place. `main.tex` includes that file directly; there is no separate
+   render copy.
+2. Revise a figure in place: the embedded diagram is the source and the git
+   history holds the previous state. Legacy renders (and their `_vN` names) live
+   in `tese/images/unused/`, superseded legacy sources in
+   `tese/images/src/superseded/`.
 3. No legend block and no prose paragraphs inside a figure. Meaning is carried by
    (a) the icon, (b) the colour of the connecting line, and (c) a short label on the
    line itself. The caption carries the prose. Two bounded exceptions define the
@@ -54,6 +60,10 @@ Frames are tinted by the surface they delimit: the default is `#F4FFFF`; a frame
 that delimits the data/storage surface uses the storage tint
 (`fillColor=#F1F8F1;strokeColor=#4F7D4F`) — e.g. the `VIP_DATA` band of the routing
 figure. Nothing else about the frame changes.
+
+In a layered figure, each layer band carries its own pale tint in this order:
+control `#F4FFFF`, data plane `#F0F0F0`, resource `#F1F8F1` (the
+`platform_layers` figure sets this convention).
 
 Frames of the newer genres declare the genre with a `genre=<name>` token in their
 style (`genre=interaction`, `genre=process`). The token never renders; it tells the
@@ -111,10 +121,10 @@ Colour is meaning. Dash and arrowhead are constants within a class.
 | Path | Stroke | Dash | Arrowheads | Label |
 |---|---|---|---|---|
 | Request data path | `#000000` | solid | `classic` both ends | `http requests`, `data` |
-| Observation / telemetry | `#FF8000` | dashed | `classic` at the consumer | `metrics`, `windowed summaries` |
-| Control of the data plane | `#007FFF` | dashed | `classic` at the switch | `OpenFlow` |
+| Observation / telemetry | `#FF8000` | dashed | `classic` at the consumer | `metrics`, `telemetry summaries` |
+| Control of the data plane | `#007FFF` | dashed | `classic` at the switch | `forwarding rules` |
 | Controller ↔ controller | `#007FFF` | dashed | `classic` both ends | `peer topology exchange (host-local)` |
-| Resource lifecycle management | `#007FFF` | dashed | `classic` at the resource | `lifecycle management` |
+| Capacity changes | `#007FFF` | dashed | `classic` at the resource | `capacity changes` |
 
 ```
 data       : edgeStyle=none;html=1;endArrow=classic;startArrow=classic;strokeColor=#000000;
@@ -122,9 +132,10 @@ telemetry  : edgeStyle=none;html=1;endArrow=classic;strokeColor=#FF8000;dashed=1
 control    : edgeStyle=none;html=1;endArrow=classic;strokeColor=#007FFF;dashed=1;
 ```
 
-Lifecycle management shares the control colour on purpose: both are the controller acting,
-and the two are separated by their label (`OpenFlow` vs `lifecycle management`). If a distinct
+Capacity changes share the control colour on purpose: both are the controller acting,
+and the two are separated by their label (`forwarding rules` vs `capacity changes`). If a distinct
 colour is ever wanted for the RQ3 interface, it must be added here first, then to the validator.
+Figures drawn before the 2026-10 de-branding still read `OpenFlow` and `lifecycle management`.
 
 The interaction and process genres (§8, §9) add the message/response classes, the
 admission flow, and the lifeline mark:
@@ -162,8 +173,8 @@ admission: edgeStyle=orthogonalEdgeStyle;html=1;endArrow=classic;strokeColor=#2E
 
 Short noun phrases, lower case except proper nouns. In use across the family:
 
-- components: `Client`, `OVS Switch`, `Containerised Edge Servers`, `MongoDB Edge Storage`, `Telemetry Aggregator`, `SDN Controller`, `Hosts`, `Edge server N`, `Storage member N`, `Primary`, `Secondary`
-- links: `http requests`, `data`, `metrics`, `windowed summaries`, `windowed summaries (host-local)`, `OpenFlow`, `lifecycle management`, `peer topology exchange (host-local)`, `writes`, `reads`, `replicates oplog`, `heartbeats`, `demand`, `provisioning`, `usable capacity`
+- components: `Client`, `Switch`, `Edge Servers`, `Storage`, `Telemetry Aggregator`, `Controller`, `Hosts`, `Edge server N`, `Storage member N`, `Primary`, `Secondary` (figures drawn before the 2026-10 de-branding carry the branded names `OVS Switch`, `Containerised Edge Servers`, `MongoDB Edge Storage`, `SDN Controller`)
+- links: `http requests`, `requests`, `data`, `metrics`, `telemetry summaries`, `telemetry summaries (host-local)`, `forwarding rules`, `capacity changes`, `peer topology exchange (host-local)`, `writes`, `reads`, `replicates oplog`, `heartbeats`, `demand`, `provisioning`, `usable capacity` (legacy figures: `OpenFlow`, `lifecycle management`, `windowed summaries`)
 - interfaces: `Interface 1 (RQ1)`, `Interface 2 (RQ2)`, `Interface 3 (RQ3)` — drawn in the colour of the path they belong to (orange for observation, blue for control)
 - interaction figures: band titles `VIP_SERVER — service routing surface`, `VIP_DATA — data routing surface`; step labels carry a `N · ` prefix (`1 · HTTP request to VIP_SERVER`) in the figure's own sequence order
 - process figures: `demand shift`, `usable capacity`, `[sustained]`, `[not sustained]`, `[timeout]`, `[ready]`, `[compute-bound]`, `[data-access-bound]`, `new replica admitted`
@@ -219,7 +230,13 @@ The control-workflow figure (`control_workflow.drawio`) defines the genre.
 ## 10. Checklist before a figure ships
 
 1. `python tools/check_drawio_style.py tese/images/src/<figure>.drawio` passes.
-2. Export: `draw.io.exe -x -f png -s 2 -o tese/images/<figure>.png tese/images/src/<figure>.drawio`.
+2. Export the editable PNG — cropped to the content, 1x scale, diagram embedded
+   (draw.io app: Export, Crop + "include a copy of my diagram"). This build's
+   CLI drops the closing IEND chunk when `-e` is used: export plain
+   (`draw.io.exe -x -f png -o temp/<figure>.png <source>`) and embed the diagram
+   with `python tools/build_editable_png.py temp/<figure>.png <source>
+   tese/images/src/<figure>.drawio.png`, then reopen the result to confirm it
+   loads.
 3. Every link carries a label; every icon carries a label (genre figures: plain
    activity flows may stay unlabelled, by the genre marker).
 4. Two domains, if present, are congruent; genre-marked frames are exempt.

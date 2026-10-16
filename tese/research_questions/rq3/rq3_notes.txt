@@ -251,3 +251,15 @@ canonical in every list; all seven rq3 labels referenced and defined; all
 three figures resolve; no new boxes; six overfulls are the pre-existing
 set. Ch6 conclusion/limitations sections remain scaffold comments (known
 pending item, not inconsistency).
+
+(2026-10-16 s) Title-consistency pass (author directive; synthesis section
+reviewed). Section names now use the canonical titles wherever a section
+is named: tab:synthesis rows normalized to full titles (rows 1-2 updated;
+row 3 carried the author's own edit), tab:campaign_workloads rows likewise,
+appendix resource-table header likewise; column widths rebalanced in the
+first two tables, no new boxes. Stale remnant fixed in §1.6 ("readiness
+admission to traffic" -> "readiness admission modes"). Kept by design:
+Ch2 gap-table interface rows (Telemetry to decision / Decision to scaling
+action / Ready backend to traffic), the campaign captions (Design of the
+X campaign), and lowercase descriptive prose. Build green; all (RQ#)
+naming sites reviewed (21 sites across the thesis).
