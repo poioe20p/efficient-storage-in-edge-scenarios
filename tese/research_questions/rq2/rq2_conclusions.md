@@ -5,6 +5,8 @@
 > recovery claim corrected (start-up transient, control-reproduced; no
 > add-attributable recovery), no-op-arm results added, platform follow-ups
 > dispositioned. Supersedes the 2026-08-09/08-10 v3-only framing.
+> **Addendum:** 2026-10-16 · **RQ2 v4 campaign** on the repaired platform —
+> outcome and integration pointers in §9 below (does not rewrite §1–§8).
 > Complements [`rq2.md`](rq2.md) (question + provenance) and
 > [`rq2_evaluation.md`](rq2_evaluation.md) (v2 design rationale) with **what the
 > completed campaigns actually showed and what the thesis may claim**.
@@ -332,3 +334,84 @@ result.
 - Era-matched figures + data:
   `docs/operation/testing/experiment/v3/rq2/graphs/thesis/rq2_thesis_figure_data_era_matched.csv`
   (legacy `rq2_thesis_figure_data.csv` retained).
+
+---
+
+## 9. RQ2 v4 campaign addendum (2026-10-16)
+
+The v4 campaign re-tested RQ2 on the **repaired platform** (liveness/cull fix;
+backend-selection spread fix):
+load-balancing spread repair): three demand regimes — compute-bound (cb),
+mixed (mx), data-bound (db) — crossed with the four scaling-capability **arms**
+(`both`, `comp`, `stor`, `none`), seven seeds (42–48), one run per arm per
+block; **89 runs (84 valid / 5 excluded)**, all cells at n = 7. The five
+exclusions are one platform incident class (container out-of-memory under the
+data-bound press), resolved by the author's n = 7 decision (D20); no cell
+verdict depends on them. Pre-registration:
+[`experiment_plan.md`](../../../docs/operation/testing/experiment/v4/rq2/experiment_plan.md);
+cell-level verdicts and the adjudication register:
+[`results.md`](../../../docs/operation/testing/experiment/v4/rq2/results.md);
+capstone synthesis:
+[`post_run_analysis.md`](../../../docs/operation/testing/experiment/v4/rq2/post_run_analysis.md).
+
+**Outcome summary (what v4 settled).**
+
+1. **Compute relief is reproduced, decisively in the mixed regime and
+   band-capped in the compute-bound regime.** Mixed: the aligned arms meet
+   the pre-registered relief-window bar in 7/7 and 7/7 replicates; median p50
+   falls from ≈ 10 s to ≈ 8–10 ms, completion from ≈ 72 % to ≈ 99 %.
+   Compute-bound: 5/7 and 4/7 as measured — below the ≥ 6/7 floor — with the
+   shortfall attributable to the registered platform artifact below; every
+   aligned replicate passes once artifact windows are excluded (14/14;
+   diagnostic, not a gate redefinition). Data-bound: the compute side reads
+   the same direction descriptively (alert-anchored share 7/7 comp, 6/7
+   both; median time-to-relief ≈ 44–51 s). The no-action comparator stays
+   locked in every regime (press witnesses 21/21 blocks), and the
+   misaligned arms show no benefit, as pre-registered.
+2. **The storage-side benefit claims are not met at cell level in v4**
+   (`both`@mx 1/7; `both`@db 5/7 — both below the replicate floor), and the
+   storage-only **arms** cannot relieve at all (0/7 in both the mixed and the
+   data-bound regime). This is explained by the second platform finding
+   below, registered before the measurements closed.
+3. **Wrong-tier specificity stays clean**: storage-only on compute-bound
+   demand never un-locks the press (`stor`@cb lock 93.8–100 %); compute-only
+   on data-bound demand never engages storage; on mixed demand, the
+   compute-only arm leaves storage untouched and no storage relief appears,
+   while the storage-only arm leaves the compute press locked — all
+   measured, as pre-registered.
+
+**Two platform findings (enter the thesis as constraints).**
+
+1. **The ~60 s re-arm band** (VIP flow hard-timeout; arm-independent): an
+   ≈ 8–10 s per-minute window in which flow re-installation adds latency even
+   in fully relieved lanes. On the compute-bound regime it caps the
+   window-share relief metric at ≈ 84–87 % without changing the latency
+   outcome (the mixed regime reads above the cap — 88.4–95.7 % in 5/28 lane
+   readings — consistent with a lighter band effect there); the
+   artifact-excluded sensitivity is 93–98 % as registered, with the method
+   flag that an independent re-derivation at a different exclusion
+   granularity clears 14/14 with a minimum lane of 81.1 % (the registered
+   range is quoted as the headline; results.md §5 item 5). Handling adopted: report as-is **plus** the
+   sensitivity as a diagnostic (no gate redefinition).
+2. **Read-path pinning** (D18): storage reads move only through newly born
+   connections; under a fixed edge set, storage capacity admitted mid-press
+   receives **no reads**. Consequences: storage-only scale-up cannot relieve
+   in this platform generation, and `both`-arm storage relief is downstream
+   of the compute spawn (new edge containers → new pools → new connections) —
+   a **tier-coupling asymmetry** that the thesis narrative must carry. The
+   same press also produced the campaign's only incident class (container
+   memory cap under the data-bound lookup shape).
+
+**Items for thesis integration (parked for the thesis-writing workflow with
+the author).**
+
+- **Ch5 §5.3 rewrite pointers**: replace the v3-only compute-bound panel with
+  the v4 evidence (mixed + compute-bound compute relief; the band caveat with
+  its sensitivity; the comparator pattern); reframe the storage-side reading
+  under D18 (no storage-only relief at this seat; tier-coupling asymmetry);
+  supersede the v3 OOM footnote with the D20-resolved incident class. Use
+  the v4 documents as the source pair (`results.md` + `post_run_analysis.md`).
+- **v3-note 9/10 → 8/10 fix** (ba-relief LAN count) remains **parked** — to
+  be applied with the author inside the thesis-writing workflow, not here.
+- Terminology per the ledger: **scale-up / scale-down**, **arm**,
+  **telemetry mode**, British English.

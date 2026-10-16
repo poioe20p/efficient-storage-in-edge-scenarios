@@ -114,7 +114,7 @@ their cells (43's replacement is also excluded — see §6).
 | 46 | valid | 99.3/99.5 | 0.038/0.067 | 1.87/2.08 | 0.6/0.5 | 1/1 | 3/2 | 91.1/87.0 |
 | 47 | valid | 99.2/99.2 | 0.026/0.048 | 2.10/2.22 | 0.7/0.8 | 1/1 | 3/4 | 89.1/89.1 |
 | 48 | valid | 99.5/99.3 | 0.028/0.054 | 2.04/2.21 | 0.5/0.7 | 1/1 | 3/3 | 89.1/89.1 |
-| 43_r2 | valid (D20 top-up) | 99.2/99.2 | 0.028/0.055 | 2.13/2.15 | 0.8/0.7 | 1/1 | 4/3 | 88.9/87.0 |
+| 43_r2 | valid (D20 top-up) | 99.2/99.2 | 0.028/0.056 | 2.13/2.15 | 0.8/0.7 | 1/1 | 4/3 | 88.9/87.0 |
 | **med** | 7/9 rows | **99.3/99.3** | **0.029/0.058** | **2.10/2.21** | **0.6/0.7** | 1/1 | 3/4 | **89.1/87.0** |
 
 Valid runs: completion ≈ 99.3 % at ~29–78 ms p50 (the co-located db regime
@@ -158,13 +158,13 @@ a JSON existed).
 | 46 | valid | 87.5/82.3 | 2.37/3.13 | 20.20/19.85 | 11.8/16.9 | 3/2 | 2.8/42.9 | 2.8/42.9 | 360/60 |
 | 47 | valid | 92.3/93.8 | 2.11/1.89 | 14.52/11.20 | 7.6/6.1 | 2/3 | 0.0/0.0 | 0.0/0.0 | — |
 | 48 | **excluded** | 71.2/87.1 | 2.53/2.14 | 18.12/16.82 | 19.2/12.3 | 3/3 | 31.4/73.5 | 31.4/73.5 | 70/50 |
-| 48_r1 | valid (D20 top-up) | 90.2/90.4 | 1.91/1.96 | 16.24/15.56 | 9.6/9.4 | 4/4 | 0.0/0.0 | 0.0/0.0 | — |
-| **med** | 7/8 rows | **90.7/92.7** | **2.11/1.96** | **16.24/11.71** | **9.1/7.2** | 3/3 | **0.0/0.0** | **0.0/0.0** | — |
+| 48_r1 | valid (D20 top-up) | 90.2/90.4 | 2.18/2.20 | 16.24/15.56 | 9.6/9.4 | 4/4 | 2.9/0.0 | 2.9/0.0 | — |
+| **med** | 7/8 rows | **90.7/92.7** | **2.18/2.05** | **16.24/11.71** | **9.1/7.2** | 3/3 | **2.8/0.0** | **2.8/0.0** | — |
 
 `stor`@db engages storage only (2–6 activations per lane; **0 compute alerts,
 0 compute spawns** — MC3 ✓) and **does not relieve**: literal shares
 0.0–42.9 %, i.e. **0/7 valid replicates meet the ≥ 80 % criterion on both
-lanes** (incl. the D20 top-up `stor_db_48_r1` at 0.0/0.0) — the
+lanes** (incl. the D20 top-up `stor_db_48_r1` at 2.9/0.0) — the
 pre-registered D18 outcome (§4). The lane latency sits at
 2–3 s p50 / ~10–20 s p95x when unrelieved, and the latency-lock (all-row
 windows, §1) is 95.9–100 % in all 7 valid runs (`stor_db_48` lan2's 91.8 %
@@ -175,14 +175,14 @@ reading is the excluded one).
 | seed | valid | completion % | p50 (s) | p95x (s) | timeout % | member CPU % | halves ge50 lan1/lan2 | storage_above % | lat-lock % |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 42 | **excluded** | 30.4/94.9 | 30.42/0.55 | 8.30/16.38 | 40.8/4.7 | 38.5/62.8 | 56/0, 71/100 | 81.0 | 89.7/51.0 |
-| 42_r1 | valid (D20 top-up) | 89.8/91.9 | 1.83/1.73 | 16.32/11.82 | 10.0/7.9 | 67.8/68.7 | 92/100, 92/100 | 82.4 | 100/100 |
+| 42_r1 | valid (D20 top-up) | 89.8/91.9 | 2.18/2.04 | 16.32/11.82 | 10.0/7.9 | 67.8/68.7 | 92/100, 92/100 | 82.4 | 100/100 |
 | 43 | valid | 92.3/93.1 | 1.96/1.72 | 11.54/11.79 | 7.6/6.8 | 68.4/68.7 | 92/100, 92/100 | 87.5 | 100/100 |
 | 44 | valid | 91.2/93.4 | 1.72/1.55 | 14.38/9.97 | 8.6/6.4 | 68.3/69.6 | 92/100, 92/100 | 83.3 | 95.9/91.8 |
 | 45 | valid | 90.8/90.8 | 2.16/2.18 | 16.44/15.72 | 9.0/9.0 | 67.2/68.9 | 92/100, 92/100 | 85.0 | 100/100 |
 | 46 | valid | 93.4/93.7 | 1.83/1.75 | 9.90/9.75 | 6.4/6.2 | 67.5/69.2 | 88/100, 92/100 | 78.9 | 100/100 |
 | 47 | valid | 95.8/96.7 | 1.53/1.29 | 8.74/8.49 | 4.1/3.1 | 68.4/69.7 | 92/100, 92/100 | 84.2 | 100/85.7 |
 | 48 | valid | 92.1/94.7 | 1.90/1.49 | 15.17/9.06 | 7.8/5.1 | 68.4/69.3 | 92/100, 92/100 | 82.4 | 98.0/100 |
-| **med** | 7/8 rows | **92.1/93.4** | **1.83/1.72** | **14.38/9.97** | **7.8/6.4** | **68.3/69.2** | **92/100, 92/100** | 83.3 | 100/100 |
+| **med** | 7/8 rows | **92.1/93.4** | **1.90/1.72** | **14.38/9.97** | **7.8/6.4** | **68.3/69.2** | **92/100, 92/100** | 83.3 | 100/100 |
 
 MC1(db) passes in all 7 valid blocks (block-42 witness restored by the D20
 top-up `none_db_42_r1`, member 67.8/68.7): member CPU mean 67.2–69.7 %
@@ -244,9 +244,9 @@ convention.
 100/80.0, 2.9/54.3, 100/88.2, 100/94.4, 100/11.8, plus the D20 top-up
 `both_db_43_r2` at 100/97.1 (recomputed independently — §7) → **5/7
 replicates meet the ≥ 80 % both-lane criterion** (misses: s45 lan1 2.9 %,
-s48 lan2 11.8 %; s44's lan2 reads 79.4–80.0 depending on window-boundary
-handling — a threshold-borderline replicate flagged for P6; the win-max
-variant yields the same 5/7 count).
+lan2 54.3 %; s48 lan2 11.8 %; s44's lan2 reads 79.4–80.0 depending on
+window-boundary handling — a threshold-borderline replicate flagged for
+P6; the win-max variant yields the same 5/7 count).
 The literal TTR (first post-ready window meeting the criterion, per lane)
 reads 10 s in 9 of the 14 valid-run lane readings, 60 s in `both_db_42`
 lan1 and `43_r2` lan1, 70 s in `43_r2` lan2, and 210 s in the two slowest
@@ -262,9 +262,9 @@ pre-add baselines (3–5 windows) apply as in P5.3.
 
 **`stor`@db — no relief (D18, registered).** 0/7 valid replicates meet the
 criterion in either variant (max reading 42.9 % in `stor_db_46` lan2; the
-D20 top-up `stor_db_48_r1` reads 0.0/0.0 — its sibling's 31.4/73.5 in the
+D20 top-up `stor_db_48_r1` reads 2.9/0.0 — its sibling's 31.4/73.5 in the
 excluded original was boundary noise at the collapsed tail);
-medians 0.0/0.0 (lan1/lan2, valid rows). With a fixed edge set, no new client connections are born
+medians 2.8/0.0 (lan1/lan2, frozen-tool rows). With a fixed edge set, no new client connections are born
 after the press starts, so the members admitted by storage scaling receive
 no reads — storage read paths are pinned to the connections existing at
 activation ([`rq2v4_p5_02_read_path_pinning.md`](rq2v4_p5_02_read_path_pinning.md),

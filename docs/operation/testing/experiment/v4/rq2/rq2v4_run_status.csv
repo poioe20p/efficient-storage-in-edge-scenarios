@@ -11,30 +11,30 @@ rq2v4_none_cb_43,none,cb,43,cb-s43,20261013_025326,0.15,0.15,valid,MC1/MC4 read 
 rq2v4_both_cb_43,both,cb,43,cb-s43,20261013_033551,0.15,0.15,valid,MC2 both@cb ComputeAlert present; storage 0 inert; culls 0; D3 True
 rq2v4_stor_cb_44,stor,cb,44,batch,20261013,0.15,0.15,valid,MC3 stor@cb: lock 95.3/100; 0 ops; culls 0; D3 True
 rq2v4_none_cb_44,none,cb,44,batch,20261013,0.15,0.15,valid,MC1+MC4 PASS: lock 95.3/98.4 pct; 0 ops; culls 0
-rq2v4_both_cb_44,both,cb,44,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts lan1=15 lan2=9; storage 0 inert; culls 0
-rq2v4_comp_cb_44,comp,cb,44,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts lan1=10 lan2=9; storage 0; culls 0
+rq2v4_both_cb_44,both,cb,44,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts lan1=5 lan2=5; storage 0 inert; culls 0
+rq2v4_comp_cb_44,comp,cb,44,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts lan1=4 lan2=5; storage 0; culls 0
 rq2v4_none_cb_45,none,cb,45,batch,20261013,0.15,0.15,valid,MC1+MC4 PASS: lock 100/95.3 pct; 0 ops; culls 0
-rq2v4_both_cb_45,both,cb,45,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 16/15; storage 0 inert; culls 0
-rq2v4_comp_cb_45,comp,cb,45,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 12/15; storage 0; culls 0
+rq2v4_both_cb_45,both,cb,45,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 6/5; storage 0 inert; culls 0
+rq2v4_comp_cb_45,comp,cb,45,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 4/5; storage 0; culls 0
 rq2v4_stor_cb_45,stor,cb,45,batch,20261013,0.15,0.15,valid,MC3 stor@cb lock 100/95.3; 0 ops; culls 0
-rq2v4_both_cb_46,both,cb,46,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 16/15; storage 0 inert; culls 0
-rq2v4_comp_cb_46,comp,cb,46,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 18/15; storage 0; culls 0
+rq2v4_both_cb_46,both,cb,46,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 6/5; storage 0 inert; culls 0
+rq2v4_comp_cb_46,comp,cb,46,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 6/5; storage 0; culls 0
 rq2v4_stor_cb_46,stor,cb,46,batch,20261013,0.15,0.15,valid,MC3 stor@cb lock 95.3/100; 0 ops; culls 0
 rq2v4_none_cb_46,none,cb,46,batch,20261013,0.15,0.15,valid,MC1+MC4 PASS: lock 98.4/93.8 pct; 0 ops; culls 0
-rq2v4_comp_cb_47,comp,cb,47,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 9/12; storage 0; culls 0
+rq2v4_comp_cb_47,comp,cb,47,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 5/4; storage 0; culls 0
 rq2v4_stor_cb_47,stor,cb,47,batch,20261013,0.15,0.15,valid,MC3 stor@cb lock 98.4/95.3; 0 ops; culls 0
 rq2v4_none_cb_47,none,cb,47,batch,20261013,0.15,0.15,valid,MC1+MC4 PASS: lock 93.8/95.3 pct; 0 ops; culls 0
-rq2v4_both_cb_47,both,cb,47,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 7/15; storage 0 inert; culls 0
+rq2v4_both_cb_47,both,cb,47,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 5/5; storage 0 inert; culls 0
 rq2v4_stor_cb_48,stor,cb,48,batch,20261013,0.15,0.15,valid,MC3 stor@cb lock 95.2/95.2; 0 ops; culls 0
 rq2v4_none_cb_48,none,cb,48,batch,20261013,0.15,0.15,valid,MC1+MC4 PASS: lock 98.4/96.8 pct; 0 ops; culls 0
-rq2v4_both_cb_48,both,cb,48,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 9/15; storage 0 inert; culls 0
-rq2v4_comp_cb_48,comp,cb,48,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 9/15; storage 0; culls 0
+rq2v4_both_cb_48,both,cb,48,batch,20261013,0.15,0.15,valid,MC2 both@cb alerts 5/5; storage 0 inert; culls 0
+rq2v4_comp_cb_48,comp,cb,48,batch,20261013,0.15,0.15,valid,MC2 comp@cb alerts 5/5; storage 0; culls 0
 rq2v4_none_mx_45,none,mx,45,batch,20261013,0.15,0.05,valid,MC1(mx)+MC4 PASS: hash lock 100/96.9; member 39.9/39.4 >=33; storage_above 100 pct; 0 ops
-rq2v4_both_mx_45,both,mx,45,batch,20261013,0.15,0.05,valid,MC2 both@mx: alerts 9/10; reserve activated lan1=5 lan2=6; culls 0
-rq2v4_comp_mx_45,comp,mx,45,batch,20261013,0.15,0.05,valid,MC2 comp@mx: alerts 12/9; 0 reserve; culls 0
+rq2v4_both_mx_45,both,mx,45,batch,20261013,0.15,0.05,valid,MC2 both@mx: alerts 3/4; reserve activated lan1=5 lan2=6; culls 0
+rq2v4_comp_mx_45,comp,mx,45,batch,20261013,0.15,0.05,valid,MC2 comp@mx: alerts 4/3; 0 reserve; culls 0
 rq2v4_stor_mx_45,stor,mx,45,batch,20261013,0.15,0.05,valid,MC2/MC3 stor@mx: reserve activated 6/6; 0 compute alerts; lock 100/96.9 >=90
-rq2v4_both_mx_46,both,mx,46,batch,20261013,0.15,0.05,valid,MC2 both@mx: alerts 9/9; reserve activated 6/5; culls 0
-rq2v4_comp_mx_46,comp,mx,46,batch,20261013,0.15,0.05,valid,MC2 comp@mx: alerts 9/9; 0 reserve; culls 0
+rq2v4_both_mx_46,both,mx,46,batch,20261013,0.15,0.05,valid,MC2 both@mx: alerts 3/3; reserve activated 6/5; culls 0
+rq2v4_comp_mx_46,comp,mx,46,batch,20261013,0.15,0.05,valid,MC2 comp@mx: alerts 3/3; 0 reserve; culls 0
 rq2v4_stor_mx_46,stor,mx,46,batch,20261013,0.15,0.05,valid,MC2/MC3 stor@mx: reserve 6/6; 0 compute alerts; lock 100/100 >=90
 rq2v4_none_mx_46,none,mx,46,batch,20261013,0.15,0.05,valid,MC1(mx)+MC4 PASS: hash lock 95.3/100.0 pct; halves 97+94/100+100; member 40.2/39.4 >=33; storage_above 99.2 pct; culls 0; D3 True 
 rq2v4_comp_mx_47,comp,mx,47,batch,20261013,0.15,0.05,valid,MC2 comp@mx: alerts 3/4; 0 reserve; 0 storage spawns; member>=33 win 92.1%/92.2%; culls 0; D3 True 
@@ -60,7 +60,7 @@ rq2v4_comp_mx_44,comp,mx,44,batch,20261014,0.15,0.05,valid,MC2 comp@mx: alerts 3
 rq2v4_comp_db_43,comp,db,43,batch,20261014,1.20,0.15,valid,MC1(db) PASS: member 72.8/73.1 >=50; MC3 comp@db: 0 storage engagements; member>=50 win 95.8/95.9; alerts 1/1 descriptive; culls 0; D3 True
 rq2v4_stor_db_43,stor,db,43,batch,20261014,1.20,0.15,valid,MC2 stor@db: reserve activated 3/3; 0 compute alerts/spawns; completion 90.7/93.6; culls 0; D3 True
 rq2v4_none_db_43,none,db,43,batch,20261014,1.20,0.15,valid,"MC1(db)+MC4 PASS: member 68.4/68.7 >=50 (h1 66.9/66.8, h2 69.8/70.7; ge50 91.7/100, 92.0/100); 0 elasticity ops; culls 0; D3 True"
-rq2v4_both_db_43,both,db,43,batch,20261014,1.20,0.15,excluded,"excluded 5.5(i) D2 [reclassified from (iii) in P5.04]: edge_server_n1 OOM-killed 11:56:20Z + edge_server_lan1_dyn3 OOM/Exited(137) 11:58:06Z mid-episode (256MB cgroup cap, kernel cgroup-OOM); lan1 black-hole completion 10.5/96.9, timeout 39.0/3.0 pct (G4 fail), F1 35 consec empty, F2 ratio 8.3x; sampler load 16.4/busy 94 pct re-read as routine db-episode workload (clean comp_db_46_r1 shares the profile); culls 0; D3 True; replaced by both_db_43_r1"
+rq2v4_both_db_43,both,db,43,batch,20261014,1.20,0.15,excluded,"excluded 5.5(i) D2 [reclassified from (iii) in P5.04]: edge_server_n1 OOM-killed 11:56:20Z + edge_server_lan1_dyn3 OOM/Exited(137) 11:58:06Z mid-episode (256MB cgroup cap, kernel cgroup-OOM); lan1 black-hole completion 10.5/96.9, timeout 39.0/3.0 pct (G4 fail), F1 35 consec empty, F2 ratio 8.3x; sampler load 16.4/busy 94 pct re-read as routine db-episode workload (clean comp_db_46_r1 shares the profile); culls 0; D3 True; replaced by both_db_43_r1 (also OOM-excluded); final replacement both_db_43_r2 valid (D20)"
 rq2v4_stor_db_44,stor,db,44,batch,20261014,1.20,0.15,valid,MC2 stor@db: reserve activated 3/3; 0 compute alerts/spawns; completion 88.1/89.5; timeout 11.6/10.3 pct (G4 wording tension — see P5.04); culls 0; D3 True
 rq2v4_none_db_44,none,db,44,batch,20261014,1.20,0.15,valid,"MC1(db)+MC4 PASS: member 68.3/69.6 >=50 (halves ge50 92/100, 92/100); completion 91.2/93.4; 0 ops; culls 0; D3 True"
 rq2v4_both_db_44,both,db,44,batch,20261014,1.20,0.15,valid,MC2 both@db: reserve activated 3/4; alerts 1/1 descriptive; completion 99.4/99.3; culls 0; D3 True
@@ -77,13 +77,16 @@ rq2v4_comp_db_47,comp,db,47,batch,20261014,1.20,0.15,valid,MC1(db) PASS member 7
 rq2v4_stor_db_47,stor,db,47,batch,20261014,1.20,0.15,valid,MC2 stor@db: reserve activated 2/3; 0 compute alerts/spawns; completion 92.3/93.8; timeout 7.6/6.1 pct (G4 wording tension - see P5.04); culls 0; D3 True
 rq2v4_none_db_47,none,db,47,batch,20261014,1.20,0.15,valid,"MC1(db)+MC4 PASS: member 68.4/69.7 >=50 (halves ge50 92/100, 92/100); completion 95.8/96.7; 0 ops; culls 0; D3 True"
 rq2v4_both_db_47,both,db,47,batch,20261014,1.20,0.15,valid,MC2 both@db: reserve activated 3/4; alerts 1/1 descriptive; completion 99.2/99.2; culls 0; D3 True
-rq2v4_stor_db_48,stor,db,48,batch,20261014,1.20,0.15,excluded,"excluded 5.5(i) D2: edge_server_n1 OOM-killed 21:03:19Z mid-episode (256MB cgroup cap, kernel cgroup-OOM; container_events Restarting(137) 21:03:20Z); final ~6 episode windows collapsed (lan1 p50 30-55s); completion 71.2/87.1, timeout 19.2/12.3 pct (G4 fail), F1 max_consec=8; replacement withheld - escalate (author decision); P5.04"
+rq2v4_stor_db_48,stor,db,48,batch,20261014,1.20,0.15,excluded,"excluded 5.5(i) D2: edge_server_n1 OOM-killed 21:03:19Z mid-episode (256MB cgroup cap, kernel cgroup-OOM; container_events Restarting(137) 21:03:20Z); final ~6 episode windows collapsed (lan1 p50 30-55s); completion 71.2/87.1, timeout 19.2/12.3 pct (G4 fail), F1 max_consec=8; replacement withheld pending escalation; author D20 authorized stor_db_48_r1 (valid 2026-10-16)"
 rq2v4_none_db_48,none,db,48,batch,20261014,1.20,0.15,valid,"MC1(db)+MC4 PASS: member 68.4/69.3 >=50 (halves ge50 92/100, 92/100); completion 92.1/94.7; 0 ops; culls 0; D3 True"
 rq2v4_both_db_48,both,db,48,batch,20261014,1.20,0.15,valid,MC2 both@db: reserve activated 3/3; alerts 1/1 descriptive; completion 99.5/99.3; culls 0; D3 True
 rq2v4_comp_db_48,comp,db,48,batch,20261014,1.20,0.15,valid,MC1(db) PASS member 71.7/72.2 >=50; MC2/MC3 comp@db: 0 storage engagements; member>=50 win 95.9/95.9; alerts 1/1 descriptive; culls 0; D3 True
 rq2v4_both_db_42,both,db,42,batch,20261014,1.20,0.15,valid,MC2 both@db: reserve activated 3/4; alerts 1/1 descriptive; completion 99.0/99.1; culls 0; D3 True
 rq2v4_comp_db_42,comp,db,42,batch,20261014,1.20,0.15,valid,MC1(db) PASS member 70.4/71.6 >=50; MC2/MC3 comp@db: 0 storage engagements; member>=50 win 93.9/95.9; alerts 1/1 descriptive; culls 0; D3 True
 rq2v4_stor_db_42,stor,db,42,batch,20261014,1.20,0.15,valid,MC2 stor@db: reserve activated 6/3; 0 compute alerts/spawns; completion 92.2/93.7; timeout 7.7/6.1 pct (G4 wording tension - see P5.04); culls 0; D3 True
-rq2v4_none_db_42,none,db,42,batch,20261014,1.20,0.15,excluded,"excluded 5.5(i) D2: edge_server_n1 OOM-killed 23:50:56Z mid-episode (256MB cap, kernel cgroup-OOM; missed by container_events poller); member absent ~4.5 min, lan1 completion 30.4 pct, F1 28 consec empty windows; MC1 38.5/62.8 + MC4 halves 56/0 fail as incident consequence; block-42 press witness compromised -> escalate per 5.1/5.5 (replacement withheld); dry press witnessed by 6/7 none runs + 42p preflight; P5.04"
+rq2v4_none_db_42,none,db,42,batch,20261014,1.20,0.15,excluded,"excluded 5.5(i) D2: edge_server_n1 OOM-killed 23:50:56Z mid-episode (256MB cap, kernel cgroup-OOM; missed by container_events poller); member absent ~4.5 min, lan1 completion 30.4 pct, F1 28 consec empty windows; MC1 38.5/62.8 + MC4 halves 56/0 fail as incident consequence; block-42 press witness compromised -> escalate per 5.1/5.5 (replacement withheld pending escalation; author D20 authorized none_db_42_r1 (valid 2026-10-16); witness restored"
 rq2v4_both_db_43_r1,both,db,43,batch,20261015,1.20,0.15,excluded,"excluded 5.5(i) D2: edge_server_n1 OOM-killed 00:12:02Z early in episode (256MB cap, kernel cgroup-OOM; missed by container_events poller); lan1 completion 42.9 pct, timeout 38.3 pct (G4 fail); seed-43 replacement slot consumed (2nd replacement = author decision); P5.04"
 rq2v4_comp_db_46_r1,comp,db,46,batch,20261015,1.20,0.15,valid,MC1(db) PASS member 70.4/72.2 >=50; MC2/MC3 comp@db: 0 storage engagements; member>=50 win 95.9/95.9; alerts 1/1 descriptive; culls 0; D3 True
+rq2v4_both_db_43_r2,both,db,43,batch,20261015,1.20,0.15,valid,D20 top-up (author n=7): third seed-43 attempt; MC2 both@db: reserve activated 4/3; alerts 1/1 descriptive; completion 99.2/99.2; culls 0; D3 True; OOM/kernel sweep clean (0 events); folder 20261015_212335
+rq2v4_stor_db_48_r1,stor,db,48,batch,20261015,1.20,0.15,valid,"D20 top-up (author n=7): reserve activated 4/4; 0 compute alerts/spawns; completion 90.2/90.4; culls 0; D3 True; OOM/kernel sweep clean; G4 timeout 9.6/9.4 pct noted (preflight-band 6-12 pct, stor@none class, D18); folder 20261015_214836"
+rq2v4_none_db_42_r1,none,db,42,batch,20261015,1.20,0.15,valid,"D20 top-up (author n=7): block-42 press witness restored; MC1(db)+MC4 PASS: member 67.8/68.7 >=50 (halves ge50 92/100, 92/100); completion 89.8/91.9; 0 ops; culls 0; D3 True; OOM/kernel sweep clean; folder 20261015_221249"

@@ -1,6 +1,6 @@
 # RQ2 v4 — Campaign Experiment Plan (P4.1)
 
-> **Status:** 2026-10-12 · 📋 Planned — authored for P4.1; **not yet frozen**: P4.2 auto-review ran (3 rounds, findings resolved per round); P4.3 author approval pending; the plan freezes on R1–R16 sign-off.
+> **Status:** 2026-10-12 · 📋 **FROZEN 2026-10-12 (R1–R16 approved, D15)** — executed in full: 89 campaign folders, 84 valid / 5 excluded; results in [`results.md`](results.md).
 > **Parent:** [`rq2v4_plan.md`](rq2v4_plan.md) (Phase 4, P4.1 requirement list) · **Decision log:** [`preparation.md`](preparation.md) (D1–D14, cited by ID) · **Executed path:** Phases 1–3 of `rq2v4_plan.md`.
 > **Grounding:** [`rq2v4_p3_00_levers.md`](rq2v4_p3_00_levers.md) §3/§6–§7 (mixed seat, D13/D14, stor-mixed finding) · [`rq2v4_p2_08_band_floor.md`](rq2v4_p2_08_band_floor.md) §6 (D12) · [`rq2v4_p2_02_knee_calibration.md`](rq2v4_p2_02_knee_calibration.md) §2/§6 (seat runs) · [`rq2v4_p2_01_hash_kind.md`](rq2v4_p2_01_hash_kind.md) (hash mechanics) · [`rq2v4_p1_05_verification.md`](rq2v4_p1_05_verification.md) (F2 protocol, P4 pins).
 > **This file is the execution contract for the Edge Experiment Runner (P5) and the gate contract for the Edge Experiment Analyzer (P6).** Where it conflicts with any other v4/rq2 artifact, this file wins.

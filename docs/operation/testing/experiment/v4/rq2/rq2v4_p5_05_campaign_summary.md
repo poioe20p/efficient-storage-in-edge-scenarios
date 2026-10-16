@@ -36,8 +36,8 @@
 | mx | none | 7 | 0 | 72.3/71.0 | 10.0/10.2 | 23.2/23.5 | 98.4/100 | 27.3/28.6 |
 | db | both | 7 | 2 | 99.3/99.3 | 0.028/0.058 | 2.10/2.21 | 16.3/16.3† | 0.6/0.7 |
 | db | comp | 7 | 1 | 99.8/99.8 | 0.027/0.049 | 1.21/1.31 | 14.3/16.3† | 0.2/0.2 |
-| db | stor | 7 | 1 | 90.7/92.7 | 1.91/1.77 | 16.24/11.71 | 100/100† | 9.1/7.2 |
-| db | none | 7 | 1 | 92.1/93.4 | 1.58/1.54 | 14.38/9.97 | 100/100† | 7.8/6.4 |
+| db | stor | 7 | 1 | 90.7/92.7 | 2.18/2.05 | 16.24/11.71 | 100/100† | 9.1/7.2 |
+| db | none | 7 | 1 | 92.1/93.4 | 1.90/1.72 | 14.38/9.97 | 100/100† | 7.8/6.4 |
 
 Lock % = hash-kind windowed p95 ≥ 1 s (p5check convention) for cb/mx.
 †db has **no hash rows** (lookup-only mix): hash lock reads 0.0 and the
@@ -85,7 +85,7 @@ pass under it** — registered as a diagnostic, not a gate redefinition
 | mx | both | **1/7** (win-max 0/7) | s42 only (98.0/98.0); thin pre-add baselines; P5.3 §4 |
 | mx | stor | **0/7** | pre-registered D18 outcome (P5.3 §2.3) |
 | db | both | **5/7** (win-max 5/7) | misses s45 (2.9/54.3), s48 (100/11.8); s44-lan2 79.4–80.0 borderline flagged; D20 top-up s43_r2 ✓; P5.04 §4 |
-| db | stor | **0/7** | pre-registered D18 outcome; incl. D20 top-up `stor_db_48_r1` at 0.0/0.0 (P5.04 §4) |
+| db | stor | **0/7** | pre-registered D18 outcome; incl. D20 top-up `stor_db_48_r1` at 2.9/0.0 (P5.04 §4) |
 
 Post-ready sampled-read shares stay descriptive everywhere (≈ 1
 sample/window; D18: reads move only via newly born connections — `stor`
@@ -168,7 +168,7 @@ outside the 89-run tally by design.
   2026-10-15T00:34Z (`comp_db_46_r1`) ≈ **50 h**; the R4 preflight pair ran
   2026-10-12T21:50–22:16Z.
 - **Folder census:** 109 `rq2v4_*` folders under
-  `source/scripts/testing/metrics/` = **86 campaign** (28 cb + 28 mx + 30 db
+  `source/scripts/testing/metrics/` = **89 campaign** (28 cb + 28 mx + 33 db
   incl. 2 `_r1`) + 2 R4-preflight + 21 P1–P3 pilot/calibration folders
   (outside the tally).
 - **Driver (`~/rq2v4_battery/driver.log`, covers 2026-10-13T04:13 →
@@ -182,7 +182,7 @@ outside the 89-run tally by design.
   exits**; one `missing_folder` false-start (18:22:53Z, no orphan) relaunched
   cleanly. The earlier cb streams (Oct 12 evening, seeds 42–43) predate this
   log file.
-- **Retention:** all 86 run folders + controller logs retained on
+- **Retention:** all 89 run folders + controller logs retained on
   `cloud-vm-rq2` pending P6 (slim-archive only after analysis, per plan §6.3).
 
 ## 6. State of the evidence (plain terms)
@@ -197,25 +197,25 @@ reaches all 14; the plan §5.3 floor arithmetic — ≥ 6/7 — is P6's), and
 `stor` never de-locks the compute press and the un-scaled `none` stays
 locked. On the **db
 row**, the compute side reads the same direction descriptively
-(alert-anchored 5/6 both, 7/7 comp; TTR medians ≈ 44–51 s), but the frozen
+(alert-anchored 6/7 both, 7/7 comp; TTR medians ≈ 44–54 s), but the frozen
 D12 anchor rule has no in-episode trigger there (bands stay 1–3; the sole
 burst is post-episode) — a P6 adjudication
 item, not an outcome claim. The db storage reading splits by mechanism:
-`both`@db reaches the D14 criterion in 4/6 valid replicates (also short of
-its n=6 floor — P6), while `stor`@db cannot under D18 pinning
+`both`@db reaches the D14 criterion in 5/7 valid replicates (short of
+the ≥ 6/7 floor — P6; miss lanes s45 lan1/lan2, s48 lan2), while `stor`@db cannot under D18 pinning
 (pre-registered). The
 regime's real cost is operational: five runs were invalidated by one
 repeatable platform behaviour (container OOM under the db press), pushing
 three cells to n=6 and crossing D19(c)'s escalation — the
 author's decision, together with P6's read of P6.1 and the `stor`@db G4
 tension, completes the campaign's evidence base. Everything else stands:
-81/86 runs valid, 0 pending, clean D3/pins everywhere, zero culls in all
+**84/89 campaign runs valid** (corrected 2026-10-16; the line read 81/86 pre-top-up), 0 pending, clean D3/pins everywhere, zero culls in all
 valid runs.
 
 ## 7. Verification hooks
 
 - Status CSV final state: `source/scripts/testing/metrics/rq2v4_run_status.csv`
-  (on `cloud-vm-rq2`) — 81 valid / 5 excluded (§3); all causes cite the
+  (on `cloud-vm-rq2`) — 84 valid / 5 excluded (§3); all causes cite the
   evidence above.
 - Rollup inputs: `~/rq2v4_battery/mx_p5/*.json` (one per campaign label
   except the excluded `comp_db_46` original — none exists for it — plus 3
