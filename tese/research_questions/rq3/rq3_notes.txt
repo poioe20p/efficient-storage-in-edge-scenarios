@@ -263,3 +263,68 @@ Ch2 gap-table interface rows (Telemetry to decision / Decision to scaling
 action / Ready backend to traffic), the campaign captions (Design of the
 X campaign), and lowercase descriptive prose. Build green; all (RQ#)
 naming sites reviewed (21 sites across the thesis).
+
+(2026-10-16 t) §5.4 framing and tab:rq3_design trim (author-approved;
+"no pages to spare"). Opening now reports the campaign (house pattern
+"The campaign compared ..."), admission glossed once ("added to the set
+of backends that can receive traffic"); modes paragraph opens "The modes
+differ in what the message is trusted to do" and closes with the
+interval calibration (20 s: raised so a message still in flight is not
+mistaken for a lost one -- record: rq3_saturation plan, P-B
+probe_fallback contamination; 10 s: calibration umbrella); conditions
+paragraph carries the reality link ("dropped on a lossy path") and the
+aim ("the comparison is about the modes, not the conditions"). Referent
+fix: "the checking mode" -> "periodic polling" (2 sites, intact
+subsection). tab:rq3_design: modes/conditions no longer restated,
+thresholds (5/7/25 pp) stated once in Test, Replication compacted to set
+names, Expectations direction-only (58 -> 45 row lines). Build green.
+
+(2026-10-16 u) §5.4 clarity pass 2 (author notes: plain wording, no
+earlier-run references, effect stated directly, author's reduced-quota
+sentence). Intact: gap sentence rewritten plain ("admitted each backend
+essentially as soon as it could serve (median 0.001 s) ... only at the
+next check (median 6.984 s)"); "The head start reached the user end to
+end." cut; poll sensitivity now direct ("with the period widened from
+10 s to 15 s ... both by about the added five seconds"),
+"pre-registered poll-interval sensitivity arm" label dropped. Bind class
+kept (the stall sits in the A-C runs and F1 shows it, so the limitation
+is load-bearing) but concretised: narrative "covers only backends that
+bind in under a second ... did not occur in the confirmation check's
+runs"; F1 caption now "fast binds / stalled binds, about ten seconds
+when the intermittent stall occurs at spawn", "two start-up classes"
+defined there; "fast-binding"/"slow class" retired. Lost: expectation/
+verdict/re-explain chains cut; opening now the author's sentence ("When
+the message is lost, the comparison runs under a reduced per-backend CPU
+quota, to reduce the spare capacity and therefore the absorption
+margin"; "window" -> "margin" per ledger); "The consequence reached
+users." cut, effect stated directly. "Re-derive readiness" retired
+(narrative x3, design row, F2 caption, fault-table header
+"Re-derivation" -> "When lost", In sum, §5.6 x4, Ch3 §3.4) -> "the modes
+that check" / "a check". Criteria close "classes with evidence" ->
+"where measured"; premature damage definition made direct. Build green.
+
+(2026-10-16 v) Strict jargon sweep, whole RQ3 (author directive: no
+abstract criterion labels; state what the modes did and whether it
+held). Criteria close rewritten ("intact direction / one-period band /
+post-admission invariance / full conjunction" all gone) to behaviour
+terms: "Across the three conditions, the expectations held: earlier
+admission with the message intact, recovery with the message lost, ...
+exposure ... against immunity ...". Lost qualifier now "two no-fault
+runs fell slightly outside their pre-registered healthy bounds, so the
+criteria set for the lost condition were not all met together".
+"Health floors" -> "healthy bounds" (3 sites + premature drop note).
+"Start-up class" retired everywhere -> "backends that bind in under a
+second / stalled at bind" (design table Test+Expectations, intact
+narrative, tab:rq3_delays "earlier for every backend", F1 caption "two
+groups", §5.1 methods para "so it cancels in the comparison"). "Co-
+primary" -> "at least 5 pp in each". "Same-fault contrasts" -> "Within
+the fault runs themselves, ... stood +17.0/+16.2 pp above periodic
+polling". "True servability" -> "only once it could serve" / "only once
+the backend can serve" (2 sites). "Cell stays assessable" -> "the
+reading stands"; "pre-bind transient recorded for the pilot" -> "small
+transient before bind". §5.6 row: "capacity dark" -> "the new capacity
+unused"; "full pre-registered conjunction" -> "Two marginal no-fault
+breaches meant not all criteria for the lost condition were met
+together". F3 "usable pairs" -> "pairs that pass the pre-registered
+checks". Verdict sentences ("The expectation held.") and pre-registered
+qualifiers kept. Build green.
