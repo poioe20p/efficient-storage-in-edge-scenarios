@@ -205,8 +205,8 @@ control loops, each observing, deciding, and acting on its own. The
 properties of what crosses (the completeness and freshness of the evidence,
 the match between the command and the demand, and whether a ready backend
 is admitted on the backend's notification alone, on the notification with
-a fallback check, on the notification with a confirmation check, or through
-periodic polling) are studied here one at a time. A check is the controller
+a fallback check, through periodic polling, or on the notification with a
+confirmation check) are studied here one at a time. A check is the controller
 asking the backend directly whether it can serve. The \emph{coordination gap}
 is the accumulated effect along the chain, which this dissertation does not
 measure as a whole.} The three interfaces between its steps, highlighted in
@@ -254,8 +254,8 @@ deployed across two network domains: how telemetry reaches the controller
 the capacity command serves the tier the demand presses on
 (bottleneck-aware scaling action); and whether a ready backend is
 admitted on the backend's notification alone, on the notification with a fallback check,
-on the notification with a confirmation check, or through periodic
-polling (readiness admission: when a ready backend starts receiving traffic).
+through periodic polling, or on the notification with a
+confirmation check (readiness admission: when a ready backend starts receiving traffic).
 
     The thesis does not claim that this SDN-based architecture is superior
 to existing orchestration platforms such as Kubernetes or NFV Management
@@ -274,8 +274,8 @@ and by establishing, for each interface, which property of the crossing
 decides the outcome and under which conditions: how telemetry reaches the
 controller, whether the scaling action serves the tier the
 demand presses on, and whether a ready backend is admitted on its
-notification alone, on the notification with a fallback check, on the
-notification with a confirmation check, or through periodic polling.
+notification alone, on the notification with a fallback check, through
+periodic polling, or on the notification with a confirmation check.
 
     The platform keeps controller-side coordination in-process, with how
 telemetry reaches the controller retained as an explicit, configurable
@@ -2083,7 +2083,7 @@ loop: it receives the summaries, updates the per-backend and
 per-member state, evaluates the tier conditions, and posts typed alerts
 to a priority queue. The elasticity thread is a daemon thread that blocks
 on that queue and performs the infrastructure changes, and the readiness
-gate runs a probe worker thread of its own.
+gate runs its own worker thread for checks.
 
 State crosses the contexts through the shared structures of
 Section~\ref{sec:control_workflow}. The telemetry consumer writes the
@@ -3241,7 +3241,8 @@ removed was the spare capacity, not the service.
 \begin{table}[H]
     \centering
     \caption{Admission modes under a lost message
-    (the RQ3 campaign; six blocks, plateau pooled).
+    (the RQ3 campaign; six blocks, plateau pooled; the seventh block's
+    pair is report-only under the pre-registered control-tail rule).
     Admitted = visibility in the routing pool; abandoned
     candidates in parentheses. Plateau tail = slow share over the last
     300~s of the plateau; $^{\ast}$block~4 is excluded from the fault
@@ -3450,7 +3451,7 @@ Chapter~\ref{ch:conclusions}.
         pre-registered storage tail-latency test,
         reported unmet \\
         Readiness admission (RQ3) & Loss without re-derivation leaves
-        capacity dark (zero admissions, six of six blocks), and a
+        capacity dark (zero admissions in every loss run), and a
         premature message damages only the modes that admit on it (damage
         medians up to $+14.4$~pp) while the modes that check stay flat & The loss
         cost under the reduced headroom the campaign fixed, and
@@ -3538,8 +3539,8 @@ policy had a service deficit to recover, which bounds the expected value
 of choosing the action at runtime. On admission, the reviewed placement work names readiness but
 leaves the step to traffic outside its scope. The campaign measures that
 step as a bounded delay while the platform is healthy, and as an
-all-or-nothing loss under a dropped notification without re-derivation,
-which the re-deriving rules convert into a bounded delay. These
+all-or-nothing loss under a dropped message without re-derivation,
+which the modes that re-derive readiness convert into a bounded delay. These
 statements characterise, within the reviewed literature, the interfaces
 that the reviewed works leave open. They do not assert that the
 coordination gap is universal.
@@ -3557,7 +3558,7 @@ the act of provisioning itself left a tail while an episode was live.
 Third, readiness admission
 is a reliability path as much as a latency path: a bounded re-derivation
 cost about seven seconds while the platform was healthy, and preserved the
-provisioned capacity when the primary notification was lost. On the
+provisioned capacity when the message was lost. On the
 evaluation side, the campaigns show that these interfaces are exercised by
 the transient and the margin.
 
@@ -3611,8 +3612,10 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 % TODO: Controlled testbed — two domains on a single host; emulated
 % inter-domain link; evaluated data path single-site; no geo-distributed or
 % wide-area performance claim. Single window size;
-% statistical power (n=3 per condition); RQ1/RQ2/RQ3 rely on required extensions and are
-% designed, not fully measured (thesis_overview.md §6); the old RQ2 slowstart result (~31 s,
+% statistical power (RQ3: seven seed-matched blocks per mode and condition; the
+% lost reading keeps the fixed six-block denominator, one exclusion and one
+% report-only block); the old "designed, not fully measured" note
+% (thesis_overview.md §6) is superseded by the completed campaigns; the old RQ2 slowstart result (~31 s,
 % n=9) is supporting calibration evidence for RQ3's periodic-polling condition, not final
 % evidence; MongoDB-specific mechanisms (Double-VIP); no end-to-end coordination penalty is
 % claimed — per-interface results are synthesized only under a matched schema.
@@ -3629,12 +3632,12 @@ evaluation are detailed in Chapter~\ref{ch:conclusions}.
 % In-place provisioning perturbs the served tail (p95 spikes tracked the add
 % events in the bottleneck-aware cell): a deploy-time property, not a demand
 % effect.
-% RQ3 bind stall (add 2026-10-09): the backend's socket bind intermittently
-% stalls about ten seconds when a backend starts during an active run
-% (network-namespace churn at spawn), random across backends and equal
-% across the compared rules; the start-up classes are measured per backend
-% and the analysis controls for the stall statistically, it is not removed
-% (Section~\ref{sec:results_rq3_readiness}).
+% RQ3 bind stall (add 2026-10-09; era note 2026-10-14): the socket bind
+% stalls about ten seconds in the September runs (every spawned backend) and
+% not at all in the October runs (max 0.089 s across the wake runs); where it
+% occurs it is equal across the compared modes, and the start-up classes are
+% measured per backend so the analysis controls for it (Section~\ref{sec:results_rq3_readiness}).
+% This is why the slow-binding stratum carries no confirmation-check evidence.
 % Data plane fixed to the OpenFlow feature set on Open vSwitch; no
 % programmable data plane (P4) and no in-band telemetry; steering relies on
 % the host's kernel connection tracking.
@@ -3771,7 +3774,7 @@ weights.\par}
     \caption{Control-plane cost per configuration (descriptive; medians
     across the runs of each configuration). Delivery records count delivered
     telemetry summaries; action records count provisioned units; admission
-    records count events or readiness probes.}
+    records count events or readiness checks.}
     \label{tab:app_config_control_cost}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
@@ -3817,7 +3820,7 @@ medians across that configuration's runs.\par}
         \texttt{READINESS\_EVENT\_FALLBACK\_S} & Direct mode. The time the gate waits for the message before checking anyway. 20~s in the reported admission runs and 130~s in the backend-notification configuration, where the check cannot begin before the abandonment bound. \\
         \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Polling interval. 10~s in the primary arms and 15~s in the sensitivity arm. \\
         \texttt{READINESS\_WAKE\_VERIFY\_MODE} & \texttt{probe} enables the confirmation check on the direct base. The message wakes a check, and admission requires the check to pass. \\
-        \texttt{READINESS\_PROBE\_TIMEOUT\_S}, \texttt{\_RETRY\_S}, \texttt{\_MAX\_S} & Probe timeout (5~s), retry interval (1~s), and abandonment bound (120~s). \\
+        \texttt{READINESS\_PROBE\_TIMEOUT\_S}, \texttt{\_RETRY\_S}, \texttt{\_MAX\_S} & Check timeout (5~s), retry interval (1~s), and abandonment bound (120~s). \\
         \texttt{EDGE\_READY\_PREMATURE\_S} & Fault instrumentation. The replica reports readiness this many seconds before it can serve, ten seconds in the evaluated premature runs. \\
         \texttt{EDGE\_READY\_SEMANTIC\_LIE\_S} & Fault instrumentation. Workload requests fail while the readiness predicate stays satisfied, for this window counted from bind (1200~s). \\
         \texttt{READINESS\_EVENT\_DROP\_MODE} & Fault instrumentation. The readiness message is dropped entirely. \\

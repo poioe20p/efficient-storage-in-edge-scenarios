@@ -235,3 +235,19 @@ serve). Guard recorded: readiness is grounded as "the backend sends a
 message when it can serve" -- NOT "as soon as provisioned" (provisioning
 starts the container; readiness means it can serve). Build green, no new
 boxes; TOC carries the new title.
+
+(2026-10-16 r) Full RQ3 consistency sweep across main.tex (author
+directive). Fixed: flow-lists reordered to A-D order (§1.1 note, §1.2,
+objectives); "probe" prose removed from three remaining sites (Ch4 gate
+thread -> "checks", appendix caption -> "readiness checks", knob
+description -> "Check timeout"); two object uses of "notification"
+replaced with "message" (§5.6); "the re-deriving rules" -> "the modes
+that re-derive readiness" (§5.6); stale "six of six blocks" -> "zero
+admissions in every loss run" (synthesis row); fault-table caption
+annotated with the seventh-block report-only rule; Ch6 TODO comments
+updated (statistical-power note superseded; bind-stall comment rewritten
+era-scoped). Verified clean: zero retired terms; mode names and order
+canonical in every list; all seven rq3 labels referenced and defined; all
+three figures resolve; no new boxes; six overfulls are the pre-existing
+set. Ch6 conclusion/limitations sections remain scaffold comments (known
+pending item, not inconsistency).
