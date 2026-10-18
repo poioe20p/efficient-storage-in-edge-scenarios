@@ -227,7 +227,27 @@ The control-workflow figure (`control_workflow.drawio`) defines the genre.
   bottom) is the only legend-like device permitted anywhere in the family (the
   bounded exception of §0.3).
 
-## 10. Checklist before a figure ships
+## 11. Schedule figures (timeline shape)
+
+The RQ1 delivery figure (`rq1_delivery_modes.drawio`) defines the genre. It shows
+*what differs between configurations*, so it belongs next to the design that
+introduces the comparison, not with the result plots.
+
+- **Header chain**: the producers → aggregator → consumer chain, drawn once with the
+  §3 icons and the §5 link colours, each with a one-line subtitle that states the
+  cadence or the consumer (`one summary of the last 10 s, every 10 s`,
+  `decision engine`). The header makes explicit which leg the comparison varies.
+- **Frames**: one `genre=schedule` frame spans the lanes and carries the frame title
+  (`The four delivery modes — what the controller receives`).
+- **Rails**: a shared horizontal time axis, grey `#B9B9B9`; 10 px marks for events;
+  one lane per configuration, labelled `<letter> · <name>` at the left and the
+  property words at the right (`complete and prompt`).
+- **Marks**: `#B9B9B9` = the event at its source, `#000000` = the event as the
+  consumer sees it, `#FF8000` = the evidence age a configuration carries, drawn as a
+  bar from the event to the moment it is read. Never recolour a mark otherwise.
+- **One compact notation key** under the frame (the §0.3 exception, as in §9).
+
+## 12. Checklist before a figure ships
 
 1. `python tools/check_drawio_style.py tese/images/src/<figure>.drawio` passes.
 2. Export the editable PNG — cropped to the content, 1x scale, diagram embedded

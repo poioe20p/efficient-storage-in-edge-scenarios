@@ -328,3 +328,17 @@ breaches meant not all criteria for the lost condition were met
 together". F3 "usable pairs" -> "pairs that pass the pre-registered
 checks". Verdict sentences ("The expectation held.") and pre-registered
 qualifiers kept. Build green.
+
+(2026-10-18 w) Design-table canon (author rule: all campaigns' design
+tables carry the same rows). All three Chapter 5 design tables now share
+the 7-row skeleton, same names and order: Treatment, Held constant,
+Workload, Replication, Exclusions, Test, Expectations. RQ1 regained its
+Workload (phase chain) and Replication (7 blocks, 28 runs, seeds
+3001-3007) rows; RQ2's "Episodes" became Workload (moved after Held
+constant) and its seed clause became a Replication row (seeds 42-48);
+RQ3's "Message conditions" and "Design" rows were dissolved into
+Treatment (modes crossed with the three conditions), Workload (one
+condition per run, 600 s plateau restored) and Replication (7 blocks per
+mode and condition, seeds 5201-5207 / 6301-6307, supporting sets). Rule
+recorded in the thesis-writing skill (House structure conventions).
+Build green.

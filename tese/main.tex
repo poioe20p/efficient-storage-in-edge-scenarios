@@ -403,7 +403,7 @@ This dissertation makes the following contributions:
     compute and storage scale-up
     from the observed bottleneck, compared with fixed single-tier policies,
     affects targeted-tier relief, service recovery, and resource use under
-    compute-bound and data-access-bound demand (RQ2).
+    a mixed press and a data-access press (RQ2).
     \item An experimental characterisation of readiness admission,
     specifically how the four admission modes (backend notification,
     notification with a fallback check, periodic polling, and
@@ -2284,11 +2284,7 @@ cross-domain data traffic only. The evaluation workloads reference locally owned
 content only, so storage reads remain within the replica set of the domain
 that serves each request, and cross-domain storage placement is disabled.
 Load balancing may place a request on a peer-domain replica at a
-hop-cost penalty. This occurred in about 2~\% of requests 
-with a recorded serving backend in the telemetry and 
-scaling action campaigns and 0.5~\% in the readiness admission
-campaign, and it is a property of the platform's load-balancing policy rather than
-a treatment. The campaigns therefore measure the coordination 
+hop-cost penalty. The campaigns therefore measure the coordination 
 interfaces under controlled and repeatable conditions.
 
     Each run is an independent experimental unit and starts from the 
@@ -2303,9 +2299,8 @@ so the offered demand is fixed by the run's seed and does not depend on
 the live database. Between runs, the persistent containers, the data
 state, and the controller state are reset.
 
-    During a run, the platform 
-records the timeline of the demand-to-capacity chain end to 
-end: demand episode onset, telemetry summary completion and controller 
+    During a run, the platform records the timeline of the demand-to-capacity
+chain end to end: demand episode onset, telemetry summary completion and controller 
 observation, scaling decision and action taken,
 provisioning start and completion, application-readiness confirmation,
 admission to the routing pool, first routed request, and first successful
@@ -2318,8 +2313,8 @@ and the design under which each campaign varied exactly one interface.
 
 \subsection{Demand Model and Campaign Workloads}
 The demand model varies two axes: the request intensity over time, and the
-request mix, which determines whether an episode binds the compute tier or the
-storage tier. The spatial axis, that is, which domain owns the requested
+request mix, which sets the tier an episode presses on. The spatial axis,
+that is, which domain owns the requested
 content, is held constant in the evaluation, as described above.
 
     The request mix is a weighted distribution over six request kinds
@@ -2365,9 +2360,11 @@ settle and separates the stressed window from the post-shift windows.
 A demand drop returns the load to a low, steady level (rate 1.0, 10~\%) and is
 the release window, in which the capacity the episode required is scaled
 down and post-shift service quality is compared with the baseline. An idle
-tail closes the run at a near-idle load (rate 0.05, 5~\%), so that every
+tail closes the run at a near-idle load (rate 0.05, 5~\%), so that the
 configuration reaches sustained idleness and the release of surplus
-capacity can complete. Table~\ref{tab:campaign_workloads} summarises 
+capacity can complete. The telemetry campaign and the mixed press end with an
+idle tail, and the data-access press ends at its demand drop.
+Table~\ref{tab:campaign_workloads} summarises 
 the workload of each campaign.
 
 \begin{table}[H]
@@ -2415,8 +2412,8 @@ before that evidence arrives.
 
     For the scaling action campaign, the outcomes are read per policy under
 each demand episode: the targeted-tier
-relief, as the change in the receiving tier's utilisation and latency
-between the pre-registered windows before and after the action, and the
+relief, as the fall in the receiving tier's utilisation while the added units
+carry served requests, and the
 service recovery, as the episode service quality against the no-scaling
 policy, with the resource use reported alongside. Saturation, as this
 campaign evaluates it, is the capacity-bound state in which a tier runs at
@@ -2426,14 +2423,19 @@ than the state of an overloaded server whose own processing slows.
     The scaling action results use the request-path latency quantities
 defined in Section~\ref{sec:vip_data_paths}: user-visible latency, edge
 service time, its data-access and edge-processing components, and the
-pre-dispatch wait. The edge service components are aggregated as
-per-request means over the demand episode. The readiness admission campaign 
+pre-dispatch wait. The edge service components are per-window means over the
+demand episode, and each run is summarised by the median of its episode
+windows. The readiness admission campaign 
 reports the segment of the chain from the scaling decision to usable capacity, 
 which isolates the admission path.
 
 Service quality is summarised per run through percentiles (p50, p95) of
-the endpoint latency over the demand episode. Latency percentiles are computed
-on the served basis, over completed requests. Outcome classes are reported
+the endpoint latency over the demand episode, and every campaign's runs record
+them. The scaling action campaign reports its service outcome on the
+request-path components and on completion, because a request-path component is
+the signal the policy reads (Section~\ref{sec:scaling_policy}). Latency
+percentiles are computed on the served basis, over completed requests.
+Outcome classes are reported
 distinctly as offered requests, completed requests, failed
 requests, timeouts (each recorded at the client-side cap of 300~s), and
 client-side cancellations and drops at phase end.
@@ -2494,9 +2496,10 @@ policies compared within a campaign are baselines that encode architectural
 properties, such as a fixed single-tier scaling policy or a periodic polling
 mechanism, and not competing aspects. Each campaign was pre-registered with the
 treatments, primary outcomes, screening rules, and analysis tests all fixed
-before data collection. For the scaling action campaign, the directions were
-fixed before data collection and the magnitude at which a direction counts as
-a better outcome was registered while the analysis was written. 
+before data collection. For the scaling action campaign, the direction
+criteria were fixed before data collection, the magnitude at which a
+direction counts as a better outcome was registered while the analysis was
+written, and the separation statistics are reported alongside the directions. 
 
 No results are pooled across campaigns. Every contrast
 is computed within its own campaign's design, and where a research question
@@ -2507,12 +2510,13 @@ measured over matched demand. A seed fixes the demand of a run: which clients
 are active in each phase and each client's request stream, targets, payloads,
 and timing jitter. The runs are organised into blocks, a block holding one run
 of every treatment the campaign compares, sharing one seed, so the treatments
-entering a contrast meet identical demand; the execution order within a block
+entering a contrast meet identical demand. The execution order within a block
 is counterbalanced across blocks, so testbed drift cannot align with a single
 treatment. Every campaign uses the same replication standard, seven
 seed-matched blocks per treatment, one run per treatment per block, and no seed
-is reused within a campaign; the seed ranges are 3001--3007 (telemetry),
-42--48 (scaling action), and 5201--5207 and 6301--6307 (the intact and lost,
+is reused within a block. A campaign with two demand episodes runs one block
+set per episode over the same seven seeds. The seed ranges are 3001--3007
+(telemetry), 42--48 (scaling action), and 5201--5207 and 6301--6307 (the intact and lost,
 and the premature, conditions of the readiness admission campaign). Seven is
 the smallest size at which a fully separated contrast remains resolvable under
 the pre-registered test: under complete separation between two treatment sets,
@@ -2523,30 +2527,30 @@ the exact Mann--Whitney $U$ test has a $p$-value floor of $2/\binom{2n}{n}$,
 run-level contrasts use the exact Mann--Whitney $U$ test, which ranks the runs
 of the two treatments together and reports the probability of a separation at
 least as strong as the observed one when the treatments are in fact
-equivalent; the readiness admission campaign applies the same test to
-per-backend samples within runs. Alongside each $p$-value the campaigns report
+equivalent. The readiness
+admission campaign applies the same test to
+per-backend samples within runs. Alongside each $p$-value the telemetry and
+readiness admission campaigns report
 Cliff's $\delta$, the difference between the probability that a run of one
 treatment exceeds a run of the other and the reverse probability, because
 significance alone does not show how separated the runs are. Values near $0$
-mean the treatments overlap; at $-1$ or $1$ every run of one treatment lies
+mean the treatments overlap. At $-1$ or $1$ every run of one treatment lies
 below or above every run of the other, a complete separation that further
 replicates can only preserve or weaken. Reported intervals are 95~\% intervals,
 the pre-registered level.
 
-Each campaign uses these tests and intervals on its own measures. The
+Each campaign applies these tests to its own measures. The
 telemetry campaign reports each $\delta$ with a 95~\% bootstrap
 confidence interval, and a direction count, the number of seed-matched
 blocks consistent with the predicted order. The scaling action campaign
-pairs each action with its comparison within a seed and reports the number of
-seeds in which the required direction holds, because its question is whether
-the direction is stable across matched runs, not whether two sets of runs
-differ. The readiness
-admission campaign reports how long each new backend takes from verified
-readiness to admission, compared separately for backends that bind in
-under a second and for backends stalled at socket bind, with the stall
-recorded per backend, so every comparison is made within start-up class.
-It reports
-its event-loss comparison as differences
+compares within a block instead. Each policy is paired with its comparison
+in the same block, and the campaign reports the number of blocks in which the
+required direction holds, with the medians alongside. The readiness
+admission campaign reports how long each new 
+backend takes from verified readiness to admission, compared separately
+for backends that bind in under a second and for backends stalled at 
+socket bind, with the stall recorded per backend, so every comparison 
+is made within start-up class. It reports its event-loss comparison as differences
 in the slow share, in percentage points, within each matched block, and its
 premature-message comparison as per-mode damage against a matched no-fault
 run. It reports no confidence intervals, because its pre-registered checks were
@@ -2559,14 +2563,13 @@ entering a contrast must pass the campaign's per-run checks on data-path
 integrity, test-harness behaviour, and delivery fidelity; cross-domain
 symmetry is screened, with breaches above the screening line reported as
 flags rather than exclusions, and the defined exclusions are removed and
-reported. Pre-registered criteria
-that are not met are reported as such, together with the observed evidence and
-its documented causes. The full design of each campaign, its treatments,
-held constants, exclusions, expectations, and pre-registered test, is
-summarised in a table at the start of its results section; the workload of
-each campaign is in Table~\ref{tab:campaign_workloads}, and its replication is
-the standard fixed above. The concrete values of the parameters held constant
-are listed per campaign in Appendix~\ref{app:campaign_config}.
+reported. Pre-registered criteria that are not met are reported as such, 
+together with the observed evidence and its documented causes. The full design 
+of each campaign, its treatments, held constants, exclusions, expectations, 
+and pre-registered test, is summarised in a table at the start of its results
+section; the workload of each campaign is in Table~\ref{tab:campaign_workloads}, 
+and its replication is the standard fixed above. The concrete values of the 
+parameters held constant are listed per campaign in Appendix~\ref{app:campaign_config}.
 
 
 \section{Telemetry Modes (RQ1)}\label{sec:results_rq1_delivery}
@@ -2605,6 +2608,11 @@ both usable capacity and the episode latency p95.
         summary (D). \\
         Held constant & Summary period (10~s), scaling and routing
         policy, workload, topology, resource limits. \\
+        Workload & Baseline (60~s) $\rightarrow$ load rise (180~s, rate
+        1.2 per client, mixed load) $\rightarrow$ recovery gap (120~s)
+        $\rightarrow$ demand drop (420~s) $\rightarrow$ idle tail (420~s). \\
+        Replication & Seven seed-matched blocks, one run per mode per
+        block (28 runs, seeds 3001--3007), counterbalanced order. \\
         Exclusions & None; all 28 runs passed the platform checks. \\
         Test & Four pre-registered contrasts on the episode latency p95,
         defined in Section~\ref{sec:campaign_analysis}: delay
@@ -2802,22 +2810,25 @@ Table~\ref{tab:rq2_design} summarises the design of the campaign.
         which commits one tier per action from the per-tier telemetry.
         Compute scale-up adds a replica. Storage scale-up activates a
         prepared reserve in the same domain. \\
-        Episodes & Mixed press: 600~s at rate 1.15 per client, about
+        Held constant & The platform default push source, routing policy,
+        admission
+        configuration, action budget, cooldowns, per-tier quotas fixed per
+        episode, read-path renewal, storage selection band. \\
+        Workload & Mixed press: 600~s at rate 1.15 per client, about
         20~\% compute challenges and 80~\% content lookups. Data-access
         press: 480~s at rate 5.0 per client, 90~\% content lookups and
         10~\% feed ranking. \\
-        Held constant & Telemetry mode (push), routing policy, admission
-        configuration, action budget, cooldowns, per-tier quotas fixed per
-        episode, seed-matched blocks (42--48), read-path renewal, storage
-        selection band. \\
+        Replication & Seven seed-matched blocks (seeds 42--48); each policy
+        runs once per episode per block, with the policies paired within each
+        seed. \\
         Exclusions & Two runs hit the edge memory cap at press onset. One
         was replaced and one retained, with its service outcome flagged;
         the per-run screens otherwise passed. \\
         Test & Pre-registered direction criteria, paired within each seed
         and assessed on direction alone
         (Section~\ref{sec:campaign_analysis}): four on the data press and
-        five on the mixed press. Medians are reported alongside each
-        direction. \\
+        five on the mixed press. The exact Mann--Whitney test and Cliff's
+        $\delta$ are reported alongside, with the medians. \\
         Expectations & Data press: the storage-only policy does better than
         no scaling and better than the compute-only policy on the
         data-access component and on relief, alone and as the first action
@@ -2881,7 +2892,9 @@ bottleneck-aware policy scaled storage first and compute after, matched
 compute-only on the processing component and on completion, and came in
 lower on the data-access component, at about 6~ms against about 10~ms. The
 ordering was bottleneck-aware, compute-only, storage-only, no scaling, in
-every seed.
+every seed on the data-access component. On completion the two policies that
+scaled compute finished within a point of each other, well above the
+storage-only policy.
 
 \begin{figure}[htbp]
     \centering
@@ -2896,10 +2909,11 @@ every seed.
 The pattern follows the queue. The policy that removes the binding
 component wins the episode, and the mixed press loads both tiers, so a
 policy that scales one tier alone leaves the other unaddressed. All nine
-registered directions held in each of the seven blocks. The storage
+registered directions held in seven of seven blocks, and on the data-access
+component every block separated without overlap. The storage
 policy's gain was in relief more than in service, and the
 bottleneck-aware margin over compute-only was small. Both follow from the
-regime. The storage tier was loaded without binding, and the compute
+episode. The storage tier was loaded without binding, and the compute
 policy had already removed the only queue.
 
 In the data-access press the queue was in the storage member. Storage-only
@@ -3000,21 +3014,25 @@ for a lost one.
         Treatment & Readiness-admission coordination across the four
         admission modes: backend notification, notification with a fallback
         check (the control, recovering a lost message without verifying
-        it), periodic polling, and notification with a confirmation
-        check. \\
-        Message conditions & Intact, lost, or premature (the message
-        arrives before the backend can serve, at a ten-second lead in the
-        evaluated matrix); each held for the whole run. \\
+        it), periodic polling, and notification with a confirmation check;
+        the four modes are crossed with three message conditions. \\
         Held constant & Readiness criterion (the same check), load-balancing
         policy, routing weights, pool state, workload shape, and per-backend
         CPU quota (per-set values in Appendix~\ref{app:campaign_config}),
         fixed within each compared set. \\
-        Design & Four modes across three message conditions
-        (Section~\ref{sec:campaign_analysis}), each fault block paired with a
-        matched no-fault run. Admission timing uses separate intact-source
-        sets (per-backend, higher-rate, relief, and poll-interval
-        sensitivity), each with its own fixed workload and quota; samples are
-        never pooled across sets. \\
+        Workload & A baseline followed by a 600~s compute-bound plateau
+        (rate 2.0 per client, pure service pressure) under fixed reduced
+        headroom (per-backend CPU quota 0.12), with one message condition
+        held for the whole run: the message arrives intact, is lost, or
+        arrives before the backend can serve, at a ten-second lead in the
+        evaluated matrix; the premature runs reuse the same plateau. \\
+        Replication & Seven seed-matched blocks per mode and condition
+        (intact and lost at seeds 5201--5207, premature at seeds
+        6301--6307, each fault block paired with a matched no-fault run),
+        mode order rotated per block. Admission timing uses separate
+        intact-source sets (per-backend, higher-rate, relief, and
+        poll-interval sensitivity), each with its own fixed workload and
+        quota; samples are never pooled across sets. \\
         Exclusions & One block excluded from the fault comparison (no-fault
         control tail breach); pre-registered healthy bounds on the no-fault
         runs. \\
@@ -3294,7 +3312,7 @@ damage against periodic polling is a near-tie ($-0.2$~pp).
 This section reads the three campaigns together. The campaigns ran on the same
 platform, used the same metric definitions and instrumentation, and followed
 the same discipline of varying one interface while holding the others fixed.
-Each campaign, however, drove its own workload under its own demand regime, so
+Each campaign, however, drove its own workload under its own demand episode, so
 the three sets of results are not pooled and no quantity is combined across
 them, consistent with the commitment in Section~\ref{sec:lit_synthesis} that
 no aggregate coordination cost is claimed. What can be compared is the pattern
@@ -3331,8 +3349,9 @@ Chapter~\ref{ch:conclusions}.
         the data-access press. Tier relief and a user-visible gain in the
         data-access wait in every seed, on its own and as the first action
         of the bottleneck-aware policy; on the mixed press every policy that
-        scales did better than no scaling and the bottleneck-aware policy
-        did better than each single-tier policy, in every seed & Where the queue is. The
+        scales did better than no scaling, and the bottleneck-aware policy
+        did better than each single-tier policy, in every seed on at least
+        one measured outcome & Where the queue is. The
         storage action relieved a tier that was loaded without binding on
         the mixed press and reached users little, while the compute-only policy
         left the pressed storage tier worse than no scaling on the
@@ -3392,7 +3411,8 @@ triggered.
 
 The interfaces also differ in the control records they leave behind, but not
 in the controller cost that carries them: across the three campaigns the
-controller's CPU and memory stayed within a narrow band, while the delivery,
+controller's memory stayed within a narrow band, at 66--77~MB in every
+configuration, and its CPU within 4--24~\%; the delivery,
 check, and action records differed as designed (medians per configuration in
 Table~\ref{tab:app_config_control_cost}).
 
@@ -3420,8 +3440,10 @@ Chapter~\ref{ch:conclusions}.
 %    RQ1 usable-capacity timing (28.5 s vs 83.2 s) and RQ3 readiness→serve
 %    chain (11.27 s vs 17.70 s).
 %  - Storage tier as a live capacity that must follow demand (§1.1): RQ2
-%    aligned storage action, tier relief plus labelled user-visible benefit
-%    over inaction, conditional on a capacity-bound queue.
+%    storage-only policy under the data-access press, tier relief plus a
+%    user-visible gain in the data-access wait in every seed, on its own and
+%    as the first action of the bottleneck-aware policy; the gain is a
+%    direction, and its size varies across runs (§6.3).
 %  - Storage synchronisation and replication bandwidth (§1.1): held-constant
 %    design context (prepared reserve; member admitted only when able to
 %    serve reads) and unmetered replica-sync bandwidth; Tier 1 selective
@@ -3429,7 +3451,7 @@ Chapter~\ref{ch:conclusions}.
 %  - Demand variation (§1.1): §5.1 demand model and the block/seed design
 %    that the conditioned effects rest on.
 %  - Loss or delay of evidence (§1.1): RQ1 loss-vs-delay separation; RQ3
-%    lost message; RQ2 delayed relief.
+%    lost message; RQ2 relief that is smaller than the action executed.
 %  - Cloud, mobile and traffic context (§1.1): background only, no measured
 %    claim.
 
@@ -3453,12 +3475,12 @@ Chapter~\ref{ch:conclusions}.
 % per run against 6), while a complete but delayed path costs in proportion to
 % the absorption margin it consumes. On the action, the reviewed auto-scaling
 % works fix the action type or evaluate coordination in composite. The campaign
-% shows that user-visible value follows the tier that binds the episode, and
-% that classification had no demonstrated advantage over a fixed policy matched
-% to the regime in the operating envelope, where no compute-bound episode became
-% capacity-bound and no policy had a service deficit to recover, which bounds
-% the expected value of choosing the action at runtime. On admission, the
-% reviewed placement work names readiness but leaves the step to traffic outside
+% shows that user-visible value follows the tier that presses the episode. Both
+% ways of serving the wrong tier cost users: a policy that scaled a
+% tier the episode did not press on relieved it without reaching users, and a
+% policy that scaled compute under the data-access press pushed more load onto
+% the tier already pressed, leaving the data-access wait above no scaling.
+% On admission, the reviewed placement work names readiness but leaves the step to traffic outside
 % its scope. The campaign measures that step as a bounded delay while the
 % platform is healthy, and as an all-or-nothing loss under a dropped message
 % without a check, which the modes that check convert into a bounded delay.
@@ -3471,10 +3493,10 @@ Chapter~\ref{ch:conclusions}.
 % to protect: dropping intermediate summaries drove the user-visible cost in
 % every replicate, while a complete but delayed path degraded only where the
 % absorption margin was thin. Second, a scaling action should be conditional on
-% the tier that actually binds the episode: full execution of an action on a
-% tier that was not the bottleneck spent node-minutes without recovering the
-% service, and the act of provisioning itself left a tail while an episode was
-% live. Third, readiness admission is a reliability path as much as a latency
+% the tier that actually presses the episode: full execution of an action on a
+% tier the episode did not press on relieved that tier without reaching users,
+% and scaling compute under the data-access press left the pressed tier worse
+% than no scaling. Third, readiness admission is a reliability path as much as a latency
 % path: a bounded wait cost about seven seconds while the platform was healthy,
 % and preserved the provisioned capacity when the message was lost. On the
 % evaluation side, the campaigns show that these interfaces are exercised by the
@@ -3641,7 +3663,7 @@ storage scaling is not exercised in that campaign.\par}
         Compute signal floors (CPU \% / latency ms) & 10 / 25 & 10 / 25 & 4.5 / 20 \\
         Compute scale-up threshold (base / max) & 0.18 / 0.85 & 0.18 / 0.85 & 0.25 / 0.85 \\
         Storage score weights (utilisation / latency) & 0.00 / 1.00 & 0.60 / 0.40 & 0.60 / 0.40 \\
-        Storage signal floors (CPU \% / latency ms) & 1.5 / 60 & 35 / 10 & 1.5 / 60 \\
+        Storage signal floors (CPU \% / latency ms) & 1.5 / 60 & 10 / 10 & 1.5 / 60 \\
         Storage scale-up threshold (base / max) & 0.35 / 0.55 & 0.35 / 0.55 & 0.20 / 0.55 \\
         Scale-up cooldowns (compute / storage) & 45~s / 120~s & 45~s / 120~s & 45~s / 120~s \\
         Compute scale-down (cooldown / window / below-criterion) & 180~s / 3 of 6 / 25~\% $\cdot$ 40~ms & 180~s / 3 of 6 / 25~\% $\cdot$ 40~ms & 180~s / 7 of 12 / 15~\% $\cdot$ 20~ms \\

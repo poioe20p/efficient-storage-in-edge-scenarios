@@ -110,6 +110,12 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
   "proves" it.
 - Results: one summary table per claim, one representative figure per RQ;
   synthesise only from segments measured under a common workload/config.
+- Campaign design tables: the RQ1/RQ2/RQ3 design tables share one 7-row
+  skeleton, same names and same order — Treatment, Held constant, Workload,
+  Replication, Exclusions, Test, Expectations. Cells may differ in length;
+  the row set never does. The experimental axis (RQ2's two presses, RQ3's
+  three message conditions) lives in Workload (and is named in Treatment),
+  not in an extra row.
 
 ## Terminology ledger
 
