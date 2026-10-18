@@ -110,12 +110,22 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
   "proves" it.
 - Results: one summary table per claim, one representative figure per RQ;
   synthesise only from segments measured under a common workload/config.
-- Campaign design tables: the RQ1/RQ2/RQ3 design tables share one 7-row
-  skeleton, same names and same order — Treatment, Held constant, Workload,
-  Replication, Exclusions, Test, Expectations. Cells may differ in length;
-  the row set never does. The experimental axis (RQ2's two presses, RQ3's
-  three message conditions) lives in Workload (and is named in Treatment),
-  not in an extra row.
+- Chapter 5 graph-like figures: use
+  `source/scripts/testing/analysis/thesis_figure_style.py`. Configuration
+  colours follow one fixed order across RQ1, RQ2 and RQ3 — grey (position 1,
+  the first configuration shown, i.e. the figure's reference rather than a
+  methodological control label), blue (2), orange (3), green (4). Red is
+  annotation-only, never a configuration colour. RQ2 colours by scaling
+  policy; components and presses are separated by panel, not by a second
+  colour set.
+- Campaign design tables: the RQ1/RQ2/RQ3 design tables share one 5-row
+  skeleton, same names and same order — Treatment, Workload, Replication,
+  Test, Expectations. Cells may differ in length; the row set never does.
+  Held constants are stated once in §5.1.4; the exclusions pointer there
+  leads to the limitations section (§6.3). Neither is repeated per table.
+  The experimental axis (RQ2's two presses, RQ3's three message
+  conditions) lives in Workload (and is named in Treatment), not in an extra
+  row.
 
 ## Terminology ledger
 

@@ -321,7 +321,7 @@ ordering and is not claimed.
 | E-LB4 | **Fault redistribution** — under total event loss, the non-recovering arm never redistributes; recovering arms redistribute after a bounded delay | Met — 0 admitted / 0 new-backend successes, 6/6 blocks; recovering arms delayed (hybrid ≈21 s; reconcile ≤ one poll period); user cost +7.64 pp median slow-share (+28 pp onset) |
 | E-RO1 | **Loop closure** — scale-decision → usable capacity arrives ~one poll period sooner, scaling with the poll period | Met — 2.17 vs 6.01 s (p = 0.0022, d = −1.000); replicated (12.48 vs 15.55 s, δ = −0.878) |
 | E-RO2 | **Usable-capacity realization** — provisioning ≠ usable; under fault without a recovery path the new capacity realizes zero | Met — zero admission / zero new-backend successes in 6/6 blocks; recovered capacity serves and relief completes; per-backend volume totals are not citable (see §6) |
-| E-RO3 | **Relief completes** — after delayed admission, incumbent relief completes | Met — plateau tails ≤ 2 pp in 5/6 assessable blocks (the excluded block's control tail spiked to 4.08 %) |
+| E-RO3 | **Relief completes** — after delayed admission, incumbent relief completes | Met — plateau tails ≤ 2 pp in 5/6 assessable blocks (periodic polling's plateau tail in the excluded block read 4.08 %) |
 
 Two earlier candidates are **not carried**: boundedness is reported as a
 qualifier inside the H-T1 claim (affected-arm median 10.6 %, pre-registered
@@ -369,7 +369,8 @@ compute-saturation campaign, 14 runs, n=7/arm).
 **RQ3b — consequence (supporting).** Under total event loss at quota 0.12 /
 rate 2.0, the event-only arm degrades to 8.3–14.4 % slow-share (onset window
 29.7–39.0 % slow) while hybrid/reconcile recover to ≤ 2 pp tails (5/6
-assessable blocks; the excluded block's control tail spiked to 4.08 %): a
+assessable blocks; periodic polling's plateau tail in the excluded block read
+4.08 %): a
 full-plateau contrast of **6.2–10.9 pp (median 7.64 pp, MWU p = 0.004,
 δ = 1.0)** and an onset contrast of **25–31 pp (median 28 pp)**, reproduced in
 5/5 assessable blocks. The degradation is bounded (median 10.6 %, ceiling

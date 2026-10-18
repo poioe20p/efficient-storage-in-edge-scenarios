@@ -33,26 +33,27 @@ Three renders for the RQ3 results section:
     included the retired false-claim family, was superseded 2026-10-05.)
 
 Completion-era trio (Family 6, added 2026-10-15; the three renders the
-thesis build carries):
-  * `rq3_admission_intervals_v3.png` -- the intact price of checking with
+thesis build carries). Palette and rcParams come from the shared Chapter 5
+module `source/scripts/testing/analysis/thesis_figure_style.py`:
+  * `rq3_admission_intervals_v5.png` -- the intact price of checking with
     all four admission modes: (a) provisioning -> first successful
     response per backend, per mode and start-up class (the confirmation
     check has no slow-class backends: the bind stall did not occur in the
     completion runs); (b) unchanged rate-12 panel. Sources:
     `.../v3/rq3_admission_modes/analysis/completion_figures_data.json`
     (panel a) and the v2 cell-12 CSV (panel b).
-  * `rq3_event_loss_outcome_v2.png` -- the lost-message outcome with the
+  * `rq3_event_loss_outcome_v4.png` -- the lost-message outcome with the
     four modes over the seven completion blocks: (a) slow share over
     time (median per 10 s bin), (b) admitted backends per run. Source:
     the same completion export.
-  * `rq3_premature_damage.png` -- the premature-message damage at the
+  * `rq3_premature_damage_v3.png` -- the premature-message damage at the
     evaluated ten-second lead, per mode: per-pair dots and pair medians
     against the 2 pp bound. Sources: `.../analysis/
     completion_premature_full.json` (A/B/C) and
     `completion_premature_wake.json` (D, with the block-1 pair
     re-included under the 2026-10-14 ruling).
 
-Style mirrors `source/scripts/testing/analysis/rq1/scripts/generate_thesis_graphs.py`
+Style comes from `source/scripts/testing/analysis/thesis_figure_style.py`
 (house seaborn-deep palette, 150/200 dpi, black per-run dots).
 
 Renders are written to the experiment folders
@@ -65,13 +66,24 @@ from __future__ import annotations
 import csv
 import json
 import shutil
+import sys
 from pathlib import Path
+
+_ANALYSIS_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ANALYSIS_DIR))
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from thesis_figure_style import (  # noqa: E402
+    GRID,
+    INK,
+    PALETTE,
+    apply_house_style,
+    series_colours,
+)
 
 ROOT = Path(__file__).resolve().parents[6]
 DATA = (ROOT / "docs/operation/testing/experiment/v3/rq3_timing/analysis/"
@@ -79,9 +91,10 @@ DATA = (ROOT / "docs/operation/testing/experiment/v3/rq3_timing/analysis/"
 OUT = ROOT / "docs/operation/testing/experiment/v3/rq3_timing/graphs/thesis"
 OUT.mkdir(parents=True, exist_ok=True)
 
-# seaborn-deep --- the thesis house palette (cf. RQ1/RQ2 figures)
-COLORS = {"event_only": "#C44E52", "hybrid": "#DD8452", "reconcile": "#4C72B0",
-          "wake_verify": "#64B5CD"}
+MODE_ORDER = ("event_only", "hybrid", "reconcile", "wake_verify")
+
+# fixed cross-RQ colour order: position 1 grey, 2 blue, 3 orange, 4 green
+COLORS = dict(zip(MODE_ORDER, series_colours(len(MODE_ORDER))))
 LABELS = {
     "event_only": "backend notification",
     "hybrid": "notification with a fallback check",
@@ -94,7 +107,6 @@ LABELS_PLOT = {
     "reconcile": "periodic polling",
     "wake_verify": "notification + confirmation check",
 }
-MODE_ORDER = ("event_only", "hybrid", "reconcile", "wake_verify")
 BLOCKS = [1, 2, 3, 4, 5, 6]           # recorded six-block frame (archives)
 COMPL_BLOCKS = [1, 2, 3, 4, 5, 6, 7]  # completion standard: seven blocks
 ONSET_S = 150.0
@@ -129,8 +141,8 @@ OUT_COMPL.mkdir(parents=True, exist_ok=True)
 # provenance: results.md section 2.5.
 WAKE_B1_D_S = -0.873
 
-# interval-figure arms: direct lifecycle vs periodic discovery (same colours
-# as the event-loss figure: direct red, discovery blue, fallback orange)
+# interval-figure arms: direct lifecycle vs periodic discovery (same fixed
+# order as the event-loss figure: direct grey, discovery orange, fallback blue)
 COL_ARM = {"direct": COLORS["event_only"], "discovery": COLORS["reconcile"],
            "fallback": COLORS["hybrid"]}
 GROUPS = [("direct", "fast"), ("direct", "slow"),
@@ -157,11 +169,7 @@ CELL12_RUNS = {
     ],
 }
 
-plt.rcParams.update({
-    "font.size": 12, "axes.labelsize": 12, "xtick.labelsize": 11,
-    "ytick.labelsize": 11, "legend.fontsize": 9.5,
-    "figure.dpi": 150, "savefig.dpi": 200, "savefig.bbox": "tight",
-})
+apply_house_style()
 
 
 def load() -> dict:
@@ -215,7 +223,7 @@ def panel_b(ax, data: dict) -> None:
                         yerr=[[median - values.min()], [values.max() - median]],
                         fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
         jitter = np.linspace(-0.12, 0.12, len(values))
-        ax.scatter(i + jitter, values, color="black", s=20, zorder=4)
+        ax.scatter(i + jitter, values, color=INK, s=20, zorder=4)
         ax.text(i, median + 0.22 if median > 0 else 0.6, f"{int(median)}",
                 ha="center", fontsize=10, fontweight="bold")
     ax.set_xticks(np.arange(3), ["direct\nlifecycle", "fallback\nvariant",
@@ -281,7 +289,7 @@ def panel_intervals_b(ax, rows: list[dict], letter: str = "(b)") -> None:
                     yerr=[[median - values.min()], [values.max() - median]],
                     fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
         jitter = RNG.uniform(-0.15, 0.15, len(values))
-        ax.scatter(x + jitter, values, s=14, color="black", alpha=0.75,
+        ax.scatter(x + jitter, values, s=14, color=INK, alpha=0.75,
                    linewidths=0, zorder=4)
         ax.text(x, values.max() + 0.8, f"{median:.1f}", ha="center",
                 fontsize=9.5)
@@ -304,7 +312,7 @@ def panel_intervals_c(ax, probes: dict[str, list[float]],
                     yerr=[[median - values.min()], [values.max() - median]],
                     fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
         jitter = RNG.uniform(-0.09, 0.09, len(values))
-        ax.scatter(x + jitter, values, s=28, color="black", alpha=0.85,
+        ax.scatter(x + jitter, values, s=28, color=INK, alpha=0.85,
                    linewidths=0, zorder=4)
         ax.text(x, values.max() + 0.35, f"{median:.2f}", ha="center",
                 fontsize=9.5)
@@ -424,13 +432,13 @@ def soundness_figure() -> None:
         for n in leads:
             for value in seed_values(arm, f"premature{n}"):
                 ax.scatter(n + RNG.uniform(-0.09, 0.09), value, s=20,
-                           color="black", alpha=0.8, linewidths=0, zorder=4)
+                           color=INK, alpha=0.8, linewidths=0, zorder=4)
     wk = medians["wake_verify|premature10"]
     ax.scatter([10], [wk["d_bar_pp"]], s=36, color=COL_SND["wake_verify"],
                zorder=5, label=LABELS_SND["wake_verify"])
     for value in seed_values("wake_verify", "premature10"):
         ax.scatter(10 + RNG.uniform(-0.09, 0.09), value, s=20,
-                   color="black", alpha=0.8, linewidths=0, zorder=4)
+                   color=INK, alpha=0.8, linewidths=0, zorder=4)
     ax.axhline(0, color="#888", lw=0.9, zorder=1)
     ax.set_xticks(leads, ["2", "5", "10"])
     ax.set_xlabel("claim lead (s)")
@@ -466,16 +474,16 @@ def panel_intervals_modes(ax, data: dict, letter: str = "(a)") -> None:
              if b["stratum"] == stratum], dtype=float)
         if len(values) == 0:
             ax.text(x, 7.0, "no slow-class\nbackends", ha="center",
-                    va="bottom", fontsize=8.2, color="#666")
+                    va="bottom", fontsize=8.2, color=INK)
             continue
         median = float(np.median(values))
         ax.bar(x, median, 0.6, color=COLORS[mode], alpha=0.8,
                edgecolor="white", zorder=2)
         ax.errorbar(x, median,
                     yerr=[[median - values.min()], [values.max() - median]],
-                    fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
+                    fmt="none", ecolor=INK, capsize=3, lw=1.2, zorder=3)
         jitter = RNG.uniform(-0.16, 0.16, len(values))
-        ax.scatter(x + jitter, values, s=13, color="black", alpha=0.75,
+        ax.scatter(x + jitter, values, s=13, color=INK, alpha=0.75,
                    linewidths=0, zorder=4)
         ax.text(x, values.max() + 0.7, f"{median:.1f}", ha="center",
                 fontsize=9)
@@ -491,7 +499,8 @@ def panel_intervals_modes(ax, data: dict, letter: str = "(a)") -> None:
     for x, mode in zip((0.5, 3.1, 5.7, 8.3), MODE_ORDER):
         ax.text(x, -0.115, mode_short[mode], transform=transform, ha="center",
                 va="top", fontsize=8.4, color=COLORS[mode])
-    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.grid(axis="y", color=GRID, linewidth=0.8, linestyle=":")
+    ax.set_axisbelow(True)
     ax.text(-0.16, 1.05, letter, transform=ax.transAxes, fontweight="bold",
             fontsize=11)
 
@@ -504,11 +513,11 @@ def intervals_v3_figure() -> None:
     panel_intervals_modes(axes[0], data, letter="(a)")
     panel_intervals_c(axes[1], probes, letter="(b)")
     fig.tight_layout()
-    out = OUT_COMPL / "rq3_admission_intervals_v3.png"
+    out = OUT_COMPL / "rq3_admission_intervals_v5.png"
     fig.savefig(out)
     plt.close(fig)
-    shutil.copyfile(out, ROOT / "tese/images/rq3_admission_intervals_v3.png")
-    print(f"wrote {out} and tese/images/rq3_admission_intervals_v3.png")
+    shutil.copyfile(out, ROOT / "tese/images/rq3_admission_intervals_v5.png")
+    print(f"wrote {out} and tese/images/rq3_admission_intervals_v5.png")
     for mode in MODE_ORDER:
         for stratum in ("fast", "slow"):
             values = [b["s"] for record in data["intact"].values()
@@ -540,16 +549,17 @@ def panel_a_modes(ax, data: dict) -> None:
         xs, ys = pooled_series_modes(data, mode)
         x_last = max(x_last, xs[-1])
         ax.plot(xs, ys, color=COLORS[mode], lw=1.9, label=LABELS_PLOT[mode])
-    ax.axvspan(0, ONSET_S, color="#C44E52", alpha=0.10, lw=0)
+    ax.axvspan(0, ONSET_S, color=PALETTE["grey"], alpha=0.10, lw=0)
     ax.set_xlabel("time since plateau onset (s)")
     ax.set_ylabel("slow share (%)")
     ax.set_xlim(-65, x_last + 5)
     ax.set_ylim(bottom=0)
-    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.grid(axis="y", color=GRID, linewidth=0.8, linestyle=":")
+    ax.set_axisbelow(True)
     ax.legend(loc="upper right", frameon=False, fontsize=8.6)
     top = ax.get_ylim()[1]
     ax.text(ONSET_S - 4, top * 0.985, "onset window", ha="right", va="top",
-            fontsize=9.5, color="#8c4a4a")
+            fontsize=9.5, color=INK)
     ax.text(-0.10, 1.045, "(a)", transform=ax.transAxes, fontweight="bold",
             fontsize=11)
 
@@ -566,9 +576,9 @@ def panel_b_modes(ax, data: dict) -> None:
             ax.errorbar(i, median,
                         yerr=[[median - values.min()],
                               [values.max() - median]],
-                        fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
+                        fmt="none", ecolor=INK, capsize=3, lw=1.2, zorder=3)
         jitter = np.linspace(-0.12, 0.12, len(values))
-        ax.scatter(i + jitter, values, color="black", s=20, zorder=4)
+        ax.scatter(i + jitter, values, color=INK, s=20, zorder=4)
         ax.text(i, median + 0.22 if median > 0 else 0.6, f"{int(median)}",
                 ha="center", fontsize=10, fontweight="bold")
     ax.set_xticks(np.arange(4), ["notification", "fallback\ncheck",
@@ -577,7 +587,8 @@ def panel_b_modes(ax, data: dict) -> None:
         label.set_color(COLORS[mode])
     ax.set_ylabel("admitted backends per run")
     ax.set_ylim(0, 7.8)
-    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.grid(axis="y", color=GRID, linewidth=0.8, linestyle=":")
+    ax.set_axisbelow(True)
     ax.text(0.03, 0.97, "notification runs: 0 admitted;\n"
             "32\u201335 candidates per run abandoned",
             transform=ax.transAxes, va="top", fontsize=8.8)
@@ -593,11 +604,11 @@ def event_loss_figure_v2() -> None:
     panel_a_modes(axa, data)
     panel_b_modes(axb, data)
     fig.tight_layout()
-    out = OUT_COMPL / "rq3_event_loss_outcome_v2.png"
+    out = OUT_COMPL / "rq3_event_loss_outcome_v4.png"
     fig.savefig(out)
     plt.close(fig)
-    shutil.copyfile(out, ROOT / "tese/images/rq3_event_loss_outcome_v2.png")
-    print(f"wrote {out} and tese/images/rq3_event_loss_outcome_v2.png")
+    shutil.copyfile(out, ROOT / "tese/images/rq3_event_loss_outcome_v4.png")
+    print(f"wrote {out} and tese/images/rq3_event_loss_outcome_v4.png")
     for mode in MODE_ORDER:
         admitted = [data["lost"][f"b{b}_{mode}"]["admissions"]["admitted"]
                     for b in COMPL_BLOCKS]
@@ -631,9 +642,9 @@ def premature_damage_figure() -> None:
             ax.errorbar(i, median,
                         yerr=[[median - values.min()],
                               [values.max() - median]],
-                        fmt="none", ecolor="#333", capsize=3, lw=1.2, zorder=3)
+                        fmt="none", ecolor=INK, capsize=3, lw=1.2, zorder=3)
         jitter = RNG.uniform(-0.13, 0.13, len(values))
-        ax.scatter(i + jitter, values, color="black", s=20, alpha=0.85,
+        ax.scatter(i + jitter, values, color=INK, s=20, alpha=0.85,
                    linewidths=0, zorder=4)
         stored = rules[mode].get("median_d_pp")
         label_value = (float(np.median(values))
@@ -642,10 +653,10 @@ def premature_damage_figure() -> None:
         eps = 1e-9 if label_value >= 0 else -1e-9
         ax.text(i, values.max() + 0.9, f"{label_value + eps:+.1f}",
                 ha="center", fontsize=9.5, fontweight="bold")
-    ax.axhline(0, color="#888", lw=0.9, zorder=1)
-    ax.axhline(2, color="#5a5a5a", lw=0.9, linestyle=":", zorder=1)
+    ax.axhline(0, color=INK, lw=0.9, zorder=1)
+    ax.axhline(2, color=INK, lw=0.9, linestyle=":", zorder=1)
     ax.text(3.62, 2.65, "2 pp bound", ha="left", fontsize=8.4,
-            color="#5a5a5a")
+            color=INK)
     ax.set_xticks(np.arange(4), ["backend\nnotification", "fallback\ncheck",
                                  "periodic\npolling", "confirmation\ncheck"])
     for label, mode in zip(ax.get_xticklabels(), MODE_ORDER):
@@ -653,16 +664,17 @@ def premature_damage_figure() -> None:
     ax.set_ylabel("episode damage (pp)")
     ax.set_xlim(-0.55, 4.05)
     ax.set_ylim(-10, 27)
-    ax.grid(axis="y", alpha=0.25, linestyle="--")
+    ax.grid(axis="y", color=GRID, linewidth=0.8, linestyle=":")
+    ax.set_axisbelow(True)
     ax.text(0.035, 0.045, "claim \u2192 first successful response:\n"
             "11.0 s (confirmation check) vs 19.5 s (periodic polling)",
             transform=ax.transAxes, va="bottom", fontsize=8.6)
     fig.tight_layout()
-    out = OUT_COMPL / "rq3_premature_damage.png"
+    out = OUT_COMPL / "rq3_premature_damage_v3.png"
     fig.savefig(out)
     plt.close(fig)
-    shutil.copyfile(out, ROOT / "tese/images/rq3_premature_damage.png")
-    print(f"wrote {out} and tese/images/rq3_premature_damage.png")
+    shutil.copyfile(out, ROOT / "tese/images/rq3_premature_damage_v3.png")
+    print(f"wrote {out} and tese/images/rq3_premature_damage_v3.png")
     for mode in MODE_ORDER:
         values = [pair["d_s"] for pair in rules[mode]["pairs"]
                   if pair.get("status") == "ok"]

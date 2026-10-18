@@ -1341,8 +1341,8 @@ connection through the routing path and any wait ahead of the
 serving process. The second is the
 \emph{edge service time}: the interval from request dispatch to response
 finalisation in the serving process, which itself decomposes into a
-\emph{data-access} component (the storage operations issued for the request,
-including connection acquisition) and
+\emph{data-access} component (every storage operation issued for the request,
+read or write, including connection acquisition) and
 an \emph{edge-processing} component (scheduling, lease and cache work, and
 response serialisation). Their sum is the request's \emph{user-visible latency},
 the client-side round trip. The two edge-service components are the tier-specific
@@ -2304,8 +2304,7 @@ chain end to end: demand episode onset, telemetry summary completion and control
 observation, scaling decision and action taken,
 provisioning start and completion, application-readiness confirmation,
 admission to the routing pool, first routed request, and first successful
-response. The load distribution of the served demand across the
-replicas is also recorded. The records behind these timestamps are
+response. The records behind these timestamps are
 described in Section~\ref{sec:impl_monitoring}, and every timing
 reported in this chapter is read from them. The rest of this section defines the 
 workloads that drive these timelines, the outcomes extracted from them, 
@@ -2332,7 +2331,8 @@ defined in Table~\ref{tab:request_kinds}.
         \midrule
         Content lookup & Reads a single content item (a point read). & Storage \\
         Feed ranking & Performs a filtered item retrieval of candidate
-        content, then ranks the candidates in the edge server. & Compute \\
+        content, then ranks the candidates in the edge server. & Storage read
+        and compute \\
         Service pressure & Introspects the edge server's recent request
         activity. & Compute \\
         Compute challenge & Solves a hash chain over a nonce in the edge
@@ -2343,6 +2343,11 @@ defined in Table~\ref{tab:request_kinds}.
         \bottomrule
     \end{tabular}
 \end{table}
+
+All six kinds appear across the three campaign mixes: the telemetry campaign
+uses five (all but compute challenge), the scaling action campaign uses
+compute challenge, content lookup, and feed ranking, and the readiness
+admission campaign uses service pressure only.
 
 A workload is a timed sequence of demand phases. Each phase fixes, for its
 duration, the offered request intensity, as a per-client request rate and an
@@ -2405,83 +2410,64 @@ the workload of each campaign.
 For the telemetry campaign, the primary outcome is
 usable-capacity latency: the time from the onset of the load rise to the
 first new capacity serving traffic, reconstructed from the recorded timeline.
-The time to the first scaling decision is reported as a descriptive outcome
-only, because the telemetry mode determines when the evidence that
-triggers a decision reaches the controller, and a decision cannot be taken
-before that evidence arrives.
+Usable capacity is the first moment at which new capacity serves traffic. The
+telemetry campaign measures to it from the onset of the load rise, and the
+readiness admission campaign from the scaling decision. The time to the first
+scaling decision is reported as a descriptive outcome only, because
+the telemetry mode determines when the evidence that triggers a decision
+reaches the controller, and a decision cannot be taken before that evidence
+arrives. Alongside it, the campaign reports the delivered fraction, the share
+of produced telemetry summaries the controller consumed, and the information
+age at decision, the time from the closing of the summary that a decision used
+to the decision itself.
 
-    For the scaling action campaign, the outcomes are read per policy under
-each demand episode: the targeted-tier
-relief, as the fall in the receiving tier's utilisation while the added units
-carry served requests, and the
-service recovery, as the episode service quality against the no-scaling
-policy, with the resource use reported alongside. Saturation, as this
-campaign evaluates it, is the capacity-bound state in which a tier runs at
-its capacity limit, arriving requests queue and completion slows, rather
-than the state of an overloaded server whose own processing slows.
+    For the scaling action campaign, the outcomes are stated per policy under
+each demand episode: the targeted-tier relief, as the fall in the receiving
+tier's utilisation for a storage action and in the processing component for a
+compute action, while the added units carry served requests; the service
+recovery, as the episode request-path components and completion against the
+no-scaling policy; and the resource use, as the scaling actions taken and the
+utilisation of the receiving tier. The campaign reports completion on the
+offered basis.
 
-    The scaling action results use the request-path latency quantities
-defined in Section~\ref{sec:vip_data_paths}: user-visible latency, edge
-service time, its data-access and edge-processing components, and the
-pre-dispatch wait. The edge service components are per-window means over the
+The scaling action results use the request-path components defined in
+Section~\ref{sec:vip_data_paths}: the data-access and processing components of
+the edge service time. The data-access component covers every storage
+operation issued for the request, read or write, including connection
+acquisition. The processing component covers the work the edge server performs
+on the request after dispatch. The edge service components are per-window means over the
 demand episode, and each run is summarised by the median of its episode
-windows. The readiness admission campaign 
-reports the segment of the chain from the scaling decision to usable capacity, 
-which isolates the admission path.
+windows. The readiness admission campaign reads the chain from verified
+readiness to admission, from admission to the first routed request, and from
+provisioning to the first successful response, together with the relief of
+the existing nodes once the new backend serves and the segment from the
+scaling decision to usable capacity, which isolates the admission path.
 
-Service quality is summarised per run through percentiles (p50, p95) of
-the endpoint latency over the demand episode, and every campaign's runs record
-them. The scaling action campaign reports its service outcome on the
-request-path components and on completion, because a request-path component is
-the signal the policy reads (Section~\ref{sec:scaling_policy}). Latency
-percentiles are computed on the served basis, over completed requests.
-Outcome classes are reported
-distinctly as offered requests, completed requests, failed
-requests, timeouts (each recorded at the client-side cap of 300~s), and
-client-side cancellations and drops at phase end.
-Completion is reported on the served basis, completed requests over
-non-abandoned requests, and on the offered basis, completed requests over
-offered requests. Unless stated otherwise, each run contributes the mean of
-its two domains, and any cross-domain asymmetry above the pre-registered
-symmetry screen is reported.
+The telemetry campaign summarises service quality per run through the p95 of
+the endpoint latency over the demand episode. The scaling action campaign
+reports its service outcome on the request-path components and on completion,
+because a request-path component is the signal the policy reads
+(Section~\ref{sec:scaling_policy}). Latency percentiles are computed on the
+served basis, meaning a served request is a completed request with a successful HTTP
+status.
 
-The outcomes each campaign reports follow the facets of its research
-question.
+Outcome classes are reported distinctly as offered requests, completed requests,
+failed requests, timeouts (each recorded at the client-side cap of 300~s), and
+client-side cancellations and drops at phase end. Completion is reported on two
+bases: completed requests over non-abandoned requests, and completed requests
+over offered requests. Unless stated otherwise,
+each run contributes the mean of its two domains, and any cross-domain asymmetry
+above the pre-registered symmetry screen is reported.
 
-\begin{itemize}
-    \item \textit{The telemetry campaign} answers its question in three
-    parts. The first is what the controller saw: the delivered fraction, how
-    much of the produced telemetry is consumed by it, and the information age at
-    decision, how old the summary behind a decision was when the decision was
-    taken. The second is how much capacity the controller added and when the
-    new capacity started serving traffic: the number of compute scale-ups per
-    run, and the usable-capacity latency. The third is what users
-    experienced: the episode latency percentiles. Both latency measures are
-    defined at the start of this subsection.
-    \item \textit{The scaling action campaign} answers its question along its three
-    axes, per policy: targeted-tier relief, as the relief obtained in the tier
-    that received the action; service recovery, as the episode service
-    quality against the no-scaling policy; and resource use, as the scaling
-    actions taken and the utilisation of the receiving tier. The load spread
-    across the replicas of the receiving tier, as each replica's share of the
-    served demand and its utilisation, reports the mechanism through which
-    the action executed.
-    \item \textit{The readiness admission campaign} answers its question in three parts.
-    When the new backend serves is analysed along the admission chain: the
-    intervals from verified readiness to admission, from admission to the
-    first routed request, and from provisioning to the first successful
-    response, and the relief of the existing nodes once the new backend
-    begins serving. The cost of a lost message is measured in the
-    slow-share, the fraction of served requests
-    that time out or exceed one second, over the full plateau (the
-    campaign's demand episode), the onset window (the first 150~s of the
-    plateau), and the plateau tail (the last 300~s of the plateau), and in
-    the number of admissions, the candidates abandoned and
-    torn down. The cost of a premature message is read as the change
-    in the same user-visible measure against a matched no-fault run.
-    A backend counts as admitted when it becomes visible in the routing pool, not
-    when its registration is recorded.
-\end{itemize}
+For the readiness admission campaign, the cost of a lost message is read as
+the slow share, the fraction of completed or timed-out requests that time out
+or exceed one second, over the full plateau (the campaign's demand episode), the onset
+window (the first 150~s of the plateau), and the plateau tail (the last 300~s
+of the plateau), and as the number of admissions, with the candidates
+abandoned and torn down. The cost of a premature message is read as damage,
+the change against a matched no-fault run in the share of offered requests
+that time out, fail, or exceed one second. A backend counts as admitted when
+it becomes visible in the routing pool, not when its registration is recorded.
 
 Control overhead is reported as the CPU utilisation and resident memory of the
 controller processes, and as the volume of control records, along each
@@ -2497,9 +2483,9 @@ properties, such as a fixed single-tier scaling policy or a periodic polling
 mechanism, and not competing aspects. Each campaign was pre-registered with the
 treatments, primary outcomes, screening rules, and analysis tests all fixed
 before data collection. For the scaling action campaign, the direction
-criteria were fixed before data collection, the magnitude at which a
-direction counts as a better outcome was registered while the analysis was
-written, and the separation statistics are reported alongside the directions. 
+criteria were fixed before data collection, the magnitude readings were
+registered as sensitivity while the analysis was written, and the medians are
+reported alongside the directions.
 
 No results are pooled across campaigns. Every contrast
 is computed within its own campaign's design, and where a research question
@@ -2513,8 +2499,8 @@ of every treatment the campaign compares, sharing one seed, so the treatments
 entering a contrast meet identical demand. The execution order within a block
 is counterbalanced across blocks, so testbed drift cannot align with a single
 treatment. Every campaign uses the same replication standard, seven
-seed-matched blocks per treatment, one run per treatment per block, and no seed
-is reused within a block. A campaign with two demand episodes runs one block
+seed-matched blocks per treatment, one run per treatment per block, and each
+block uses a distinct seed. A campaign with two demand episodes runs one block
 set per episode over the same seven seeds. The seed ranges are 3001--3007
 (telemetry), 42--48 (scaling action), and 5201--5207 and 6301--6307 (the intact and lost,
 and the premature, conditions of the readiness admission campaign). Seven is
@@ -2527,69 +2513,68 @@ the exact Mann--Whitney $U$ test has a $p$-value floor of $2/\binom{2n}{n}$,
 run-level contrasts use the exact Mann--Whitney $U$ test, which ranks the runs
 of the two treatments together and reports the probability of a separation at
 least as strong as the observed one when the treatments are in fact
-equivalent. The readiness
-admission campaign applies the same test to
-per-backend samples within runs. Alongside each $p$-value the telemetry and
-readiness admission campaigns report
-Cliff's $\delta$, the difference between the probability that a run of one
-treatment exceeds a run of the other and the reverse probability, because
-significance alone does not show how separated the runs are. Values near $0$
-mean the treatments overlap. At $-1$ or $1$ every run of one treatment lies
-below or above every run of the other, a complete separation that further
-replicates can only preserve or weaken. Reported intervals are 95~\% intervals,
-the pre-registered level.
+equivalent. The readiness admission campaign applies the same test to
+per-backend samples within runs. The telemetry and readiness admission
+campaigns report Cliff's $\delta$ where the runs overlap, because significance
+alone does not show how separated the runs are. The scaling action campaign's
+registered criterion is the direction in each block, and all nine directions
+held in seven of seven blocks, so its contrasts are reported on the direction
+count alone. Values
+near $0$ mean the treatments overlap. At $-1$ or $1$ every run of one
+treatment lies below or above every run of the other, a complete separation
+that further replicates can only preserve or weaken. A $p$-value is reported
+only where the runs overlap, and a complete separation is reported as such.
+Reported intervals are 95~\% intervals, the pre-registered level.
 
-Each campaign applies these tests to its own measures. The
-telemetry campaign reports each $\delta$ with a 95~\% bootstrap
-confidence interval, and a direction count, the number of seed-matched
-blocks consistent with the predicted order. The scaling action campaign
-compares within a block instead. Each policy is paired with its comparison
-in the same block, and the campaign reports the number of blocks in which the
-required direction holds, with the medians alongside. The readiness
-admission campaign reports how long each new 
-backend takes from verified readiness to admission, compared separately
-for backends that bind in under a second and for backends stalled at 
-socket bind, with the stall recorded per backend, so every comparison 
-is made within start-up class. It reports its event-loss comparison as differences
-in the slow share, in percentage points, within each matched block, and its
-premature-message comparison as per-mode damage against a matched no-fault
-run. It reports no confidence intervals, because its pre-registered checks were
-thresholds and agreement across blocks. No correction is made for testing
+The telemetry campaign adds a direction count, the number of seed-matched
+blocks consistent with the predicted order. The scaling action campaign is
+paired within each block and reports the number of blocks in which the required
+direction holds, with the medians alongside. The readiness admission campaign
+compares admission intervals within start-up class and reports its event-loss
+and premature-message comparisons as block-level differences and per-mode
+damage. It reports no confidence intervals, because its pre-registered checks
+were thresholds and agreement across blocks. No correction is made for testing
 several contrasts at once, because each campaign fixed a small number of
 named contrasts in advance.
 
-Screening rules are applied before the contrasts as runs
-entering a contrast must pass the campaign's per-run checks on data-path
-integrity, test-harness behaviour, and delivery fidelity; cross-domain
-symmetry is screened, with breaches above the screening line reported as
-flags rather than exclusions, and the defined exclusions are removed and
-reported. Pre-registered criteria that are not met are reported as such, 
-together with the observed evidence and its documented causes. The full design 
-of each campaign, its treatments, held constants, exclusions, expectations, 
-and pre-registered test, is summarised in a table at the start of its results
-section; the workload of each campaign is in Table~\ref{tab:campaign_workloads}, 
-and its replication is the standard fixed above. The concrete values of the 
-parameters held constant are listed per campaign in Appendix~\ref{app:campaign_config}.
+Within each campaign, the treatments compared differ only in the interface
+named in the Treatment row. The telemetry modes share the summary period
+(10~s), scaling and routing policy, workload, topology, and resource limits.
+The scaling policies share the default push source, routing policy, admission
+configuration, action budget, cooldowns, per-tier quotas fixed per episode,
+read-path renewal, and storage selection band. The admission modes share the
+readiness criterion, load-balancing policy, routing weights, pool state,
+workload shape, and per-backend CPU quota, fixed within each compared set.
+The concrete values of all these parameters are listed per campaign in
+Appendix~\ref{app:campaign_config}.
+
+Screening followed the pre-registered per-run checks; the resulting exclusions
+and their effect on the analysis population are discussed with the limitations
+in Section~\ref{sec:limitations}. No exclusion rests on the treated outcome,
+and pre-registered criteria that are not met are reported with the results. The full design of each campaign is summarised in a
+table at the start of its results section; the workload of each campaign is in
+Table~\ref{tab:campaign_workloads}, and its replication is the standard fixed
+above.
 
 
 \section{Telemetry Modes (RQ1)}\label{sec:results_rq1_delivery}
 
 The campaign asked how the four telemetry modes change the way the
-controller scales the service when load rises. Its answer is reported in the
-three parts defined for the campaign in Section~\ref{sec:metrics_definitions}.
-The modes were compared
-over the same load rise (Section~\ref{sec:experimental_setup}). Push (A) is the
-reference: every summary reaches the controller as it closes. 
-Delayed push (B) delivers every summary, 30~s late. Sampled push 
-(D) delivers one summary in three, on time.
-Polling (C) delivers the same one-in-three share as sampled push, but the
-summary it returns had already closed when the read began, so its evidence
-arrives old as well as sparse (Section~\ref{sec:monitoring_decision}).
-Relative to the reference, one property changes at a time: delay without
-missing summaries (B), missing summaries without delay (D), and both together
-(C), so the cost of late telemetry is separated from the cost of missing telemetry. The
-pre-registered expectation was the ordering A $<$ B $<$ C $\approx$ D on
-both usable capacity and the episode latency p95.
+controller scales the service when load rises. Its answer is reported in 
+terms of what the controller saw, how much capacity it added and when the new
+capacity served traffic, and what users experienced.
+
+The modes were compared over the same load rise (Section~\ref{sec:experimental_setup}). 
+Push (A) is the reference: every summary reaches the controller as it closes. 
+Delayed push (B) delivers every summary, 30~s late. Sampled push (D) delivers 
+one summary in three, on time. Polling (C) delivers the same one-in-three 
+share as sampled push, but the summary it returns had already closed when 
+the read began, so its evidence arrives old as well as sparse (Section~\ref
+{sec:monitoring_decision}). Relative to the reference, one property changes at 
+a time: delay without missing summaries (B), missing summaries without delay (D),
+and both together (C), so the cost of late telemetry is separated from the cost of 
+missing telemetry. The pre-registered expectation was the ordering A $<$ B $<$ C $\approx$ 
+D on both usable capacity and the episode latency p95.
 
     Table~\ref{tab:rq1_design} summarises the design of the campaign.
 
@@ -2606,20 +2591,18 @@ both usable capacity and the episode latency p95.
         platform: push (A); delayed push, the same summaries with a fixed
         30~s lag (B); polling every 30~s (C); and sampled push, every third
         summary (D). \\
-        Held constant & Summary period (10~s), scaling and routing
-        policy, workload, topology, resource limits. \\
         Workload & Baseline (60~s) $\rightarrow$ load rise (180~s, rate
         1.2 per client, mixed load) $\rightarrow$ recovery gap (120~s)
         $\rightarrow$ demand drop (420~s) $\rightarrow$ idle tail (420~s). \\
         Replication & Seven seed-matched blocks, one run per mode per
         block (28 runs, seeds 3001--3007), counterbalanced order. \\
-        Exclusions & None; all 28 runs passed the platform checks. \\
         Test & Four pre-registered contrasts on the episode latency p95,
         defined in Section~\ref{sec:campaign_analysis}: delay
         (A--B, D--C) and missing evidence (A--D, B--C). \\
         Expectations & Ordering A $<$ B $<$ C $\approx$ D on usable
-        capacity and the episode latency p95; sampled push expected strictly
-        worst; quality outside the load rise unaffected. \\
+        capacity and the episode latency p95, with the additional prediction
+        D $>$ C (sampled push strictly worst); quality outside the load rise
+        unaffected. \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2656,9 +2639,9 @@ capacity became usable. First new capacity serving traffic was 28.5~s after
 the onset in A, 59.6~s in B, 79.6~s in C and 83.2~s in D
 (Table~\ref{tab:rq1_arms}), so polling and sampled push took nearly three
 times as long as push, while delayed push landed about 31~s after push,
-close to its fixed 30~s lag. A $<$ B and B $<$ C held in all seven blocks;
-C and D were not cleanly separated (D later by 3.6~s at the median, C $<$ D
-in five of seven blocks). The time to the first scale-up decision is descriptive
+close to its fixed 30~s lag. On usable capacity, A $<$ B and B $<$ C held in
+all seven blocks; C and D were not cleanly separated (D later by 3.6~s at the
+median, C $<$ D in five of seven blocks). The time to the first scale-up decision is descriptive
 (Section~\ref{sec:metrics_definitions}). The number of actions is
 descriptive in the same way:
 polling and sampled push ran 2 to 4 compute scale-ups per run, against 6,
@@ -2670,8 +2653,9 @@ less as well as later.
 \begin{table}[htbp]
     \centering
     \caption{Telemetry modes: usable capacity, episode latency, and
-    outcome classes (medians with min--max ranges over the seven replicates;
-    delivered share as the observed range; no timeouts in the episode in any
+    outcome classes (medians; min--max ranges over the seven replicates are
+    shown for usable capacity and episode p95; delivered share as the observed
+    range; cancelled/dropped as medians; no timeouts in the episode in any
     mode). Usable capacity is the time
     from episode onset to first new capacity serving traffic; the episode p95
     is the served-basis endpoint latency p95 (per-run mean of the two
@@ -2681,7 +2665,7 @@ less as well as later.
     \setlength{\tabcolsep}{2pt}
     \begin{tabular}{l c c c c c}
         \toprule
-        Mode & Delivered (\%) & Usable capacity (s) & Episode p95 (s) & Timeouts & Cancelled (\%) \\
+        Mode & Delivered (\%) & Usable capacity (s) & Episode p95 (s) & Timeouts & Cancelled/dropped (\%) \\
         \midrule
         push (A) & 100.0 & 28.5 (25.1--32.9) & 3.7 (2.8--5.2) & 0 & 5.6 \\
         delayed push (B) & 100.0 & 59.6 (55.1--61.5) & 10.8 (5.0--65.3) & 0 & 6.5 \\
@@ -2695,7 +2679,7 @@ less as well as later.
 (Table~\ref{tab:rq1_edges}, Figure~\ref{fig:rq1_episode_p95}).
 With about two thirds of the summaries absent, the episode endpoint p95
 reached 35.0~s in C and 34.5~s in D against 3.7~s in A, roughly a ninefold
-penalty, with complete separation ($\delta = -1.000$, exact $p = 0.0006$).
+penalty; the registered A--D contrast separated completely ($\delta = -1.000$).
 Delay degraded the outcome in aggregate, to 10.8~s against 3.7~s
 ($\delta = -0.959$, $p = 0.0012$), but not uniformly: two of the seven
 delayed push runs collapsed to the level of polling and sampled push
@@ -2704,20 +2688,25 @@ delayed push runs collapsed to the level of polling and sampled push
 \begin{table}[htbp]
     \centering
     \caption{Pre-registered primary contrasts on the episode endpoint latency
-    p95 (served basis, per-run mean of the two domains). Exact Mann--Whitney
-    $p$-values at $n = 7$ per mode. The effect size, its interval, and the
-    direction count are defined in Section~\ref{sec:campaign_analysis}. The
-    direction count gives how many blocks (of seven) followed the predicted
-    order.}
+    p95 (served basis, per-run mean of the two domains). Cliff's $\delta$ is
+    reported for every contrast, with its 95~\% bootstrap interval where the
+    runs overlap; the exact $p$-value is reported only where the runs overlap,
+    since a complete separation at seven runs per mode has the $p$-value floor
+    stated in Section~\ref{sec:campaign_analysis}. The block count gives how
+    many seed-matched blocks followed the contrast's predicted order
+    (A $<$ B and D $>$ C for the delay contrasts; A $<$ D and B $<$ C for the
+    loss contrasts).}
     \label{tab:rq1_edges}
-    \begin{tabular}{l c c c c}
+    \footnotesize
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{l c c p{0.40\textwidth}}
         \toprule
-        Contrast & Medians (s) & Exact $p$ & Cliff's $\delta$ [95~\% CI] & Direction \\
+        Contrast & Medians (s) & Blocks in predicted order & Separation \\
         \midrule
-        Delay A--B & 3.7 vs 10.8 & 0.0012 & $-0.959$ [$-$1.000, $-$0.755] & 7/7 \\
-        Delay D--C & 34.5 vs 35.0 & 0.456 & $-0.265$ [$-$0.837, 0.388] & 2/7 \\
-        Loss A--D & 3.7 vs 34.5 & 0.0006 & $-1.000$ [$-$1.000, $-$1.000] & 7/7 \\
-        Loss B--C & 10.8 vs 35.0 & 0.209 & $-0.429$ [$-$1.000, 0.429] & 5/7 \\
+        Delay A--B & 3.7 vs 10.8 & 7/7 & $\delta = -0.959$ [$-$1.000, $-$0.755]; $p = 0.0012$; not complete \\
+        Delay D--C & 34.5 vs 35.0 & 2/7 & $\delta = -0.265$ [$-$0.837, 0.388]; $p = 0.456$ \\
+        Loss A--D & 3.7 vs 34.5 & 7/7 & complete, $\delta = -1.000$ \\
+        Loss B--C & 10.8 vs 35.0 & 5/7 & $\delta = -0.429$ [$-$1.000, 0.429]; $p = 0.209$ \\
         \bottomrule
     \end{tabular}
 
@@ -2725,7 +2714,7 @@ delayed push runs collapsed to the level of polling and sampled push
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.75\textwidth]{images/rq1_episode_latency_p95_v2.png}
+    \includegraphics[width=0.75\textwidth]{images/rq1_episode_latency_p95_v4.png}
     \caption{Episode endpoint latency p95 by telemetry mode (served
     basis; per-run mean of the two domains; seven replicates per mode). Bars
     show the median across replicates, whiskers the min--max range, and dots
@@ -2810,10 +2799,6 @@ Table~\ref{tab:rq2_design} summarises the design of the campaign.
         which commits one tier per action from the per-tier telemetry.
         Compute scale-up adds a replica. Storage scale-up activates a
         prepared reserve in the same domain. \\
-        Held constant & The platform default push source, routing policy,
-        admission
-        configuration, action budget, cooldowns, per-tier quotas fixed per
-        episode, read-path renewal, storage selection band. \\
         Workload & Mixed press: 600~s at rate 1.15 per client, about
         20~\% compute challenges and 80~\% content lookups. Data-access
         press: 480~s at rate 5.0 per client, 90~\% content lookups and
@@ -2821,14 +2806,12 @@ Table~\ref{tab:rq2_design} summarises the design of the campaign.
         Replication & Seven seed-matched blocks (seeds 42--48); each policy
         runs once per episode per block, with the policies paired within each
         seed. \\
-        Exclusions & Two runs hit the edge memory cap at press onset. One
-        was replaced and one retained, with its service outcome flagged;
-        the per-run screens otherwise passed. \\
         Test & Pre-registered direction criteria, paired within each seed
         and assessed on direction alone
         (Section~\ref{sec:campaign_analysis}): four on the data press and
-        five on the mixed press. The exact Mann--Whitney test and Cliff's
-        $\delta$ are reported alongside, with the medians. \\
+        five on the mixed press. The medians and block counts are reported
+        alongside; the registered test is direction alone, so no $p$-values
+        or effect sizes are reported. \\
         Expectations & Data press: the storage-only policy does better than
         no scaling and better than the compute-only policy on the
         data-access component and on relief, alone and as the first action
@@ -2852,9 +2835,9 @@ without binding in the other.
     \caption{Scaling policies by demand episode: the two request-path
     components, completion, storage utilisation, and added units.
     Processing and data access are the components defined in
-    Section~\ref{sec:vip_data_paths}, completion is the share of episode
-    requests answered, and storage utilisation is the tier average over the
-    episode. Values are medians across the seven seed-matched runs per
+    Section~\ref{sec:vip_data_paths}, completion is completed requests over
+    offered requests during the episode, and storage utilisation is the tier
+    average over the episode. Values are medians across the seven seed-matched runs per
     policy; added units are per domain and run. The figures show the
     per-run values.}
     \label{tab:rq2_arms}
@@ -2898,11 +2881,11 @@ storage-only policy.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/rq2_mixed_press.png}
-    \caption{Mixed press: the two request-path components (left) and
+    \includegraphics[width=0.9\textwidth]{images/rq2_mixed_press_v3.png}
+    \caption{Mixed press: processing (left), data access (middle), and
     completion (right) by scaling policy. Bars are medians across the seven
     seed-matched runs, whiskers the min--max range, and dots the individual
-    runs.}
+    runs. Policy colours follow the chapter's fixed order.}
     \label{fig:rq2_mixed}
 \end{figure}
 
@@ -2931,9 +2914,9 @@ level of the compute-only policy (Figure~\ref{fig:rq2_data}).
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/rq2_data_press.png}
-    \caption{Data-access press: the two request-path components (left,
-    logarithmic axis) and completion (right) by scaling policy. Bars are
+    \includegraphics[width=0.9\textwidth]{images/rq2_data_press_v3.png}
+    \caption{Data-access press: processing (left), data access (middle,
+    logarithmic axis), and completion (right) by scaling policy. Bars are
     medians across the seven seed-matched runs, whiskers the min--max range,
     and dots the individual runs.}
     \label{fig:rq2_data}
@@ -2964,11 +2947,11 @@ served, not by the number of units it added.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/rq2_storage_relief_v3.png}
-    \caption{Relief and execution: storage tier utilisation (left) and
-    members serving the episode (right) by scaling policy, for both
-    episodes. Bars are medians across the runs, whiskers the min--max range,
-    and dots the individual runs.}
+    \includegraphics[width=0.9\textwidth]{images/rq2_storage_relief_v5.png}
+    \caption{Relief and execution, by scaling policy: mixed press storage
+    utilisation (a) and members serving (b); data-access press storage
+    utilisation (c) and members serving (d). Bars are medians across the
+    runs, whiskers the min--max range, and dots the individual runs.}
     \label{fig:rq2_relief}
 \end{figure}
 
@@ -3016,26 +2999,20 @@ for a lost one.
         check (the control, recovering a lost message without verifying
         it), periodic polling, and notification with a confirmation check;
         the four modes are crossed with three message conditions. \\
-        Held constant & Readiness criterion (the same check), load-balancing
-        policy, routing weights, pool state, workload shape, and per-backend
-        CPU quota (per-set values in Appendix~\ref{app:campaign_config}),
-        fixed within each compared set. \\
         Workload & A baseline followed by a 600~s compute-bound plateau
         (rate 2.0 per client, pure service pressure) under fixed reduced
         headroom (per-backend CPU quota 0.12), with one message condition
         held for the whole run: the message arrives intact, is lost, or
         arrives before the backend can serve, at a ten-second lead in the
-        evaluated matrix; the premature runs reuse the same plateau. \\
+        evaluated matrix; the premature runs reuse the same plateau shape. \\
         Replication & Seven seed-matched blocks per mode and condition
         (intact and lost at seeds 5201--5207, premature at seeds
         6301--6307, each fault block paired with a matched no-fault run),
-        mode order rotated per block. Admission timing uses separate
+        mode order rotated per block; the lost comparison uses the fixed
+        six-block frame, with the added seventh block report-only. Admission timing uses separate
         intact-source sets (per-backend, higher-rate, relief, and
         poll-interval sensitivity), each with its own fixed workload and
         quota; samples are never pooled across sets. \\
-        Exclusions & One block excluded from the fault comparison (no-fault
-        control tail breach); pre-registered healthy bounds on the no-fault
-        runs. \\
         Test & Exact Mann--Whitney U throughout: admission intervals per
         backend, separated by bind time (under a second, or stalled at
         about ten seconds in the earlier runs); slow-share differences per
@@ -3062,17 +3039,18 @@ Notification with a fallback check behaves like backend notification
 while the message arrives, because its fallback only fires when none 
 does, so the priced contrast is between admitting on the message and
 checking for it. Backend notification admitted each backend essentially
-as soon as it could serve (median 0.001~s), while periodic polling 
-admitted it only at the next check (median 6.984~s). Every backend
+as soon as it could serve (median 0.001~s in the recorded admission-timing
+set), while periodic polling admitted it only at the next check (median
+6.984~s). Every backend
 was admitted earlier under backend notification ($\delta = -1.000$).
 The full chain is in Table~\ref{tab:rq3_delays} and
 Figure~\ref{fig:rq3_admission_intervals}. 
 
-Provisioning to the first successful response was about
-six seconds shorter under backend notification (11.27~s against 17.70~s,
-exact $p = 0.0005$), and relief reached the loaded tier about four
+Provisioning to the first successful response, across both start-up classes,
+was about six seconds shorter under backend notification (11.27~s against
+17.70~s, exact $p = 0.0005$), and relief reached the loaded tier about four
 seconds sooner (scaling decision to usable capacity 2.17~s against
-6.01~s, exact $p = 0.0022$ on the set-level test; the set's standardised
+6.01~s, complete separation, $\delta = -1.000$; the set's standardised
 replicate reproduced the direction, 1.87~s against 8.98~s, earlier for every
 backend it measured). Once admitted, both modes served the first
 request in about a second, and the load left the existing nodes by the
@@ -3099,9 +3077,14 @@ runs, which all come from the later period, contain no stalled backend
 \begin{table}[H]
     \centering
     \caption{Admission-chain intervals and healthy-regime outcomes (intact
-    message; backend notification versus periodic polling). Medians over
-    runs and per-backend intervals as marked;
-    exact Mann--Whitney $p$-values as pre-registered.}
+    message; backend notification versus periodic polling). Medians over each
+    row's population; the readiness$\to$admission row reports the recorded
+    admission-timing set (12 runs, 47 backends), provisioning$\to$first success
+    reports the recorded anchor pooled over both start-up classes, and scaling
+    decision$\to$usable capacity uses the higher-rate set (six runs per
+    mechanism; its standardised replicate is a separate four-run set). Exact
+    Mann--Whitney $p$-values where the arms overlap, with complete separation
+    and confirmatory rows marked as such.}
     \label{tab:rq3_delays}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
@@ -3111,7 +3094,7 @@ runs, which all come from the later period, contain no stalled backend
         \midrule
         Verified readiness$\to$admission (s) & 0.001 & 6.984 & $\delta = -1.000$; earlier for every backend \\
         Provisioning$\to$first successful response (s) & 11.27 & 17.70 & exact $p = 0.0005$, $\delta = -0.594$ \\
-        Scaling decision$\to$usable capacity (s) & 2.17 & 6.01 & set-level exact $p = 0.0022$, $\delta = -1.000$; the standardised replicate reproduced the direction, 1.87 against 8.98~s \\
+        Scaling decision$\to$usable capacity (s) & 2.17 & 6.01 & $\delta = -1.000$ (complete separation); standardised replicate 1.87 against 8.98~s \\
         Admission$\to$first routed request (s) & 0.4--1.2 & 0.4--1.2 & confirmatory; not separated \\
         Relief of the existing nodes (per-run median, pp; seven runs per mode) & 16.0 & 19.3 & exact $p = 0.209$; not separated \\
         \bottomrule
@@ -3120,7 +3103,7 @@ runs, which all come from the later period, contain no stalled backend
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{images/rq3_admission_intervals_v3.png}
+    \includegraphics[width=0.9\textwidth]{images/rq3_admission_intervals_v5.png}
     \caption{Admission-chain intervals under an intact message, all four
     admission modes. (a) Provisioning to first successful response per
     backend over the seven seed-matched blocks (medians 4.1, 3.1, 10.0 and
@@ -3129,7 +3112,7 @@ runs, which all come from the later period, contain no stalled backend
     with no stalled backend under the confirmation check). (b) Scaling
     decision to usable capacity per run (the
     recorded higher-rate set, 12.0 requests per second per client, six runs
-    per mechanism; medians 2.17 against 6.01~s; exact $p = 0.0022$,
+    per mechanism; medians 2.17 against 6.01~s; complete separation,
     $\delta = -1.000$; the set's standardised replicate reproduced the
     direction, 1.87 against 8.98~s). Backends fall into two groups by their
     measured socket bind time: under a second, or about ten seconds for the
@@ -3154,8 +3137,8 @@ against 21.4~s). In the premature grid's loss runs (seeds 6301--6303),
 periodic polling also recovered, landing $+1.3$~pp from its matched
 no-fault runs.
 
-Under backend notification the slow share, the fraction of served requests
-that timed out or exceeded one second, rose to 8.3--14.4~\% over the plateau, 
+Under backend notification the slow share, the fraction of completed or
+timed-out requests that took longer than one second, rose to 8.3--14.4~\% over the plateau,
 concentrated in the onset window, where the difference against the recovering
 modes had a median of 28.0~pp (full plateau 7.64~pp, exact $p = 0.0040$). It
 stayed bounded at a 10.6~\% plateau median, under the pre-registered
@@ -3165,13 +3148,14 @@ so what the failure removed was the spare capacity, not the service.
 \begin{table}[H]
     \centering
     \caption{Admission modes under a lost message
-    (the RQ3 campaign; six blocks, plateau pooled; the seventh block's
-    pair is report-only under the pre-registered control-tail rule).
-    Admitted = visibility in the routing pool; abandoned
-    candidates in parentheses. Plateau tail = slow share over the last
-    300~s of the plateau; $^{\ast}$block~4 is excluded from the fault
-    comparison, its no-fault control tail (4.08~\%) breaching the 2~pp
-    floor.}
+    (the RQ3 campaign; fixed six-block frame, five assessable; each plateau
+    column covers that mode's six-block frame, and the confirmation check's
+    column covers all seven of its seed-matched blocks; the seventh block's
+    pair in the six-block family (contrast 1.2~pp) is report-only under the
+    pre-registered relief-completion rule). Admitted = visibility in the
+    routing pool; abandoned candidates in parentheses. Plateau slow = slow
+    share over the full plateau; plateau tail = slow share over the last
+    300~s of the plateau; a named block gives that block's own value.}
     \label{tab:rq3_fault}
     \footnotesize
     \setlength{\tabcolsep}{2pt}
@@ -3179,9 +3163,9 @@ so what the failure removed was the spare capacity, not the service.
         \toprule
         Mode & When lost & Admitted (abandoned) & Plateau slow (\%) & Plateau tail (\%) \\
         \midrule
-        Backend notification & none; fallback inert & 0 (32--35) & 8.3--14.4 & 1.0--1.3, except b2: 11.4 \\
+        Backend notification & none; fallback inert & 0 (32--35) & 8.3--14.4 & 1.0--1.2, except b2: 11.4 \\
         Notification with a fallback check & 20~s fallback check & 4--6 (0) & 1.9--3.6 & $\le$1.5 \\
-        Periodic polling & 10~s poll & 4--5 (0) & 2.0--5.0 & $\le$1.4, except b4$^{\ast}$: 4.08 \\
+        Periodic polling & 10~s poll & 4--5 (0) & 2.0--5.0 & $\le$1.4, except b4: 4.1 \\
         Notification with a confirmation check & 20~s absence fallback & 6--7 (0) & 1.1--4.1 & 0.7--3.7 \\
         \bottomrule
     \end{tabular}
@@ -3189,30 +3173,36 @@ so what the failure removed was the spare capacity, not the service.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{images/rq3_event_loss_outcome_v2.png}
+    \includegraphics[width=0.95\textwidth]{images/rq3_event_loss_outcome_v4.png}
     \caption{Under a lost message with reduced headroom, only
     the modes that check recover. (a) Slow share
-    (served requests timed out or slower than 1~s), median across the seven
-    seed-matched blocks per 10~s bin; the shaded band marks the onset window
+    (completed or timed-out requests that took longer than 1~s), median across
+    the seven seed-matched blocks per 10~s bin; the shaded band marks the onset window
     (first 150~s after the plateau starts). (b) Admitted backends per run
     (dots, one per block; bars, medians; whiskers, the min--max range). In the
     seven backend-notification runs no backend was admitted and 32--35
     candidates per run were abandoned and torn down, while the fallback
     check, periodic polling and the confirmation check admit through their
     own checks (medians 5, 5 and 6 backends) with relief completing;
-    no-fault runs admit on every mode, with zero abandoned candidates.}
+    no-fault runs admit on every mode, with zero abandoned candidates. The
+    figure shows all seven run blocks for context; the gated contrasts use
+    each mode's assessable blocks, five for the three modes that share the
+    frame and seven for the confirmation check.}
     \label{fig:rq3_event_loss_outcome}
 \end{figure}
 
-One qualifier bounds the reading: two no-fault runs fell slightly
-outside their pre-registered healthy bounds, so the criteria set for the
-lost condition were not all met together; the breaches sit on the
-no-fault side and do not touch the comparison. The block-4 exclusion
-rests on its own pre-registered control check, recorded in
-Table~\ref{tab:rq3_fault}.
+One qualifier bounds the reading: two intact-run health-floor checks (blocks 3
+and 5) fell outside their pre-registered bounds
+(Section~\ref{sec:limitations}), so the criteria set
+for the lost condition were not all met together; the breaches sit on the
+intact side and do not enter the fault contrast. The block-4 exclusion
+rests on its pre-registered relief-completion check: periodic polling's
+relief did not complete in that run, its plateau tail reading 4.08~\%
+against the 2~pp bound (Table~\ref{tab:rq3_fault}), so the block is not
+assessable.
 The confirmation check recovered through the same absence fallback,
-admitting 6--7 backends per run with none abandoned. Its slow share
-stayed within the 2~pp bound against its own no-fault partners in every
+admitting 6--7 backends per run with none abandoned. Against its own no-fault
+partners it stayed within the 2~pp bound in every
 block (median change $-0.4$~pp), so the recovery carried no user cost.
 
 Under a premature message at the evaluated lead of ten seconds, the
@@ -3220,8 +3210,8 @@ expectation was that the modes that admit on the message would be
 exposed while the modes that check would absorb it
 (Table~\ref{tab:rq3_soundness} and
 Figure~\ref{fig:rq3_premature_damage}). Damage is the change in the
-share of requests that fail, time out, or exceed one second, against a
-matched no-fault run. Backend notification carried a median damage 
+share of offered requests that fail, time out, or exceed one second, against
+a matched no-fault run. Backend notification carried a median damage
 of $+14.4$~pp against its matched no-fault runs. Notification with a fallback
 check shared the exposure (median $+11.7$~pp). Periodic polling stayed at 
 its no-fault level (median $-0.1$~pp, within the $2$~pp). Within the
@@ -3232,8 +3222,9 @@ evidence each mode trusts, meaning the fallback check reacts to a
 message that never arrives, not to one that arrives early, so it shares
 the exposure, while the periodic poll's check cannot pass before the
 backend can serve, so the timing of the message has nothing to act on.
-The confirmation check was immune in the same way and a median damage of
-$-0.9$~pp over the seven seed-matched pairs. It admitted only once
+The confirmation check was immune in the same way, with a median damage of
+$-0.9$~pp over the seven seed-matched pairs (six of the seven within the
+$2$~pp bound). It admitted only once
 it could serve, reaching the first successful response 11.0~s after the
 message against 19.5~s under periodic polling. Backend notification was
 $+16.9$~pp more damaged than it, positive in every block, and its own
@@ -3243,10 +3234,10 @@ damage against periodic polling is a near-tie ($-0.2$~pp).
     \centering
     \caption{User-visible damage of the admission modes under a premature
     message at the evaluated ten-second lead (seven seed-matched pairs per
-    mode). Damage is the change, in percentage points, in the share of
+    mode). Damage is the change, in percentage points, in the share of offered
     requests that fail, time out, or exceed one second, against a matched
-    no-fault run; medians over the pairs that pass the pre-registered checks
-    (six usable pairs under backend notification, seven under the other
+    no-fault run; medians over the usable pairs (six under backend
+    notification, seven under the other
     modes). A positive
     reading means
     the fault run's share was above that of its no-fault partner.}
@@ -3267,14 +3258,14 @@ damage against periodic polling is a near-tie ($-0.2$~pp).
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.72\textwidth]{images/rq3_premature_damage.png}
+    \includegraphics[width=0.72\textwidth]{images/rq3_premature_damage_v3.png}
     \caption{User-visible damage of the four admission modes under a
     premature message at the evaluated ten-second lead. Bars are the
     medians over the pairs that pass the pre-registered checks, dots the
     individual seed-matched pairs,
     and the dotted line the pre-registered $2$~pp bound; a positive reading
-    means the fault run's share of slow requests was above that of its
-    no-fault partner. The confirmation check admits only once the backend
+    means     the fault run's share of offered requests that time out, fail, or exceed
+    one second was above that of its no-fault partner. The confirmation check admits only once the backend
     can serve, which also places it first to a first successful response after the
     message (11.0~s against 19.5~s under periodic polling).}
     \label{fig:rq3_premature_damage}
@@ -3366,8 +3357,8 @@ Chapter~\ref{ch:conclusions}.
         cost under the reduced headroom the campaign fixed, and
         premature-message damage for the modes that admit on the message
         while the modes that check stay flat at the evaluated ten-second
-        lead & Two marginal no-fault breaches meant not all criteria for the
-        lost condition were met together \\
+        lead & Two no-fault health-floor breaches meant not all criteria for
+        the lost condition were met together \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -3525,11 +3516,21 @@ when its runs executed. In the campaign's earlier runs, a share of the spawned
 backends stalled about ten seconds at socket bind (10.0--10.4~s whenever it
 occurred); in its later runs, none did (none of the 283 later-run backends
 recorded a stalled bind, and the confirmation check's runs peaked at 0.089~s).
-The start-up class is measured per backend and every comparison is made within
-class, which holds the stall fixed in the reported contrasts; the slow class,
+The start-up class is measured per backend and every gated comparison is made
+within class, which holds the stall fixed in the reported contrasts; the slow
+class,
 however, draws only on the earlier runs, so the slow-binding stratum carries
 no confirmation-check evidence, and the pre-registered wake check that
 requires evidence in every stratum is carried as not met.
+
+    The readiness-to-admission interval could not be re-measured in this
+build. The admission log's readiness and admission timestamps read the same,
+so the interval reads 0.000~s for essentially every backend, and no finer
+trace records it: the service log's polling trace carries an
+$\approx$2.9~s quantisation. The interval reported in
+Section~\ref{sec:results_rq3_readiness} is the recorded admission-timing
+set's; the remaining legs are reported on the populations named in
+Table~\ref{tab:rq3_delays}.
 
     Storage relief under the data-access press was not uniform. The action
 relieved the pressed tier and cut the data-access component in every seed,
@@ -3547,6 +3548,19 @@ hit the edge container's memory cap as the episode began, at about
 367--370~MB against the 384~MB limit. One was replaced and one retained,
 with its service outcome flagged. The limit bounds the demand intensity at
 which the platform was evaluated, and a higher limit was not tested.
+
+    The analysis population is bounded by the pre-registered screens. The
+telemetry campaign excluded no run. The two memory-cap runs above were the
+only scaling-action removals. In the readiness admission campaign, one block
+is excluded from the fault comparison because periodic polling's relief did
+not complete in that run (its plateau tail read 4.08~\% against the 2~pp
+bound), leaving five assessable blocks; the added seventh block is report-only
+under the same rule (contrast 1.2~pp). Two no-fault runs fell outside the
+pre-registered health floor (hybrid block 3's failed-or-timed-out share,
+1.19~\% against the 1~\% bound, and periodic polling block 5's plateau tail,
+4.29~\% against the 2~pp bound); they stay recorded and are not re-chased,
+and the fault contrast does not use them. Neither exclusion rests on the
+treated outcome, and neither reverses a reported direction.
 
 % TODO: Controlled testbed — two domains on a single host; emulated
 % inter-domain link. Single window size;

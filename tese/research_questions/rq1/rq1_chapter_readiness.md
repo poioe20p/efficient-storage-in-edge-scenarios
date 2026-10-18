@@ -1,6 +1,6 @@
 # RQ1 — Results-Chapter Readiness Dossier
 
-> **Status:** 2026-10-09 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
+> **Status:** 2026-10-18 (§5.2 written 2026-09-26; Ch3 §3.4 / §5.1 alignments
 > 2026-09-28; observation table added 2026-09-28, trimmed to the two
 > observation axes; results narrative interpretation pass; 2026-10-01:
 > pre-registered expectations row added to `tab:rq1_design`; §5.2 exhibits
@@ -11,19 +11,18 @@
 > `rq1_conclusions.md` (verdict record), `rq1.md` (framing provenance).
 >
 > 2026-10-09: RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in main.tex §1.3.
+>
+> 2026-10-18: Chapter 5 streamline pass — 5-row design table, fixed cross-RQ
+> figure colour order, and `rq1_episode_latency_p95_v4.png`.
 
 ---
 
 ## 1. Question (fixed, `main.tex` §1.3 — no change needed)
 
-> "How do three ways of delivering demand evidence to the controller, more
-> specifically, event-preserving, delayed event-preserving, and latest-state,
-> affect what the controller observes about overload, how it responds by
-> scaling, and the quality of service users experience during a demand
-> shift?"
+> "How do the four telemetry modes (push, delayed push, polling, and sampled
+> push) affect how the controller scales the service when load rises?"
 
-The question has **three clauses**, and the staged results section answers
-them in order:
+The analysis answers it in three parts, in order:
 
 | Question clause | §5.2 material |
 | --- | --- |
@@ -73,13 +72,17 @@ than A, with B in between.
 | | Verdict | Headline |
 | --- | --- | --- |
 | H1 | ✅ Confirmed | medians A 28.5 < B 59.6 < C 79.6 ≈ D 83.2 s; A<B and B<C in 7/7 blocks; C≈D (5/7) |
-| H2 | ⚠️ Partially confirmed | loss A−D: δ = −1.000, p = 0.0006, perfect separation 7/7; delay A−B: p = 0.0012, 7/7 direction but bimodal; B−C n.s. (p = 0.209); C ≈ D (p = 0.456) |
+| H2 | ⚠️ Partially confirmed | loss A−D: δ = −1.000, complete separation 7/7 (p at the n=7 floor); delay A−B: p = 0.0012, 7/7 direction but bimodal; B−C n.s. (p = 0.209); C ≈ D (p = 0.456) |
 | H3 | ✅ Confirmed | non-surge p95 ≈ 1.05–1.08 s everywhere; only tail timeouts (0.07–0.12 %) |
 
 Timeouts were 0 in every episode, so (as pre-registered) the ordering is
 carried entirely by p95; failure and canceled classes are reported alongside.
 
 ## 4. Evaluation — material for §5.1 "Experimental Setup" (RQ1 row)
+
+> **2026-10-18:** the per-RQ setup table below is superseded by the 5-row
+> design-table skeleton in `main.tex` (Treatment, Workload, Replication, Test,
+> Expectations); held constants moved to §5.1.4 and exclusions to §6.3.
 
 One row of the per-RQ setup table:
 
@@ -107,9 +110,11 @@ One row of the per-RQ setup table:
 - **Figure (one representative figure per RQ):** source
   `docs/operation/testing/experiment/v3/rq1/graphs/thesis/episode_latency_p95.png`
   → **copied to** `tese/images/rq1_episode_latency_p95.png` (2026-09-26);
-  **regenerated 2026-10-09** as `tese/images/rq1_episode_latency_p95_v2.png`
-  (included in `main.tex` §5.2), with the superseded render moved to
-  `tese/images/unused/rq1_episode_latency_p95.png`. **Do NOT use
+  **regenerated 2026-10-18** as `tese/images/rq1_episode_latency_p95_v4.png`
+  (included in `main.tex` §5.2; fixed cross-RQ order: grey push, blue
+  delayed push, orange polling, green sampled push; 28 runs, medians
+  3.73/10.77/35.04/34.50 s re-verified on `cloud-vm`), with the superseded
+  renders moved to `tese/images/unused/`. **Do NOT use
   `endpoint_latency_p95.png`** (run-wide pooled metric — diluted,
   not the pre-registered endpoint).
 - **Tables:** `tab:rq1_observation` (delivery realisation and overload
@@ -120,6 +125,8 @@ One row of the per-RQ setup table:
 - **2026-10-01:** `tab:rq1_design` gained a pre-registered expectations row (ordering A < B < C ≈ D on usable capacity and the served-basis episode p95; the sampled push arm expected to be strictly worst; non-surge quality clean in every arm). The four §5.2 result exhibits were re-ordered to sit after the paragraphs that invoke them (ISCTE near-invocation rule), in `main.tex` and in the staged draft. A same-day follow-up added an 'on usable capacity' gloss to the replicated-ordering sentence (both files); the row change 'permitted' → 'expected' is main-only.
 - **2026-10-05:** full number re-verification of §5.2 against the `cloud-vm` run artifacts (reaction_timeline / info_age / phase_service_quality / per_node_stats, plus the campaign dataset and stats): all quoted values confirmed; two corrections applied — D-arm episode-p95 lower bound 30.7 → 31.4 (raw minimum 31.43 s, `sp_2`), and the margin-sentence usable-capacity range aligned to the per-run mean-of-domains unit (52.6–63.6 → 55.1–61.5 s; the wider figure was the pooled per-domain range, dominated by the flagged `delayed_3` run). The robustness sentence now also notes the two single-window recovery blips (C 4.2 s, D 5.8 s). No other §5.2 numbers changed.
 - **2026-10-09:** `tab:rq1_edges` gained a table note stating the per-contrast predicted orders of the direction counts (A < B and D > C for the delay edges; A < D and B < C for the loss edges) and noting that the D > C prediction is the flagged pre-campaign possibility that the sampled push arm would be strictly worst, its low count (2/7) being the reported deviation. Added for reader clarity, since the 2/7 count is otherwise unreadable without the campaign record; mirrored in the staged draft; table values unchanged.
+- **2026-10-18:** Chapter 5 streamlining pass. `tab:rq1_edges` now reports Cliff's δ and its bootstrap interval for every contrast, with the exact p-value only where the runs overlap (complete separation at n = 7 has the floor stated once in §5.1.4); the predicted-order caption is retained. Values unchanged: A–B 7/7, D–C 2/7 (the flagged D > C prediction), A–D 7/7, B–C 5/7 on the episode p95. The text's "A < B and B < C in 7/7" remains the usable-capacity H1 ordering, not the p95 contrast.
+- **2026-10-18 (figure):** RQ1 render regenerated through the shared house-style script as `rq1_episode_latency_p95_v4.png`. The `cloud-vm` run matched 28 folders (7 per mode) and reproduced the Table 5.6 episode-p95 medians exactly (3.73/10.77/35.04/34.50 s); usable-capacity medians 28.5/59.6/79.6/83.2 s are a separate column and were not the gate. The scheme is the fixed cross-RQ order (grey, blue, orange, green by configuration position). The `_v2` and `_v3` renders moved to `tese/images/unused/`.
 - **Numbers:** all re-verified 2026-09-26 against the campaign summary, the
   stats CSV, and the run bundles (provenance comment in the draft header).
 - **Optional appendix material** (not in the page-limited body):
