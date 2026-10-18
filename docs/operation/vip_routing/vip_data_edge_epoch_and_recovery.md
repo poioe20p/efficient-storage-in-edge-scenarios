@@ -175,6 +175,50 @@ Key constraints:
 - Recovery rotation creates exactly one new current epoch even under
   overlapping concurrent failures on the same old epoch.
 
+## 5b. Admission-time pool renewal -- `POST /pool_renew` (v5)
+
+**Why this exists.** An edge process pins its storage member at connection
+birth; flow-expiry re-installs reuse the pin, so a *newly added* member is
+reachable only through connections born after its admission. Under a sustained
+press with a fixed edge set, connection births are ≈ 0 and new capacity is
+invisible to the data plane no matter how the controller scores it (v4 finding
+D18). The renewal endpoint closes that gap by retiring the pinned pool epoch on
+every storage admission.
+
+**Endpoint.** `control_plane_routes.py` exposes `POST /pool_renew`. The body
+names the LAN, a `reason` (`storage_admission`) and the `wave`; the handler
+rejects a body whose lane is not this process's `config.lan_id` (400). The path
+is in `SKIP_COUNTING_PATHS` (`edge_server_process_state.py`) so control traffic
+never pollutes request counters.
+
+**Flags** (single source: `rq2v5_pins.env`, lifted to both static and dynamic
+edges):
+
+| Flag | Default (v5 pin) | Meaning |
+|---|---|---|
+| `EDGE_POOL_RENEW_ENABLED` | `1` | Master switch (off ⇒ endpoint returns 409/no-op) |
+| `EDGE_POOL_RENEW_MIN_INTERVAL_S` | `15` | Debounce: further reasons inside the window merge into the pending wave (superseded) |
+| `EDGE_POOL_RENEW_WAVES` | `2` | Waves per admission |
+| `EDGE_POOL_RENEW_WAVE_GAP_S` | `45` | Wave-B delay — must exceed the 30 s warm-lease TTL |
+
+**Wave semantics.** On a fire the process atomically retires the current epoch
+and installs a new one (`_rotate_renewed_epoch`, under one
+`_pool_renew_lock`); already-leased requests keep their old connection and
+drain. Logged as `pool_renew: lan=… reason=… wave=N new_epoch=M` plus
+`Replaced current epoch for <lan> via pool_renew:…`. Wave A goes out
+immediately with the newly admitted node; wave B fires at `+WAVE_GAP_S`, after
+the warm-lease TTL has expired, so connections born after admission re-select
+without a live warm lease (see the ε-band in
+[`vip_routing_backend_selection_and_warm_leases.md`](./vip_routing_backend_selection_and_warm_leases.md) §6a).
+
+**Controller side.** `main_n1.py` / `main_n2.py` call
+`_broadcast_pool_renew()` from `_promote_storage_backend()`. The broadcast runs
+in a lossless worker that copies the MAC set per pass, retries deferred nodes
+and logs `[pool_renew] broadcast domain=… nodes=K deferred=N`. A per-node POST
+read-timeout (1.5 s) under load is **cosmetic**: the edge still processes the
+renewal server-side (verified in the v5 campaign: every timed-out POST has a
+matching edge fire).
+
 ## 5a. Retry Architecture and Collective Failure Threshold
 
 ### Problem

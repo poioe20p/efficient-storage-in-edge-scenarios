@@ -112,6 +112,13 @@ spawns 0/0) — the MC2/MC3 read is clean; member CPU stays ≥ 33 % in
 
 ### 2.3 `stor`@mx
 
+> **v5 override (2026-10-17):** the storage-only arm is a **hard goal** in
+> `rq2v5` (D24), not a report-only direction. v5 measured `stor`@mx t_db
+> **89.7 ms vs `none` 103.0 ms** with same-tier relief (4–5 members carrying
+> traffic, tier CPU 42→28 %) — 7/7 seeds. See
+> [`v5/rq2/results.md`](../../../v5/rq2/results.md) and
+> [`v5/rq2/experiment_plan.md`](../../../v5/rq2/experiment_plan.md) §1.
+
 | seed | valid | completion % | p50 (s) | p95x (s) | lock % | reserve acts | D14 literal % | D14 win-max % | pre-add member reads % |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 42 | valid | 77.7/76.4 | 8.73/9.01 | 22.4/22.5 | 98.4/100 | 6/6 | 2.0/2.1 | 2.0/2.0 | 54.6/63.9 |

@@ -1,7 +1,9 @@
 # RQ2 v5 - Read-path renewal fix + storage spread band + recalibrated battery
 
 > **Status:** authorised by author directive 2026-10-16 (hard goals H1/H2; scope =
-> 56 runs, `mx`+`db`; naming `rq2v5`).
+> 56 runs, `mx`+`db`; naming `rq2v5`). **FROZEN 2026-10-16** after auto-review
+> rounds 1-5 (final round: 0 open findings). Implementation (W1) may start; any
+> deviation from S3 routes back through a decision ID.
 > **Parent:** v4/rq2 (diagnosis record).
 > **Precedence:** for v5 this plan wins where it conflicts with any v4/rq2
 > artifact; v4 artifacts remain authoritative for the v4 record. **Explicit v5
@@ -22,9 +24,10 @@
 > **Workstreams (not v4's F1/F2 floor labels):** W1 = fix design + implementation
 > (+ evidence deposit); W2 = seat calibration + pilot; W3 = 56-run battery;
 > W4 = analysis + close-out.
-> **Review:** auto-review round 1 (35 findings) and round 2 (24 findings) triaged;
-> this is version 3 (adds the storage spread band D21b; worker/scheduler
-> atomicity; single-source knobs; census arithmetic; floor re-derivation policy).
+> **Review:** auto-review rounds 1-4 triaged (35 / 24 / 12 / 2 findings; rounds
+> 3-4 closed with no unresolved criticals after fixes); this is version 5
+> (mx pilot pair scheduled for the H1-mx decision; `wave_b_in_warm` flag target
+> = per-run `analysis/run_summary.md`); freeze pending a clean focused round 5.
 
 ## 0. Author directive (verbatim scope)
 
@@ -122,12 +125,17 @@ the row **with author sign-off** - never silently waived. All other rows apply
 as registered.
 
 **Renewal evidence (census - corrected arithmetic):** per run record:
-(i) controller broadcasts: `now` + `deferred` (worker retry) = 1 per storage
-admission (failures logged and counted); (ii) edge fires: `wave=1` and `wave=2`
-log lines; (iii) exceptions: `debounced`, `superseded` (a newer admission
-replaced a pending schedule), `failed`. Requirements: fires == broadcasts x
-waves - exceptions (recorded per class); every admission has a broadcast of
-class now|deferred; any wave gap > 2 x configured gap is flagged.
+(i) controller broadcasts: `now` lines + `deferred` retries carrying the
+accumulated admission count (`deferred=N`); broadcasts(now) + sum(deferred N)
+== storage admissions (failures logged/counted separately); (ii) edge fires:
+`wave=1` and `wave=2` log lines; (iii) exceptions: `debounced`, `superseded`,
+`failed`; (iv) `wave_b_in_warm`: wave-B fires landing inside a re-arm of the
+30 s warm window of a *newer* admission - counted and reported per run;
+disposition: interpretive only (the run stays evaluable; flagged in the per-run
+analyzer summary `<run_dir>/analysis/run_summary.md` (v4 convention); if
+> 50 % of a run's wave-B fires are warm-window, escalate to the author). Requirements: fires == broadcasts x waves - exceptions (per
+class); every admission attributable to a broadcast of class now|deferred; any
+wave gap > 2 x configured gap is flagged.
 
 ## 3. W1 - Platform fix
 
@@ -158,26 +166,36 @@ class now|deferred; any wave gap > 2 x configured gap is flagged.
 notifies edges once; each edge schedules per LAN: wave A immediately, wave B at
 +`WAVE_GAP_S` (default 45 s > 30 s TTL). A new admission **supersedes** a
 pending schedule (atomic; the pending wave B is cancelled and counted
-`superseded`; each admission's wave A fires immediately regardless). Wave B's
+`superseded`; each admission's wave A fires immediately, except when the 15 s
+debounce class applies - recorded as `debounced`). Wave B's
 spread premise holds when no promotion occurred within the preceding 30 s; the
 census flags wave-B fire times falling inside a warm window.
 
 **b. Storage epsilon-band spread (D21b) in `select_storage`.** Env-gated,
-default OFF; v5 pins ON. Mechanics mirror `select_server`'s P2.6/P2.8 band
-(`source/sdn_controller/_vip_routing/selection.py`, band block ~L231-284):
-after the post-filter WSM costs are computed, the band = candidates with
-`cost <= min_cost + EPS`; if the band would be smaller than `MIN_BAND` when a
-candidate is a strict argmin by more than EPS, include the next-best
-candidate(s) until the floor is met (same semantics as compute - re-read the
-compute implementation and mirror it, do not improvise); round-robin within
-the band (reuse/extend the domain's `rr_idx`); log with a distinct marker
-`select_storage(%s): spread band=%d eps=%.3f floor=%d warm=%s chosen=...`.
+default OFF; v5 pins ON. **Mirror the band CONSTRUCTION from `select_server`'s
+P2.6/P2.8 band (`source/sdn_controller/_vip_routing/selection.py`, ~L231-284):**
+the same eligibility filters (finite cost, local member, `mac in _mac_to_ip`,
+slow-start penalty fully decayed), band = eligible candidates with
+`cost <= min_cost + EPS`, and the same floor rule - top up with the
+next-cheapest eligible candidates whenever `len(band) < MIN_BAND` (any reason).
+**Three storage-specific deviations (explicit - do NOT copy the compute
+versions):**
+(i) **pick rule = round-robin within the band**, reusing the domain's existing
+`rr_idx` counter (today used for exact ties - extend it, do not add a second
+index). Compute picks by `md5(client_mac) % len(band)`; that can concentrate a
+small burst of connections from few edges, while RR guarantees the intra-wave
+spread H1 requires;
+(ii) **the warm claim keeps its existing early return** - the band is only
+reached when no warm lease returned (compute instead APPENDS the warm member
+into its band; copying that would break wave A's relocation);
+(iii) **distinct log token** - storage must NEVER emit compute's `spread band=`
+token (the v4 D12/G1 anchor greps it): log
+`select_storage(%s): storage_band=%d eps=%.3f floor=%d warm=%s chosen=...`.
 Knobs: `STORAGE_SELECTION_SPREAD_EPS` (default 0.0 = OFF),
 `STORAGE_SELECTION_SPREAD_MIN_BAND` (default 0). **v5 pins EPS=0.03,
 MIN_BAND=2** (D22 may re-pin within 0.02-0.05 / 2-3 with pilot evidence).
-The band must respect the existing `prefer_secondary` filter (band over the
-post-filter candidate set only) and must not fire when a warm claim already
-returned.
+The band respects the existing `prefer_secondary` filter (band over the
+post-filter candidate set only).
 
 **c. Levers classification.** Timing/policy levers (waves, `WAVE_GAP_S`,
 debounce, EPS, MIN_BAND) may be re-pinned via D22. **Any other selection-math
@@ -267,6 +285,11 @@ def renew_current_epoch(lan: str, reason: str) -> dict:
 (All cancel/store/start happen under one `_pool_renew_lock` acquisition - no
 gap for a racing admission; superseded timers are counted and logged.)
 
+**Also required:** `_close_drained_epochs` gains one INFO line when a retired
+epoch's client is closed (`log.info("retiring epoch %s for %s closed (leases=0)", ...)`).
+Today the close path logs only warnings; that line is the selftest's close
+observable and the census's close witness.
+
 **c. `control_plane_routes.py`** - new POST route; **imports must be extended**
 (add `renew_current_epoch`, `snapshot_normal_vip_config` to the
 `vip_data_mongo_runtime` import list; use the in-scope `process_state` for the
@@ -307,8 +330,9 @@ selection module imports the two band constants from `..scaling_config`
 **b. Non-blocking, lossless broadcast.** Worker thread + lock-guarded
 in-flight flag + one pending retry (a deferred admission is retried when the
 current fan-out completes - never dropped). Under os-ken's monkey-patched
-threading this worker is cooperative; it is still bounded by
-`nodes x timeout(1.5 s)` and reads node maps by value:
+threading this worker is cooperative; it copies `_local_server_macs` per pass
+while `_mac_to_ip` is read live from the worker thread (same exposure as the
+`_broadcast_tier1_manifest` precedent):
 
 ```python
 def _broadcast_pool_renew(self, domain: str) -> None:
@@ -317,8 +341,9 @@ def _broadcast_pool_renew(self, domain: str) -> None:
         return
     with self._pool_renew_lock:
         if self._pool_renew_inflight:
-            self._pool_renew_pending = True
-            logger.info("[pool_renew] broadcast deferred domain=%s", domain)
+            self._pool_renew_pending += 1
+            logger.info("[pool_renew] broadcast deferred domain=%s pending=%d",
+                        domain, self._pool_renew_pending)
             return
         self._pool_renew_inflight = True
     threading.Thread(target=self._pool_renew_worker, args=(domain,),
@@ -328,7 +353,8 @@ def _pool_renew_worker(self, domain: str) -> None:
     pending = True
     while pending:
         with self._pool_renew_lock:
-            self._pool_renew_pending = False
+            deferred = self._pool_renew_pending
+            self._pool_renew_pending = 0
         sent = 0
         for mac in list(self._local_server_macs):
             ip = self._mac_to_ip.get(mac)
@@ -341,15 +367,17 @@ def _pool_renew_worker(self, domain: str) -> None:
                 sent += 1
             except requests.RequestException as exc:
                 logger.warning("[pool_renew] POST %s failed: %s", url, exc)
-        logger.info("[pool_renew] broadcast domain=%s nodes=%d", domain, sent)
+        logger.info("[pool_renew] broadcast domain=%s nodes=%d deferred=%d",
+                    domain, sent, deferred)
         with self._pool_renew_lock:
-            pending = self._pool_renew_pending
+            pending = self._pool_renew_pending > 0
             if not pending:
                 self._pool_renew_inflight = False
 ```
 
 (init `self._pool_renew_lock = threading.Lock()`,
-`self._pool_renew_inflight = False`, `self._pool_renew_pending = False` with
+`self._pool_renew_inflight = False`, `self._pool_renew_pending = 0` (a counter,
+so N admissions during one fan-out are all attributable on the retry) with
 the controller's other state. Census classes: `broadcast` now/deferred;
 `failed` logged.)
 
@@ -422,8 +450,10 @@ broadcast (member selectable before wave A).
    `spread_eps`, `spread_min_band` columns. W2/W3 preflight witnesses: static
    edge via `docker exec edge_server_n1 printenv EDGE_POOL_RENEW_ENABLED
    EDGE_POOL_RENEW_WAVE_GAP_S`; **dynamic edge**: after the first `both` run of
-   each regime, the same witness on a live dynamic unit; both recorded in the
-   pilot/battery evidence. `phases_snapshot.json` D3 check as v4.
+   each regime, the same witness on a live dynamic unit (if none is live at the
+   moment - drained or absent-cleaned - record "no live dynamic edge to verify"
+   as the RQ3 precedent tolerates, and retry on the next `both` run); both
+   recorded in the pilot/battery evidence. `phases_snapshot.json` D3 check as v4.
 
 6. **Images:** rebuild `edge_server` on the VM; record image id + content hash
    in the W2 pilot evidence. Unset flags => v4 behaviour (compat).
@@ -437,7 +467,11 @@ broadcast (member selectable before wave A).
    file's pre-campaign content as `rq2v5_ref_phases_restore.json`. Edit
    `phases.json` in place before each regime block (regime-major), verify via
    the D3 check on the first run of each regime, and at campaign close restore
-   the canonical file byte-exactly from `rq2v5_ref_phases_restore.json`.
+   the canonical file byte-exactly from `rq2v5_ref_phases_restore.json`. (The
+   three `rq2v5_ref_phases_*.json` copies are read-only references/backups -
+   never run inputs; no `phases.json` variants exist.) The W2 pilot sequence
+   switches db -> mx -> db, so the in-place edit applies at **every regime
+   change - pilots included**; the D3 check applies to every v5 run.
 
 ### 3.7 Tests (W1 exit evidence)
 
@@ -446,17 +480,18 @@ broadcast (member selectable before wave A).
    read at import time => the test spawns itself as subprocesses with different
    env):
    a. flag off -> `disabled`; no epoch change;
-   b. flag on -> wave A: `epoch_id` increments (via
-      `_get_current_epoch_snapshot`), previous epoch marked retiring;
+   b. flag on -> wave A: `epoch_id` increments (`_get_current_epoch_snapshot`)
+      and the previous epoch appears in `_epoch_states[lan].retiring` (the
+      snapshot alone cannot show the retiring list);
    c. immediate second POST -> `debounced`;
    d. lane mismatch -> 400; unknown LAN -> 400; malformed body -> 400;
    e. **wave B**: with `EDGE_POOL_RENEW_WAVE_GAP_S=1`, a second rotation
       appears within ~2 s AND not before ~1 s (wave-B timing bound);
    f. **supersession**: two POSTs spaced > debounce and < gap -> the first
       wave B is cancelled, counted `superseded`, exactly one wave B remains;
-   g. **retire/close**: after rotation the previous epoch's client is closed by
-      the housekeeping sweep once leases drain (assert via the epoch snapshot /
-      close log).
+   g. **retire/close**: after rotation and lease drain, the housekeeping sweep
+      closes the previous client - assert via the new close INFO line (S3.4b)
+      and the retiring list emptying;
 2. `python -m py_compile` clean on every touched `.py`.
 3. A storage-band selftest case in the same script family: with two synthetic
    member costs `[0.80, 0.82]`, EPS=0.03/floor=2 -> both in the band and
@@ -476,8 +511,8 @@ Rationale: at `sc=0.15` the member sat ~69 % with flat ~62 ms `t_db` - no
 headroom for H1; a saturated member is required so added storage capacity
 lowers `t_db`.
 
-**Pilot runs** (labels `rq2v5_p2_pilot_*`, seed **45** for the pair, standard db
-schedule ~24 min, budget <= 5 runs ~2 h):
+**Pilot runs** (labels `rq2v5_p2_pilot_*`, seed **45** per pair; db schedule
+~24 min, mx schedule ~40 min; budget <= 7 runs ~4 h):
 
 1. `none`@db at `sc=0.09` - **P-A:** member win-max mean >= 90 %; delivery
    deficit >= 8 pp vs offered; `t_db` median >= 120 ms (~2x v4 floor); edge CPU
@@ -486,13 +521,20 @@ schedule ~24 min, budget <= 5 runs ~2 h):
    complete (S2); (ii) **distribution**: >= 2 members carrying reads post-ready
    and busiest pre-add member CPU dropping (H2 direction); (iii) `t_db` median
    <= 0.80 x the none pilot's (H1 direction); (iv) band marker present in
-   controller logs (`select_storage ... spread band=`).
-3. P-A fail -> retry at `sc=0.07`. P-B fail WITH census present -> **stop and
+   controller logs (`select_storage ... storage_band=`).
+3. **mx pair**: `none`@mx and `stor`@mx at seed 45 on the frozen mx seat
+   (`sc=0.05`, `ec=0.15`, standard mx schedule) - **P-C:** renewal census
+   complete; distribution direction (>= 2 members carrying reads post-ready);
+   per-lane `t_db` ratio <= 0.80 (this pair is the H1-mx promote/report input
+   for D22). The mx seat is NOT recalibrated in v5; if the mx member's headroom
+   makes the ratio unreachable, that is evidence for report-only and is
+   recorded as such - not a pilot failure.
+4. P-A fail -> retry at `sc=0.07`. P-B fail WITH census present -> **stop and
    escalate to the author**; allowed escalation levers: wave/gap/debounce and
    EPS/MIN_BAND re-pinning (D22, within 0.02-0.05 / 2-3) - any further
    selection-math change needs a new decision ID first.
-4. One confirmation repeat of the `stor` pilot at the frozen value.
-5. Floor re-derivation (S2): record achieved db I1 and the seat-conditional
+5. One confirmation repeat of the `stor`@db pilot at the frozen value.
+6. Floor re-derivation (S2): record achieved db I1 and the seat-conditional
    rows; prepare D22's re-registration text for author sign-off if needed.
 
 **Freeze (D22):** final `sc`, pilot numbers, H1-mx promote/report decision,
@@ -523,7 +565,9 @@ contract: matrix S5, gates S2, seat D22). W3 cannot start before D22.
 
 - Adapt the v4 pipeline: per-run metrics (p5mx-style), D14 tooling
   (g1lock-style) for H2, `t_db` extraction (window_log `avg_time_db_ms` +
-  per-server `avg_time_db_read_ms`), renewal census (S2), band-marker census.
+  per-server `avg_time_db_read_ms`), renewal census (S2), `storage_band=`
+  marker census (distinct token - the D12/G1 anchor tooling greps compute's
+  `spread band=` and must never match storage lines).
   Outputs: `rq2v5_cell_stats.csv`, `rq2v5_run_status.csv`.
 - Verdicts: **H1-db, H2-db, H2-mx** (+H1-mx per D22) + carried battery (S2) +
   base floor (v4 S5.4 as amended by D22).
@@ -550,9 +594,9 @@ contract: matrix S5, gates S2, seat D22). W3 cannot start before D22.
 | --- | --- | --- |
 | 7.1 | Renewal relocates rather than spreads | D21b band + wave B after the 30 s TTL; pilot P-B(ii)/(iv) verifies; census flags wave-B fires inside warm windows |
 | 7.2 | Band parameters mis-tuned (over-spread hurts t_db via weakest member) | EPS/floor are pins; D22 re-pins within 0.02-0.05 / 2-3 with pilot evidence; H1 gates the outcome |
-| 7.3 | Unknown-stats cost (1.0) biases fresh members | Wave B runs with live stats (~10 s cadence); band floor keeps fresh members eligible; pilot observes |
+| 7.3 | Unknown-stats cost (1.0) biases fresh members | A fresh member enters the band only once telemetry lands (~10 s cadence); the floor tops up with the cheapest *eligible* candidates and cannot rescue a stats-less member. Wave B at +45 s gives ~3-4 samples of headroom; if telemetry lags, wave B re-pins to the pre-add member and that admission contributes nothing to H1 - pilot observes, census records |
 | 7.4 | Rotation churn vs the P6.1 band | 2 waves per admission (2-6/lane/episode); band census per run vs v4; material worsening => finding |
-| 7.5 | Controller worker blocked/cooperative under eventlet | worker is bounded (nodes x 1.5 s), reads maps by value, lossless deferred retry (3.5b) |
+| 7.5 | Controller worker blocked/cooperative under eventlet | worker is bounded (nodes x 1.5 s), copies `_local_server_macs` per pass, lossless deferred retry (3.5b) |
 | 7.6 | OOM class (db edge memory) persists | v4 replacement/top-up rules carried (S5) |
 | 7.7 | Comparability | v5 = new platform segment; never pool with v4; cb unaffected (no in-episode admissions + default-off flags) |
 | 7.8 | `t_db` mixes write ops | Primary `avg_time_db_ms` (the author's metric); secondary `avg_time_db_read_ms` |
@@ -564,7 +608,8 @@ contract: matrix S5, gates S2, seat D22). W3 cannot start before D22.
 `source/scripts/testing/controller_env_overrides/rq2v5_pins.env`;
 `rq2v5_w1_01_path_binding_evidence.md`, `rq2v5_ref_phases_mx.json`,
 `rq2v5_ref_phases_db.json`, `rq2v5_ref_phases_restore.json`, (W2)
-`experiment_plan.md`, (W4) `rq2v5_cell_stats.csv`, `rq2v5_run_status.csv`,
+`experiment_plan.md`, (W4) per-run `<run_dir>/analysis/run_summary.md`
+(v4 convention), `rq2v5_cell_stats.csv`, `rq2v5_run_status.csv`,
 `results.md`, `post_run_analysis.md` (all in this folder); VM `~/rq2v5_battery/`.
 **Modified (code):** edge: `edge_server_config.py`, `vip_data_mongo_runtime.py`,
 `control_plane_routes.py` (incl. extended import list),
@@ -586,4 +631,12 @@ per regime; restored byte-exactly at close);
 | 2026-10-16 | Authored plan (v1); **D21** registered: admission-time epoch-renewal fix + recalibrated db seat; hard goals H1/H2; scope 56 runs (mx+db) | Author directive (2026-10-16) |
 | 2026-10-16 | **v2 after review round 1** (3 critical / 19 warning / 13 observation): two-wave renewal; dynamic-edge env; non-blocking fan-out; pins-file provenance; per-regime phases procedure; full D14 + reduced-n + base-floor carries; MC1-db explicit; census/pointers corrected | auto-review round 1 |
 | 2026-10-16 | **v3 after review round 2** (2 critical / 8 warning / 14 observation): **D21b storage epsilon-band added** (renewal alone relocates; argmin is one-hot - the band is the H1/H2 distribution mechanism, env-gated, mirroring the compute P2.6/P2.8 precedent); lossless broadcast worker; atomic edge scheduler (superseded counted); single-source knobs (pins -> merged env -> lifts); route imports corrected; explicit band/floor/wave D22 ranges; floor re-derivation policy; v4 override annotations; D23 registered (mode-env reuse); W1 path-binding evidence deposit; H1-mx feasibility definition; selftest coverage expanded | auto-review round 2 |
+| 2026-10-16 | **v4 after review round 3** (0 critical / 6 warning / 6 observation): band pick rule fixed to **RR-within-band** (documented deviation from compute's md5 pick); warm early-return kept (documented deviation); storage log token `storage_band=` disambiguated from the D12-anchored `spread band=`; census gains `wave_b_in_warm` + deferred counters; close INFO line added for observability; selftest observables corrected; floor rationale fixed; ref-copy and dynamic-witness tolerances stated | auto-review round 3 |
+| 2026-10-16 | **v5 after review round 4** (1 critical / 1 warning): mx pilot pair added to W2 (feeds the H1-mx promote/report decision in D22; budget <= 7 runs); `wave_b_in_warm` flag target defined as per-run `analysis/run_summary.md`; stale wording fixed | auto-review round 4 |
+| 2026-10-16 | W1 addendum: architect acceptance of the two implementation deviations — `_pool_renew_worker` `try/finally` + post-pass deferred consumption (fixes a strand-the-inflight-flag gap in the S3.5b sketch; contract intent preserved) and the `warm = None` init in `select_storage` (required for the `warm=%s` token under non-lifecycle policies; inert when `EPS<=0`). Pins file is passed by the caller as `extra_env_file` (v4 `rq2v4_p4_pins.env` precedent) — W2/W3 must pass it on every run. `rq2v5_w1_01_path_binding_evidence.md` deposited (S8 closed). | review-gate follow-up |
 | - | **D22** (pending W2): frozen db seat `sc=...`; pilot numbers; H1-mx decision; floor re-registrations; `experiment_plan.md` created | W2 calibration |
+| 2026-10-16 | **D22 pre-registration delta (author-approved):** `EDGE_MEMORY` 256m -> 384m for v5 runs — seat-robustness fix for the n1 kernel OOMs in pilot `stor`@db runs (2/2; RSS ~245 MB vs 256 MB cap; cgroup-confirmed, n1-only, never in `none`@db). Single source = `rq2v5_pins.env`; lifted by `rq2v5_launch_run.sh` to (a) controller env (dynamic-edge spawns) and (b) make vars (static edges). Verified: LF-clean, `bash -n` clean, local sha256 `f8d2d523f9d4210e`/`afe5e1c2f8c3c57e` byte-exact on VM, post-launch `edge_server_n1` Memory limit = 402653184 B. Scope note: cb mechanically unaffected (no cb/mx OOM in v4; v5-scoped pins) — no cb reruns triggered. | author approval 2026-10-16 |
+| 2026-10-17 | **D22 FROZEN** (author: "proceed"). Frozen config: db `sc=0.09` / `ec=1.20`; mx `sc=0.05` / `ec=0.15`; `EDGE_MEMORY=384m` (single pins file). **H1-mx = REPORT** (not gate): measured stor@mx t_db ratio 0.863 (lan1) / 0.834 (lan2) — a real −13.7 %/−16.6 % improvement but sub-bar, because mx `none` runs the storage member at only ~41 % (edge ~78 % is the binding tier); gating it would test press intensity, not the fix. **H2-mx remains a gate** (direction PASS: static member 42.0→24.6 % / 40.9→23.7 %, 7–8 added members carrying load, aggregate storage work ×2.5–2.9). Floor re-registrations: db `none` member recorded at measured (mean 95.3/96.7 %, median 97.6/98.4 %) replacing the carried v3 ≥50 % witness. Pilot budget: 6 of ≤7 used (P-A, P-B ×3, P-C ×2) — no further pilots. **Census correction (stor@mx):** 7 admissions/lane, of which 2 were debounce-merged → 5 renewal events (10 fires/lane); `node_removing` = 0 — identical to the v4 baseline (`rq2v4_stor_mx_44`: 7 adds, 0 removals; `rq2v4_none_mx_44`: 0 events). **Container hygiene verified:** `setup_network` → `cleanup.sh -v` removes ALL containers + transient volumes at every launch (v4 ran identically), so per-run `stor` strays (7/lane) can never enter the next run's baseline — confirmed at the first W3 launch (`Cleaning up Docker resources` with `dyn_pre=14`). **W3 artefacts:** `source/scripts/testing/rq2v5_campaign_driver.sh` + `rq2v5_batches/campaign.txt` (56 runs, v4-exact per-seed mode orders and regime-major mx→db seed iteration; automatic sha-gated phases swap; halt on rc/`missing_run_completed`/culls; OOM recorded; byte-exact phases restore at close) and `tools/watch_campaign.py` (four-exit campaign watchdog). Contract: `v5/rq2/experiment_plan.md`. | W2 close / W3 start |
+| 2026-10-17 | **D24 — author hard-goal battery (replaces the D22 gate set).** Author verbatim intent: *the only hard goals are* — **db (storage press):** `both` and `stor` HAVE to be better than `none` **and** better than `comp`; `comp` does NOT have to beat `none`. **mx (mixed press):** `stor`, `comp` and `both` HAVE to be better than `none`, and `both` HAS to beat each single arm (`stor`, `comp`). "Better" in db = **t_db and same-tier relief** (both required); "better" in mx = **t_db and/or t_proc and/or same-tier relief** (any one suffices). **Everything else is soft** (ratio ≤0.80 bars, D14 ≥80 %-window protocol, client completion/p50, band/census extras — reported and manageable). Operationalisation (mechanism only, not intent — vetoable): per-seed paired direction, cell passes when it holds in ≥ 6/7 seeds; medians reported alongside; ties count against. Manipulation/base checks (MC1–MC5, base floor) are run-*validity* inclusion criteria, not goals — unchanged. **Coverage:** the frozen W3 batch already runs both/stor/comp/none × 7 seeds in BOTH regimes, so every D24 comparison is measured by the running campaign — no scope change, no restart. | author, 2026-10-17 |
+| 2026-10-18 | **D25 — materiality of "better" registered (author):** *"For D2 if the overall direction stands then that's good enough."* → "better" (D24) is judged on the **per-seed paired direction** (per lane; ties count against); **no magnitude floor** applies to any gate. Sensitivity retained for transparency: D2 = 7/7 (direction), 6/7 (≥ 5 %), 5/7 (≥ 20 %). **Consequence: all nine D24 hard gates PASS** — db D1 7/7, D2 7/7, D3 7/7, D4 7/7; mx M1–M5 7/7 each. | author, 2026-10-18 |
+| 2026-10-16 | W1 implementation completed (files: edge `edge_server_config.py`, `vip_data_mongo_runtime.py`, `control_plane_routes.py`, `edge_server_process_state.py`; controller `scaling_config.py`, `_vip_routing/selection.py`, `main_n1.py`, `main_n2.py`, `elasticity/compute_node_manager.py`; network `build_network_1.sh`, `build_network_2.sh`; testing `rq2v5_launch_run.sh`, `controller_env_overrides/rq2v5_pins.env`, `rq2v5_p1_01_pool_renew_selftest.py`) — validation: py_compile clean on all 10 touched .py; selftest PASS on host (flask 3.1.3 + pymongo 4.15.2 available; 10 cases: a-g pool renewal, band pair/alt-policy/floor/off) — implementation note: `_pool_renew_worker` adds a `try/finally` + post-pass deferred consumption to the S3.5b sketch (the sketch has no exception path; without it a raised pass strands `_pool_renew_inflight` and loses the deferred attribution); author sign-off pending if strict sketch fidelity is required. S8's `rq2v5_w1_01_path_binding_evidence.md` deposit remains outstanding (VM-side analysis artifact, out of the W1 code scope) | W1 executor |

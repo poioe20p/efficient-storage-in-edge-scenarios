@@ -158,10 +158,46 @@ candidate exists.
 1. **Recovery pool filtering** (if `recovery=True`).
 2. **Warm lease claim** (see Section 8).
 3. **WSM scoring** across all pool members.
-4. **Round-robin tie-breaking** using a per-domain counter
+4. **ε-band filter** (D21b — see §6a; disabled when `STORAGE_SELECTION_EPS <= 0`).
+5. **Round-robin tie-breaking** using a per-domain counter
    (`_rr_storage_idx[domain]`).
-5. **Remember normal choice.** If not a recovery selection, the chosen backend
+6. **Remember normal choice.** If not a recovery selection, the chosen backend
    is recorded via `_remember_normal_storage_choice()`.
+
+## 6a. Storage ε-band (D21b) — spreading instead of one-hot assignment
+
+Strict argmin is one-hot: every new connection under identical load picks the
+*same* member, so admission-driven renewal merely **relocates** the hot spot
+instead of using the added capacity. The storage band mirrors the compute-side
+band (D12/P2.6) with storage-specific constants:
+
+| Constant (`scaling_config.py`) | Default | Meaning |
+|---|---|---|
+| `STORAGE_SELECTION_EPS` | `0.03` | Band width as a fraction of the cheapest cost |
+| `STORAGE_SELECTION_MIN_BAND` | `2` | Minimum candidates kept in the band |
+
+Algorithm: compute costs, let `c_min` be the cheapest; keep every member with
+`cost <= c_min * (1 + EPS)`; if fewer than `MIN_BAND` survive, top up with the
+next-cheapest members (including cost ties) so the pick is never one-hot; then
+choose **round-robin within the band** with the per-domain counter.
+`STORAGE_SELECTION_EPS <= 0` restores the legacy strict-argmin behaviour.
+
+**Log token isolation:** the pick logs `storage_band=<n>`, deliberately
+**distinct** from the compute band's `spread band=`. The D12/G1 anchor tooling
+greps `spread band=` and must never match storage lines (v5 anchor-integrity
+requirement; verified per run in the v5 campaign).
+
+**Warm-lease interaction.** A warm-lease claim keeps its early return: an
+existing lease means reuse, and the band is irrelevant. The band only applies
+when a *new* connection selects, which is why the admission-time renewal
+(`vip_data_edge_epoch_and_recovery.md` §5b) must reach the edge in two waves —
+wave B after the 30 s TTL guarantees that post-admission selections occur with
+no live warm lease. A freshly added member has no telemetry yet and carries the
+`topology_lifecycle` unknown-stats default `1.0` (worst), so it enters the band
+only once its first stats land (~10 s cadence); a wave-B pass that runs before
+telemetry arrives re-pins to the pre-add member and contributes no relief —
+the registered risk that explains the v5 campaign's relief-intermittency
+cluster.
 
 ## 7. Unknown Telemetry and Tie-Breaking
 

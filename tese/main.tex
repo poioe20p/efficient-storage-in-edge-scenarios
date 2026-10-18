@@ -189,8 +189,7 @@ evidence to a decision point. The decision point selects a scaling action,
 such as scaling compute or scaling storage, and the action provisions new
 capacity. Finally the new capacity attains a readiness state (it can answer
 requests, not merely run) and starts receiving traffic, which is
-the point at which it becomes
-usable. The chain is therefore a
+the point at which it becomes usable. The chain is therefore a
 timeline through the orchestration system, and its steps are joined by
 interfaces.\footnote{Throughout this dissertation, the
 \emph{demand-to-capacity chain} denotes the full timeline from a demand
@@ -244,11 +243,11 @@ decisions, and traffic routing) run in the same process, so that each
 studied interface can be configured and varied on its own rather than
 observed as an incidental coupling. Telemetry
 production and aggregation remain external to the controller, so how
-aggregated telemetry reaches the controller is an explicit boundary, while
+aggregated telemetry is consumed by the controller is an explicit boundary, while
 scaling and admission are exposed as lifecycle hooks.
 
     Along this chain, three interfaces are studied in the evaluated service
-deployed across two network domains: how telemetry reaches the controller
+deployed across two network domains: how telemetry is consumed by the controller
 (the telemetry mode); whether
 the scaling action serves the tier the demand presses on
 (bottleneck-aware scaling action); and whether a ready backend is
@@ -270,14 +269,14 @@ The main objective of this thesis is to contribute to more efficient
 resource orchestration for edge services by characterising the
 interfaces of the demand-to-capacity chain under controlled demand regimes,
 and by establishing, for each interface, which property of the crossing
-decides the outcome and under which conditions: how telemetry reaches the
+decides the outcome and under which conditions: how telemetry is consumed by the
 controller, whether the scaling action serves the tier the
 demand presses on, and whether a ready backend is admitted on its
 notification alone, on the notification with a fallback check, through
 periodic polling, or on the notification with a confirmation check.
 
     The platform keeps controller-side coordination in-process, with how
-telemetry reaches the controller retained as an explicit, configurable
+telemetry is consumed by the controller retained as an explicit, configurable
 boundary. Along with explicit lifecycle hooks for scaling and admission, this arrangement
 exposes the studied interfaces to direct measurement. Because the
 components share one process and are therefore coupled, making each
@@ -1082,11 +1081,10 @@ cloud deployments rather than isolating an interface.
 In a second, recurring setup, the same functions are kept together at
 an SDN-based control point or coordinated through shared state. What
 neither arrangement provides, however, is a decomposition of the control
-process into its interfaces.Prior systems measure complete control
-processes or coordinate them by construction.
-They do not isolate how telemetry reaches the controller, scaling
-decisions, or readiness admission as independent variables in the
-demand-to-capacity path.
+process into its interfaces. Prior systems measure complete control
+processes or coordinate them by construction. They do not isolate how
+telemetry is consumed by the controller, scaling decisions, or readiness admission
+as independent variables in the demand-to-capacity path.
 That interface-level isolation is what this dissertation provides.
 
     SDN-based resource orchestration is therefore an established and
@@ -1254,8 +1252,7 @@ presented in the remainder of the chapter.
     can serve.
 
     \item \textit{Non-blocking steering.} Packet handling must never wait on
-    slow infrastructure work such as provisioning, membership joins, or
-    removal.
+    slow infrastructure work such as provisioning or removal.
 
     \item \textit{Instrumented transitions.} Every capacity change must be a
     sequence of explicit, timestamped transitions (provisioned, ready,
@@ -1273,8 +1270,8 @@ Within each domain the platform is organised in three layers
 (Figure~\ref{fig:platform_layers}). The control layer holds the controller,
 which consumes the telemetry summaries, performs load balancing, and decides
 the scaling actions. The data plane layer holds the software switch, which
-forwards the client requests and the storage traffic once the controller
-installs the forwarding rules. The resource layer holds the edge servers that
+carries the client requests and the storage traffic along the path the
+controller decides. The resource layer holds the edge servers that
 serve requests, the storage members that hold the service state, and the
 telemetry aggregator that forms the summaries for the controller.
 
@@ -1282,8 +1279,8 @@ telemetry aggregator that forms the summaries for the controller.
     \centering
     \includegraphics[width=\textwidth]{images/src/platform_layers.drawio.png}
     \caption{Layered organisation of the platform in one network domain: the
-    controller of the control layer consumes the telemetry summaries and
-    issues the forwarding rules to the switch and the capacity changes to
+    controller of the control layer consumes the telemetry summaries,
+    decides how the traffic is routed, and issues the capacity changes to
     the resources. The data plane layer carries the client requests and the
     storage traffic, and the resource layer holds the edge servers, the
     storage members, and the telemetry aggregator.}
@@ -1292,11 +1289,10 @@ telemetry aggregator that forms the summaries for the controller.
 
 \subsection{Two-Domain Organisation}
 
-The platform is organised as two network domains connected by an emulated
-inter-domain data link, representing the two sites of the evaluated
-deployment. Each domain contains client workloads, a software data plane,
-a pool of containerised edge servers, a replicated storage tier, a
-telemetry aggregator, and a controller. The peer
+The platform is organised as two network domains joined by an inter-domain
+data path, representing the two sites of the deployment. Each domain
+contains client workloads, a software data plane, a pool of edge servers, a
+replicated storage tier, a telemetry aggregator, and a controller. The peer
 controllers exchange topology information, and each consumes the telemetry
 summaries produced by the aggregators of both domains. Each controller runs
 telemetry consumption, elasticity coordination, and traffic steering in the
@@ -1304,18 +1300,17 @@ same process for its own domain. Where this thesis says node without
 qualification, it means one deployed unit of either tier: an edge server of
 the compute pool, or a storage member of the replica set.
 
-    The emulated inter-domain link models the cross-domain data path, while
-telemetry and controller-to-controller topology exchange use
-host-local control channels. This distinction separates data-path delay from
-control-path communication.
+    Both domains run on one host in the evaluated deployment, so the control
+plane is local and only the inter-domain data path crosses domains. The
+evaluated demand stays within a domain, so the two-domain organisation is
+exercised as a cross-domain-aware control plane with a single-site data path.
 
 \subsection{Virtual IP Data Paths}\label{sec:vip_data_paths}
 Clients access edge services through a per-domain \ac{VIP}. Service requests
 are addressed to the virtual service address \texttt{VIP\_SERVER}, and edge
-servers route storage reads through the virtual data address \texttt{VIP\_DATA},
-while storage writes are issued directly to the replica-set primary. This
-separation represents service routing and data access as distinct routing
-surfaces.
+servers route storage reads through the virtual data address \texttt{VIP\_DATA}.
+This separation represents service routing and data access as distinct
+routing surfaces.
 
     Neither address names a node. A request to \texttt{VIP\_SERVER} is a call
 to the service API, answerable by any admitted compute replica, and a read
@@ -1323,45 +1318,21 @@ to \texttt{VIP\_DATA} is issued through the storage tier's data interface and
 answered by whichever member the controller selects; the client and the edge
 server address the tier, and the controller decides the node.
 
-    When a flow addressed to a virtual IP is first observed, the controller
-selects an eligible backend and configures the data plane to forward
-the flow. Subsequent matching packets are handled in the data plane without further
-controller involvement. Service load balancing may select a backend
-in either domain (a platform capability held constant in the evaluation), while 
-cross-domain storage placement is disabled.
+    The controller is responsible for both routing surfaces: for each new
+connection it selects the unit that will serve it among the admitted units of
+the relevant tier, and it places that choice on the network path. Established
+connections keep their unit, so a capacity change does not reroute traffic
+that is already being served. Load balancing may select a backend in either
+domain (a platform capability held constant in the evaluation), while
+cross-domain storage placement is not exercised.
 
     Load balancing is cost-based, for both service backends and storage
-members. The controller
-computes a weighted cost from each eligible backend's reported resource
-state (CPU utilisation, memory usage, request count, and hop distance) and
-installs forwarding rules for the lowest-cost one. 
-Each metric enters the cost as a fraction of the largest value observed
-among the eligible candidates, so metrics with different units contribute
-on a common scale under configurable weights, and candidates that tie at
-the lowest cost are selected in round-robin. Hop distance expresses reach and in this
-architecture a peer-domain candidate is always assigned more hops than a local
-one, so local candidates are preferred at comparable resource state.
-For storage reads observed on the virtual data path, the same mechanism
-selects a replica-set member, using the corresponding storage metrics (CPU
-utilisation, memory usage, connections, replication lag, and hop distance).
-Figure~\ref{fig:vip_routing_sequence} walks through the resulting sequence.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{images/src/vip_routing_sequence_no_logos.drawio.png}
-    \caption{Double-VIP routing sequence: a client request addressed to
-    \texttt{VIP\_SERVER} triggers load balancing in the controller, and
-    the edge server's storage reads through \texttt{VIP\_DATA} trigger load
-    balancing across replica-set members.}
-    \label{fig:vip_routing_sequence}
-\end{figure}
-
-The load-balancing policy also defines two behaviours that accompany the cost
-function: a warm-lease priority, which gives a newly admitted backend
-bounded priority for new connections during a configured window, and a
-slow-start ramp, in which a newly discovered backend is held back by a
-cost penalty that decays over the same window. Both are configuration
-choices of the routing path.
+members. The controller compares the candidates' reported resource state
+under configurable weights and selects the lowest-cost unit, preferring local
+candidates at comparable state. For storage reads observed on the virtual
+data path, the same mechanism selects a replica-set member. The metrics of
+the comparison, and how the selection is enforced on the path, are described
+in Chapter~\ref{ch:implementation}.
 
 A request's path decomposes into two intervals. The first is the
 \emph{pre-dispatch wait}: the time between the client issuing the request and
@@ -1536,16 +1507,15 @@ treated as indeterminate and do not count toward idleness.
 Chapter~\ref{ch:implementation}.
 
 \subsection{Compute}\label{sec:elastic_compute}
-Compute capacity is a per-domain pool of containerised edge servers, each
+Compute capacity is a per-domain pool of edge servers, each
 capable of serving any request addressed to the domain's virtual service
 address. Storage reads performed by a compute replica are routed through the
 domain's virtual data address, or served from a Tier~1 copy where one is
-held (the data-placement tiers are defined in Section~\ref{sec:elastic_data}),
-and its writes are issued directly to the replica-set primary. 
+held (the data-placement tiers are defined in Section~\ref{sec:elastic_data}).
 Reads are left to the routing path. Compute scale-up
 applies the policy defined in Section~\ref{sec:scaling_policy}.
 
-    A newly provisioned compute replica is recorded through an explicit
+A newly provisioned compute replica is recorded through an explicit
 registration step and becomes eligible for load balancing only
 once it is visible in the routing pool. How readiness
 reaches that pool is configurable, and four admission modes are
@@ -1559,22 +1529,18 @@ admit on its own. Because the modes that admit on the message trust it,
 a message that arrives before the replica can serve would reach the
 routing pool unchecked, while the modes that check observe readiness
 themselves before admitting. The modes are measured under three message
-conditions,
-each held for the whole run: the message arrives intact, never arrives,
-or arrives before the backend can serve.
-Because load balancing steers new flows while installed flows remain
-where they were placed (Section~\ref{sec:control_workflow}), admission also
+conditions, each held for the whole run: the message arrives intact, 
+never arrives, or arrives before the backend can serve.
+Because load balancing steers new connections while established ones
+remain with their unit (Section~\ref{sec:control_workflow}), admission also
 marks the point at which the new backend can begin to share the load.
-Per-backend resource quotas are configuration parameters of the compute
-tier.
 
     Compute scale-down removes the least disruptive eligible replica, applying
 the idle condition defined in Section~\ref{sec:scaling_policy}. 
 Only replicas provisioned by the platform are eligible for removal, so the
 original nodes are left undisturbed. A candidate is considered
 only while its reports are recent, and among the eligible replicas the one
-carrying the least request load is removed first, with the lowest
-utilisation and request-processing latency used as tie-breakers.
+carrying the least request load is removed first.
 Removal proceeds in two phases: the replica is first withdrawn
 from the routing pool and signalled to finish its in-flight requests,
 and only after it drains is it released.
@@ -1582,19 +1548,26 @@ A pending drain can be cancelled if load rebounds before the replica exits,
 favouring fast recovery over aggressive reclamation.
 
 \subsection{Storage}\label{sec:elastic_data}
-The replica set is the unit in which storage capacity is scaled. The storage
-tier of each domain runs as a replica set whose primary serves the
-clients' writes and whose secondaries replicate the data and absorb the
-remainder of the traffic. Reads may therefore be served by any replica-set
-member, and the consistency contract is primary writes with eventually
-consistent secondary reads. The evaluation does not rely on read-after-write
-semantics. Storage scale-up is a membership change. The controller provisions
-a new storage member, which joins the set as a non-voting secondary, and
-admits it to the data path only once the member can serve reads. Preparation 
+The storage tier of each domain is a replica set, and storage capacity is
+scaled by changing its membership, one member at a time. Any admitted member
+can answer a read, so read load is distributed across the membership. Writes
+are not distributed: the store keeps a single primary for writes, and the
+remaining members replicate the data and serve eventually consistent reads.
+This write placement follows from the store's replication model rather than
+from a platform design decision: the evaluation adopts it as the tier's
+consistency contract and does not rely on read-after-write semantics. Storage
+scale-up is a membership change. The controller provisions a new storage
+member, which joins the set, and admits it to the data path only once the
+member can serve reads. Preparation
 is decoupled from the reaction: a readied member is held in
 reserve outside the routing pool, and the storage scale-up is
 the activation of this prepared reserve, which removes the initial readiness wait
 from the reaction path. A new reserve is prepared immediately afterwards.
+
+    Admission alone does not put the member to work, because a connection
+chooses its member when it is opened. The platform therefore renews the edge
+servers' storage connections when a member is admitted, and spreads new
+connections across members whose reported cost is close to the best.
 
     Storage scale-down removes an idle member while the remaining members keep
 serving. Only members added by the platform are eligible for removal, so the
@@ -1602,7 +1575,7 @@ set's original membership is left undisturbed, and the most recently added
 eligible member is removed first. The decision applies the idle condition
 defined in Section~\ref{sec:scaling_policy} to the storage tier's idle signals
 (its data-access latency and, in the configurations that enable
-it, its storage utilisation).
+it, its CPU utilisation).
 
     Beyond the membership change, the platform defines three data-placement
 tiers: Tier~0 provides direct remote reads over
@@ -1688,7 +1661,7 @@ admission and release follow the same flow as the actions themselves.
 
 \section{Control Workflow}\label{sec:control_workflow}
 The control workflow separates three execution contexts that share one
-process but do not block one another. The packet context handles flow
+process but do not block one another. The packet context handles routing
 decisions and does not wait on slow work. The observation context evaluates
 delivered summaries and emits action requests. The action context performs
 infrastructure changes such as provisioning, drain, and removal.
@@ -1701,13 +1674,12 @@ delivered summary. If the tier condition is sustained, the engine emits a
 scaling action request, which the action context executes. The provisioned unit
 reaches its readiness state and is admitted to the corresponding routing
 pool, which for the storage tier is the activation of the prepared reserve.
-New flows can then be directed to it, while flows already installed on other
-members remain where they were placed. The chain completes when the new unit
+New connections can then be directed to it, while established connections
+remain where they were placed. The chain completes when the new unit
 serves its first successful request. Each step is instrumented, so the
 timeline from demand observation to usable capacity is recorded end to end,
 from registration and routing-pool inclusion to the first successful request
-(Figure~\ref{fig:control_workflow}). 
-When readiness admission is enabled, a
+(Figure~\ref{fig:control_workflow}). When readiness admission is enabled, a
 compute replica that does not reach readiness within the configured bound, or
 that is never admitted within the abandonment bound, is abandoned and torn
 down instead of being admitted. Without readiness admission,
@@ -1738,8 +1710,8 @@ and the action requests, and the action context owns the infrastructure
 changes and records the state of each in-flight capacity change. The
 routing pools are updated with the capacity transitions: a unit enters them
 when it is admitted and leaves them on removal, while a readied member held
-in reserve remains outside them until activation. The packet context reads 
-both on each flow decision. Because the packet context is not blocked by
+in reserve remains outside them until activation. The packet context reads
+both on each routing decision. Because the packet context is not blocked by
 the action context, a long-running change cannot stall request steering.
 Because the action requests are queued and prioritised, detection is not
 blocked by execution. 
@@ -1896,7 +1868,10 @@ when the predicate first succeeds.
 The controller provisions a replica by starting its container with the
 tier's quotas and the run's environment, attaching it to the domain
 network through an Open vSwitch port, and recording it as a backend of the domain.
-Removal follows the two phases of Section~\ref{sec:elastic_allocation}.
+Removal follows the two phases of Section~\ref{sec:elastic_allocation},
+and among the eligible replicas the one carrying the least request load is
+removed first, with the lowest utilisation and request-processing latency
+used as tie-breakers.
 The drain completes once the replica's in-flight requests reach zero and
 a quiet period passes. Only then is its network attachment removed.
 
@@ -1964,7 +1939,7 @@ decision is summarised in Algorithm~\ref{alg:readiness_admission}.
 \end{algorithm}
 
 Warm-lease priority and slow-start ramps are separate load-balancing
-behaviours of the routing path (Section~\ref{sec:vip_data_paths}) and
+behaviours of the routing path (Section~\ref{sec:impl_control}) and
 are held constant in the readiness experiments.
 
 \subsection{Storage}\label{sec:impl_data}
@@ -2013,9 +1988,15 @@ free. The member lifecycle is bounded by the run's caps
 (Appendix~\ref{app:campaign_config}).
 
 Reads are issued against the domain's virtual data address through
-per-request leases that the edge server manages per domain epoch. When
-the address's membership changes, the epoch rotates and pooled
-connections are retried with backoff, and reads prefer a secondary.
+per-request leases that the edge server manages per domain epoch. On every
+storage admission the controller sends a renewal request to each edge
+server of the domain, and the edge rotates the epoch so that new
+connections choose a member again. The request is sent in two waves, one
+immediately and one 45~s later, after the 30~s warm lease, because a
+connection opened just before the admission keeps its member for the life
+of that lease. Selection of a member uses a band: costs within 3~\% of the
+lowest count as equal, the band keeps at least two members, and the choice
+inside the band rotates. Reads prefer a secondary.
 Writes are issued directly to the replica-set primary. Selective
 synchronisation (Tier~1), which holds a
 partial copy of the data in the consumer domain, and cross-domain
@@ -2115,15 +2096,42 @@ on each flow decision.
 
 On the first packet of a new connection, no flow rule matches and the
 packet is sent to the controller. The controller selects a unit with the
-cost function of Section~\ref{sec:vip_data_paths}, installs the
-rules described in Section~\ref{sec:impl_infrastructure}, and sends the
-packet on. Subsequent packets follow the installed rules. The rules carry
+cost function of Section~\ref{sec:vip_data_paths}. The function computes a
+weighted cost from each eligible candidate's reported resource state, and
+the lowest-cost unit is selected. For backends the cost uses CPU
+utilisation, memory usage, request count, and hop distance; for storage
+members it uses CPU utilisation, memory usage, connections, replication
+lag, and hop distance. Each metric enters as a fraction of the largest
+value observed among the eligible candidates, so metrics with different
+units contribute on a common scale under the configured weights, and
+candidates that tie at the lowest cost are selected in round-robin. Hop
+distance expresses reach, and a peer-domain candidate is always assigned
+more hops than a local one, so local candidates are preferred at
+comparable resource state. The controller then installs the rules
+described in Section~\ref{sec:impl_infrastructure} and sends the packet
+on. Subsequent packets follow the installed rules. The rules carry
 a configurable idle timeout, which resets as the connection stays
 active, and a configurable hard timeout, after which the rule expires and
 the next packet triggers a fresh load-balancing decision. The evaluated values are
 listed per campaign in Appendix~\ref{app:campaign_config}. When a unit
-leaves a pool, its rules are removed.
+leaves a pool, its rules are removed. Two behaviours accompany the cost
+function: a warm-lease priority, which gives a newly admitted backend
+bounded priority for new connections during a configured window, and a
+slow-start ramp, in which a newly discovered backend is held back by a
+cost penalty that decays over the same window.
+Figure~\ref{fig:vip_routing_sequence} walks through the first-packet path on
+both virtual addresses.
 Algorithm~\ref{alg:first_packet} summarises the first-packet path.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/src/vip_routing_sequence_no_logos.drawio.png}
+    \caption{Double-VIP routing sequence: a client request addressed to
+    \texttt{VIP\_SERVER} triggers load balancing in the controller, and
+    the edge server's storage reads through \texttt{VIP\_DATA} trigger load
+    balancing across replica-set members.}
+    \label{fig:vip_routing_sequence}
+\end{figure}
 
 \begin{algorithm}[H]
     \caption{First-packet handling for a new connection.}
@@ -2314,12 +2322,12 @@ request mix, which determines whether an episode binds the compute tier or the
 storage tier. The spatial axis, that is, which domain owns the requested
 content, is held constant in the evaluation, as described above.
 
-    The request mix is a weighted distribution over five request kinds
+    The request mix is a weighted distribution over six request kinds
 defined in Table~\ref{tab:request_kinds}.
 
 \begin{table}[H]
     \centering
-    \caption{The five request kinds that make up the workload mixes, and
+    \caption{The six request kinds that make up the workload mixes, and
     the tier each loads.}
     \label{tab:request_kinds}
     \footnotesize
@@ -2332,6 +2340,8 @@ defined in Table~\ref{tab:request_kinds}.
         content, then ranks the candidates in the edge server. & Compute \\
         Service pressure & Introspects the edge server's recent request
         activity. & Compute \\
+        Compute challenge & Solves a hash chain over a nonce in the edge
+        server. & Compute \\
         Content update & Writes an update to a content item. & Storage \\
         Content aggregation & Computes a collection-level aggregation over
         content items. & Storage \\
@@ -2377,11 +2387,14 @@ the workload of each campaign.
         client, all clients active; mixed load: 30~\% service pressure,
         35~\% content lookups, 15~\% feed ranking, 10~\% each of updates and
         aggregations \\
-        Bottleneck-Aware Scaling Action (RQ2) & Baseline (30 or 60~s) $\rightarrow$ one of two
-        episodes $\rightarrow$ recovery gap (60 or 120~s) $\rightarrow$
-        demand drop (360 or 420~s) & Compute-bound: 600~s at rate 1.5 per
-        client, pure service pressure. Data-access-bound: 480~s at rate 5.0
-        per client, 90~\% content lookups \\
+        Bottleneck-Aware Scaling Action (RQ2) & Baseline (60~s)
+        $\rightarrow$ mixed episode (600~s) $\rightarrow$ recovery gap
+        (120~s) $\rightarrow$ demand drop (420~s) $\rightarrow$ idle tail
+        (420~s), or baseline (30~s) $\rightarrow$ data-access episode
+        (480~s) $\rightarrow$ recovery gap (60~s) $\rightarrow$ demand drop
+        (360~s) & Mixed press: rate 1.15 per client, 20~\% compute
+        challenges and 80~\% content lookups. Data-access press: rate 5.0
+        per client, 90~\% content lookups and 10~\% feed ranking \\
         Readiness Admission Modes (RQ3) & Baseline (60~s) $\rightarrow$
         compute-bound plateau (600~s) $\rightarrow$ recovery gap (120~s)
         $\rightarrow$ demand drop (420~s) $\rightarrow$ idle tail (420~s) &
@@ -2400,12 +2413,12 @@ only, because the telemetry mode determines when the evidence that
 triggers a decision reaches the controller, and a decision cannot be taken
 before that evidence arrives.
 
-    For the scaling action campaign, the outcomes are read per arm, each
-arm being one scaling policy under one demand regime: the targeted-tier
+    For the scaling action campaign, the outcomes are read per policy under
+each demand episode: the targeted-tier
 relief, as the change in the receiving tier's utilisation and latency
 between the pre-registered windows before and after the action, and the
-service recovery, as the episode service quality against the no-action
-comparator, with the resource use reported alongside. Saturation, as this
+service recovery, as the episode service quality against the no-scaling
+policy, with the resource use reported alongside. Saturation, as this
 campaign evaluates it, is the capacity-bound state in which a tier runs at
 its capacity limit, arriving requests queue and completion slows, rather
 than the state of an overloaded server whose own processing slows.
@@ -2436,7 +2449,7 @@ question.
 \begin{itemize}
     \item \textit{The telemetry campaign} answers its question in three
     parts. The first is what the controller saw: the delivered fraction, how
-    much of the produced telemetry reached it, and the information age at
+    much of the produced telemetry is consumed by it, and the information age at
     decision, how old the summary behind a decision was when the decision was
     taken. The second is how much capacity the controller added and when the
     new capacity started serving traffic: the number of compute scale-ups per
@@ -2444,18 +2457,13 @@ question.
     experienced: the episode latency percentiles. Both latency measures are
     defined at the start of this subsection.
     \item \textit{The scaling action campaign} answers its question along its three
-    axes, per arm: targeted-tier relief, as the relief obtained in the tier
+    axes, per policy: targeted-tier relief, as the relief obtained in the tier
     that received the action; service recovery, as the episode service
-    quality against the no-action comparator; and resource use, as the
-    scaling actions taken and the compute and storage node-minutes of the
-    units those actions provision. A node-minute is one provisioned unit
-    counted for each minute it exists, so the totals characterise how much
-    capacity-time a policy keeps in service beyond the nodes that are
-    always running, not
-    how busy that capacity is. The totals
-    are normalised per thousand recorded requests. The load spread across the replicas of the
-    receiving tier, as each replica's share of the served demand and its
-    utilisation, reports the mechanism through which the action executed.
+    quality against the no-scaling policy; and resource use, as the scaling
+    actions taken and the utilisation of the receiving tier. The load spread
+    across the replicas of the receiving tier, as each replica's share of the
+    served demand and its utilisation, reports the mechanism through which
+    the action executed.
     \item \textit{The readiness admission campaign} answers its question in three parts.
     When the new backend serves is analysed along the admission chain: the
     intervals from verified readiness to admission, from admission to the
@@ -2486,7 +2494,9 @@ policies compared within a campaign are baselines that encode architectural
 properties, such as a fixed single-tier scaling policy or a periodic polling
 mechanism, and not competing aspects. Each campaign was pre-registered with the
 treatments, primary outcomes, screening rules, and analysis tests all fixed
-before data collection. 
+before data collection. For the scaling action campaign, the directions were
+fixed before data collection and the magnitude at which a direction counts as
+a better outcome was registered while the analysis was written. 
 
 No results are pooled across campaigns. Every contrast
 is computed within its own campaign's design, and where a research question
@@ -2527,10 +2537,10 @@ Each campaign uses these tests and intervals on its own measures. The
 telemetry campaign reports each $\delta$ with a 95~\% bootstrap
 confidence interval, and a direction count, the number of seed-matched
 blocks consistent with the predicted order. The scaling action campaign
-works with ratios instead of groups: for each arm it reports the median
-ratio across runs, with a 95~\% confidence interval, and compares it with
-the pre-registered threshold, because its question is whether a ratio
-passes a target, not whether two sets of runs differ. The readiness
+pairs each action with its comparison within a seed and reports the number of
+seeds in which the required direction holds, because its question is whether
+the direction is stable across matched runs, not whether two sets of runs
+differ. The readiness
 admission campaign reports how long each new backend takes from verified
 readiness to admission, compared separately for backends that bind in
 under a second and for backends stalled at socket bind, with the stall
@@ -2755,36 +2765,30 @@ drop shares flat at roughly 5--7~\%.
 
 \section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
 
-The campaign compared three scaling-action policies under the same demand
-shifts: a fixed compute-only policy, a fixed storage-only policy, and
-bottleneck-aware selection, each evaluated on a compute-bound episode
-(600~s of pure service pressure) and a data-access-bound episode (480~s,
-90~\% content lookups). Each episode is named after the tier its load
-presses on: the compute tier in the first, the storage member in the
-second. Whether the named tier actually becomes capacity-bound
-(Section~\ref{sec:metrics_definitions}) is itself one of the results.
-A comparative extension contributes the element the original design
-lacked: no-action comparators (a policy that scales nothing), against
-which the consequence of any action can be measured. Comparisons that
-draw on both campaigns carry labels recording the memory cap and software
-build of each side.
+The campaign asked what following the press buys over always scaling the
+same tier. Four scaling policies were compared under two demand episodes:
+no scaling, compute-only, storage-only, and bottleneck-aware selection,
+which scales compute and storage according to the pressing demand. Each
+policy was run once per episode, over seven seed-matched blocks. The
+episodes differ in their request mix. The mixed press carries
+interactive requests with content lookups, so both tiers are loaded. The
+data-access press is read-heavy content serving, so the reads land on the
+storage tier.
 
-Each policy stands for an operator choice about which tier the action
-serves: scale only the tier that runs the requests, scale only the tier
-that stores and serves the data, or scale the tier the episode presses on.
-That tier is the bottleneck and bottleneck-aware selection reads the
-per-tier telemetry, classifies the episode as compute-bound or
-data-access-bound, and scales the matching tier, while each fixed policy
-acts on its single tier alone.
+Each policy is a way to spend capacity. No scaling is the platform without
+elasticity. It shows what the press does alone and is the reference for
+every other policy. Compute-only is the usual reflex, the single elastic
+dimension of a plain container platform. Storage-only is the data tier as
+the elastic dimension, the activation of a prepared reserve while the
+service tier stays fixed. Bottleneck-aware selection is the platform under
+test. Both tiers can be scaled, the action follows the per-tier telemetry,
+and one tier is committed per action, so an episode that presses both tiers
+can be answered on both in sequence. A fixed policy can never scale the
+other tier.
 
-The pre-registered expectation was that the aligned action would relieve
-the tier that bound the episode and improve the user-visible service
-against inaction and that the mismatched action would harm service relative
-to inaction.
+Table~\ref{tab:rq2_design} summarises the design of the campaign.
 
-Table~\ref{tab:rq2_design} summarises the design of the original campaign.
-
-\begin{table}[H]
+\begin{table}[htbp]
     \centering
     \caption{Design of the scaling action campaign (RQ2).}
     \label{tab:rq2_design}
@@ -2793,227 +2797,172 @@ Table~\ref{tab:rq2_design} summarises the design of the original campaign.
         \toprule
         Item & Design \\
         \midrule
-        Treatment & Three scaling policies (compute-only, storage-only, and
-        bottleneck-aware selection) each under two demand regimes
-        (compute-bound and data-access-bound), giving six arms, plus
-        no-action comparators (a policy that scales nothing) contributed by
-        the comparative extension, against which the benefit and harm
-        ratios are computed. The fixed policies scale their
-        own tier only, while bottleneck-aware selection classifies the
-        episode from the tier telemetry and scales the matching tier.
-        Compute scale-up adds a compute replica; storage scale-up activates
-        a prepared reserve in the same domain. \\
-        Held constant & Telemetry mode, routing policy, per-tier resource
-        caps, action budget, cooldowns, backend-admission condition;
-        Tier~1 selective synchronisation and cross-domain storage
-        placement disabled. \\
-        Exclusions & Two runs excluded as documented container memory-cap
-        incidents (kills under the 256~MB and 512~MB caps); per-run screens as
-        above. \\
-        Test & Pre-registered arm-level criterion: median of the replicate
-        p95 ratios between the pre-activation window (from the episode
-        onset to the reserve activation, 30--60~s of completed requests)
-        and the post-activation window (from 120~s after the added member
-        is ready to the episode end, over 300~s), with a 95~\% CI
-        excluding 1.0; tier-relief and resource-use outcomes
-        alongside. \\
-        Expectations & The aligned action is expected to relieve the tier
-        that binds the episode and to benefit user-visible service over
-        inaction; the mismatched action is expected to bring no relief to
-        the binding tier and to harm service. The aligned action's
-        value over inaction on the compute axis is carried as a
-        descriptive measure. Each expectation is assessed against a
-        pre-registered coefficient, reported with its outcome. \\
+        Treatment & Four scaling policies under two demand episodes: no
+        scaling, compute-only, storage-only, and bottleneck-aware selection,
+        which commits one tier per action from the per-tier telemetry.
+        Compute scale-up adds a replica. Storage scale-up activates a
+        prepared reserve in the same domain. \\
+        Episodes & Mixed press: 600~s at rate 1.15 per client, about
+        20~\% compute challenges and 80~\% content lookups. Data-access
+        press: 480~s at rate 5.0 per client, 90~\% content lookups and
+        10~\% feed ranking. \\
+        Held constant & Telemetry mode (push), routing policy, admission
+        configuration, action budget, cooldowns, per-tier quotas fixed per
+        episode, seed-matched blocks (42--48), read-path renewal, storage
+        selection band. \\
+        Exclusions & Two runs hit the edge memory cap at press onset. One
+        was replaced and one retained, with its service outcome flagged;
+        the per-run screens otherwise passed. \\
+        Test & Pre-registered direction criteria, paired within each seed
+        and assessed on direction alone
+        (Section~\ref{sec:campaign_analysis}): four on the data press and
+        five on the mixed press. Medians are reported alongside each
+        direction. \\
+        Expectations & Data press: the storage-only policy does better than
+        no scaling and better than the compute-only policy on the
+        data-access component and on relief, alone and as the first action
+        of the bottleneck-aware policy. Mixed press: every policy that
+        scales does better than no scaling, and the bottleneck-aware policy
+        does better than each single-tier policy. \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-The relief check asked whether the aligned action relieved the tier that
-bound the episode (Figure~\ref{fig:rq2_relief}). Where the storage tier
-bound the episode, it did: the prepared reserve was activated in every
-run where the storage action was selected (11 of 11) and shared the reads,
-and the storage-member peak CPU fell to 0.57--0.66 of its pre-activation
-level in all twelve storage-only domains.
-The bottleneck-aware arm followed the same direction with eight of its
-ten domains below the threshold. On the compute-bound episode no relief 
-is reported because the compute tier never entered the capacity-bound state,
-so there was no queue to relieve. The action did spread the load across
-the added backends, with no user-visible change (Figure~\ref{fig:rq2_engagement}).
+With no scaling, the mixed press held the processing component at about
+124~ms with the storage tier at about 42~\% of its cap. The data-access
+press held the storage tier at about 98~\% with the data-access component
+at about 2~s. Completion was about 71~\% and about 78~\%
+(Table~\ref{tab:rq2_arms}). In both episodes the queue formed in the tier
+the request mix targets, and each tier is bound in one episode and loaded
+without binding in the other.
 
-\begin{figure}[H]
+\begin{table}[htbp]
     \centering
-    \includegraphics[width=0.75\textwidth]{images/rq2_storage_relief_v2.png}
-    \caption{Targeted-tier relief where the storage tier bound the episode:
-    post-to-pre peak storage-CPU ratio per replicate (mean of the two
-    domains) for the data-access-bound arms, against the pre-registered
-    0.75 threshold; bars show the mean across replicates with the standard
-    deviation, and dots the individual replicates. The storage-only arm
-    stays below the threshold in every replicate, the bottleneck-aware arm
-    partially overlaps it, and the compute-only arm activated no reserve.}
+    \caption{Scaling policies by demand episode: the two request-path
+    components, completion, storage utilisation, and added units.
+    Processing and data access are the components defined in
+    Section~\ref{sec:vip_data_paths}, completion is the share of episode
+    requests answered, and storage utilisation is the tier average over the
+    episode. Values are medians across the seven seed-matched runs per
+    policy; added units are per domain and run. The figures show the
+    per-run values.}
+    \label{tab:rq2_arms}
+    \footnotesize
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{p{0.17\textwidth} c c c c p{0.21\textwidth}}
+        \toprule
+        Policy & Processing (ms) & Data access (ms) & Completion (\%) & Storage (\%) & Added units \\
+        \midrule
+        \multicolumn{6}{l}{\emph{Mixed press}} \\
+        no scaling & 124 & 103 & 70.6 & 42 & none \\
+        compute-only & 10 & 10 & 98.4 & 52 & 3 compute \\
+        storage-only & 115 & 90 & 74.0 & 28 & 7 storage \\
+        bottleneck-aware & 10 & 6 & 98.9 & 30 & 7 storage, 3 compute \\
+        \midrule
+        \multicolumn{6}{l}{\emph{Data-access press}} \\
+        no scaling & 55 & 2075 & 77.5 & 98 & none \\
+        compute-only & 15 & 3615 & 82.1 & 99 & 1 compute \\
+        storage-only & 21 & 66 & 84.7 & 43 & 6 storage \\
+        bottleneck-aware & 15 & 78 & 92.0 & 46 & 6 storage, 1 compute \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+In the mixed press, the two policies that scaled the compute tier removed
+the processing component, and completion rose to about 99~\%
+(Figure~\ref{fig:rq2_mixed}). The data-access component fell with it,
+because a request's read no longer waits behind the processing queue.
+Storage-only relieved the tier it served. The storage tier's average
+utilisation fell from about 42~\% to about 28~\%, the episode ran with
+three to five members, and the added members reported activity. The
+processing component stayed at about 115~ms and completion rose only to
+about 74~\%. Relief of a tier that does not bind did not reach users. The
+bottleneck-aware policy scaled storage first and compute after, matched
+compute-only on the processing component and on completion, and came in
+lower on the data-access component, at about 6~ms against about 10~ms. The
+ordering was bottleneck-aware, compute-only, storage-only, no scaling, in
+every seed.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/rq2_mixed_press.png}
+    \caption{Mixed press: the two request-path components (left) and
+    completion (right) by scaling policy. Bars are medians across the seven
+    seed-matched runs, whiskers the min--max range, and dots the individual
+    runs.}
+    \label{fig:rq2_mixed}
+\end{figure}
+
+The pattern follows the queue. The policy that removes the binding
+component wins the episode, and the mixed press loads both tiers, so a
+policy that scales one tier alone leaves the other unaddressed. All nine
+registered directions held in each of the seven blocks. The storage
+policy's gain was in relief more than in service, and the
+bottleneck-aware margin over compute-only was small. Both follow from the
+regime. The storage tier was loaded without binding, and the compute
+policy had already removed the only queue.
+
+In the data-access press the queue was in the storage member. Storage-only
+was the matched policy. It activated the reserve in every run, the storage
+tier's average utilisation fell from about 98~\% to about 43~\%, the
+episode ran with two to four members, and the added members reported
+activity. The data-access component fell to about 60~ms in most runs and
+completion rose to about 85~\%. Of the three policies that scale it took
+the data-access component lowest. Bottleneck-aware selection scaled the
+storage reserve first and one compute unit after. It reached the highest
+completion in the episode, about 92~\%, held the data-access component
+between the storage-only policy and no scaling, at about 78~ms against
+about 66~ms and about 2~s, and brought the processing component to the
+level of the compute-only policy (Figure~\ref{fig:rq2_data}).
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/rq2_data_press.png}
+    \caption{Data-access press: the two request-path components (left,
+    logarithmic axis) and completion (right) by scaling policy. Bars are
+    medians across the seven seed-matched runs, whiskers the min--max range,
+    and dots the individual runs.}
+    \label{fig:rq2_data}
+\end{figure}
+
+Compute-only removed the edge queue and pushed more requests at the
+un-scaled member. The data-access component rose above no scaling, from
+about 2~s to about 3.6~s, and completion improved only from about 78~\% to
+about 82~\%. The mismatched policy left the pressed tier worse than no
+scaling. The difference is the data path. The storage action adds a
+member and renews the connections that choose it, so reads that arrive
+afterwards can share the member. The compute action shortens the path up
+to the queue and leaves the queue in place.
+
+Resource use separates the policies where service does not. On the mixed
+press the two policies that scale compute added three units and spent them
+on the tier that bound, while the storage-only policy added seven and
+relieved a tier that did not.
+The recovered delivery also raised the storage tier's utilisation from
+about 42~\% to about 52~\%. On the data-access press the two policies that
+scale storage added six units and relieved the binding tier, while the
+compute-only policy added one and left the press in place. The
+bottleneck-aware policy is the only one that spent on both tiers in both
+episodes, and it ended at or above the best single-tier policy on
+completion in both (Figure~\ref{fig:rq2_relief}). Within the
+evaluated envelope, what reached users was decided by the tier a policy
+served, not by the number of units it added.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/rq2_storage_relief_v3.png}
+    \caption{Relief and execution: storage tier utilisation (left) and
+    members serving the episode (right) by scaling policy, for both
+    episodes. Bars are medians across the runs, whiskers the min--max range,
+    and dots the individual runs.}
     \label{fig:rq2_relief}
 \end{figure}
 
-The service outcome is regime-concentrated (Figures~\ref{fig:rq2_latency_data} 
-and~\ref{fig:rq2_latency_compute}). On the data-access-bound episode the 
-tier-matched storage action delivered a large user-visible benefit over inaction 
-as the episode endpoint latency p95 was about 0.6~s against about 1.6~s under 
-no action, a ratio of about 0.37 against the pre-registered benefit threshold 
-of 0.85 (secondary: p50 about 60~ms against about 280~ms). 
-The bottleneck-aware arm also beat no action on the same episode but by 
-less (about 0.67 against the 0.37 of the fixed storage arm). Its own 
-second-tier action is the documented cause: after storage relief it adds 
-compute as well, and in two of five replicates a compute add coincided 
-with a tail spike.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{images/rq2_latency_data_access.png}
-    \caption{Episode endpoint latency of the data-access-bound episode at
-    the p95 (left, logarithmic axis) and the median (right) for the
-    compute-only, storage-only and bottleneck-aware arms and the no-action
-    comparator. The matched storage action
-    takes the tail and the mismatched compute action keeps the lowest
-    median while leaving a higher tail. Bars show per-arm medians across
-    replicates and dots the individual runs; the no-action comparator is
-    drawn from the extension campaign and carries its cross-era label.}
-    \label{fig:rq2_latency_data}
-\end{figure}
-
-On the compute-bound episode no policy differed from no action in
-service as every arm served at a p50 of about 3~ms. No recovery is
-attributable to the compute action,
-as the onset latency is flat (about 3~ms). The load is the same in 
-every arm and stays below the tier's capacity, so the late-episode
-tail that appears in the scaling arms is not due to the load but to 
-scaling the compute tier mid-episode. A later pre-registered escalation 
-found no regime in which the compute deficit was both capacity-bound 
-and measurable, so the compute-bound episode exercises the compute 
-tier without ever producing a service deficit for an action to recover.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{images/rq2_latency_compute_bound.png}
-    \caption{Episode endpoint latency of the compute-bound episode at the
-    median (left) and the p95 (right, logarithmic axis) for the
-    compute-only, storage-only and bottleneck-aware arms and the no-action
-    comparator, all six replicates per arm on the same build. The median
-    is the null reading: every arm serves at about
-    3~ms. At the p95 the onset latency is flat (about 3~ms) and a
-    late-episode tail appears only in the arms that scale up the compute
-    tier (medians of about 4.6~s in the compute-only arm and 1.6~s in
-    the bottleneck-aware arm), absent in the storage-only arm and the
-    no-action comparator (about 7~ms). Bars show per-arm
-    medians across replicates and dots the individual runs.}
-    \label{fig:rq2_latency_compute}
-\end{figure}
-
-The data-access reading follows from where the queue builds: with no
-action the serving storage member carries the full read load alone, the
-matched action moves a share of the reads to the reserve and cuts the
-data-access component of the wait (about 79~ms to 52~ms), and the
-mismatched action never reaches the data path. The data-access component
-and the edge-processing component are the per-tier latency signals the
-selection observes (Section~\ref{sec:scaling_policy}).
-
-The scaling action on the compute-bound episode was executed in full
-(Figure~\ref{fig:rq2_engagement}): the added replicas took most of each
-run's requests (medians of about 71 and 72~\% in the compute-only and
-bottleneck-aware arms), and the total compute spent rose to about four
-times the single-backend load. The domain's traffic alternated between
-members rather than loading them at once: in the windows a backend
-carried traffic it served the full episode rate at about the
-single-backend CPU (mostly 55--61~\% against 61~\%), so the all-window
-medians in the panel (46--56~\%) sit below that level only through the
-idle windows each member also has.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{images/rq2_compute_engagement.png}
-    \caption{Execution of the compute action on the compute-bound episode,
-    covering the compute-only and bottleneck-aware arms with the
-    storage-only arm as the no-scaling reference. Left: the share of each
-    domain's requests served by the added backends after the first addition
-    (dots: individual runs and domains), over the grey share served by the
-    original infrastructure. Right: per-backend CPU as a percentage of the
-    backend CPU cap, median over each member's sampled windows (the
-    original infrastructure over the episode, the added backends over
-    their active life), against the storage-only arm's single-backend CPU
-    on the same episode (dashed); each member alternates between serving
-    windows at about that level and near-idle windows. The action executed
-    in full, yet the service outcome
-    (Figure~\ref{fig:rq2_latency_compute}, left) is unchanged.}
-    \label{fig:rq2_engagement}
-\end{figure}
-
-Resource use separates the policies where service does not: on the
-compute-bound episode both compute-scaling arms spent compute without
-changing the service, and on the data-access-bound episode the storage
-action's spend became tier relief and user-visible benefit, while the
-mismatched compute action's spend relieved nothing. In the evaluated
-envelope, what reached users was decided by the tier a policy served, not by
-the size of its spend.
-
-Selection commitment holds across regimes. The bottleneck-aware classifier
-committed to the detected bottleneck in every evaluated regime: on the
-data-access-bound episode it activated the storage reserve first and scaled
-compute only after storage relief, and on the compute-bound episode it scaled
-compute without activating storage. Classifier-versus-episode agreement was
-88--93~\% on the data-access-bound episode. The compute units the arm adds after
-storage relief follow from the condition (edge utilisation rose past its
-threshold while every request is served through the edge), not from a
-compute deficit.
-
-The compute-bound episode shows no such mirror, because pure service pressure
-holds the storage tier near idle, so no sustained storage request arises
-after the compute action.
-
-Degradation was bounded on both sides. On the data-access-bound episode
-the mismatched action came in between the matched action and no action
-(about 0.8~s at the p95 against about 0.6~s and 1.6~s): it helped less
-than the matched action while still beating inaction, so the
-pre-registered harm expectation was not met. On the compute-bound
-episode the cost of acting is the late-episode tail of the scaling arms
-(about 4.6~s and 1.6~s at the p95, against about 7~ms elsewhere), which
-forms while a replica is prepared mid-episode.
-
-One pre-registered criterion remained formally unmet: the storage
-tail-latency test. It asks whether the request tail latency (p95) clearly
-improved once the reserve was active, comparing the window before the
-activation with the window after it. The tail did come out lower after
-the action, about a quarter lower on the median (a ratio of 0.727), but
-not clearly enough for the test: the interval around that improvement
-still spans no change, so the criterion counts as unmet. The documented
-cause is a
-measurement asymmetry between the two pinned windows: the long
-post-activation window always contains the sparse completed-request tail
-above 10~s, which the short pre-activation window rarely does, inflating
-its p95 independently of the action. The storage reading therefore rests
-on the tier relief and on the labelled benefit over inaction, and the
-unmet gate is carried as such. Across the five pre-registered criteria
-the set closes as follows: storage relief met, benefit over inaction met,
-harm from the mismatched action not met, compute recovery not
-attributable to the action, and storage tail latency unmet under its own
-rule. Within the operating envelope, the
-only regime in which an action improved user-visible service was the one
-where the served tier actually bound.
-
-% In sum, the results support one conditional conclusion: the aligned action
-% relieved the tier that bound the episode and delivered the labelled
-% user-visible benefit over inaction, and the benefit is absent where no
-% capacity-bound queue forms, however fully the action executes. The
-% selector committed to the detected bottleneck in every evaluated regime,
-% while the campaign reports no add-attributable compute recovery and no
-% demonstrated advantage of bottleneck-aware selection over a matched fixed
-% policy. The absence of that advantage is partly a property of the
-% envelope as the experiment failed to produce a compute-bound episode that was
-% capacity-bound within the tested range, so on that axis no policy, fixed
-% or adaptive, had a service deficit to recover, and selection had no 
-% service difference to separate itself with.
-
-% The reported effects hold for the evaluated two-domain testbed,
-% its workloads, and its resource limits. The platform behaviours
-% observed at those limits are carried to Chapter~\ref{ch:conclusions} as
-% limitations and future work.
+Overall the bottleneck-aware policy gave the highest completion in both,
+and the matched single-tier policy came second in both. A policy that
+served a tier the episode did not press on made no difference to users,
+as storage-only did on the mixed press, or pushed more load onto the
+tier that was already pressed, as compute-only did on the data-access press.
 
 \section{Readiness Admission Modes (RQ3)}\label{sec:results_rq3_readiness}
 
@@ -3068,7 +3017,7 @@ for a lost one.
         never pooled across sets. \\
         Exclusions & One block excluded from the fault comparison (no-fault
         control tail breach); pre-registered healthy bounds on the no-fault
-        arm. \\
+        runs. \\
         Test & Exact Mann--Whitney U throughout: admission intervals per
         backend, separated by bind time (under a second, or stalled at
         about ten seconds in the earlier runs); slow-share differences per
@@ -3083,7 +3032,7 @@ for a lost one.
         differ once admission occurs. Lost (reduced headroom): a decisive
         but bounded slow-share difference for backend notification, no
         redistribution under backend notification, recovery by the modes
-        that check with relief completing, and the no-fault arm staying
+        that check with relief completing, and the no-fault runs staying
         within its pre-registered healthy bounds. Premature: the modes that admit on
         the message are exposed while the modes that check hold their
         no-fault level. \\
@@ -3161,7 +3110,7 @@ runs, which all come from the later period, contain no stalled backend
     for backends that met the stall at bind in the earlier runs,
     with no stalled backend under the confirmation check). (b) Scaling
     decision to usable capacity per run (the
-    recorded higher-rate arm, 12.0 requests per second per client, six runs
+    recorded higher-rate set, 12.0 requests per second per client, six runs
     per mechanism; medians 2.17 against 6.01~s; exact $p = 0.0022$,
     $\delta = -1.000$; the set's standardised replicate reproduced the
     direction, 1.87 against 8.98~s). Backends fall into two groups by their
@@ -3378,23 +3327,19 @@ Chapter~\ref{ch:conclusions}.
         with two of seven delayed push runs collapsing to the level of
         polling and sampled push & The full ordering A $<$ B $<$ C $\approx$ D, and polling
         versus sampling not separated (C $\approx$ D) \\
-        Bottleneck-Aware Scaling Action (RQ2) & Storage action under data-access-bound
-        demand. Tier relief in every storage-only domain (12/12) and
-        in most bottleneck-aware domains (8/10), with user-visible
-        benefit over inaction (labelled comparison); the classifier
-        committed to the detected tier in every evaluated regime, with
-        classifier-versus-episode agreement of 88--93~\% on the
-        data-access-bound episode & A capacity-bound queue in the
-        served tier as the condition for benefit. Where no queue formed,
-        full compute execution recovered nothing and the provisioning left
-        a late-episode tail & Compute-side
-        recovery attributable to the action, no demonstrated advantage of
-        bottleneck-aware selection over a fixed matched policy under the 
-        tested conditions, the pre-registered harm expectation not met 
-        (the measured ordering is the matched action, then the mismatched action,
-        then the bottleneck-aware action, then no action), and the
-        pre-registered storage tail-latency test,
-        reported unmet \\
+        Bottleneck-Aware Scaling Action (RQ2) & The storage-only policy under
+        the data-access press. Tier relief and a user-visible gain in the
+        data-access wait in every seed, on its own and as the first action
+        of the bottleneck-aware policy; on the mixed press every policy that
+        scales did better than no scaling and the bottleneck-aware policy
+        did better than each single-tier policy, in every seed & Where the queue is. The
+        storage action relieved a tier that was loaded without binding on
+        the mixed press and reached users little, while the compute-only policy
+        left the pressed storage tier worse than no scaling on the
+        data-access press & Why the size of the storage action's gain
+        varies across runs. No user-visible advantage of the bottleneck-aware
+        policy over the matched single-tier policy beyond completion under
+        the tested conditions \\
         Readiness Admission Modes (RQ3) & Loss without a check leaves
         the new capacity unused (zero admissions in every loss run), and a
         premature message damages only the modes that admit on it (damage
@@ -3415,10 +3360,10 @@ load rise, and the cost of delay appeared only when the absorption margin of
 the existing nodes ran out. Missing summaries stretched the window in
 which the existing nodes had to cope alone, and the margin was exhausted
 in every
-replicate. The action improved user-visible quality only where the episode
-built a capacity-bound queue in the served tier. Where no queue formed,
-the compute action recovered nothing and the provisioning itself left a
-tail. The admission
+replicate. The action improved user-visible quality only where it removed
+the queue the episode formed. The storage action reached users on the
+data-access press and not on the mixed press, and the compute action the
+reverse. The admission
 delay cost nothing while the nodes held spare capacity, and the lost
 message consumed that margin under the reduced headroom the
 campaign fixed. On the evaluated testbed, the three interfaces decide how a
@@ -3432,16 +3377,11 @@ the episode tail, with complete separation in every replicate, while late
 summaries cost in proportion to the margin they consume. Delay was harmless
 in five delayed replicates and decisive in the two that sampled a slow
 platform state. In the action
-interface, execution and benefit are separate. The compute action spread
-the load, yet users saw no recovery because no
-capacity-bound queue existed to drain, and the storage action delivered
-benefit precisely where the queue existed. The action also carried a cost
-of its own: on the compute-bound episode the provisioning left a
-late-episode tail in both compute-scaling arms, and on the
-data-access-bound episode the bottleneck-aware arm's additional compute
-action coincided with a tail spike in two of its five replicates, so
-provisioning is not invisible to users while an episode is
-live. In the admission interface, latency and reliability are separate. Backend
+interface, execution and benefit are separate. The storage action executed
+and relieved its tier on the mixed press, where the storage tier was loaded
+but not binding, and users gained little. The compute action executed on
+the data-access press and left the pressed tier worse than no scaling. In the
+admission interface, latency and reliability are separate. Backend
 notification saved about seven seconds while the platform was healthy, and
 lost the admission entirely when its single message
 was dropped, while the modes that check turned the same loss into a
@@ -3569,6 +3509,23 @@ however, draws only on the earlier runs, so the slow-binding stratum carries
 no confirmation-check evidence, and the pre-registered wake check that
 requires evidence in every stratum is carried as not met.
 
+    Storage relief under the data-access press was not uniform. The action
+relieved the pressed tier and cut the data-access component in every seed,
+but the size of the gain varied across runs: in most it fell to tens of
+milliseconds, and in three of the seven runs it remained between 300~ms
+and 1.5~s. The campaign cannot explain the difference. The run records
+carry the mechanism's census but no per-connection trace, and the leading
+explanation, a renewal that selects a member before its reported statistics
+settle, remains a hypothesis. The storage benefit reported in
+Section~\ref{sec:results_rq2_action} is therefore a direction that held in
+every seed, not a magnitude that can be expected in any single run.
+
+    The edge memory limit was marginal at press onset. Two runs
+hit the edge container's memory cap as the episode began, at about
+367--370~MB against the 384~MB limit. One was replaced and one retained,
+with its service outcome flagged. The limit bounds the demand intensity at
+which the platform was evaluated, and a higher limit was not tested.
+
 % TODO: Controlled testbed — two domains on a single host; emulated
 % inter-domain link. Single window size;
 % statistical power (RQ3: seven seed-matched blocks per mode and condition; the
@@ -3581,16 +3538,6 @@ requires evidence in every stratum is carried as not met.
 % Cross-domain service placement: requests can be served by the peer domain's
 % replicas at a hop-cost penalty (share reported in Section~\ref{sec:experimental_setup});
 % scope item / held-constant behaviour, not a treatment.
-% RQ2 residual benefit (recompute 2026-10-02): the mismatched compute action
-% still beat inaction on the data-access-bound episode; attributed to the
-% pre-dispatch (queue-side) layer and edge processing, with the data-access
-% component left unreduced (Section~\ref{sec:results_rq2_action}). State here:
-% deciding the advantage in general would require a serving configuration whose
-% pre-dispatch wait does not respond to serving replication, a measurable cost
-% of serving the wrong tier, and regime variation no single fixed policy covers.
-% In-place provisioning perturbs the served tail (p95 spikes tracked the add
-% events in the bottleneck-aware cell): a deploy-time property, not a demand
-% effect.
 % RQ3 bind stall (add 2026-10-09; era note 2026-10-14; wording aligned
 % 2026-10-16 with §5.1.4/§5.4): the socket bind stalled about ten seconds
 % (10.0--10.4 s whenever it occurred, no intermediate values) in a share of
@@ -3645,7 +3592,7 @@ stored the effective configuration it executed
 \texttt{aggregator\_\allowbreak env\_\allowbreak snapshot.env})
 and its phase schedule (\texttt{phases\_snapshot.json}), so the per-run values
 are recoverable from the run artefacts. Where a campaign spans several demand
-regimes or evidence sets, the arms state the value per regime or set.
+regimes or evidence sets, each column states the value for its regime or set.
 
 \begin{table}[H]
     \centering
@@ -3657,9 +3604,9 @@ regimes or evidence sets, the arms state the value per regime or set.
         \toprule
         Parameter & Telemetry Modes (RQ1) & Bottleneck-Aware Scaling Action (RQ2) & Readiness Admission Modes (RQ3) \\
         \midrule
-        Compute replica CPU quota (vCPU) & 0.25 & 0.15 (compute-bound arms) / 1.20 (data-bound arms) & 0.12 (fault arms); 0.15 / 0.30 (intact-source sets) \\
-        Compute replica memory limit & 256~MB & 256~MB $\rightarrow$ 512~MB (from run~15; platform hardening) & 256~MB \\
-        Storage-member CPU quota (vCPU) & 0.08 & 0.08 (compute-bound arms) / 0.15 (data-bound arms) & 0.08 \\
+        Compute replica CPU quota (vCPU) & 0.25 & 0.15 (mixed press) / 1.20 (data-access press) & 0.12 (fault runs); 0.15 / 0.30 (intact-source sets) \\
+        Compute replica memory limit & 256~MB & 384~MB & 256~MB \\
+        Storage-member CPU quota (vCPU) & 0.08 & 0.05 (mixed press) / 0.09 (data-access press) & 0.08 \\
         Storage-member memory limit & 512~MB & 512~MB & 512~MB \\
         Clients per domain & 24 & 24 & 24 \\
         MongoDB connections per edge server & 6 & 12 & 6 \\
@@ -3670,12 +3617,12 @@ regimes or evidence sets, the arms state the value per regime or set.
         \bottomrule
     \end{tabular}
 \end{table}
-{\footnotesize\noindent\textit{Note.} The scaling action campaign's
-compute-replica memory limit was raised from 256~MB to 512~MB at run~15
-(platform hardening after the two documented memory-cap incidents; the
-affected runs were re-run, and one compute-bound arm was re-run at the
-binding configuration). In the
-readiness admission campaign the fault arms ran at the reduced quota of
+{\footnotesize\noindent\textit{Note.} The scaling action campaign ran the
+mixed press at an edge quota of 0.15~vCPU and the data-access press at
+1.20~vCPU, with storage at 0.05 and 0.09~vCPU and an edge memory limit of
+384~MB. Two runs hit that limit at press onset
+(Chapter~\ref{ch:conclusions}). In the
+readiness admission campaign the fault runs used the reduced quota of
 0.12~vCPU and the intact-source admission-timing sets at 0.15 and 0.30~vCPU;
 storage scaling is not exercised in that campaign.\par}
 
@@ -3724,6 +3671,7 @@ classification margin apply only to bottleneck-aware selection.\par}
         \midrule
         Backend weights (CPU / RAM / requests / hops) & 0.30 / 0.10 / 0.20 / 0.28 & 0.30 / 0.10 / 0.20 / 0.28 & 0.20 / 0.20 / 0.20 / 0.28 \\
         Storage-member weights (CPU / RAM / connections / lag / hops) & 0.20 / 0.10 / 0.20 / 0.20 / 0.30 & 0.20 / 0.10 / 0.20 / 0.20 / 0.30 & 0.20 / 0.20 / 0.10 / 0.20 / 0.30 \\
+        Storage selection band (cost epsilon / minimum members) & --- & 3~\% / 2 & --- \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -3742,7 +3690,7 @@ weights.\par}
     \label{tab:app_config_control_cost}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
-    \begin{tabular}{p{0.21\textwidth} p{0.29\textwidth} p{0.19\textwidth} p{0.12\textwidth} p{0.12\textwidth}}
+    \begin{tabular}{p{0.23\textwidth} p{0.25\textwidth} p{0.21\textwidth} p{0.11\textwidth} p{0.11\textwidth}}
         \toprule
         Campaign & Configuration & Control records per run & CPU & Memory \\
         \midrule
@@ -3750,13 +3698,14 @@ weights.\par}
         Telemetry Modes (RQ1) & B delayed push & 332 deliveries; 6 compute scale-ups & 14.7~\% & 69~MB \\
         Telemetry Modes (RQ1) & C polling & 105 deliveries; 4 compute scale-ups & 14.5~\% & 72~MB \\
         Telemetry Modes (RQ1) & D sampled push & 114 deliveries; 3 compute scale-ups & 14.0~\% & 73~MB \\
-        Bottleneck-Aware Scaling Action (RQ2) & compute-only, compute-bound & 8 compute scale-ups & 2.7~\% & 72~MB \\
-        Bottleneck-Aware Scaling Action (RQ2) & storage-only, compute-bound & none & 2.1~\% & 66~MB \\
-        Bottleneck-Aware Scaling Action (RQ2) & bottleneck-aware, compute-bound & 8 compute scale-ups & 2.7~\% & 67~MB \\
-        Bottleneck-Aware Scaling Action (RQ2) & compute-only, data-access-bound & 6 compute scale-ups & 22.0~\% & 69~MB \\
-        Bottleneck-Aware Scaling Action (RQ2) & storage-only, data-access-bound & reserve activations & 15.6~\% & 69~MB \\
-        Bottleneck-Aware Scaling Action (RQ2) & bottleneck-aware, data-access-bound & 6 compute scale-ups and reserve activations & 22.3~\% & 70~MB \\
-        Bottleneck-Aware Scaling Action (RQ2) & no action (comparator) & none & 2.2 / 17.0~\% & 66 / 69~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & no scaling, mixed press & none & 4.5~\% & 77~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & compute-only, mixed press & 3 compute scale-ups & 3.7~\% & 73~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & storage-only, mixed press & 7 reserve activations & 5.1~\% & 68~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & bottleneck-aware, mixed press & 7 reserve activations and 3 compute scale-ups & 4.1~\% & 69~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & no scaling, data-access press & none & 20.5~\% & 71~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & compute-only, data-access press & 1 compute scale-up & 22.1~\% & 70~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & storage-only, data-access press & 6 reserve activations & 21.1~\% & 75~MB \\
+        Bottleneck-Aware Scaling Action (RQ2) & bottleneck-aware, data-access press & 6 reserve activations and 1 compute scale-up & 24.2~\% & 75~MB \\
         Readiness Admission Modes (RQ3) & backend notification & 4 events & 10.9~\% & 67~MB \\
         Readiness Admission Modes (RQ3) & periodic polling, 10~s & 4 check records & 11.5~\% & 66~MB \\
         Readiness Admission Modes (RQ3) & periodic polling, 15~s & 4 check records & 11.0~\% & 66~MB \\
@@ -3765,11 +3714,9 @@ weights.\par}
 \end{table}
 {\footnotesize\noindent\textit{Note.} Controller CPU is the mean over the
 episode phase for delivery and action, and over the plateau for admission;
-memory is the corresponding mean. Every action configuration records four
-storage adds for the run-start reserve preparation, excluded from the
-storage rows above; the no-action comparator records 2.2~\% on the
-compute-bound episode and 17.0~\% on the data-access-bound one. Counts are
-medians across that configuration's runs.\par}
+memory is the corresponding mean. Action records count the scaling actions
+taken during the episode, per domain and run. Counts are medians across that
+configuration's runs.\par}
 
 \begin{table}[H]
     \centering
@@ -3782,13 +3729,15 @@ medians across that configuration's runs.\par}
         \midrule
         \texttt{READINESS\_PROPAGATION} & Compute-admission mode. \texttt{off} registers a replica immediately, \texttt{direct} admits on the \texttt{app\_ready} message, and \texttt{discovery} checks on the polling interval. \\
         \texttt{READINESS\_EVENT\_FALLBACK\_S} & Direct mode. The time the gate waits for the message before checking anyway. 20~s in the reported admission runs and 130~s in the backend-notification configuration, where the check cannot begin before the abandonment bound. \\
-        \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Polling interval. 10~s in the primary arms and 15~s in the sensitivity arm. \\
+        \texttt{DISCOVERY\_POLL\_INTERVAL\_S} & Polling interval. 10~s in the primary runs and 15~s in the sensitivity set. \\
         \texttt{READINESS\_WAKE\_VERIFY\_MODE} & \texttt{probe} enables the confirmation check on the direct base. The message wakes a check, and admission requires the check to pass. \\
         \texttt{READINESS\_PROBE\_TIMEOUT\_S}, \texttt{\_RETRY\_S}, \texttt{\_MAX\_S} & Check timeout (5~s), retry interval (1~s), and abandonment bound (120~s). \\
         \texttt{EDGE\_READY\_PREMATURE\_S} & Fault instrumentation. The replica reports readiness this many seconds before it can serve, ten seconds in the evaluated premature runs. \\
         \texttt{EDGE\_READY\_SEMANTIC\_LIE\_S} & Fault instrumentation. Workload requests fail while the readiness predicate stays satisfied, for this window counted from bind (1200~s). \\
         \texttt{READINESS\_EVENT\_DROP\_MODE} & Fault instrumentation. The readiness message is dropped entirely. \\
         \texttt{TELEMETRY\_SOURCE} & Telemetry mode source. \texttt{event\_preserving} implements push, \texttt{delayed\_event\_preserving} implements delayed push (\texttt{DELAY\_S}, 30~s), \texttt{poll} implements polling (\texttt{POLL\_INTERVAL\_S}, 30~s in the campaign), and \texttt{sampled\_push} implements sampled push (\texttt{SAMPLE\_EVERY}, every third summary); \texttt{zmq} is the platform's raw push default. \\
+        \texttt{STORAGE\_POOL\_RENEW\_ENABLED}, \texttt{EDGE\_POOL\_RENEW\_*} & Storage read-path renewal. The controller broadcasts a renewal after a storage admission, and the edge rotates its read epoch in two waves (45~s gap, 15~s minimum interval). Enabled in the scaling action campaign. \\
+        \texttt{STORAGE\_SELECTION\_SPREAD\_*} & Storage selection band. Costs within 3~\% of the lowest count as equal, and at least two members are kept. Enabled in the scaling action campaign and off (0 / 0) elsewhere. \\
         \texttt{VIP\_FLOW\_ISOLATION}, \texttt{EDGE\_FLOW\_ISOLATION} & One fresh routing decision per measured request, with per-connection service-path flows. \\
         \bottomrule
     \end{tabular}

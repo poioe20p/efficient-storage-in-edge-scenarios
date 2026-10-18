@@ -74,6 +74,16 @@ class EdgeServerConfig:
     mongo_max_pool_size: int
     mongo_primary_lan1: str
     mongo_primary_lan2: str
+    # ── RQ2 v5 pool renewal (admission-time epoch rotation) ──────────────
+    # Edge half of the double gate: the controller POSTs /pool_renew after a
+    # storage admission (its own STORAGE_POOL_RENEW_ENABLED gate), and this
+    # edge rotates its read epoch only when pool_renew_enabled is on.
+    # Default 0 => v4 behaviour (no rotation, no wave-B timers).
+    # See docs/operation/testing/experiment/v5/rq2/rq2v5_plan.md S3.4.
+    pool_renew_enabled: bool
+    pool_renew_min_interval_s: float
+    pool_renew_waves: int
+    pool_renew_wave_gap_s: float
 
     @classmethod
     def from_env(cls) -> "EdgeServerConfig":
@@ -166,6 +176,18 @@ class EdgeServerConfig:
             ),
             mongo_primary_lan2=os.environ.get(
                 "EDGE_MONGO_PRIMARY_LAN2", "mongodb://10.0.1.4:27018/"
+            ),
+            # RQ2 v5 pool renewal (S3.4): unset flags keep the mechanism
+            # inert — v4 behaviour is byte-identical for every other campaign.
+            pool_renew_enabled=(
+                os.environ.get("EDGE_POOL_RENEW_ENABLED", "0").strip() == "1"
+            ),
+            pool_renew_min_interval_s=float(
+                os.environ.get("EDGE_POOL_RENEW_MIN_INTERVAL_S", "15")
+            ),
+            pool_renew_waves=int(os.environ.get("EDGE_POOL_RENEW_WAVES", "2")),
+            pool_renew_wave_gap_s=float(
+                os.environ.get("EDGE_POOL_RENEW_WAVE_GAP_S", "45")
             ),
         )
 

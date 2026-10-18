@@ -182,6 +182,32 @@
 > pointers. Decision recorded: the 5 s/12 s polling-calibration sentence
 > stays deleted; relocation into Ch5 would require locating and re-verifying
 > its calibration runs.
+>
+> **2026-10-16 (later):** Chapter 3 abstraction pass (approved). Ch3 raised to
+> the requirement level and its realisations deferred to Ch4. Sec 3.2.2: flow
+> mechanics replaced by the controller-responsibility statement ('responsible
+> for both routing surfaces', per-connection selection, established
+> connections keep their unit); cost-function metrics, normalisation and
+> round-robin tie-break moved to Sec 4.4; warm-lease/slow-start moved to
+> Sec 4.4 (Sec 4.2.2 pointer now sec:impl_control); the vip_routing_sequence
+> figure and its walk-through moved from Sec 3.2.2 to Sec 4.4; the
+> writes-to-primary clause and 'is disabled' dropped. Sec 3.3.3: the
+> consistency contract restated once as the store's replication constraint
+> adopted by the evaluation ('Writes are not distributed: the store keeps a
+> single primary for writes'); 'non-voting' dropped (stays in Ch4 Sec 4.2.2);
+> storage idle-signal wording 'storage utilisation' -> 'CPU utilisation'
+> (STORAGE_SCALE_DOWN_CPU_AWARE gate). Sec 3.3.2: 'containerised', the writes
+> clause and the quota sentence dropped; flow wording -> connections; removal
+> tie-breakers moved to Sec 4.2. Sec 3.5: 'flow decisions' -> 'routing
+> decisions'; 'new flows / installed flows' -> connections. Sec 3.2: layer
+> paragraph and platform_layers caption no longer say 'installs the
+> forwarding rules'; Sec 3.2.1 emulation/host-local wording replaced by the
+> single-site scope statement. DR8 'membership joins' dropped. Figures:
+> platform_layers 'windowed summaries' -> 'telemetry summaries' (STYLE.md
+> Sec 7 legacy label); control_workflow packet-context subtitle 'handles each
+> request's routing; never blocks' and 'steer new flows' -> 'steer new
+> connections'; 'forwarding rules' kept (STYLE.md Sec 5 fixed vocabulary);
+> checker passes, edited PNGs re-exported in place at the same dimensions.
 
 ---
 

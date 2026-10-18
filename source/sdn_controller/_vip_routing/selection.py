@@ -17,6 +17,8 @@ from ..scaling_config import _VIP_WARM_SERVER_SECONDS, _VIP_WARM_STORAGE_SECONDS
 from ..scaling_config import _STORAGE_READ_POLICY
 from ..scaling_config import _BACKEND_SELECTION_SPREAD_EPS
 from ..scaling_config import _BACKEND_SELECTION_SPREAD_MIN_BAND
+from ..scaling_config import _STORAGE_SELECTION_SPREAD_EPS
+from ..scaling_config import _STORAGE_SELECTION_SPREAD_MIN_BAND
 
 # Reads offload to SECONDARY members only. Non-SECONDARY states (RECOVERING,
 # STARTUP, STARTUP2, ROLLBACK, or stale/None telemetry) are NOT offload
@@ -314,12 +316,26 @@ def select_storage(
     When multiple candidates share the lowest cost (typical during cold
     start when all resource dimensions are 0.0), round-robin across them
     to distribute traffic evenly.  Each domain has its own counter.
+
+    Storage spread band (RQ2 v5 D21b, `_STORAGE_SELECTION_SPREAD_EPS` > 0):
+    mirrors select_server's P2.6/P2.8 band construction — eligible
+    candidates (finite cost, local member, known IP, slow-start penalty
+    fully decayed) within eps of the minimum form a band, floored at
+    `_STORAGE_SELECTION_SPREAD_MIN_BAND` with the next-cheapest eligible
+    members — so a renewal or a new connection spreads across near-best
+    storage members instead of re-concentrating on one. Three storage
+    deviations from the compute band: the pick rule is round-robin within
+    the band (reusing the per-domain counter, not an md5 hash); the warm
+    claim above keeps its early return (no warm member is appended to the
+    band); and the log token is `storage_band=`. With eps = 0 the legacy
+    behaviour is preserved exactly (argmin + exact-tie round-robin).
     """
     pool = controller.vip_storage_pool_n1 if domain == "n1" else controller.vip_storage_pool_n2
     if not pool:
         logger.warning("select_storage(%s): pool empty", domain)
         return None
 
+    warm = None
     if _BACKEND_SELECTION_POLICY == "topology_lifecycle":
         warm = _claim_warm_backend(
             controller,
@@ -339,6 +355,7 @@ def select_storage(
 
     best_cost = float("inf")
     tied: list[dict] = []
+    scored: list[tuple[float, dict]] = []
 
     # Read offload (RQ3 v3): prefer_secondary routes reads away from the PRIMARY
     # to SECONDARY members only. Writes keep the dedicated write client; the
@@ -395,6 +412,7 @@ def select_storage(
         # Reuses _VIP_WARM_STORAGE_SECONDS (30 s) for the ramp period —
         # same TTL as storage warm leases, differing only in start time.
         cost += _slowstart_penalty(controller, mac, _VIP_WARM_STORAGE_SECONDS)
+        scored.append((cost, entry))
         logger.debug(
             "select_storage(%s): mac=%s cpu=%.1f ram=%.1f conn=%.1f lag=%.2f hops=%s cost=%.4f",
             domain, mac,
@@ -409,6 +427,65 @@ def select_storage(
             tied = [entry]
         elif cost == best_cost:
             tied.append(entry)
+
+    if _STORAGE_SELECTION_SPREAD_EPS > 0:
+        # D21b storage band (RQ2 v5). Eligibility mirrors the compute P2.8
+        # floor filter: finite cost, local member, known IP (no silent
+        # ingress drop), slow-start penalty fully decayed (recomputed at
+        # band-fill time; a decay crossing between scoring and fill is
+        # bounded by one selection); cost ties break on MAC so the cut is
+        # deterministic across pool rebuilds (the raw scored order follows
+        # set iteration). The band respects the prefer_secondary filter —
+        # `scored` only holds post-filter candidates.
+        def _band_eligible(mac: str) -> bool:
+            return (
+                mac not in controller.peer_hosts
+                and mac in controller._mac_to_ip
+                and _slowstart_penalty(controller, mac, _VIP_WARM_STORAGE_SECONDS) == 0.0
+            )
+
+        cutoff = best_cost + _STORAGE_SELECTION_SPREAD_EPS
+        band = [(c, e) for c, e in scored
+                if math.isfinite(c) and c <= cutoff and _band_eligible(e["mac"])]
+        # Floor: top the band up to MIN_BAND members with the next-cheapest
+        # eligible members whenever it is short for any reason (e.g. a strict
+        # winner by more than eps), clamped to the eligible set.
+        floor_k = _STORAGE_SELECTION_SPREAD_MIN_BAND
+        if floor_k > 1 and len(band) < floor_k:
+            in_band = {e["mac"] for _, e in band}
+            local = sorted(
+                ((c, e) for c, e in scored
+                 if math.isfinite(c) and _band_eligible(e["mac"])),
+                key=lambda ce: (ce[0], ce[1]["mac"]),
+            )
+            for c, e in local:
+                if len(band) >= floor_k:
+                    break
+                if e["mac"] not in in_band:
+                    band.append((c, e))
+                    in_band.add(e["mac"])
+        if band:
+            # Deviation (i): round-robin WITHIN the band, reusing the
+            # domain's existing counter (today used for exact ties) — an
+            # md5 pick can concentrate a small burst from few edges, while
+            # RR guarantees the intra-wave spread H1 requires.
+            if len(band) > 1:
+                band.sort(key=lambda ce: ce[1]["mac"])
+                rr_idx = controller._rr_storage_idx.get(domain, 0)
+                chosen_cost, chosen = band[rr_idx % len(band)]
+                controller._rr_storage_idx[domain] = rr_idx + 1
+            else:
+                chosen_cost, chosen = band[0]
+            # Deviation (iii): token is `storage_band=` — NEVER compute's
+            # `spread band=` (the v4 D12/G1 anchor greps that token).
+            logger.info(
+                "select_storage(%s): storage_band=%d eps=%.3f floor=%d warm=%s "
+                "chosen=%s cost=%.4f min=%.4f",
+                domain, len(band), _STORAGE_SELECTION_SPREAD_EPS,
+                _STORAGE_SELECTION_SPREAD_MIN_BAND, warm is not None,
+                chosen["mac"], chosen_cost, best_cost,
+            )
+            return chosen
 
     if not tied:
         return None

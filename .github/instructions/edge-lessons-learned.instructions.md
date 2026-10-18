@@ -21,21 +21,36 @@ a reliable fallback.
 
 ## CRLF Line Endings from Windows `scp`
 
-`scp` from Windows preserves CRLF line endings which break bash scripts on the
-cloud VM. Always run `sed -i 's/\r$//'` on any `.sh` file synced from Windows
-before using it. Also fix the local file's line endings to prevent recurrence.
+`scp` from Windows preserves CRLF line endings which break bash scripts (and
+data files — a batch line ending `0.05\r` passes `\r` into container args).
+**Preferred fix (2026-10-17):** convert locally to LF *before* the copy and then
+prove it with hashes:
+
+```powershell
+$t = [IO.File]::ReadAllText($f) -replace "`r`n", "`n"
+[IO.File]::WriteAllText($f, $t, (New-Object System.Text.UTF8Encoding($false)))
+# then: scp, and compare sha256sum both sides (first 16 hex must match)
+```
+
+**Do not `sed -i 's/\r$//'` through a PowerShell→ssh one-liner.** The nested
+quoting degenerates and the pattern can arrive mangled — on 2026-10-16 a `sed`
+run in that pipeline ate trailing `r` characters across a file
+(`edge_server` → `edge_serve`) and broke a launch. If sed is unavoidable, run
+it from a script file on the VM, then verify byte-exactness by re-`scp` and
+comparing sha256. Related vector: a *third* way CRLF sneaks in is Python
+`subprocess` text-mode stdin on Windows (writes `\n` as `\r\n`) — see the
+"Runner Tooling" section.
 
 When copying analysis outputs (summary CSVs, graphs, summaries) back from the
 cloud VM to the local repo for archival, be aware that Windows tools may add
 CRLF to text files that are later re-synced to the VM (e.g. shell scripts
 deployed for a future run). Always verify shell scripts have Unix line endings
-before re-deploying. Fix: `sed -i 's/\r$//'` on the cloud VM, or use `dos2unix`
-if available. Run folders and raw artifacts always stay on the hosting VM —
-only analysis outputs are synced back to the local repo.
+before re-deploying. Run folders and raw artifacts always stay on the hosting
+VM — only analysis outputs are synced back to the local repo.
 
 Discovered on 2026-07-03 during `rq1_v2final_push_1` launch —
 `build_network_setup.sh` synced with CRLF caused `set: pipefail: invalid option`
-and make failed immediately.
+and make failed immediately. Refined 2026-10-17 during RQ2 v5 W3.
 
 ## Shared Runner Gate False-Failures (RQ2 × RQ3 gate)
 
@@ -92,27 +107,35 @@ plan sit on top. Magnitudes are plan-defined, never invented at analysis time. A
 missed hard gate ⇒ the run is not thesis evidence unless the plan pre-registered
 the exception.
 
-## Long-Run Monitoring (Open Investigation)
+## Long-Run Monitoring (RESOLVED 2026-10-17 — campaign driver + four-exit watchdog)
 
-Runs can take 40+ minutes. The current approach (`mode=async` terminal +
-`ServerAliveInterval=60`) works but has failure modes:
+Runs take 40+ minutes; a 56-run battery takes ~40 h. The settled pattern (RQ2
+v5 W3, 2026-10-17) replaces per-run polling entirely:
 
-- **SSH keepalive gaps**: If the VM is slow to respond, the keepalive may not
-  prevent a dropped connection on a 40-minute run.
-- **No progress visibility**: The runner has no mid-run signal beyond
-  `current_phase.txt` — if the run silently stalls, detection is delayed until
-  the terminal exits (or doesn't).
-- **Investigation needed**: Evaluate alternatives such as `nohup` +
-  detached execution with periodic phase-polling from a separate SSH session,
-  or a lightweight watchdog script on the cloud VM that writes heartbeat
-  timestamps the runner can check independently.
-
-**Update (2026-10-05):** the rq3snd E-stage campaign (60 runs, ~41 h) ran
-entirely on `nohup`-detached sequencers + local watchdogs polling every 15–30 s
-over short-lived SSH connections — no watchdog false-negatives across the whole
-campaign (every mid-sequence STOP was caught). Remaining failure mode found:
-unredirected `nohup` stdout dies on SSH-pipe break at the first write — see the
-"Detached Analysis Jobs" section below.
+- **Detached driver, not per-run watchdogs.** One `nohup`-detached driver runs
+  the whole batch (`source/scripts/testing/rq2v5_campaign_driver.sh`), writing
+  `driver.log`, per-run evidence, a `rq2v5_run_status.csv` row per run, and two
+  control markers: `DRIVER_HALTED` (with reason) and `CAMPAIGN_DONE`. Launch
+  always as `nohup … > file 2>&1 < /dev/null &` (unredirected stdout dies at
+  the first write after an SSH pipe break — see "Detached Analysis Jobs").
+- **Campaign watchdog with explicit exits** (`tools/watch_campaign.py`): polls
+  the markers every 60 s over short-lived SSH and exits `0` CAMPAIGN_DONE,
+  `2` DRIVER_HALTED, `3` driver-gone-without-marker, `4` timeout — and `5`
+  after 3 consecutive empty/UNKNOWN polls. The last one matters: during W3 the
+  watchdog itself was broken at launch and printed `UNKNOWN` for 3 h without
+  exiting — a blind watcher must fail fast, never "watch" silence.
+- **Live phase:** `current_phase.txt` is the only live phase source —
+  `run_status.json`'s `current_phase` field is stale at `"setup"` for the whole
+  run. Base mid-run screening on `current_phase.txt` plus the known schedule.
+- **Safe screening windows:** the mx run cycle interleaves ~16 min of low-rate
+  post-episode phases (`recovery_gap` + `demand_drop` + `idle_tail`) around each
+  ~10-min episode. Screening reads (admissions census, member counts) are safe
+  in `demand_drop`/`recovery_gap`; never sample episode interiors for screening
+  and never touch gate-eligible windows from a status check.
+- **Historical note:** mid-2026 runs used `mode=async` terminals +
+  `ServerAliveInterval=60`; the rq3snd campaign (60 runs, ~41 h) already ran on
+  `nohup`-detached sequencers + local watchdogs with no false negatives — the
+  W3 driver formalises that into markers + CSV + a single four-exit watcher.
 
 ## Pre-Registered Zero-Admission Cells vs the Shared Min-Admissions Gate (RQ3 robustness)
 
@@ -470,8 +493,20 @@ Two runner-tooling pitfalls hit on the same day (2026-10-05, rq3snd close-out):
   exits — output-complete / process-gone-without-output / timeout — and fail
   fast on the middle one. A watcher that only polls for success converts a
   dead stage into an hour of silence.
+- **`ssh -n` and `bash -s` are mutually exclusive** (2026-10-17, RQ2 v5 W3).
+  `-n` redirects stdin from `/dev/null`, so a remote script piped into
+  `ssh host 'bash -s'` never arrives — the remote shell executes nothing and
+  returns empty output, which a watcher then reports as `UNKNOWN` forever.
+  Never combine `-n` with stdin-fed remote scripts.
+- **Windows Python `subprocess` text mode rewrites stdin newlines** (same day).
+  With `text=True` and `input="..."`, Python writes `\n` as `\r\n` on Windows
+  (universal-newline translation on the stdin pipe), so the remote bash sees
+  `$\'\r\': command not found` even when the file itself was LF-clean. Send
+  bytes: `input=script.replace("\r\n","\n").encode("utf-8")` and decode stdout
+  yourself; never pass `str` input together with `text=True` to `ssh`.
 
-Discovered on 2026-10-05 during the rq3snd E-stage close-out.
+Discovered on 2026-10-05 during the rq3snd E-stage close-out; the last two
+entries on 2026-10-17 during the RQ2 v5 W3 launch.
 
 - **Bind-stall strata are era-scoped, not per-run random.** The ~10 s socket-bind stall that defines the RQ3 slow-binding class was universal in the September runs (every spawned backend, 10.0-10.4 s) and entirely absent from every October run (0/41 backends >= 5 s; max 0.089 s). A per-stratum comparison across eras silently compares platform states, and a new arm measured only in the stall-free era can never populate the slow stratum: read the raw bind-timing edge-log lines and state the era before claiming a stratum direction not reproduced.
 

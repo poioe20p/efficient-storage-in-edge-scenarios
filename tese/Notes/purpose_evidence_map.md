@@ -200,30 +200,24 @@ record: `tese/research_questions/rq1/rq1_conclusions.md`.
 2. Edge-DB research treats database scalability as a **static/design-time** replication–sharding–placement decision — not as runtime capacity control.
 3. **No surveyed system makes a closed-loop, telemetry-driven decision of which tier — compute or storage — to scale from an observed bottleneck, and none co-locates monitoring + scaling + routing over both tiers with shared state.**
 
-**Answered (2026-09-28):** measured in the scaling-action campaign (34/36
-valid runs) together with its comparative extension (no-action comparators
-and order-shifted sequences, 30 runs). The consequences are
-regime-concentrated: a large user-visible benefit for the aligned storage
-action over inaction (labelled comparison), a resource-side rather than
-service-level wrong-action cost, and a bounded compute axis — no
-add-attributable compute recovery (the v3 recovery signature is a start-up
-transient; the same-build six-replicate re-run of 2026-10-04 separates it:
-the onset transient does not reproduce, and a surviving late-episode tail
-appears only in the compute-scaling arms, p95 medians 4.6 s and 1.6 s), with
-the escalation attempt recorded as a diagnostic. Reported
-in §5.3 (`sec:results_rq2_action`); records:
-`tese/research_questions/rq2/rq2_conclusions.md` (re-synced 2026-10-04).
+**Answered (2026-10-18):** measured in the scaling-action campaign (56 runs
+plus one approved replacement; eight configurations over seeds 42--48). Under the
+data-access press the storage action relieved the pressed tier and cut the
+data-access component in every seed, on its own and as the first action of
+the bottleneck-aware policy, and every registered direction held. Under the mixed press
+every action beat inaction and the adaptive action beat each single-tier
+action. The mismatched compute action left the pressed tier worse than
+inaction on the data-access press. Reported in §5.3
+(`sec:results_rq2_action`); records:
+`docs/operation/testing/experiment/v5/rq2/` (results, post-run analysis, cell
+stats, control cost).
 
-**The cost of the scaling action itself (the honest claim):** scaling the data
-tier is not "just more replicas". In this apparatus the storage action is a
-MongoDB member addition (`rs.add()`), which triggers **replica sync — real
-bandwidth consumption and transient overload** on the new member and the existing
-set. The edge-storage corpus models placement/replication *cost* as a static
-objective (e.g., erasure-code cost-optimal placement, Jin et al. 2023); it does
-**not** model the runtime cost of *performing* the scaling action during a live
-episode. The thesis therefore measures not only relief but the **cost of the
-action itself** (sync bandwidth/overload), and scopes honestly: cold, same-LAN
-`rs.add/remove` only — full placement/consistency semantics are out of scope.
+**The cost of the scaling action itself (the honest claim):** the evaluated
+storage action is the activation of a prepared reserve, so the membership
+change and its replica sync sit off the reaction path. The campaign does not
+meter the replica-sync bandwidth consumed when the reserve is prepared, and
+the thesis carries that as a limitation (Ch.6). The claim is scoped to same-LAN
+reserve activation, with full placement/consistency semantics out of scope.
 
 ### I3 — Ready backend → traffic admission (RQ3, readiness admission)
 

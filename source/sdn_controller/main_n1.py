@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ from .scaling_config import (
     _SCALE_DOWN_CANDIDATE_MAX_STALENESS_S,
     _STORAGE_PERSISTENT_RESERVE_ENABLED,
     _STORAGE_RESERVE_PENDING_WINDOWS,
+    _STORAGE_POOL_RENEW_ENABLED,
     _CROSS_REGION_STORAGE_ENABLED,
     _CROSS_REGION_STORAGE_WARM,
     _CROSS_REGION_STORAGE_COOLDOWN_S,
@@ -100,6 +102,15 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
         self._datapath_by_id = {}
         self._lan_id = os.environ.get("LAN_ID", "lan1")
         self._lan_num = 1 if self._lan_id == "lan1" else 2
+
+        # ── RQ2 v5 admission-time pool renewal broadcast (S3.5b) ──
+        # One worker thread per fan-out; a lock-guarded in-flight flag plus a
+        # pending counter keeps every admission attributable — a deferred
+        # admission is retried when the current fan-out completes, never
+        # dropped. Inert while _STORAGE_POOL_RENEW_ENABLED is 0.
+        self._pool_renew_lock = threading.Lock()
+        self._pool_renew_inflight = False
+        self._pool_renew_pending = 0
 
         _aggregator_endpoints = [
             ep.strip()
@@ -312,9 +323,80 @@ class KenLearnAndLog(VipRoutingMixin, TopologyMixin, app_manager.OSKenApp):
             except requests.RequestException as exc:
                 logger.warning("[tier1] manifest PUT %s failed: %s", url, exc)
 
+    def _broadcast_pool_renew(self, domain: str) -> None:
+        """POST /pool_renew on every edge server of this LAN after a storage admission.
+
+        Called from ``_promote_storage_backend`` — the single choke point all
+        admission paths funnel through. Non-blocking and lossless: one worker
+        thread per fan-out, an in-flight flag in front of it, and a pending
+        counter so N admissions during one fan-out are all attributable on
+        the retry (census classes: broadcast now/deferred; failed logged).
+        No-op while ``_STORAGE_POOL_RENEW_ENABLED`` is 0.
+        """
+        if not _STORAGE_POOL_RENEW_ENABLED:
+            return
+        with self._pool_renew_lock:
+            if self._pool_renew_inflight:
+                self._pool_renew_pending += 1
+                logger.info("[pool_renew] broadcast deferred domain=%s pending=%d",
+                            domain, self._pool_renew_pending)
+                return
+            self._pool_renew_inflight = True
+        threading.Thread(target=self._pool_renew_worker, args=(domain,),
+                         daemon=True, name="pool-renew-fanout").start()
+
+    def _pool_renew_worker(self, domain: str) -> None:
+        """Fan out /pool_renew once per pending admission (worker thread).
+
+        Under os-ken's monkey-patched threading this worker is cooperative;
+        it copies ``_local_server_macs`` per pass while ``_mac_to_ip`` is
+        read live from the worker thread (same exposure as the
+        ``_broadcast_tier1_manifest`` precedent).
+        """
+        pending = True
+        cleared = False
+        try:
+            while pending:
+                with self._pool_renew_lock:
+                    deferred = self._pool_renew_pending
+                sent = 0
+                for mac in list(self._local_server_macs):
+                    ip = self._mac_to_ip.get(mac)
+                    if not ip:
+                        continue
+                    url = f"http://{ip}:5000/pool_renew"
+                    try:
+                        requests.post(url, json={"lan": self._lan_id,
+                                                 "reason": "storage_admission"}, timeout=1.5)
+                        sent += 1
+                    except requests.RequestException as exc:
+                        logger.warning("[pool_renew] POST %s failed: %s", url, exc)
+                logger.info("[pool_renew] broadcast domain=%s nodes=%d deferred=%d",
+                            domain, sent, deferred)
+                with self._pool_renew_lock:
+                    # Consume the deferred count only after the pass completed:
+                    # a pass that raised leaves it pending, so the next fan-out
+                    # still reports those admissions (never dropped). Plain
+                    # subtraction: the single-worker invariant makes the
+                    # difference non-negative, so a violation stays visible.
+                    self._pool_renew_pending -= deferred
+                    pending = self._pool_renew_pending > 0
+                    if not pending:
+                        self._pool_renew_inflight = False
+                        cleared = True
+        finally:
+            # Exception path only (the normal path clears the flag under the
+            # lock above): a stranded in-flight flag would degrade every later
+            # admission to "deferred" without a fan-out — "lossless, never
+            # dropped" (S3.5b). Never clear after a newer worker took over.
+            if not cleared:
+                with self._pool_renew_lock:
+                    self._pool_renew_inflight = False
+
     def _promote_storage_backend(self, mac: str, domain: str) -> None:
         self.add_storage_mac(mac, domain)
         self.mark_storage_backend_warm(mac, domain)
+        self._broadcast_pool_renew(domain)      # NEW - admission-time renewal
         logger.info(
             "[vip_data] promoted storage mac=%s domain=%s",
             mac,

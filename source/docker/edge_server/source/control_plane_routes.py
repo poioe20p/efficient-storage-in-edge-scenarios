@@ -10,6 +10,8 @@ from vip_data_mongo_runtime import (
     apply_vip_update,
     find_unknown_vip_update_lans,
     prepare_vip_update_payload,
+    renew_current_epoch,
+    snapshot_normal_vip_config,
 )
 
 log = logging.getLogger(__name__)
@@ -82,6 +84,22 @@ def register_control_plane_routes(app: Flask, process_state) -> None:
                 "changed_lans": changed_lans,
             }
         ), 200
+
+    @app.route("/pool_renew", methods=["POST"])
+    def pool_renew():
+        """Renew the read epoch for this edge's own LAN (RQ2 v5, S3.4c).
+
+        Called by the controller after a storage admission. Lane mismatch
+        (another LAN's request), unknown LAN, and malformed bodies are all
+        rejected without touching any epoch state.
+        """
+        body = request.get_json(silent=True) or {}
+        lan = body.get("lan")
+        known = set(snapshot_normal_vip_config().keys())
+        if not isinstance(lan, str) or lan not in known or lan != process_state.config.lan_id:
+            return jsonify({"error": "unknown or mismatched lan", "lan": lan}), 400
+        result = renew_current_epoch(lan, reason=str(body.get("reason", "unspecified")))
+        return jsonify(result), 200
 
     @app.route("/tier1_manifest", methods=["PUT"])
     def tier1_manifest():

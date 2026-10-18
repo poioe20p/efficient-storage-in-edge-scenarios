@@ -128,6 +128,17 @@ _epoch_states: dict[str, _LanEpochState] = {}
 _epoch_housekeeping_start_lock = threading.Lock()
 _epoch_housekeeping_started = False
 
+# ── RQ2 v5 pool renewal (admission-time epoch rotation, S3.4b) ───────────────
+# Per-LAN renewal scheduler: wave A (immediate rotation) + wave B (a rotation
+# after the warm-lease TTL, so the epsilon-band can spread the reads that the
+# warm window relocated). One admission supersedes a pending schedule.
+# Lock order (documented): _pool_renew_lock may be held while taking
+# state.lifecycle_lock; the reverse never happens. _get_lan_epoch_state is
+# called before any lock is taken.
+_pool_renew_lock = threading.Lock()
+_pool_renew_last_at: dict[str, float] = {}
+_pool_renew_timers: dict[str, list[threading.Timer]] = {}
+
 
 def _seed_epoch_states_from_config() -> None:
     configured_lans = set(vip_data_per_domain)
@@ -306,6 +317,52 @@ def _rotate_current_epoch_locked(
     return state.current
 
 
+def _rotate_renewed_epoch(lan: str, reason: str, wave: int) -> dict:
+    state = _get_lan_epoch_state(lan)
+    with state.lifecycle_lock:
+        if state.normal_vip_ip is None:
+            raise StorageVipConfigurationError(f"missing normal VIP mapping for {lan}")
+        new_epoch = _rotate_current_epoch_locked(
+            lan, state, reason=f"pool_renew:{reason}:w{wave}",
+            next_mode="normal", next_vip_ip=state.normal_vip_ip)
+        epoch_id = new_epoch.epoch_id
+    log.info("pool_renew: lan=%s reason=%s wave=%d new_epoch=%s", lan, reason, wave, epoch_id)
+    return {"rotated": True, "reason": reason, "lane": lan, "wave": wave, "epoch_id": epoch_id}
+
+
+def renew_current_epoch(lan: str, reason: str) -> dict:
+    """Wave A now + wave B after the warm-lease TTL (admission-time renewal)."""
+    if not CONFIG.pool_renew_enabled:
+        return {"rotated": False, "reason": "disabled", "lane": lan, "wave": 0, "epoch_id": None}
+    state = _get_lan_epoch_state(lan)
+    superseded = 0
+    with _pool_renew_lock:                      # atomic cancel + debounce + store
+        now = time.monotonic()
+        if now - _pool_renew_last_at.get(lan, 0.0) < CONFIG.pool_renew_min_interval_s:
+            with state.lifecycle_lock:
+                current_id = state.current.epoch_id if state.current else None
+            return {"rotated": False, "reason": "debounced", "lane": lan, "wave": 0,
+                    "epoch_id": current_id}
+        _pool_renew_last_at[lan] = now
+        superseded = len(_pool_renew_timers.get(lan, []))
+        for t in _pool_renew_timers.pop(lan, []):
+            t.cancel()
+        if superseded:
+            log.info("pool_renew: lan=%s superseded=%d pending wave(s)", lan, superseded)
+        result = _rotate_renewed_epoch(lan, reason, wave=1)   # wave A
+        timers: list[threading.Timer] = []
+        for wave in range(2, CONFIG.pool_renew_waves + 1):    # v5 ships 2; increases are D22 levers
+            t = threading.Timer(
+                CONFIG.pool_renew_wave_gap_s * (wave - 1),
+                _rotate_renewed_epoch, args=(lan, reason, wave))
+            t.daemon = True
+            timers.append(t)
+        _pool_renew_timers[lan] = timers
+        for t in timers:
+            t.start()
+    return result
+
+
 def _close_drained_epochs() -> None:
     ready: list[tuple[str, int, MongoClient]] = []
     overdue: list[tuple[str, int, int]] = []
@@ -343,6 +400,8 @@ def _close_drained_epochs() -> None:
             client.close()
         except Exception as exc:  # pragma: no cover - defensive close path
             log.warning("drained epoch close failed for %s epoch=%s: %s", lan, epoch_id, exc)
+        else:
+            log.info("retiring epoch %s for %s closed (leases=0)", epoch_id, lan)
 
 
 def _epoch_housekeeping_loop() -> None:

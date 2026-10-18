@@ -118,6 +118,10 @@ docker run -dit --name edge_server_n1 --network none --restart=on-failure \
   -e EDGE_FLOW_ISOLATION=${EDGE_FLOW_ISOLATION:-0} \
   -e EDGE_MONGO_READ_PREFERENCE=${EDGE_MONGO_READ_PREFERENCE:-secondaryPreferred} \
   -e EDGE_MONGO_MAX_POOL_SIZE=${EDGE_MONGO_MAX_POOL_SIZE:-1} \
+  -e EDGE_POOL_RENEW_ENABLED=${EDGE_POOL_RENEW_ENABLED:-0} \
+  -e EDGE_POOL_RENEW_MIN_INTERVAL_S=${EDGE_POOL_RENEW_MIN_INTERVAL_S:-15} \
+  -e EDGE_POOL_RENEW_WAVES=${EDGE_POOL_RENEW_WAVES:-2} \
+  -e EDGE_POOL_RENEW_WAVE_GAP_S=${EDGE_POOL_RENEW_WAVE_GAP_S:-45} \
   edge_server
 
 echo "Starting edge_storage_server_n1 container..."

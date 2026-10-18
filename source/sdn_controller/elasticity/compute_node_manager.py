@@ -268,6 +268,14 @@ class ComputeNodeAdder(_BaseNodeAdder):
             "-e", f"EDGE_READY_SEMANTIC_LIE_S={os.environ.get('EDGE_READY_SEMANTIC_LIE_S', '0')}",
             "-e", f"EDGE_MONGO_READ_PREFERENCE={os.environ.get('EDGE_MONGO_READ_PREFERENCE', 'secondaryPreferred')}",
             "-e", f"EDGE_MONGO_MAX_POOL_SIZE={os.environ.get('EDGE_MONGO_MAX_POOL_SIZE', '1')}",
+            # RQ2 v5 admission-time pool renewal: the controller process env
+            # is the single source (pins file -> launcher lift -> controller
+            # env), so dynamic edges inherit the same pinned values as the
+            # static ones. Unset => the edge image defaults (gate stays off).
+            "-e", f"EDGE_POOL_RENEW_ENABLED={os.environ.get('EDGE_POOL_RENEW_ENABLED', '0')}",
+            "-e", f"EDGE_POOL_RENEW_MIN_INTERVAL_S={os.environ.get('EDGE_POOL_RENEW_MIN_INTERVAL_S', '15')}",
+            "-e", f"EDGE_POOL_RENEW_WAVES={os.environ.get('EDGE_POOL_RENEW_WAVES', '2')}",
+            "-e", f"EDGE_POOL_RENEW_WAVE_GAP_S={os.environ.get('EDGE_POOL_RENEW_WAVE_GAP_S', '45')}",
             *(["-e", f"HASH_WORK_FACTOR={hash_wf}"] if hash_wf else []),
             # Dynamic nodes heartbeat too (liveness only): presence must
             # survive telemetry blackouts under saturation. Supersedes the

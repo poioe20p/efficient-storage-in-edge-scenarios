@@ -13,7 +13,7 @@ from telemetry import ZmqMetricSender, _get_server_mac
 log = logging.getLogger(__name__)
 
 
-SKIP_COUNTING_PATHS = frozenset({"/health", "/drain", "/ready"})
+SKIP_COUNTING_PATHS = frozenset({"/health", "/drain", "/ready", "/pool_renew"})
 
 
 @dataclass

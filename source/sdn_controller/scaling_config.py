@@ -327,6 +327,24 @@ _BACKEND_SELECTION_SPREAD_EPS = float(
 _BACKEND_SELECTION_SPREAD_MIN_BAND = int(
     os.environ.get("BACKEND_SELECTION_SPREAD_MIN_BAND", "4"))
 
+# ── RQ2 v5 D21b storage spread band + admission-time pool renewal ────────
+# D21b: env-gated epsilon-band for STORAGE selection (select_storage),
+# mirroring the compute P2.6/P2.8 band construction but with three explicit
+# deviations (round-robin WITHIN the band reusing the per-domain rr counter;
+# the warm-claim early return is kept; the log token is `storage_band=`, never
+# compute's `spread band=`). Defaults 0.0/0 => exact v4 `select_storage`
+# (strict argmin + exact-tie round-robin) — v5 pins EPS=0.03 / MIN_BAND=2.
+# See docs/operation/testing/experiment/v5/rq2/rq2v5_plan.md S3.2b.
+_STORAGE_SELECTION_SPREAD_EPS = float(
+    os.environ.get("STORAGE_SELECTION_SPREAD_EPS", "0.0"))
+_STORAGE_SELECTION_SPREAD_MIN_BAND = int(
+    os.environ.get("STORAGE_SELECTION_SPREAD_MIN_BAND", "0"))
+
+# Controller half of the double gate for the admission-time epoch renewal
+# (S3.4/S3.5): 1 => POST /pool_renew to every edge of this LAN after a storage
+# admission; 0 (default) => no broadcast at all (v4 behaviour unchanged).
+_STORAGE_POOL_RENEW_ENABLED = os.environ.get("STORAGE_POOL_RENEW_ENABLED", "0").strip() == "1"
+
 # ── Storage persistent reserve ─────────────────────────────────────────
 # 1 = maintain one ready same-LAN storage reserve per LAN; 0 = off.
 _STORAGE_PERSISTENT_RESERVE_ENABLED = int(
