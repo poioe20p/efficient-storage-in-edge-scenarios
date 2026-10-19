@@ -247,6 +247,18 @@ introduces the comparison, not with the result plots.
   bar from the event to the moment it is read. Never recolour a mark otherwise.
 - **One compact notation key** under the frame (the §0.3 exception, as in §9).
 
+**Phase-profile variant** (`workload_phases.drawio`): when the schedule is a
+sequence of *phases* rather than of discrete events, the profile is a black step
+line over a shared time axis, and the phases form a labelled strip beneath it
+(name in bold, duration in grey under it). The decisive phase is tinted `#F0F0F0`
+across the plot and bracketed below with its role as the bracket label. Only the
+levels the axis does not already mark are labelled on the steps.
+
+**Scene variant** (`rq3_message_*.drawio`): one figure per condition, the same
+drawing with one element changed. State bands replace the time axis (a
+`provisioning` band, then `can serve`), rails carry the message and the admission,
+and the configuration letters sit on the marks they belong to.
+
 ## 12. Checklist before a figure ships
 
 1. `python tools/check_drawio_style.py tese/images/src/<figure>.drawio` passes.

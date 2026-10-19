@@ -208,6 +208,33 @@
 > request's routing; never blocks' and 'steer new flows' -> 'steer new
 > connections'; 'forwarding rules' kept (STYLE.md Sec 5 fixed vocabulary);
 > checker passes, edited PNGs re-exported in place at the same dimensions.
+>
+> **2026-10-19: whole-thesis length pass (approved).** Target: the ISTA
+> 50/60-page body norm (body was pp. 1–74). Applied, all norms-compliant
+> (ISCTE 2020 §2 unchanged: 12 pt Times, A4, 2.5 cm margins, 1.5 spacing,
+> chapters still opening on odd pages):
+> (a) Ch5 §5.1.1 — Table 5.1 (`tab:testbed_config`) deleted; it restated
+> Ch4 §4.1 row by row. The section now points to §4.1 and Appendix A and
+> keeps only the campaign-specific conditions.
+> (b) Ch5 §5.1.2 — the four surrounding-phase descriptions compressed
+> (rates kept, prose trimmed). (c) Ch5 §5.1.4 — the per-campaign seed
+> ranges dropped (each design table states its own) and the Mann–Whitney /
+> Cliff's δ textbook explanation compressed, keeping the 0.0006 floor
+> rationale. (d) Ch1 §1.1 — the duplicated chain description merged into a
+> single paragraph and the definitions footnote shortened (the four
+> admission modes removed from it; §1.3 states them). (e) Ch1 §1.6 — the
+> six-bullet chapter walkthrough replaced by one paragraph. (f) Ch3 §3.3.1 —
+> the three symbol `itemize` blocks replaced by inline definitions; the
+> four-step evaluation order kept. (g) Ch4 §4.5 — prose repeating
+> Table 4.3 trimmed. (h) Ch2 §2.6 — the closing three paragraphs merged,
+> removing the restatement of the §2.7 gap claim. (i) Ch6 §6.3 — the
+> bind-stall counts dropped (they are in §5.4).
+> Result: 103 → 99 pages; body pp. 1–70 (references 67–70); no new overfull
+> box. Rejected on compliance grounds: `openany` (breaks §2.1 viii odd-page
+> starts and §2.1 ii double-sided printing) and a smaller LoF/LoT font
+> (§2.1 i allows only 11/12 pt). The `\lofskip` value is the width of the
+> "Figure 5.1" label, not free space — reducing it to 2 pc overflows the
+> label box, so it stays at 6 pc. Remaining gap to the norm: ~10 pages.
 
 ---
 

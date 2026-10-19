@@ -96,10 +96,10 @@
 \begin{document}
 
 \chapter{Introduction}\label{ch:introduction} %DONE
-Edge web services that encompass monitoring, auto-scaling and routing are
-commonly built from separate components, each with its own policies. 
+Edge web services that encompass monitoring, auto-scaling and routing must
+coordinate these functions across the boundaries between them. 
 How well such a service absorbs a
-change in demand therefore depends not only on what each component does
+change in demand therefore depends not only on what each function does
 individually, but also on the interfaces between them. Coordination across those
 interfaces can fall short, and where it does, orchestration efficiency and
 reliability can degrade and may reduce the quality of service users
@@ -175,37 +175,21 @@ copies consumes storage and replication bandwidth
 \parencite{Breitbach2019ContextAwareDataTaskPlacement}.
 
     Scale-up alone does not guarantee usable capacity instantly. The
-orchestration must detect the demand shift, deliver that information to the
-decision point, provision the right kind of capacity, and redirect traffic
-to it. The steps hand over to one another across boundaries between
-functions, and what the next step acts on can be late, incomplete,
-mismatched, or unverified.
-
-    This sequence forms the demand-to-capacity chain, the path that an
-orchestration system takes to convert a change in overall user demand into
-capacity that serves that demand. A demand
-shift is first observed by monitoring and telemetry, which deliver the
-evidence to a decision point. The decision point selects a scaling action,
-such as scaling compute or scaling storage, and the action provisions new
-capacity. Finally the new capacity attains a readiness state (it can answer
-requests, not merely run) and starts receiving traffic, which is
-the point at which it becomes usable. The chain is therefore a
-timeline through the orchestration system, and its steps are joined by
-interfaces.\footnote{Throughout this dissertation, the
-\emph{demand-to-capacity chain} denotes the full timeline from a demand
-shift to usable capacity. An \emph{interface} is a boundary between two
-steps of the chain at which two functions meet, and what crosses an
-interface is the evidence, the command, or the state that the next step
-acts on. A \emph{handoff delay} is the latency between a function's 
-handover and the next step acting on it. The reviewed literature addresses
-this topic mainly at boundaries between functions that run under independent
-control loops, each observing, deciding, and acting on its own. The
-properties of what crosses (the completeness and freshness of the evidence,
-the match between the command and the demand, and whether a ready backend
-is admitted on the backend's notification alone, on the notification with
-a fallback check, through periodic polling, or on the notification with a
-confirmation check) are studied here one at a time. A check is the controller
-asking the backend directly whether it can serve. The \emph{coordination gap}
+orchestration must detect the demand shift, deliver that evidence to the
+decision point, provision the right kind of capacity, and admit traffic to it,
+and every step hands over to the next across a boundary between functions.
+This sequence is the demand-to-capacity chain, the path that converts a change
+in overall user demand into capacity that serves that demand: monitoring and
+telemetry observe the shift, a decision point selects a scaling action, the
+action provisions new capacity, and that capacity reaches a readiness state
+(it can answer requests, not merely run) and starts receiving traffic, which
+is the point at which it becomes usable.\footnote{An \emph{interface} is a
+boundary between two steps of the chain at which two functions meet; what
+crosses it is the evidence, the command, or the state the next step acts on,
+and a \emph{handoff delay} is the latency between a function's handover and
+the next step acting on it. The reviewed literature addresses these
+boundaries mainly between functions that run under independent control loops,
+each observing, deciding, and acting on its own. The \emph{coordination gap}
 is the accumulated effect along the chain, which this dissertation does not
 measure as a whole.} The three interfaces between its steps, highlighted in
 Figure~\ref{fig:demand_capacity_chain}, are the subject of this thesis.
@@ -219,12 +203,13 @@ Figure~\ref{fig:demand_capacity_chain}, are the subject of this thesis.
     \label{fig:demand_capacity_chain}
 \end{figure}
 
-    The steps described above must be coordinated under the time pressure of
-an ongoing demand shift. In practice, however, they are commonly performed by
-separate components. A monitoring system collects metrics, an
-auto-scaler provisions capacity, and a load balancer redirects traffic,
-each running under its own control loop and acting on its own view of the
-service. In the reviewed literature, the cost of these crossings is
+The steps described above must be coordinated under the time pressure of
+an ongoing demand shift. In practice, they may run as separate components,
+each with its own control loop and its own view of the service where a
+monitoring system collects metrics, an auto-scaler provisions capacity,
+and a load balancer redirects traffic. They may also run within one
+control process, and the interfaces between them remain in both
+arrangements. In the reviewed literature, the cost of these crossings is
 acknowledged but never isolated or varied as an independent
 variable~\parencite{Qu2018AutoScalingWebApplicationsClouds,
 Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
@@ -238,8 +223,8 @@ inaccurate~\parencite{Dreibholz2023TowardsLightweightTaskSchedulingFramework}.
 This thesis isolates the three interfaces and measures the
 effect of each of these properties on its own. The platform built for this
 purpose is organised as two peer \ac{SDN} controllers, one per network domain.
-Within each controller the consuming functions of the chain (telemetry consumption, scaling
-decisions, and traffic routing) run in the same process, so that each
+Within each controller the consuming functions of the chain (telemetry consumption,
+scaling decisions, and traffic routing) run in the same process, so that each
 studied interface can be configured and varied on its own rather than
 observed as an incidental coupling. Telemetry
 production and aggregation remain external to the controller, so how
@@ -421,41 +406,22 @@ This dissertation makes the following contributions:
 and workload families.
 
 \section{Dissertation Structure}\label{sec:document_structure} %DONE
-This dissertation is organised into six chapters:
-
-\begin{itemize}
-\item \textit{Chapter 1} introduces the research, presenting its context, motivation and
-problem statement, the objectives, the research questions that emerged, the methodology that
-guided the work, and the main contributions.
-
-\item \textit{Chapter 2} reviews the background and related work. After presenting the
-methodology used to conduct the review, it surveys the platform technologies on which the
-proposed solution rests (edge platforms, SDN and OpenFlow, containers, and NoSQL document
-stores), then monitoring and telemetry, auto-scaling, load balancing and readiness
-admission on SDN, and resource orchestration on SDN, examines the default separation of
-monitoring, scaling and routing
-into independent components observed across these areas, and concludes with the research
-gaps that motivate this dissertation.
-
-\item \textit{Chapter 3} presents the architecture and design of the proposed solution for
-edge services: the design requirements, the SDN-based architecture, the distributed elastic
-allocation of compute and storage resources, the monitoring and decision engine, and the control
-workflow.
-
-\item \textit{Chapter 4} describes the implementation of the proposed solution: the
-experimental infrastructure, the implementation of the elastic allocation of compute and storage
-resources, the monitoring and decision engine, the control workflow, and the validation of the
-implementation.
-
-\item \textit{Chapter 5} presents the experimental results. Following the
-demand-to-capacity chain, the experimental campaigns address the telemetry modes
-(RQ1), the bottleneck-aware scaling action (RQ2), and the readiness admission
-modes (RQ3), followed by a synthesis across the three interfaces.
-
-\item \textit{Chapter 6} concludes the dissertation, restating the findings and the
-contributions, discussing the limitations of the work, and outlining directions for future
-research.
-\end{itemize}
+This dissertation is organised into six chapters.
+Chapter~\ref{ch:introduction} introduces the research: its context,
+motivation and problem statement, the objectives, the research questions that
+emerged, the methodology that guided the work, and the main contributions.
+Chapter~\ref{ch:literature_review} presents the review methodology and surveys
+the platform technologies on which the proposed solution rests (edge computing,
+SDN and OpenFlow, containers, and NoSQL document stores), then telemetry,
+auto-scaling, load balancing and readiness admission, and orchestration on SDN,
+closing with the research gaps that motivate this dissertation.
+Chapter~\ref{ch:system_architecture} presents the architecture and design of
+the proposed solution and Chapter~\ref{ch:implementation} its implementation
+and validation. Chapter~\ref{ch:results} reports the three experimental
+campaigns along the demand-to-capacity chain and the synthesis across them.
+Chapter~\ref{ch:conclusions} concludes the dissertation, restating the findings
+and the contributions, discussing the limitations of the work, and outlining
+directions for future research.
 
 
 \raggedbottom
@@ -766,7 +732,7 @@ changes. When and how many resources to add or remove therefore
 determines both the quality of service during a demand shift and
 the efficiency with which scarce resources are managed.
 
-    Qu et al. classify the auto-scalers along several characteristics,
+Qu et al. classify the auto-scalers along several characteristics,
 among them the scaling indicator, the resource estimation method, and
 the timing of the action, and Taherizadeh and Stankovski present a
 taxonomy for edge computing whose dimensions include adaptation
@@ -779,7 +745,7 @@ scale and how many instances to add, which kind of capacity is
 provisioned, when applicable, is not among the classification dimensions
 \parencite{Qu2018AutoScalingWebApplicationsClouds,Taherizadeh2017AutoScalingApplicationsEdgeComputing}.
 
-    With SDN, the traffic side is added, but the scaled
+With SDN, the traffic side is added, but the scaled
 resource remains the one the service function is built from.
 Llorens-Carrodeguas et al. couple SDN-based traffic steering with
 horizontal scaling of virtualised network functions, so that the SDN
@@ -791,21 +757,19 @@ In such a service, however, the storage tier is
 itself a live capacity. When the pressure sits in the data rather than
 in the function instances, adding instances does not relieve the storage tier.
 
-    Predictive and learning-based approaches sharpen the same decision
+Predictive and learning-based approaches sharpen the same decision
 without widening it. Toka et al. formalise the Kubernetes horizontal
 autoscaler's control model to anticipate demand for edge clusters
 \parencite{Toka2021MachineLearningScalingManagementKubernetes}, Ju et
 al. and Cheng et al. forecast workload to adjust replica counts ahead of
 demand, the latter jointly with placement
 \parencite{Ju2021ProactiveAutoscalingEdgeComputingSystems,Cheng2023ProScaleProactiveAutoscalingMicroserviceTime},
-and Li et al. couple scaling and placement in a single optimisation
-\parencite{Li2021JointOptimizationAutoScalingAdaptive}. Across these
-systems the optimisation lies on the forecast and adjusting the number of
+Across these systems the optimisation lies on the forecast and adjusting the number of
 compute replicas over time. The improvement pursued is a better forecast of
 how many instances to run, which tier holds the limiting resource does
 not enter the scope of study.
 
-    Scaling one resource does not always make the service better,
+Scaling one resource does not always make the service better,
 because the pressure may sit elsewhere. Nikravesh et al. quantify what
 that default costs in a three-tier web service. The scaling decisions
 taken for the business tier turn out to be insensitive to database
@@ -815,15 +779,13 @@ scaling decisions ignore
 \parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}. Dogani et
 al. make the same observation in their survey, noting that adding
 resources does not necessarily raise throughput when the bottleneck
-lies elsewhere
-\parencite{Dogani2023AutoScalingTechniquesContainerCloud}. Among the
-systems covered by that survey, only a few take cross-service effects
+lies elsewhere \parencite{Dogani2023AutoScalingTechniquesContainerCloud}. 
+Among the systems covered by that survey, only a few take cross-service effects
 into account. Waterfall, a machine-learning auto-scaler, accounts
 for how scaling one microservice can shift the bottleneck towards
-downstream services. The mechanism remains compute-side, and no
-surveyed system selects a storage action.
+downstream services.
 
-    PBScaler identifies the microservice whose degradation
+PBScaler identifies the microservice whose degradation
 propagates through the invocation graph, ranks candidate
 bottlenecks, and optimises replica management around the
 identified bottleneck
@@ -833,7 +795,7 @@ but the bottleneck it locates is always a microservice and the action it
 takes is always replica scaling, so the choice between
 compute and storage capacity remains outside the action space.
 
-    The closest reviewed precedent to choosing between resource tiers
+The closest reviewed precedent to choosing between resource tiers
 is the provisioning model of Li et al., which adds both cloud compute
 instances and data replicas in cloud-assisted edge systems, from a
 forecast of future workload built over historical workload data
@@ -842,21 +804,7 @@ actions are available, but the trigger is a forecast rather than a live
 observed bottleneck, and the capacity is provisioned across edge hosts
 and rented cloud instances, with the outcome measured in tenancy cost. 
 
-    Even among the most recent surveys regarding autoscaling, 
-El Mrabet et al. extend the classification across cloud,
-fog, and edge, categorising the surveyed methods by their
-decision mechanism, scaling strategy, and
-deployment layer, and the provisioned tier is
-not among the classification dimensions
-\parencite{ElMrabet2025ComprehensiveSurveyTaxonomyAutoscalingTechniques}.
-
-Qu et al. describe a web application as split into
-a front-end, application logic, and a database tier, and
-record that \enquote{the database tier is often considered dynamically
-unscalable and ignored by auto-scalers}
-\parencite[p.~6]{Qu2018AutoScalingWebApplicationsClouds}.
-
-    Overall, the literature demonstrates that the kind of capacity added
+Overall, the literature demonstrates that the kind of capacity added
 under certain scenarios can have an impact,
 compute replicas do not relieve pressure whose limiting
 resource lies in the storage tier, and database capacity can govern SLA
@@ -864,14 +812,15 @@ violations while a compute-tier scaling decision remains unchanged.
 Scaling actions are therefore not interchangeable merely because each
 adds resources.
 
-    Therefore in the reviewed studies, the choice between these actions
-remains an architectural given, settled by forecasts or by joint
-placement rather than chosen at runtime from a live observed
-bottleneck. This dissertation isolates that choice, with storage
-scale-up among the actions the controller may take, and measures
-the resulting differences in targeted-tier relief, service recovery,
-and resource use. How a selected action becomes usable capacity is
-examined next.
+In the reviewed studies, therefore, which kind of capacity a scaling
+action adds remains an architectural given: the capacity scaled is
+compute, and where a second kind is available, as in Li et al., the
+choice is settled by a forecast rather than by the observation that
+identifies the bottleneck, while runtime bottleneck identification, as in
+PBScaler and Waterfall, still acts on compute replicas only. This
+dissertation isolates that choice, with storage scale-up among the actions
+the controller may take at runtime, and measures the resulting differences
+in targeted-tier relief, service recovery, and resource use.
 
 \section{Load Balancing and Readiness Admission on SDN}\label{sec:lit_sdn_lb} %DONE
 Load balancing distributes incoming traffic among a set of available
@@ -962,7 +911,7 @@ stays outside the set, and the nodes already serving carry the demand
 without it. When a backend is in the set while it cannot serve the 
 traffic it receives, the requests routed to it fail.
 
-This dissertation treats admission into that set as the variable: the
+This dissertation treats admission into that set as the variable as the
 four admission modes require different evidence before a backend is
 admitted (backend notification, notification with a fallback check,
 periodic polling, and notification with a confirmation check). The
@@ -985,11 +934,10 @@ orchestration, and at the edge it is all the more demanding because each
 site holds scarce capacity and the demand on it fluctuates over time.
 Where the two tiers are separate, the scaling action can address either
 side, because compute replicas serve requests, while the data
-they serve lives in the storage tier.
-Demand for data can therefore exist without demand for compute and vice 
-versa.
+they serve lives in the storage tier. Demand for data can therefore exist 
+without demand for compute and vice versa.
 
-    This dissertation studies the SDN-based form of this architectural
+This dissertation studies the SDN-based form of this architectural
 layer, in which the coordination spans the SDN controller, the
 container runtime, and the data store, and the challenge is to keep
 these layers working together as demand fluctuates. The
@@ -999,50 +947,40 @@ of the demand-to-capacity chain, monitoring, scaling, and routing,
 are held together in each, using the terms interface and coordination
 gap as defined in Section~\ref{sec:context_motivation}.
 
-    Baktir et al. organise the gains SDN brings to
-edge computing into benefit areas such as high-resolution control
-built on a centralised view and programmatic access
-\parencite{Baktir2017HowCanEdgeComputingBenefit}. Wang et al. survey
-architectures in which SDN and NFV jointly coordinate placement,
+Baktir et al. organise the gains SDN brings to edge computing into 
+benefit areas such as high-resolution control built on a centralised 
+view and programmatic access \parencite{Baktir2017HowCanEdgeComputingBenefit}. 
+Wang et al. survey architectures in which SDN and NFV jointly coordinate placement,
 traffic, and caching across the network and service layers, showing
 that SDN's role at the edge extends beyond forwarding into
-orchestration
-\parencite{Wang2019SoftwareDefinedNetworkingEnhancedEdge}. Sofia
-et al. argue for context-aware cross-layer orchestration of
-containerised edge-cloud applications serving next-generation IoT
-services, treating contextual information such as location and data
-freshness as part of the orchestration input
-\parencite{Sofia2023DynamicContextAwareCrossLayer}. These works
-document architectures or proofs of concept rather than the
+orchestration \parencite{Wang2019SoftwareDefinedNetworkingEnhancedEdge}.
+These works document architectures or proofs of concept rather than the
 coordination inside a running system, and the interfaces between
 the functions fall outside the scope of all three.
 
 
-    Peng et al. exercise SDN-based resource management in vehicular
+Peng et al. exercise SDN-based resource management in vehicular
 multi-access edge computing as task migration and radio slicing,
 treating telemetry as available input rather than as an interface to
 be studied, and without container orchestration or tier scaling
 \parencite{Peng2019SDNResourceManagementAutonomousVehicular}.
 
-    Some of these platforms bring the functions
-together at the SDN control point itself. Llorens-Carrodeguas et al.
-combine monitoring, auto-scaling, and load balancing in a single SDN
-redirector for a transparent VNF cluster, although metric collection
-and the lifecycle operations that feed and execute the decision
-remain external
-\parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing};
+Some of these platforms bring the functions together at the SDN control
+point itself. Llorens-Carrodeguas et al. combine monitoring, auto-scaling,
+and load balancing in a single SDN redirector for a transparent VNF cluster,
+although metric collection and the lifecycle operations that feed and
+execute the decision remain external \parencite{Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing};
 Hung et al. present an SDN controller for 5G backhaul that closes a
 telemetry-and-routing loop, with telemetry collection delegated to
 decentralised microservices reached through an API, omitting scaling
-altogether
-\parencite{Hung2022SDNControllerMonitoringArchitecture5G}. The first
-study binds all three functions at one control point and the
+altogether \parencite{Hung2022SDNControllerMonitoringArchitecture5G}. 
+The first study binds all three functions at one control point and the
 second binds two of the three, so combining the functions at an SDN
-control point has precedent in the literature
-and is leveraged in this dissertation. Neither system, however, reports the
-delay within its coordination.
+control point has precedent in the literature and is leveraged in this
+dissertation. Neither system, however, reports the delay within its 
+coordination.
 
-    Three further systems coordinate the same functions across multiple
+Three further systems coordinate the same functions across multiple
 sites. OneEdge keeps authoritative state at each edge site,
 reconciles it with a central aggregate through two-phase commits, and
 uses \ac{ZMQ} for communication among its distributed components. Its
@@ -1061,49 +999,29 @@ granularity while elastic controllers provision capacity, naming the
 stages of the provisioning delay, detection, acquisition, and
 warm-up, before treating them as one combined quantity
 \parencite{Bogdanov2018Kurma}. The coordination is built into each system, 
-but the delay it carries is not isolated. 
-None of their evaluations attributes the time taken by the state
-updates, exchanges, and redirects along those communication paths to
-the individual handoffs between observing demand, deciding, provisioning,
-and admitting capacity.
+but the delay it carries is not isolated. None of their evaluations attributes
+the time taken by the state updates, exchanges, and redirects along those
+communication paths to the individual handoffs between observing demand,
+deciding, provisioning, and admitting capacity.
 
-    The related background is therefore organised in two setups. In the
-one setup, monitoring, scaling, and routing are implemented as
-separate components, each running its own control loop, so the evidence and
-commands that tie them together must cross component boundaries.
-The separation is not only architectural. In an evaluation across major
-cloud providers, Podolskiy et al. observe IaaS autoscalers and the
-surrounding layers acting independently, with load-balancing issues and
-increased latency appearing around demand shifts
-\parencite{Podolskiy2018IaaSReactiveAutoscalingPerformanceChallenges}. The
-measurement is observational, documenting the coordination symptom in
-cloud deployments rather than isolating an interface.
-In a second, recurring setup, the same functions are kept together at
-an SDN-based control point or coordinated through shared state. What
-neither arrangement provides, however, is a decomposition of the control
-process into its interfaces. Prior systems measure complete control
-processes or coordinate them by construction. They do not isolate how
-telemetry is consumed by the controller, scaling decisions, or readiness admission
-as independent variables in the demand-to-capacity path.
-That interface-level isolation is what this dissertation provides.
-
-    SDN-based resource orchestration is therefore an established and
-feasible arrangement, and the coordination it rests on is a recorded
-open issue. Nain et al. record resource optimisation in SDN-based
-edge environments among the continuing challenges of the field
-\parencite{Nain2024ResourceOptimizationEdgeSDNEdge}. The interface
-properties studied in this dissertation are one measurable dimension of
-that coordination, and because the functions meet at boundaries that
-an SDN-based control point can expose as explicit, configurable
-interfaces, such a platform is a suitable experimental basis for
-evaluating them. The platform built in
-this dissertation follows that setup and exposes the telemetry mode,
-scaling decisions, and readiness admission as
-independently configurable interfaces, as presented in
-Chapter~\ref{ch:system_architecture}.
+Bringing the three functions together is therefore not itself a new concept. 
+Llorens-Carro\-deguas et al. and Hung et al. bind them, fully or in part, 
+at an SDN control point, and OneEdge, McK8s, and Kurma coordinate them 
+through shared state across sites. What these systems do not do is hold 
+the whole control process in a single executable and expose the handoffs 
+between observing, deciding, provisioning, and admitting as configurable
+interfaces. Their coordination is built into each system, and none isolates
+how telemetry is consumed by the controller, scaling decisions, or readiness 
+admission as independent variables in the demand-to-capacity path. SDN-based 
+resource orchestration is nevertheless an established and feasible arrangement,
+and Nain et al. record resource optimisation in SDN-based edge environments among
+the field's continuing challenges \parencite{Nain2024ResourceOptimizationEdgeSDNEdge}.
+The platform built in this  dissertation follows that setup and exposes the telemetry
+mode, scaling decisions,  and readiness admission as independently configurable 
+interfaces, as presented in Chapter~\ref{ch:system_architecture}.
 
 \section{Synthesis and Research Gaps}\label{sec:lit_synthesis} % DONE
-    Across the reviewed literature, the cost of these crossings is
+Across the reviewed literature, the cost of these crossings is
 acknowledged, but never measured on its own. Where a
 cost is measured, it is measured for a whole system: Kurma reports
 provisioning delay as one combined quantity \parencite{Bogdanov2018Kurma},
@@ -1125,17 +1043,9 @@ between an instance's arrival and its readiness to serve as launch time, but
 the step from readiness to traffic admission lies outside its scope
 \parencite{TabatabaeeMalazi2022DynamicServicePlacementMultiAccess}.
 
-    No reviewed work materialises the other properties of these crossings as
-experimental variables either. The loss of intermediate evidence is
-recorded as a limitation of polling
-(Section~\ref{sec:lit_monitoring}), the tier that a scaling action
-serves is settled by forecasts or by joint placement rather than chosen
-from a live observed bottleneck (Section~\ref{sec:lit_auto_scaling}), and
-failure-driven changes to the set of backends receiving traffic remain unaddressed by the 
-reviewed mechanisms (Section~\ref{sec:lit_sdn_lb}).
-
-    Table~\ref{tab:interface_gaps} condenses these findings into the
-three interfaces and the question each leaves open.
+No reviewed work materialises the other properties of these crossings as
+experimental variables either. Table~\ref{tab:interface_gaps} condenses these 
+findings into the three interfaces and the question each leaves open.
 
 \begin{table}[htbp]
     \centering
@@ -1168,7 +1078,7 @@ three interfaces and the question each leaves open.
     \end{tabular}
 \end{table}
 
-    The research questions of Section~\ref{sec:research_questions} are the
+The research questions of Section~\ref{sec:research_questions} are the
 experimental form of Table~\ref{tab:interface_gaps}. This dissertation does
 not argue that the coordination gap is universal, only that, within the
 reviewed literature, these interfaces have not been isolated as independent
@@ -1186,7 +1096,7 @@ process per domain. The telemetry mode, the scaling decision,
 and the transitions from scaling action to traffic admission
 remain explicit observation points. 
 
-    Section~\ref{sec:design_requirements} defines the requirements that guided
+Section~\ref{sec:design_requirements} defines the requirements that guided
 the proposed solution, and Section~\ref{sec:architecture_overview} presents
 the layered organisation of the platform and its two-domain deployment
 (Figure~\ref{fig:platform_layers}).
@@ -1300,7 +1210,7 @@ same process for its own domain. Where this thesis says node without
 qualification, it means one deployed unit of either tier: an edge server of
 the compute pool, or a storage member of the replica set.
 
-    Both domains run on one host in the evaluated deployment, so the control
+Both domains run on one host in the evaluated deployment, so the control
 plane is local and only the inter-domain data path crosses domains. The
 evaluated demand stays within a domain, so the two-domain organisation is
 exercised as a cross-domain-aware control plane with a single-site data path.
@@ -1312,13 +1222,13 @@ servers route storage reads through the virtual data address \texttt{VIP\_DATA}.
 This separation represents service routing and data access as distinct
 routing surfaces.
 
-    Neither address names a node. A request to \texttt{VIP\_SERVER} is a call
+Neither address names a node. A request to \texttt{VIP\_SERVER} is a call
 to the service API, answerable by any admitted compute replica, and a read
 to \texttt{VIP\_DATA} is issued through the storage tier's data interface and
 answered by whichever member the controller selects; the client and the edge
 server address the tier, and the controller decides the node.
 
-    The controller is responsible for both routing surfaces: for each new
+The controller is responsible for both routing surfaces meaning, for each new
 connection it selects the unit that will serve it among the admitted units of
 the relevant tier, and it places that choice on the network path. Established
 connections keep their unit, so a capacity change does not reroute traffic
@@ -1326,7 +1236,7 @@ that is already being served. Load balancing may select a backend in either
 domain (a platform capability held constant in the evaluation), while
 cross-domain storage placement is not exercised.
 
-    Load balancing is cost-based, for both service backends and storage
+Load balancing is cost-based, for both service backends and storage
 members. The controller compares the candidates' reported resource state
 under configurable weights and selects the lowest-cost unit, preferring local
 candidates at comparable state. For storage reads observed on the virtual
@@ -1334,22 +1244,14 @@ data path, the same mechanism selects a replica-set member. The metrics of
 the comparison, and how the selection is enforced on the path, are described
 in Chapter~\ref{ch:implementation}.
 
-A request's path decomposes into two intervals. The first is the
-\emph{pre-dispatch wait}: the time between the client issuing the request and
-the request's dispatch in the serving process, covering the setup of its
-connection through the routing path and any wait ahead of the
-serving process. The second is the
-\emph{edge service time}: the interval from request dispatch to response
-finalisation in the serving process, which itself decomposes into a
-\emph{data-access} component (every storage operation issued for the request,
-read or write, including connection acquisition) and
-an \emph{edge-processing} component (scheduling, lease and cache work, and
-response serialisation). Their sum is the request's \emph{user-visible latency},
-the client-side round trip. The two edge-service components are the tier-specific
-latency signals the scaling policy observes, data access for the storage tier and
-processing for the compute tier (Section~\ref{sec:scaling_policy}). The
-pre-dispatch wait is observable only as a difference and carries no separate
-instrumentation.
+A request's latency decomposes into the \emph{pre-dispatch wait}, from the
+client issuing the request to its dispatch in the serving process, and the
+\emph{edge service time}, from dispatch to response finalisation, which
+decomposes into a \emph{data-access} and an \emph{edge-processing}
+component. Their sum is the request's \emph{user-visible latency}, the
+client-side round trip. The two edge-service components are the
+tier-specific latency signals the scaling policy observes
+(Section~\ref{sec:scaling_policy}).
 
 \subsection{Control and Telemetry Paths}\label{sec:control_paths}
 Edge servers and storage components emit resource and request observations to
@@ -1420,15 +1322,11 @@ $w_{\mathrm{lat}}$ into the degradation score
 \end{split}
 \end{equation}
 with the per-tier weights configured to sum to one, so the score lies
-between zero and one, where:
-\begin{itemize}[leftmargin=*, itemsep=0pt]
-    \item $c(w)$ -- CPU utilisation of the scored tier observed in summary $w$;
-    \item $t(w)$ -- typical latency of the scored tier observed in summary $w$;
-    \item $c_0$, $t_0$ -- signal floors: at or below these values a signal is considered normal for the tier;
-    \item $c_\Delta$, $t_\Delta$ -- signal spans: the rise above the floor at which a signal's contribution saturates;
-    \item $\hat{c}(w)$, $\hat{t}(w)$ -- normalised components of summary $w$, each in $[0,1]$;
-    \item $w_{\mathrm{util}}$, $w_{\mathrm{lat}}$ -- configurable weights of the utilisation and latency components.
-\end{itemize}
+between zero and one. A signal at or below its floor contributes nothing and
+is treated as normal for the tier; $c_0$ and $t_0$ are those floors, and
+$c_\Delta$ and $t_\Delta$ the rises above them at which each contribution
+saturates. The normalised components $\hat{c}(w)$ and $\hat{t}(w)$ therefore
+lie in $[0,1]$.
     The floors, spans, weights, and threshold parameters are configured
 independently for each tier, so the policy can be calibrated to each tier
 without changing the structure of the score. For the compute tier the signals are CPU
@@ -1449,19 +1347,14 @@ condition is
     \theta(k) &= \min\big(\theta_{\mathrm{base}} + k\,\Delta\theta + \beta_{\mathrm{peer}},\ \theta_{\max}\big),
 \end{split}
 \end{equation}
-where:
-\begin{itemize}[leftmargin=*, itemsep=0pt]
-    \item $\mathcal{W}_n$ -- sliding set of the most recent $W$ summaries in which the tier was eligible to act;
-    \item $W$ -- number of eligible summaries in the scale-up window;
-    \item $R$ -- minimum number of degraded summaries required to request a scale-up;
-    \item $k$ -- number of dynamic units currently in the tier's pool (units provisioned by the controller beyond the initial pool);
-    \item $\theta(k)$ -- adaptive degradation threshold with $k$ dynamic units in the pool;
-    \item $\theta_{\mathrm{base}}$ -- base threshold;
-    \item $\Delta\theta$ -- threshold increment per additional dynamic unit, applied linearly for the compute tier; for the storage tier the increment diminishes with each additional unit, down to a configured minimum;
-    \item $\theta_{\max}$ -- upper bound of the adaptive threshold;
-    \item $\beta_{\mathrm{peer}}$ -- peer relief added to the compute-tier threshold while the peer domain is healthy enough to absorb spillover traffic (zero otherwise).
-\end{itemize}
-    The threshold follows the number of dynamic units in the tier's pool.
+where $k$ is the number of dynamic units currently in the tier's pool,
+$\theta_{\mathrm{base}}$ the base threshold, $\Delta\theta$ the increment per
+additional unit, $\theta_{\max}$ its upper bound, and $\beta_{\mathrm{peer}}$
+the peer relief added to the compute-tier threshold while the peer domain is
+healthy enough to absorb spillover traffic (zero otherwise). The increment is
+applied linearly for the compute tier; for the storage tier it diminishes with
+each additional unit, down to a configured minimum.
+The threshold follows the number of dynamic units in the tier's pool.
 Each additional unit therefore faces a higher bar, and the threshold falls
 back as units are removed. A scale-up cooldown after each committed scale-up
 and a scale-down cooldown keyed on the most recent scale-up keep the pace of
@@ -1476,11 +1369,9 @@ thresholds,
 \begin{equation}\label{eq:idle_condition}
     c(w) < \tau_c \quad\text{and}\quad t(w) < \tau_t,
 \end{equation}
-where:
-\begin{itemize}[leftmargin=*, itemsep=0pt]
-    \item $\tau_c$, $\tau_t$ -- idle thresholds of the utilisation and latency signals.
-\end{itemize}
-    A scale-down is requested only when idleness is sustained across
+where $\tau_c$ and $\tau_t$ are the idle thresholds of the utilisation and
+latency signals.
+A scale-down is requested only when idleness is sustained across
 $R_\downarrow$ of the last $W_\downarrow$ summaries, where $R_\downarrow$ is the
 required number of idle summaries and $W_\downarrow$ the length of the
 scale-down window. This window is longer than the scale-up one, which
@@ -1488,7 +1379,7 @@ prevents a transient data-bound stall from being misread as idle capacity.
 Summaries whose latency exceeds a ceiling are
 treated as indeterminate and do not count toward idleness.
 
-    The policy evaluates each tier per summary, in a fixed order:
+The policy evaluates each tier per summary, in a fixed order:
 \begin{enumerate}[leftmargin=*, itemsep=0pt]
     \item the summary is skipped when the tier is ineligible: an
     infrastructure operation is in progress, the tier is at its cap, or a
@@ -1503,8 +1394,8 @@ treated as indeterminate and do not count toward idleness.
     tier requests a scale-down once idleness spans $R_\downarrow$ of the
     last $W_\downarrow$ summaries.
 \end{enumerate}
-    The values these parameters take in the evaluation are reported in
-Chapter~\ref{ch:implementation}.
+    The values these parameters take in the evaluation are listed in
+Appendix~\ref{app:campaign_config}.
 
 \subsection{Compute}\label{sec:elastic_compute}
 Compute capacity is a per-domain pool of edge servers, each
@@ -1535,7 +1426,7 @@ Because load balancing steers new connections while established ones
 remain with their unit (Section~\ref{sec:control_workflow}), admission also
 marks the point at which the new backend can begin to share the load.
 
-    Compute scale-down removes the least disruptive eligible replica, applying
+Compute scale-down removes the least disruptive eligible replica, applying
 the idle condition defined in Section~\ref{sec:scaling_policy}. 
 Only replicas provisioned by the platform are eligible for removal, so the
 original nodes are left undisturbed. A candidate is considered
@@ -1554,22 +1445,21 @@ can answer a read, so read load is distributed across the membership. Writes
 are not distributed: the store keeps a single primary for writes, and the
 remaining members replicate the data and serve eventually consistent reads.
 This write placement follows from the store's replication model rather than
-from a platform design decision: the evaluation adopts it as the tier's
+from a platform design decision. The evaluation adopts it as the tier's
 consistency contract and does not rely on read-after-write semantics. Storage
 scale-up is a membership change. The controller provisions a new storage
 member, which joins the set, and admits it to the data path only once the
-member can serve reads. Preparation
-is decoupled from the reaction: a readied member is held in
-reserve outside the routing pool, and the storage scale-up is
+member can serve reads. Preparation is decoupled from the reaction as a readied
+member is held in reserve outside the routing pool, and the storage scale-up is
 the activation of this prepared reserve, which removes the initial readiness wait
 from the reaction path. A new reserve is prepared immediately afterwards.
 
-    Admission alone does not put the member to work, because a connection
+Admission alone does not put the member to work, because a connection
 chooses its member when it is opened. The platform therefore renews the edge
 servers' storage connections when a member is admitted, and spreads new
 connections across members whose reported cost is close to the best.
 
-    Storage scale-down removes an idle member while the remaining members keep
+Storage scale-down removes an idle member while the remaining members keep
 serving. Only members added by the platform are eligible for removal, so the
 set's original membership is left undisturbed, and the most recently added
 eligible member is removed first. The decision applies the idle condition
@@ -1577,9 +1467,9 @@ defined in Section~\ref{sec:scaling_policy} to the storage tier's idle signals
 (its data-access latency and, in the configurations that enable
 it, its CPU utilisation).
 
-    Beyond the membership change, the platform defines three data-placement
-tiers: Tier~0 provides direct remote reads over
-the virtual data path, meaning the replica-set member is deployed outside its
+Beyond the membership change, the platform defines three data-placement
+tiers: Tier~0 provides direct remote reads over the virtual data path, 
+meaning the replica-set member is deployed outside its
 primary network domain, Tier~1 holds a partial copy of the data in the consumer
 domain, and Tier~2 is the replica-set extension described above. Tier~0 and
 Tier~1 are platform capabilities rather than evaluated treatments. The
@@ -1587,7 +1477,7 @@ evaluated storage action is limited to activating the prepared
 reserve or removing a member of the domain's own replica set.
 
 \section{Telemetry, Load Balancing, and Scaling}\label{sec:monitoring_decision}
-    The producers and the aggregator that collects their reports are described
+The producers and the aggregator that collects their reports are described
 in Section~\ref{sec:control_paths}. Each edge server reports after every
 request it answers, carrying its own resource state and the experience of
 that request, and each storage member reports as it serves storage requests,
@@ -1608,13 +1498,12 @@ complete and late; sampled push delivers one summary in three as it is
 produced, partial and prompt; and polling returns only the most recent
 summary at a fixed read interval, partial and late. The modes are four
 configurations of one interface rather than two transports opposed to each
-other, and the read interval alone places polling in its cell: summaries that
-close between two reads are never fetched, and the read is not aligned with
-when the summaries close, so the summary it returns may have closed up to one
-read interval before the read.
+other. In the read interval summaries that close between two reads are never
+fetched, and the read is not aligned with when the summaries close, so the
+summary it returns may have closed up to one read interval before the read.
 
 Because the decision engine evaluates delivered summaries only, the mode sets the
-earliest moment a scaling reaction can begin: a decision cannot be taken
+earliest moment a scaling reaction can begin. And a decision cannot be taken
 before its triggering evidence arrives. The condition counts the last
 summaries the engine has seen, so missing summaries slow how often it is
 met as well as when it first can be, and the mode therefore shapes how much
@@ -1624,19 +1513,18 @@ decision logic remain unchanged, so any difference in how the controller
 scales is attributed to the evidence it received rather than to the
 mechanism that carried it.
 
-Inside the controller, the summaries feed two consumers. The first is load
-balancing, whose candidate state is updated from the summaries. The second is
-the decision engine, which evaluates each summary with the scaling policy of
-Section~\ref{sec:scaling_policy} and emits a typed,
-prioritised action request once a tier's condition is sustained. Requests that
-add or preserve resources take precedence over requests that remove capacity.
-Among the additions, a storage scale-up precedes a compute scale-up, and among
-the removals, a storage scale-down precedes a compute scale-down. A request's
-type identifies its resource tier (compute or storage) and
-its action (scale-up or scale-down), and the evidence behind each request
-is recorded in the decision log for the summary that produced it.
+Inside the controller, the summaries feed two consumers. Load balancing keeps
+its candidate state from them, so a unit is selected on its current load
+rather than on the state it had when it was admitted. The decision engine
+applies the scaling policy of Section~\ref{sec:scaling_policy} to each
+delivered summary, and reads both domains. The tier condition is assessed on
+the local domain's summary, while the peer domain's condition adjusts the
+threshold through the peer-relief term of
+Equation~\eqref{eq:scale_up_condition}, so a scale-up is decided on the state
+of the system rather than on the local site alone. Once a tier's condition is
+sustained, the engine emits an action request.
 Figure~\ref{fig:decision_engine_flow} details the
-per-summary evaluation, from the eligibility check to the request emissions.
+per-summary evaluation, from the eligibility check to the request emission.
 
 \begin{figure}[H]
     \centering
@@ -1648,7 +1536,7 @@ per-summary evaluation, from the eligibility check to the request emissions.
     \label{fig:decision_engine_flow}
 \end{figure}
 
-    The decision engine may also be configured to commit to a single scaling 
+The decision engine may also be configured to commit to a single scaling 
 action (compute or storage), which is the scaling interface of the demand-to-capacity chain. 
 In the bottleneck-aware configuration, that choice distinguishes between compute-bound and
 data-access-bound demand and scales the matching tier when it leads by the
@@ -1666,7 +1554,7 @@ decisions and does not wait on slow work. The observation context evaluates
 delivered summaries and emits action requests. The action context performs
 infrastructure changes such as provisioning, drain, and removal.
 
-    The workflow traverses the demand-to-capacity chain introduced in
+The workflow traverses the demand-to-capacity chain introduced in
 Section~\ref{sec:context_motivation}. A change in demand alters the request
 experience reported by the compute replicas, and the summary that contains
 the change is produced and delivered. The decision engine evaluates the
@@ -1708,22 +1596,22 @@ only by the ordinary capacity checks.
 through direct calls. The observation context writes the telemetry state
 and the action requests, and the action context owns the infrastructure
 changes and records the state of each in-flight capacity change. The
-routing pools are updated with the capacity transitions: a unit enters them
-when it is admitted and leaves them on removal, while a readied member held
+routing pools are updated with new a units entering them
+when admitted and leaving them on removal, while a readied member held
 in reserve remains outside them until activation. The packet context reads
 both on each routing decision. Because the packet context is not blocked by
 the action context, a long-running change cannot stall request steering.
 Because the action requests are queued and prioritised, detection is not
-blocked by execution. 
+blocked by execution.
 
-    Every request that adds or preserves capacity
+Every request that adds or preserves capacity
 precedes every request that removes capacity. The cancellation of a
 pending drain precedes its execution. 
 This execution order is distinct from
 the scaling decision, which the observation context decides before the
 request is queued.
 
-    Across domains, the peer controllers exchange topology state so that each
+Across domains, the peer controllers exchange topology state so that each
 controller is aware of the peer domain's resources, while acting on its own
 domain's demand. The concrete realisation of this design, the technologies
 that implement each context, and the validation of the resulting platform
@@ -1735,7 +1623,8 @@ Chapter~\ref{ch:results}.
 \chapter{Implementation}\label{ch:implementation}
 Chapter~\ref{ch:system_architecture} specified what the platform must do.
 This chapter describes what was built. Section~\ref{sec:impl_infrastructure}
-presents the testbed and its load source, Section~\ref{sec:impl_elastic} the
+presents the testbed and its load source, Section~\ref{sec:impl_data_path}
+the data path on which steering is enforced, Section~\ref{sec:impl_elastic} the
 two scaled resources as implemented, Section~\ref{sec:impl_monitoring} the
 observation and decision components, Section~\ref{sec:impl_control} the
 runtime behaviour of the controller, and Section~\ref{sec:impl_validation}
@@ -1747,7 +1636,11 @@ in the text are listed per campaign in Appendix~\ref{app:campaign_config}.
 The platform runs on a single cloud VM host that holds both domains as
 Docker containers on emulated networks. The host is a KVM virtual machine
 running Ubuntu 22.04.5~LTS, with 4~vCPU on an AMD EPYC-Genoa processor at
-2.4~GHz, 8~GB of memory, and local SSD storage.
+2.4~GHz, 8~GB of memory, and local SSD storage. Each campaign ran on a host
+of this type, and the hosts were identical apart from the local disk, which
+is smaller on the telemetry campaign's host (80~GB against 160~GB) because
+no instance with the same disk size was available when that host was
+provisioned.
 Table~\ref{tab:impl_components} lists the components as deployed.
 
 \begin{table}[H]
@@ -1782,8 +1675,37 @@ carries an emulated, fixed symmetric round-trip time applied with tc-netem
 available and off by default). The emulated link carries the cross-domain
 data path, and every control-plane link is host-local.
 
+The load is exerted by a scheduled driver that runs on the host beside
+the testbed. Each client is a Linux network namespace attached to its
+domain's client network, and the driver issues requests from a namespace
+as HTTP calls against the domain's virtual service address, so the
+controller observes the namespace's source address and steers each
+request through the data path below. A run instantiates 24 clients per
+domain, 48 in total. The driver executes the run's phase schedule, defined
+in Section~\ref{sec:experimental_setup}. Active clients issue requests
+continuously at the phase rate against users and content items taken from 
+a snapshot of the seeded data set, so traffic generation does not depend on 
+a live database, and the run's seed fixes which clients are active and the 
+per-client request streams.
+
+The delivery of the load is open-loop, so a client keeps issuing
+its requests on schedule while earlier requests are still outstanding and
+the offered demand is preserved when the service slows down. Three
+client-side bounds make the resulting failure modes explicit and finite.
+Each client keeps at most 1024 requests in flight, and a request that
+arrives when the window is full is recorded as dropped. Every request
+carries a 300~s client-side cap, and a request that reaches it is
+recorded as a timeout. In-flight requests that outlast the 30~s phase-end
+drain are abandoned and recorded as cancelled. Each issued request is
+written to the run's request record with its phase, kind, target
+identifiers, issue time, outcome class, and latency, and the record,
+together with the phase snapshot captured per run, is the raw material of
+the per-run analyses of Chapter~\ref{ch:results}.
+
+\section{Data Path}\label{sec:impl_data_path}
+
 The data plane runs OpenFlow on Open vSwitch. The platform's steering
-needs are elementary and standard: match ordinary addresses and ports,
+needs are elementary and standard. Match ordinary addresses and ports,
 rewrite each connection to its backend, and deliver new connections to
 the controller, which answers from the same Python process that runs the
 control logic (DR2). OpenFlow covers this set natively, and it reaches
@@ -1806,6 +1728,7 @@ five-tuple, the pair of addresses and ports plus the protocol. Reply
 packets are handed back to connection tracking, which reverses the
 mapping, so the identity of each connection lives in the kernel's table
 rather than in the rule. Two consequences matter for the platform.
+
 Established connections survive rule deletion, which lets the controller
 bulk-delete a member's forward rules when the member leaves the pool and
 lets new connections re-select while established ones finish. And because
@@ -1814,35 +1737,6 @@ be scoped to the client or, as in the reported configuration, to a single
 connection of it, so a pooled client spreads its connections across
 members. Each domain tracks its connections in its own zone, and rules
 that belong to a domain share a cookie so they can be removed together.
-
-The load is exerted by a scheduled driver that runs on the host beside
-the testbed. Each client is a Linux network namespace attached to its
-domain's client network, and the driver issues requests from a namespace
-as HTTP calls against the domain's virtual service address, so the
-controller observes the namespace's source address and steers each
-request through the data path above. A run instantiates 24 clients per
-domain, 48 in total. The driver executes the run's phase schedule
-(Section~\ref{sec:experimental_setup}): each phase fixes its duration, a
-per-client issuing rate, the fraction of clients that are active, and its
-request mix. Active clients issue requests continuously at the phase rate
-against users and content items taken from a snapshot of the seeded data
-set, so traffic generation does not depend on a live database, and the
-run's seed fixes which clients are active and the per-client request
-streams. 
-
-The delivery of the load is open-loop, so a client keeps issuing
-its requests on schedule while earlier requests are still outstanding and
-the offered demand is preserved when the service slows down. Three
-client-side bounds make the resulting failure modes explicit and finite.
-Each client keeps at most 1024 requests in flight, and a request that
-arrives when the window is full is recorded as dropped. Every request
-carries a 300~s client-side cap, and a request that reaches it is
-recorded as a timeout. In-flight requests that outlast the 30~s phase-end
-drain are abandoned and recorded as cancelled. Each issued request is
-written to the run's request record with its phase, kind, target
-identifiers, issue time, outcome class, and latency, and the record,
-together with the phase snapshot captured per run, is the raw material of
-the per-run analyses of Chapter~\ref{ch:results}.
 
 \section{Distributed Elastic Allocation of Resources}\label{sec:impl_elastic}
 
@@ -1970,7 +1864,7 @@ secondary state and can serve reads, the sidecar emits the
 the member into the domain's virtual data address, by default on the
 event, with a telemetry-observed secondary state as the fallback path.
 While the member serves, the sidecar polls it and reports a sample whenever
-the member's operation counters show activity: the sample carries the
+the member's operation counters show activity. The sample carries the
 member's replication lag, its open connections, and its CPU and memory use
 read from the container's cgroup files. An idle member is kept visible by the
 periodic heartbeat.
@@ -2038,7 +1932,7 @@ their implemented sources.
 \end{table}
 
 The platform's default source pushes each summary as it is
-produced, without a delivery guarantee; the campaign's push mode uses the
+produced, without a delivery guarantee. The campaign's push mode uses the
 acknowledged replay, so the campaign can verify that every produced summary
 arrived. The replaying sources record every summary they observe in a delivery log
 with its network, sequence number, close time, delivery time, delay, and source
@@ -2064,7 +1958,8 @@ record of Section~\ref{sec:impl_infrastructure} and the delivery log
 above. Inside the controller, the delivered
 summaries feed the two consumers of
 Section~\ref{sec:monitoring_decision}, and
-every decision is written to the decision log with its evidence. In the
+every decision is written to the decision log for the summary that produced
+it, together with its evidence. In the
 bottleneck-aware configuration, the action gate commits at most one
 action per summary and records the bottleneck class it assigned, the
 per-tier evidence, the action taken and the actions rejected, and the budget
@@ -2087,6 +1982,11 @@ to a priority queue. The elasticity thread is a daemon thread that blocks
 on that queue and performs the infrastructure changes, and the readiness
 gate runs its own worker thread for checks.
 
+Each alert identifies its resource tier and its action. Requests that add
+or preserve capacity take precedence over requests that remove it. Among
+additions, a storage scale-up precedes a compute scale-up, and among removals,
+a storage scale-down precedes a compute scale-down.
+
 State crosses the contexts through the shared structures of
 Section~\ref{sec:control_workflow}. The telemetry consumer writes the
 per-node state and the alerts between its yield points, the elasticity
@@ -2098,17 +1998,19 @@ On the first packet of a new connection, no flow rule matches and the
 packet is sent to the controller. The controller selects a unit with the
 cost function of Section~\ref{sec:vip_data_paths}. The function computes a
 weighted cost from each eligible candidate's reported resource state, and
-the lowest-cost unit is selected. For backends the cost uses CPU
-utilisation, memory usage, request count, and hop distance; for storage
-members it uses CPU utilisation, memory usage, connections, replication
-lag, and hop distance. Each metric enters as a fraction of the largest
-value observed among the eligible candidates, so metrics with different
-units contribute on a common scale under the configured weights, and
-candidates that tie at the lowest cost are selected in round-robin. Hop
-distance expresses reach, and a peer-domain candidate is always assigned
+the lowest-cost unit is selected. 
+
+For backends the cost uses CPU utilisation, memory usage, request count, 
+and hop distance; for storage members it uses CPU utilisation, memory usage, 
+connections, replication lag, and hop distance. Each metric enters as a fraction 
+of the largest value observed among the eligible candidates, so metrics with 
+different units contribute on a common scale under the configured weights, and
+candidates that tie at the lowest cost are selected in round-robin. 
+
+Hop distance expresses reach, and a peer-domain candidate is always assigned
 more hops than a local one, so local candidates are preferred at
 comparable resource state. The controller then installs the rules
-described in Section~\ref{sec:impl_infrastructure} and sends the packet
+described in Section~\ref{sec:impl_data_path} and sends the packet
 on. Subsequent packets follow the installed rules. The rules carry
 a configurable idle timeout, which resets as the connection stays
 active, and a configurable hard timeout, after which the rule expires and
@@ -2141,7 +2043,7 @@ Algorithm~\ref{alg:first_packet} summarises the first-packet path.
         \State send the packet to the controller
         \State select a unit from the eligible pool with the cost function
         \State install the routing rule for the client and the unit
-        (Section~\ref{sec:impl_infrastructure})
+        (Section~\ref{sec:impl_data_path})
         \State send the packet on, and later packets follow the rule
     \end{algorithmic}
 \end{algorithm}
@@ -2169,51 +2071,59 @@ controller restarts.
 
 \section{Implementation Validation}\label{sec:impl_validation}
 
-Before any experiment campaign, the implementation was validated in three
-ways. The locked configuration was exercised end to end and checked for
-stability, each mechanism was exercised and its effect reproduced, and
-the telemetry path was checked against the mode it
-implements.
+Before any experiment campaign, the platform was validated to the point where
+a difference observed later could be attributed to the interface under test
+rather than to the platform. The locked configuration was exercised end to
+end, each mechanism was exercised and its effect reproduced across replicates,
+and the telemetry path was checked against the mode it implements.
+Table~\ref{tab:impl_validation} states the behaviour each check establishes.
 
 \begin{table}[H]
     \centering
-    \caption{Implementation checks and their outcomes.}
+    \caption{Behaviour established before the experiment campaigns, with
+    the evidence of each check.}
     \label{tab:impl_validation}
     \footnotesize
-    \begin{tabular}{p{0.26\textwidth} p{0.35\textwidth} p{0.32\textwidth}}
+    \begin{tabular}{p{0.235\textwidth} p{0.685\textwidth}}
         \toprule
-        Check & Condition & Outcome \\
+        Property & Established behaviour, with its evidence \\
         \midrule
-        Integrated stability & Identical runs of the locked configuration, with all mechanisms enabled & Failure rate within the envelope (0.18\,\% and 0.41\,\% against a 3\,\% gate), with no tracebacks \\
-        Variability & Identical replicates after the scale-down cooldown fix & Compute-phase variability removed, with 0.23\,\% overall in the verification run \\
-        Data-path routing & Stale-rule failures during member removal & Compute-phase failures fall from 56--65\,\% to 1.4\,\%, with no connection-epoch rotations \\
-        Storage reserve & Activation of the prepared reserve & The activated reserve carries data-path traffic, and liveness is stable \\
-        Selective synchronisation & Bidirectional hotspot activation & Data-access latency falls from 84.5\,ms to 3.58\,ms, with a clean drain in both directions \\
-        Telemetry path & Summary continuity and per-mode fidelity &Every produced summary delivered or recorded as an aged-out gap, completeness and measured delay match the configured mode, and overhead stays bounded across modes \\
+        Integrated stability & Runs of the locked configuration with every
+        mechanism enabled stay inside the 3\,\% failure envelope
+        (0.18\,\% and 0.41\,\%) and produce no tracebacks. \\
+        Run-to-run reproducibility & After the scale-down cooldown fix,
+        replicates of one configuration repeat their phase behaviour,
+        leaving 0.23\,\% overall variability between them. \\
+        Member removal without disrupting established flows & Stale-rule
+        failures during removal fall from 56--65\,\% to 1.4\,\%, and no
+        connection epoch rotates, so a removal reaches only flows in
+        flight. \\
+        Prepared storage reserve & An activated reserve carries data-path
+        traffic while the set stays live. \\
+        Bidirectional hotspot activation & Activating the Tier~1 hotspot in
+        both directions lowers data-access latency from 84.5\,ms to
+        3.58\,ms and drains cleanly on each side. \\
+        Telemetry fidelity & Every produced summary is delivered or
+        recorded as an aged-out gap, completeness and delay match the
+        configured mode, and overhead stays bounded across modes. \\
         \bottomrule
     \end{tabular}
 \end{table}
-{\footnotesize\noindent\textit{Note.} The selective-synchronisation check
+{\footnotesize\noindent\textit{Note.} The bidirectional hotspot activation check
 validates the Tier~1 mechanism, which is disabled in the reported campaigns
 (Section~\ref{sec:impl_data}); the remaining checks exercise the
 configurations the campaigns use.\par}
 
-Correctness is read from this behaviour rather than from code inspection.
-The mechanisms were exercised under the canonical workload, and their
-effects were reproduced across replicate runs. The telemetry-path
-checks verify the modes directly. The summary log records
-every produced summary, and a summary that is never delivered is recorded
-as an aged-out gap rather than silently lost. Completeness, sequence
-order, and delivery delay are logged per summary and match the configured
-mode, and the aggregator's overhead and per-summary payload stay bounded
-and constant across modes. The readiness path is additionally exercised
-with the fault instrumentation of the fault-robustness experiments, where
-a replica can be configured to report readiness before it can serve, to
-answer workload requests with errors while the readiness predicate stays
-satisfied, or to lose its readiness message entirely. The instrumentation
-and its values are listed in Appendix~\ref{app:campaign_config}. The
-empirical characterisation of the three interfaces is presented in
-Chapter~\ref{ch:results}.
+Correctness is read from this behaviour rather than from code inspection: the
+mechanisms were exercised under the canonical workload, and their effects were
+reproduced across replicate runs. The readiness path is additionally exercised
+with the fault instrumentation of
+the fault-robustness experiments, where a replica can be configured to report
+readiness before it can serve, to answer workload requests with errors while
+the readiness predicate stays satisfied, or to lose its readiness message
+entirely. The instrumentation and its values are listed in
+Appendix~\ref{app:campaign_config}. The empirical characterisation of the
+three interfaces is presented in Chapter~\ref{ch:results}.
 
 
 
@@ -2235,49 +2145,12 @@ controller, and the two domains are joined by an emulated inter-domain link. Bot
 domains are driven by the same open-loop scheduled driver
 (Section~\ref{sec:impl_infrastructure}), which applies the request schedule
 regardless of the responses it receives, so the demand offered to the service
-is independent of the capacity available to serve it.
+is independent of the capacity available to serve it. The deployed components
+are described in Section~\ref{sec:impl_infrastructure}, and the per-campaign
+caps, quotas, and parameter values are listed in
+Appendix~\ref{app:campaign_config}.
 
-Table~\ref{tab:testbed_config} summarises the configuration common to the three
-campaigns; the per-campaign resource caps, quotas, and parameter values are
-listed in Appendix~\ref{app:campaign_config}.
-
-\begin{table}[htbp]
-    \centering
-    \caption{Evaluation testbed configuration common to the three campaigns.}
-    \label{tab:testbed_config}
-    \footnotesize
-    \begin{tabular}{p{0.22\textwidth} p{0.68\textwidth}}
-        \toprule
-        Component & Configuration \\
-        \midrule
-        Host & both domains on a single KVM-based cloud virtual machine
-        running Ubuntu 22.04.5~LTS, with 4~vCPU on an AMD EPYC-Genoa processor
-        at 2.4~GHz, 8~GB of memory, and local SSD storage; all components run
-        as CPU-capped containers \\
-        Inter-domain link (emulated) & fixed symmetric round-trip latency of
-        185~ms (tc-netem) \\
-        Data plane & one Open vSwitch per domain, programmed over OpenFlow \\
-        Controllers & one OS-Ken controller per domain; traffic steering,
-        telemetry consumption, and elasticity decisions run in the controller
-        process \\
-        Edge tier & Docker compute replicas per domain; a fixed set of servers
-        extended by dynamic units during scale-up \\
-        Storage tier & one MongoDB replica set per domain; members added and
-        removed through native replication \\
-        Telemetry & one aggregator per domain; summaries of the preceding
-        10~s, produced every 10~s \\
-        Workload driver & open-loop scheduled driver: 24 clients per domain
-        (48 in total), a bounded in-flight window of 1024 requests, a
-        client-side request cap of 300~s, and a 30~s phase-end drain \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-    The testbed runs the two domains on a single host, which keeps the control
-paths host-local. The three campaigns ran on hosts of the same type,
-identical apart from the local disk, which is smaller on the host of the
-telemetry campaign (80~GB against 160~GB) because no instance with
-the same disk size was available when that host was provisioned. Telemetry
+Within the testbed, telemetry
 and controller-to-controller topology
 exchange do not traverse the inter-domain link, which carries
 cross-domain data traffic only. The evaluation workloads reference locally owned
@@ -2287,19 +2160,17 @@ Load balancing may place a request on a peer-domain replica at a
 hop-cost penalty. The campaigns therefore measure the coordination 
 interfaces under controlled and repeatable conditions.
 
-    Each run is an independent experimental unit and starts from the 
-same set of nodes and configuration.
+Each run is an independent experimental unit and starts from the 
+same set of nodes and configuration. Before each run, the data set is 
+generated from a fixed data seed and loaded into the domain's replica-set
+primary: 3000 content items and 100 user profiles per domain, with the 
+collection indexes created by the same setup. The setup also exports a 
+snapshot of the seeded items and profiles, and the driver draws its request
+targets from that snapshot, so the offered demand is fixed by the run's
+seed and does not depend on the live database. Between runs, the persistent
+containers, the data state, and the controller state are reset.
 
-    Before each run, the data set is generated from a fixed data seed and
-loaded into the domain's replica-set primary: 3000 content items and 100
-user profiles per domain, with the collection indexes created by the
-same setup. The setup also exports a snapshot of the seeded items and
-profiles, and the driver draws its request targets from that snapshot,
-so the offered demand is fixed by the run's seed and does not depend on
-the live database. Between runs, the persistent containers, the data
-state, and the controller state are reset.
-
-    During a run, the platform records the timeline of the demand-to-capacity
+During a run, the platform records the timeline of the demand-to-capacity
 chain end to end: demand episode onset, telemetry summary completion and controller 
 observation, scaling decision and action taken,
 provisioning start and completion, application-readiness confirmation,
@@ -2312,12 +2183,11 @@ and the design under which each campaign varied exactly one interface.
 
 \subsection{Demand Model and Campaign Workloads}
 The demand model varies two axes: the request intensity over time, and the
-request mix, which sets the tier an episode presses on. The spatial axis,
-that is, which domain owns the requested
-content, is held constant in the evaluation, as described above.
-
-    The request mix is a weighted distribution over six request kinds
-defined in Table~\ref{tab:request_kinds}.
+request mix, which sets the tier an episode presses on. The mix is the
+per-request probability of each of six kinds (Table~\ref{tab:request_kinds}),
+drawn independently for every request, so it sets how much of a phase's
+traffic presses on each tier. The weights are stated with each campaign's
+workload (Table~\ref{tab:campaign_workloads}).
 
 \begin{table}[H]
     \centering
@@ -2356,19 +2226,17 @@ shift under test is referred to as the demand episode. Each campaign defined
 its own workload, calibrated and locked before the campaign started, and
 every run stores the phase schedule it executed.
 
-    The phases around the episode have fixed roles across the campaigns. A
+The phases around the episode have fixed roles across the campaigns. A
 baseline window opens every run at a low, steady load (rate 1.0 per client,
 10~\% of clients active) and establishes the healthy pre-shift operating
-point. A recovery gap is a quiet phase with a low issuing load (rate
-0.5, 5~\% of clients) and acts as a post-episode quiet period that lets the platform
-settle and separates the stressed window from the post-shift windows. 
-A demand drop returns the load to a low, steady level (rate 1.0, 10~\%) and is
-the release window, in which the capacity the episode required is scaled
+point. A recovery gap (rate 0.5, 5~\%) lets the platform settle and separates
+the stressed window from the post-shift ones. A demand drop (rate 1.0, 10~\%)
+is the release window, in which the capacity the episode required is scaled
 down and post-shift service quality is compared with the baseline. An idle
-tail closes the run at a near-idle load (rate 0.05, 5~\%), so that the
-configuration reaches sustained idleness and the release of surplus
-capacity can complete. The telemetry campaign and the mixed press end with an
-idle tail, and the data-access press ends at its demand drop.
+tail (rate 0.05, 5~\%) closes the run, so that the release of surplus
+capacity can complete; the telemetry campaign, the mixed press and the
+readiness admission campaign end with it, and the data-access press ends at
+its demand drop.
 Table~\ref{tab:campaign_workloads} summarises 
 the workload of each campaign.
 
@@ -2421,7 +2289,7 @@ of produced telemetry summaries the controller consumed, and the information
 age at decision, the time from the closing of the summary that a decision used
 to the decision itself.
 
-    For the scaling action campaign, the outcomes are stated per policy under
+For the scaling action campaign, the outcomes are stated per policy under
 each demand episode: the targeted-tier relief, as the fall in the receiving
 tier's utilisation for a storage action and in the processing component for a
 compute action, while the added units carry served requests; the service
@@ -2460,7 +2328,7 @@ each run contributes the mean of its two domains, and any cross-domain asymmetry
 above the pre-registered symmetry screen is reported.
 
 For the readiness admission campaign, the cost of a lost message is read as
-the slow share, the fraction of completed or timed-out requests that time out
+the slow share which is the fraction of completed or timed-out requests that time out
 or exceed one second, over the full plateau (the campaign's demand episode), the onset
 window (the first 150~s of the plateau), and the plateau tail (the last 300~s
 of the plateau), and as the number of admissions, with the candidates
@@ -2491,7 +2359,7 @@ No results are pooled across campaigns. Every contrast
 is computed within its own campaign's design, and where a research question
 draws on more than one campaign the campaigns are reported separately.
 
-    Each campaign organises its runs so that every planned contrast is
+Each campaign organises its runs so that every planned contrast is
 measured over matched demand. A seed fixes the demand of a run: which clients
 are active in each phase and each client's request stream, targets, payloads,
 and timing jitter. The runs are organised into blocks, a block holding one run
@@ -2500,31 +2368,25 @@ entering a contrast meet identical demand. The execution order within a block
 is counterbalanced across blocks, so testbed drift cannot align with a single
 treatment. Every campaign uses the same replication standard, seven
 seed-matched blocks per treatment, one run per treatment per block, and each
-block uses a distinct seed. A campaign with two demand episodes runs one block
-set per episode over the same seven seeds. The seed ranges are 3001--3007
-(telemetry), 42--48 (scaling action), and 5201--5207 and 6301--6307 (the intact and lost,
-and the premature, conditions of the readiness admission campaign). Seven is
-the smallest size at which a fully separated contrast remains resolvable under
-the pre-registered test: under complete separation between two treatment sets,
-the exact Mann--Whitney $U$ test has a $p$-value floor of $2/\binom{2n}{n}$,
-0.0006 at seven runs per treatment.
+block uses a distinct seed; the ranges are given in each campaign's design
+table. A campaign with two demand episodes runs one block set per episode over
+the same seven seeds. Seven is the smallest size at which a fully separated
+contrast remains resolvable under the pre-registered test: under complete
+separation between two treatment sets, the exact Mann--Whitney $U$ test has a
+$p$-value floor of $2/\binom{2n}{n}$, 0.0006 at seven runs per treatment.
 
-    The reported contrasts follow the tests fixed before data collection. The
-run-level contrasts use the exact Mann--Whitney $U$ test, which ranks the runs
-of the two treatments together and reports the probability of a separation at
-least as strong as the observed one when the treatments are in fact
-equivalent. The readiness admission campaign applies the same test to
-per-backend samples within runs. The telemetry and readiness admission
-campaigns report Cliff's $\delta$ where the runs overlap, because significance
-alone does not show how separated the runs are. The scaling action campaign's
-registered criterion is the direction in each block, and all nine directions
-held in seven of seven blocks, so its contrasts are reported on the direction
-count alone. Values
-near $0$ mean the treatments overlap. At $-1$ or $1$ every run of one
-treatment lies below or above every run of the other, a complete separation
-that further replicates can only preserve or weaken. A $p$-value is reported
-only where the runs overlap, and a complete separation is reported as such.
-Reported intervals are 95~\% intervals, the pre-registered level.
+The reported contrasts follow the tests fixed before data collection. The
+run-level contrasts use the exact Mann--Whitney $U$ test, and the readiness
+admission campaign applies the same test to per-backend samples within runs.
+The telemetry and readiness admission campaigns report Cliff's $\delta$
+alongside, because significance alone does not show how separated the runs
+are. The scaling action campaign's registered criterion is the direction in
+each block, and all nine directions held in seven of seven blocks, so its
+contrasts are reported on the direction count alone. A $p$-value is reported
+only where the runs overlap; a complete separation is reported as such, since
+further replicates can only preserve or weaken it, and a $\delta$ near $0$
+means the treatments overlap. Reported intervals are 95~\% intervals, the
+pre-registered level.
 
 The telemetry campaign adds a direction count, the number of seed-matched
 blocks consistent with the predicted order. The scaling action campaign is
@@ -2533,9 +2395,7 @@ direction holds, with the medians alongside. The readiness admission campaign
 compares admission intervals within start-up class and reports its event-loss
 and premature-message comparisons as block-level differences and per-mode
 damage. It reports no confidence intervals, because its pre-registered checks
-were thresholds and agreement across blocks. No correction is made for testing
-several contrasts at once, because each campaign fixed a small number of
-named contrasts in advance.
+were thresholds and agreement across blocks.
 
 Within each campaign, the treatments compared differ only in the interface
 named in the Treatment row. The telemetry modes share the summary period
@@ -2551,7 +2411,8 @@ Appendix~\ref{app:campaign_config}.
 Screening followed the pre-registered per-run checks; the resulting exclusions
 and their effect on the analysis population are discussed with the limitations
 in Section~\ref{sec:limitations}. No exclusion rests on the treated outcome,
-and pre-registered criteria that are not met are reported with the results. The full design of each campaign is summarised in a
+and pre-registered criteria that are not met are reported with the results. 
+The full design of each campaign is summarised in a
 table at the start of its results section; the workload of each campaign is in
 Table~\ref{tab:campaign_workloads}, and its replication is the standard fixed
 above.
@@ -2576,7 +2437,7 @@ and both together (C), so the cost of late telemetry is separated from the cost 
 missing telemetry. The pre-registered expectation was the ordering A $<$ B $<$ C $\approx$ 
 D on both usable capacity and the episode latency p95.
 
-    Table~\ref{tab:rq1_design} summarises the design of the campaign.
+Table~\ref{tab:rq1_design} summarises the design of the campaign.
 
 \begin{table}[H]
     \centering
@@ -2607,7 +2468,7 @@ D on both usable capacity and the episode latency p95.
     \end{tabular}
 \end{table}
 
-    Under push and delayed push the controller received every completed
+Under push and delayed push the controller received every completed
 summary, with the information age at decision lowest under push and highest
 under delayed push; under polling and sampled push it received about one
 third of them (Table~\ref{tab:rq1_observation}).
@@ -2634,7 +2495,7 @@ third of them (Table~\ref{tab:rq1_observation}).
     \end{tabular}
 \end{table}
 
-    Every mode scaled up both tiers, and what differed was when the new
+Every mode scaled up both tiers, and what differed was when the new
 capacity became usable. First new capacity serving traffic was 28.5~s after
 the onset in A, 59.6~s in B, 79.6~s in C and 83.2~s in D
 (Table~\ref{tab:rq1_arms}), so polling and sampled push took nearly three
@@ -2724,7 +2585,7 @@ delayed push runs collapsed to the level of polling and sampled push
     \label{fig:rq1_episode_p95}
 \end{figure}
 
-    The spread of delayed push comes from the platform state that each run
+The spread of delayed push comes from the platform state that each run
 samples, not from the decision engine. Across all seven runs
 the first scale-up decision fell between 52.0~s and 60.4~s and usable
 capacity between 55.1~s and 61.5~s. What decides the outcome is whether the
@@ -2737,7 +2598,7 @@ so the variance left no trace; C's and D's were exhausted in all seven;
 delayed push sat at the boundary, covered in five runs and exhausted in the
 two that sampled a slow state.
 
-    Two pre-registered expectations did not hold, and both are informative.
+Two pre-registered expectations did not hold, and both are informative.
 The full ordering broke because the two collapsed delayed push runs landed
 at C's level, so B and C do not separate (exact $p = 0.209$), and sampled
 push was not strictly worst, since C and D are statistically
@@ -2748,7 +2609,7 @@ consumes. One delayed push run showed a cross-domain asymmetry above the
 campaign's screening line (domain~2 p95 21.1~s against 4.0~s in domain~1);
 it was the only run above the line.
 
-    The differences are confined to the load rise. Outside it, the four
+The differences are confined to the load rise. Outside it, the four
 modes were indistinguishable, with baseline, recovery and demand-drop p95 at
 about 1.05--1.08~s, no timeouts inside the episode, and cancellation and
 drop shares flat at roughly 5--7~\%.
@@ -3227,8 +3088,9 @@ $-0.9$~pp over the seven seed-matched pairs (six of the seven within the
 $2$~pp bound). It admitted only once
 it could serve, reaching the first successful response 11.0~s after the
 message against 19.5~s under periodic polling. Backend notification was
-$+16.9$~pp more damaged than it, positive in every block, and its own
-damage against periodic polling is a near-tie ($-0.2$~pp).
+$+16.9$~pp more damaged than it, positive in every block, while the
+confirmation check and periodic polling sit at a descriptive near-tie
+($-0.2$~pp between them, three of seven pairs positive).
 
 \begin{table}[H]
     \centering
@@ -3264,8 +3126,11 @@ damage against periodic polling is a near-tie ($-0.2$~pp).
     medians over the pairs that pass the pre-registered checks, dots the
     individual seed-matched pairs,
     and the dotted line the pre-registered $2$~pp bound; a positive reading
-    means     the fault run's share of offered requests that time out, fail, or exceed
-    one second was above that of its no-fault partner. The confirmation check admits only once the backend
+    means the fault run's share of offered requests that time out, fail, or exceed
+    one second was above that of its no-fault partner. A negative reading means the
+    fault run's share was below its partner's, which for the modes that check the
+    message is run-to-run variation around zero rather than a gain. The
+    confirmation check admits only once the backend
     can serve, which also places it first to a first successful response after the
     message (11.0~s against 19.5~s under periodic polling).}
     \label{fig:rq3_premature_damage}
@@ -3300,19 +3165,9 @@ damage against periodic polling is a near-tie ($-0.2$~pp).
 
 \section{Discussion: Synthesis Across Interfaces}\label{sec:discussion}
 
-This section reads the three campaigns together. The campaigns ran on the same
-platform, used the same metric definitions and instrumentation, and followed
-the same discipline of varying one interface while holding the others fixed.
-Each campaign, however, drove its own workload under its own demand episode, so
-the three sets of results are not pooled and no quantity is combined across
-them, consistent with the commitment in Section~\ref{sec:lit_synthesis} that
-no aggregate coordination cost is claimed. What can be compared is the pattern
-each campaign revealed: which effects held for every replicate, which depended
-on a condition the campaign varied or sampled, and which the campaign could
-not establish. This classification is the comparative synthesis promised in
-Section~\ref{sec:contributions}, stated per interface in
-Table~\ref{tab:synthesis}, and it prepares the answers summarised in
-Chapter~\ref{ch:conclusions}.
+This section reads the three campaigns together, comparing the pattern each
+campaign revealed, classified per interface in Table~\ref{tab:synthesis} as
+robust, conditional, or not established.
 
 \begin{table}[H]
     \centering
@@ -3353,7 +3208,8 @@ Chapter~\ref{ch:conclusions}.
         Readiness Admission Modes (RQ3) & Loss without a check leaves
         the new capacity unused (zero admissions in every loss run), and a
         premature message damages only the modes that admit on it (damage
-        medians up to $+14.4$~pp) while the modes that check stay flat & The loss
+        medians up to $+14.4$~pp) while the modes that check stay flat, the
+        confirmation check admitting only on a verified servable backend & The loss
         cost under the reduced headroom the campaign fixed, and
         premature-message damage for the modes that admit on the message
         while the modes that check stay flat at the evaluated ten-second
@@ -3369,19 +3225,16 @@ in the steady state. The telemetry modes were indistinguishable outside the
 load rise, and the cost of delay appeared only when the absorption margin of
 the existing nodes ran out. Missing summaries stretched the window in
 which the existing nodes had to cope alone, and the margin was exhausted
-in every
-replicate. The action improved user-visible quality only where it removed
+in every replicate. The action improved user-visible quality only where it removed
 the queue the episode formed. The storage action reached users on the
 data-access press and not on the mixed press, and the compute action the
-reverse. The admission
-delay cost nothing while the nodes held spare capacity, and the lost
+reverse. The admission delay cost nothing while the nodes held spare capacity, and the lost
 message consumed that margin under the reduced headroom the
 campaign fixed. On the evaluated testbed, the three interfaces decide how a
 demand shift is weathered, not how the service performs once the shift has
 passed.
 
-The campaigns also separate failure modes that monitoring and scaling are
-often discussed as one. Across the telemetry modes, missing summaries and
+Across the telemetry modes, missing summaries and
 late summaries are different faults. Missing summaries cost about nine times
 the episode tail, with complete separation in every replicate, while late
 summaries cost in proportion to the margin they consume. Delay was harmless
@@ -3396,9 +3249,11 @@ notification saved about seven seconds while the platform was healthy, and
 lost the admission entirely when its single message
 was dropped, while the modes that check turned the same loss into a
 bounded delay, and a premature message cost only the modes that
-admitted on it. Because admission fills the routing pool, the choice also
-sets what the load distribution can rely on once scaling has been
-triggered.
+admitted on it. The mode is nevertheless one choice that sets both at once, and
+because it fills the routing pool it also sets what the load distribution can
+rely on once scaling has been triggered: a lost message hides ready capacity
+from the pool, and a premature message exposes capacity that cannot yet absorb
+traffic.
 
 The interfaces also differ in the control records they leave behind, but not
 in the controller cost that carries them: across the three campaigns the
@@ -3511,56 +3366,54 @@ Chapter~\ref{ch:conclusions}.
 % --- This item was written on 2026-10-16 because §5.4 cites this section for
 % it; the remaining items stay in the scaffold below until Chapter 6 is
 % written. ---
-The socket bind stall measured in the readiness admission campaign is bound to
-when its runs executed. In the campaign's earlier runs, a share of the spawned
-backends stalled about ten seconds at socket bind (10.0--10.4~s whenever it
-occurred); in its later runs, none did (none of the 283 later-run backends
-recorded a stalled bind, and the confirmation check's runs peaked at 0.089~s).
-The start-up class is measured per backend and every gated comparison is made
-within class, which holds the stall fixed in the reported contrasts; the slow
-class,
-however, draws only on the earlier runs, so the slow-binding stratum carries
-no confirmation-check evidence, and the pre-registered wake check that
-requires evidence in every stratum is carried as not met.
+% The socket bind stall measured in the readiness admission campaign is bound to
+% when its runs executed. In the campaign's earlier runs, a share of the spawned
+% backends stalled about ten seconds at socket bind (10.0--10.4~s whenever it
+% occurred), and none of the later-run backends did. The start-up class is
+% measured per backend and every gated comparison is made within class, which
+% holds the stall fixed in the reported contrasts; the slow class,
+% however, draws only on the earlier runs, so the slow-binding stratum carries
+% no confirmation-check evidence, and the pre-registered wake check that
+% requires evidence in every stratum is carried as not met.
 
-    The readiness-to-admission interval could not be re-measured in this
-build. The admission log's readiness and admission timestamps read the same,
-so the interval reads 0.000~s for essentially every backend, and no finer
-trace records it: the service log's polling trace carries an
-$\approx$2.9~s quantisation. The interval reported in
-Section~\ref{sec:results_rq3_readiness} is the recorded admission-timing
-set's; the remaining legs are reported on the populations named in
-Table~\ref{tab:rq3_delays}.
+%     The readiness-to-admission interval could not be re-measured in this
+% build. The admission log's readiness and admission timestamps read the same,
+% so the interval reads 0.000~s for essentially every backend, and no finer
+% trace records it: the service log's polling trace carries an
+% $\approx$2.9~s quantisation. The interval reported in
+% Section~\ref{sec:results_rq3_readiness} is the recorded admission-timing
+% set's; the remaining legs are reported on the populations named in
+% Table~\ref{tab:rq3_delays}.
 
-    Storage relief under the data-access press was not uniform. The action
-relieved the pressed tier and cut the data-access component in every seed,
-but the size of the gain varied across runs: in most it fell to tens of
-milliseconds, and in three of the seven runs it remained between 300~ms
-and 1.5~s. The campaign cannot explain the difference. The run records
-carry the mechanism's census but no per-connection trace, and the leading
-explanation, a renewal that selects a member before its reported statistics
-settle, remains a hypothesis. The storage benefit reported in
-Section~\ref{sec:results_rq2_action} is therefore a direction that held in
-every seed, not a magnitude that can be expected in any single run.
+%     Storage relief under the data-access press was not uniform. The action
+% relieved the pressed tier and cut the data-access component in every seed,
+% but the size of the gain varied across runs: in most it fell to tens of
+% milliseconds, and in three of the seven runs it remained between 300~ms
+% and 1.5~s. The campaign cannot explain the difference. The run records
+% carry the mechanism's census but no per-connection trace, and the leading
+% explanation, a renewal that selects a member before its reported statistics
+% settle, remains a hypothesis. The storage benefit reported in
+% Section~\ref{sec:results_rq2_action} is therefore a direction that held in
+% every seed, not a magnitude that can be expected in any single run.
 
-    The edge memory limit was marginal at press onset. Two runs
-hit the edge container's memory cap as the episode began, at about
-367--370~MB against the 384~MB limit. One was replaced and one retained,
-with its service outcome flagged. The limit bounds the demand intensity at
-which the platform was evaluated, and a higher limit was not tested.
+%     The edge memory limit was marginal at press onset. Two runs
+% hit the edge container's memory cap as the episode began, at about
+% 367--370~MB against the 384~MB limit. One was replaced and one retained,
+% with its service outcome flagged. The limit bounds the demand intensity at
+% which the platform was evaluated, and a higher limit was not tested.
 
-    The analysis population is bounded by the pre-registered screens. The
-telemetry campaign excluded no run. The two memory-cap runs above were the
-only scaling-action removals. In the readiness admission campaign, one block
-is excluded from the fault comparison because periodic polling's relief did
-not complete in that run (its plateau tail read 4.08~\% against the 2~pp
-bound), leaving five assessable blocks; the added seventh block is report-only
-under the same rule (contrast 1.2~pp). Two no-fault runs fell outside the
-pre-registered health floor (hybrid block 3's failed-or-timed-out share,
-1.19~\% against the 1~\% bound, and periodic polling block 5's plateau tail,
-4.29~\% against the 2~pp bound); they stay recorded and are not re-chased,
-and the fault contrast does not use them. Neither exclusion rests on the
-treated outcome, and neither reverses a reported direction.
+%     The analysis population is bounded by the pre-registered screens. The
+% telemetry campaign excluded no run. The two memory-cap runs above were the
+% only scaling-action removals. In the readiness admission campaign, one block
+% is excluded from the fault comparison because periodic polling's relief did
+% not complete in that run (its plateau tail read 4.08~\% against the 2~pp
+% bound), leaving five assessable blocks; the added seventh block is report-only
+% under the same rule (contrast 1.2~pp). Two no-fault runs fell outside the
+% pre-registered health floor (hybrid block 3's failed-or-timed-out share,
+% 1.19~\% against the 1~\% bound, and periodic polling block 5's plateau tail,
+% 4.29~\% against the 2~pp bound); they stay recorded and are not re-chased,
+% and the fault contrast does not use them. Neither exclusion rests on the
+% treated outcome, and neither reverses a reported direction.
 
 % TODO: Controlled testbed — two domains on a single host; emulated
 % inter-domain link. Single window size;
@@ -3629,6 +3482,26 @@ stored the effective configuration it executed
 and its phase schedule (\texttt{phases\_snapshot.json}), so the per-run values
 are recoverable from the run artefacts. Where a campaign spans several demand
 regimes or evidence sets, each column states the value for its regime or set.
+
+    Every stored phase schedule follows the anatomy of
+Figure~\ref{fig:workload_phases}, which draws the phases of a run and singles
+out the demand episode among them.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{images/src/workload_phases.drawio.png}
+    \caption{Phases of a run, shown for the telemetry campaign. A phase fixes
+    its offered request intensity, as a per-client rate and an active-client
+    fraction, and its request mix for its duration. The phase that applies the
+    demand shift under test is the demand episode, and the outcomes are read
+    over it. The surrounding phases have fixed roles across the campaigns: the
+    baseline window establishes the healthy pre-shift operating point, the
+    recovery gap lets the platform settle, the demand drop is the release
+    window in which the episode's capacity is scaled down, and the idle tail
+    lets the release complete. Durations and intensities differ per campaign
+    and are listed in Table~\ref{tab:campaign_workloads}.}
+    \label{fig:workload_phases}
+\end{figure}
 
 \begin{table}[H]
     \centering
