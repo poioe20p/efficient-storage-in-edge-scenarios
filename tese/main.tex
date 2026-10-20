@@ -2115,9 +2115,7 @@ three interfaces is presented in Chapter~\ref{ch:results}.
 
 \section{Experimental Setup}\label{sec:experimental_setup}
 This section defines the conditions under which the three research questions'
-experimental evaluations were executed: the testbed and its instrumentation, the
-demand model and the workload of each campaign, the measured outcomes, and the
-design of each campaign.
+experimental evaluations were executed.
 
 \subsection{Testbed and Instrumentation}
 The evaluation was performed on the platform of
@@ -2131,15 +2129,6 @@ are described there, and the per-campaign
 caps, quotas, and parameter values are listed in
 Appendix~\ref{app:campaign_config}.
 
-Within the testbed, telemetry
-and controller-to-controller topology
-exchange do not traverse the inter-domain link, which carries
-cross-domain data traffic only. The evaluation workloads reference locally owned
-content only, so storage reads remain within the replica set of the domain
-that serves each request, and cross-domain storage placement is disabled.
-Load balancing may place a request on a peer-domain replica at a
-hop-cost penalty.
-
 Each run is an independent experimental unit and starts from the 
 same set of nodes and configuration. Before each run, the data set is 
 generated from a fixed data seed and loaded into the domain's replica-set
@@ -2151,14 +2140,11 @@ seed and does not depend on the live database. Between runs, the persistent
 containers, the data state, and the controller state are reset.
 
 During a run, the platform records the timeline of the demand-to-capacity
-chain end to end: demand episode onset, telemetry summary completion and controller 
-observation, scaling decision and action taken,
-provisioning start and completion, application-readiness confirmation,
-admission to the routing pool, first routed request, and first successful
-response. The records behind these timestamps are
-described in Section~\ref{sec:impl_monitoring}, and every timing
-reported in this chapter is read from them. The rest of this section defines the 
-workloads that drive these timelines, the outcomes extracted from them, 
+chain end to end, from demand observation to the first request served by new
+capacity. The records behind these timestamps are described in
+Section~\ref{sec:impl_monitoring}, and every timing reported in this chapter is
+read from them. The rest of this section defines the
+workloads that drive these timelines, the outcomes extracted from them,
 and the design under which each campaign varied exactly one interface.
 
 \subsection{Demand Model and Campaign Workloads}
@@ -2194,10 +2180,18 @@ workload (Table~\ref{tab:campaign_workloads}).
     \end{tabular}
 \end{table}
 
-All six kinds appear across the three campaign mixes: the telemetry campaign
+All six kinds appear across the three campaign mixes. The telemetry campaign
 uses five (all but compute challenge), the scaling action campaign uses
 compute challenge, content lookup, and feed ranking, and the readiness
 admission campaign uses service pressure only.
+
+    The compute challenge gives the compute tier a press of its own. Feed
+ranking loads that tier too, but only after reading candidates from the store,
+so it presses both tiers at once, and service pressure summarises the requests
+that preceded it, so its cost per request varies with the traffic already
+served. The compute challenge instead performs a fixed number of hash rounds
+over a request-bound nonce with no storage access, which is why it carries the
+compute side of the scaling action campaign's mixed press.
 
 A workload is a timed sequence of demand phases. Each phase fixes, for its
 duration, the offered request intensity, as a per-client request rate and an
@@ -2208,16 +2202,13 @@ every run stores the phase schedule it executed.
 
 The phases around the episode have fixed roles across the campaigns. A
 baseline window opens every run at a low, steady load (rate 1.0 per client,
-10~\% of clients active) and establishes the healthy pre-shift operating
-point. A recovery gap (rate 0.5, 5~\%) lets the platform settle and separates
-the stressed window from the post-shift ones. A demand drop (rate 1.0, 10~\%)
-is the release window, in which the capacity the episode required is scaled
-down and post-shift service quality is compared with the baseline. An idle
-tail (rate 0.05, 5~\%) closes the run, so that the release of surplus
-capacity can complete; the telemetry campaign, the mixed press and the
-readiness admission campaign end with it, and the data-access press ends at
-its demand drop.
-Table~\ref{tab:campaign_workloads} summarises 
+10~\% of clients active) and establishes the healthy pre demand surge operating 
+(pre-shift) point. A recovery gap (rate 0.5, 5~\%) lets the platform settle and 
+separates the stressed window from the post-shift ones. A demand drop 
+(rate 1.0, 10~\%) is the release window, in which the capacity the episode 
+required is scaled down and post-shift service quality is compared with the 
+baseline. An idle tail (rate 0.05, 5~\%) closes the run, so that the release 
+of surplus capacity can complete. Table~\ref{tab:campaign_workloads} summarises
 the workload of each campaign.
 
 \begin{table}[H]
@@ -2255,89 +2246,36 @@ the workload of each campaign.
 \end{table}
 
 \subsection{Metrics and Outcome Definitions}\label{sec:metrics_definitions}
-For the telemetry campaign, the primary outcome is
-usable-capacity latency: the time from the onset of the load rise to the
-first new capacity serving traffic, reconstructed from the recorded timeline.
-Usable capacity is the first moment at which new capacity serves traffic. The
-telemetry campaign measures to it from the onset of the load rise, and the
-readiness admission campaign from the scaling decision. The time to the first
-scaling decision is reported as a descriptive outcome only, because
-the telemetry mode determines when the evidence that triggers a decision
-reaches the controller, and a decision cannot be taken before that evidence
-arrives. Alongside it, the campaign reports the delivered fraction, the share
-of produced telemetry summaries the controller consumed, and the information
-age at decision, the time from the closing of the summary that a decision used
-to the decision itself.
 
-For the scaling action campaign, the outcomes are stated per policy under
-each demand episode: the targeted-tier relief, as the fall in the receiving
-tier's utilisation for a storage action and in the processing component for a
-compute action, while the added units carry served requests; the service
-recovery, as the episode request-path components and completion against the
-no-scaling policy; and the resource use, as the scaling actions taken and the
-utilisation of the receiving tier. The campaign reports completion on the
-offered basis.
-
-The scaling action results use the request-path components defined in
-Section~\ref{sec:vip_data_paths}: the data-access and processing components of
-the edge service time. The data-access component covers every storage
-operation issued for the request, read or write, including connection
-acquisition. The processing component covers the work the edge server performs
-on the request after dispatch. The edge service components are per-window means over the
-demand episode, and each run is summarised by the median of its episode
-windows. The readiness admission campaign reads the chain from verified
-readiness to admission, from admission to the first routed request, and from
-provisioning to the first successful response, together with the relief of
-the existing nodes once the new backend serves and the segment from the
-scaling decision to usable capacity, which isolates the admission path.
-
-The telemetry campaign summarises service quality per run through the p95 of
-the endpoint latency over the demand episode. The scaling action campaign
-reports its service outcome on the request-path components and on completion,
-because a request-path component is the signal the policy reads
-(Section~\ref{sec:scaling_policy}). Latency percentiles are computed on the
-served basis, meaning a served request is a completed request with a successful HTTP
-status.
-
-Outcome classes are reported distinctly as offered requests, completed requests,
+Every outcome is read from the recorded timeline of each run, and unless
+stated otherwise each run contributes the mean of its two domains.
+Outcome are reported through offered requests, completed requests,
 failed requests, timeouts (each recorded at the client-side cap of 300~s), and
 client-side cancellations and drops at phase end. Completion is reported on two
-bases: completed requests over non-abandoned requests, and completed requests
-over offered requests. Unless stated otherwise,
-each run contributes the mean of its two domains, and any cross-domain asymmetry
-above the pre-registered symmetry screen is reported.
+bases, completed over non-abandoned requests and completed over offered
+requests, and latency percentiles use the served basis, where a served request
+is a completed request with a successful HTTP status. A latency component is a
+per-window mean over the campaign's demand episode, and each run is summarised
+by the median of its episode windows.
 
-For the readiness admission campaign, the cost of a lost message is read as
-the slow share which is the fraction of completed or timed-out requests that time out
-or exceed one second, over the full plateau (the campaign's demand episode), the onset
-window (the first 150~s of the plateau), and the plateau tail (the last 300~s
-of the plateau), and as the number of admissions, with the candidates
-abandoned and torn down. The cost of a premature message is read as damage,
-the change against a matched no-fault run in the share of offered requests
-that time out, fail, or exceed one second. A backend counts as admitted when
-it becomes visible in the routing pool, not when its registration is recorded.
-
-Control overhead is reported as the CPU utilisation and resident memory of the
-controller processes, and as the volume of control records, along each
-campaign.
+Usable capacity is the first moment at which new capacity serves traffic,
+measured from the anchor each campaign's interface defines: the onset of the
+demand shift where the telemetry mode varies, and the scaling decision where
+admission is under test. The remaining outcomes belong to the campaign that
+varies the interface they describe, and are defined with its results. Relief is
+the fall in the receiving tier's utilisation for a storage action and in the
+processing component for a compute action, while the added units carry served
+requests. Control overhead is reported as the CPU utilisation, resident memory,
+and volume of control records of the controller processes.
 
 \subsection{Campaign Designs and Analysis}\label{sec:campaign_analysis}
 All three campaigns follow the same discipline of single-variable
 manipulation. Each campaign varies exactly one interface of the
 demand-to-capacity chain and holds the other two constant, so that the
-measured differences are attributable to the interface under test. The
-policies compared within a campaign are baselines that encode architectural
-properties, such as a fixed single-tier scaling policy or a periodic polling
-mechanism, and not competing aspects. Each campaign was pre-registered with the
-treatments, primary outcomes, screening rules, and analysis tests all fixed
-before data collection. For the scaling action campaign, the direction
-criteria were fixed before data collection, the magnitude readings were
-registered as sensitivity while the analysis was written, and the medians are
-reported alongside the directions.
+measured differences are attributable to the interface under test.
 
-No results are pooled across campaigns. Every contrast
-is computed within its own campaign's design, and where a research question
-draws on more than one campaign the campaigns are reported separately.
+The treatments, primary outcomes, screening rules, and analysis tests of every
+campaign were fixed in writing before data collection.
 
 Each campaign organises its runs so that every planned contrast is
 measured over matched demand. A seed fixes the demand of a run: which clients
@@ -2346,47 +2284,26 @@ and timing jitter. The runs are organised into blocks, a block holding one run
 of every treatment the campaign compares, sharing one seed, so the treatments
 entering a contrast meet identical demand. The execution order within a block
 is counterbalanced across blocks, so testbed drift cannot align with a single
-treatment. Every campaign uses the same replication standard, seven
+treatment.
+
+Every campaign uses the same replication standard, seven
 seed-matched blocks per treatment, one run per treatment per block, and each
-block uses a distinct seed; the ranges are given in each campaign's design
+block uses a distinct seed. The seed ranges are given in each campaign's design
 table. A campaign with two demand episodes runs one block set per episode over
 the same seven seeds. Seven is the smallest size at which a fully separated
 contrast remains resolvable under the pre-registered test: under complete
 separation between two treatment sets, the exact Mann--Whitney $U$ test has a
 $p$-value floor of $2/\binom{2n}{n}$, 0.0006 at seven runs per treatment.
 
-The reported contrasts follow the tests fixed before data collection. The
-run-level contrasts use the exact Mann--Whitney $U$ test, and the readiness
-admission campaign applies the same test to per-backend samples within runs.
-The telemetry and readiness admission campaigns report Cliff's $\delta$
-alongside, because significance alone does not show how separated the runs
-are. The scaling action campaign's registered criterion is the direction in
-each block, and all nine directions held in seven of seven blocks, so its
-contrasts are reported on the direction count alone. A $p$-value is reported
-only where the runs overlap; a complete separation is reported as such, since
-further replicates can only preserve or weaken it, and a $\delta$ near $0$
-means the treatments overlap. Reported intervals are 95~\% intervals, the
-pre-registered level.
-
-The telemetry campaign adds a direction count, the number of seed-matched
-blocks consistent with the predicted order. The scaling action campaign is
-paired within each block and reports the number of blocks in which the required
-direction holds, with the medians alongside. The readiness admission campaign
-compares admission intervals within start-up class and reports its event-loss
-and premature-message comparisons as block-level differences and per-mode
-damage. It reports no confidence intervals, because its pre-registered checks
-were thresholds and agreement across blocks.
-
-Within each campaign, the treatments compared differ only in the interface
-named in the Treatment row. The telemetry modes share the summary period
-(10~s), scaling and routing policy, workload, topology, and resource limits.
-The scaling policies share the default push source, routing policy, admission
-configuration, action budget, cooldowns, per-tier quotas fixed per episode,
-read-path renewal, and storage selection band. The admission modes share the
-readiness criterion, load-balancing policy, routing weights, pool state,
-workload shape, and per-backend CPU quota, fixed within each compared set.
-The concrete values of all these parameters are listed per campaign in
-Appendix~\ref{app:campaign_config}.
+The run-level contrasts use the exact Mann--Whitney $U$ test. A $p$-value is
+reported only where the runs of the two treatments overlap in range, and a
+complete separation is reported as such, since further replicates can only
+preserve or weaken it. The telemetry and readiness admission campaigns report
+Cliff's $\delta$ alongside, because a $p$-value alone does not show how far
+apart the runs are: $\delta$ does not depend on the number of runs, a $\delta$
+near $0$ means the two treatments occupy the same range with no consistent
+ordering between them, and $\delta=\pm1$ means complete separation, with every
+run of one treatment larger than every run of the other.
 
 Screening followed the pre-registered per-run checks; the resulting exclusions
 and their effect on the analysis population are discussed with the limitations
@@ -2400,8 +2317,8 @@ above.
 
 \section{Telemetry Modes (RQ1)}\label{sec:results_rq1_delivery}
 
-The campaign asked how the four telemetry modes change the way the
-controller scales the service when load rises. Its answer is reported in 
+The campaign evaluated how the four telemetry modes change the way the
+controller scales the service when load rises. The results are reported in
 terms of what the controller saw, how much capacity it added and when the new
 capacity served traffic, and what users experienced.
 
@@ -2414,8 +2331,9 @@ the read began, so its evidence arrives old as well as sparse (Section~\ref
 {sec:monitoring_decision}). Relative to the reference, one property changes at 
 a time: delay without missing summaries (B), missing summaries without delay (D),
 and both together (C), so the cost of late telemetry is separated from the cost of 
-missing telemetry. The pre-registered expectation was the ordering A $<$ B $<$ C $\approx$ 
-D on both usable capacity and the episode latency p95.
+missing telemetry. The pre-registered expectation was the ordering A $<$ B $<$ C
+on both usable capacity and the episode latency p95, with polling and sampled
+push expected to be indistinguishable from each other.
 
 Table~\ref{tab:rq1_design} summarises the design of the campaign, its
 workload is the telemetry row of Table~\ref{tab:campaign_workloads}.
@@ -2435,13 +2353,11 @@ workload is the telemetry row of Table~\ref{tab:campaign_workloads}.
         summary (D). \\
         Replication & Seven seed-matched blocks, one run per mode per
         block (28 runs, seeds 3001--3007), counterbalanced order. \\
-        Test & Four pre-registered contrasts on the episode latency p95,
-        defined in Section~\ref{sec:campaign_analysis}: delay
-        (A--B, D--C) and missing evidence (A--D, B--C). \\
-        Expectations & Ordering A $<$ B $<$ C $\approx$ D on usable
-        capacity and the episode latency p95, with the additional prediction
-        D $>$ C (sampled push strictly worst); quality outside the load rise
-        unaffected. \\
+        Test & Four pre-registered contrasts on the episode latency p95:
+        delay (A--B, D--C) and missing evidence (A--D, B--C). \\
+        Expectations & Ordering A $<$ B $<$ C on usable capacity and the
+        episode latency p95, with polling and sampled push expected to be
+        indistinguishable; quality outside the load rise unaffected. \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -2480,8 +2396,10 @@ the onset in A, 59.6~s in B, 79.6~s in C and 83.2~s in D
 times as long as push, while delayed push landed about 31~s after push,
 close to its fixed 30~s lag. On usable capacity, A $<$ B and B $<$ C held in
 all seven blocks; C and D were not cleanly separated (D later by 3.6~s at the
-median, C $<$ D in five of seven blocks). The time to the first scale-up decision is descriptive
-(Section~\ref{sec:metrics_definitions}). The number of actions is
+median, C $<$ D in five of seven blocks). The time to the first scale-up
+decision is descriptive only, because the telemetry mode sets when the evidence
+that triggers a decision reaches the controller, and a decision cannot be taken
+before it arrives. The number of actions is
 descriptive in the same way:
 polling and sampled push ran 2 to 4 compute scale-ups per run, against 6,
 the whole dynamic pool of three units per domain, in push and delayed push.
@@ -2576,16 +2494,13 @@ so the variance left no trace; C's and D's were exhausted in all seven;
 delayed push sat at the boundary, covered in five runs and exhausted in the
 two that sampled a slow state.
 
-Two pre-registered expectations did not hold, and both are informative.
-The full ordering broke because the two collapsed delayed push runs landed
-at C's level, so B and C do not separate (exact $p = 0.209$), and sampled
-push was not strictly worst, since C and D are statistically
-indistinguishable ($p = 0.456$). What the campaign
+One pre-registered expectation did not hold, and it is informative. The
+ordering broke at B--C because the two collapsed delayed push runs landed at
+C's level, so the two do not separate (exact $p = 0.209$); polling and sampled
+push were indistinguishable ($p = 0.456$), as the design expected. What the campaign
 measured instead is two faults of different kinds: missing summaries act
 robustly in every replicate, while delay acts conditionally on the margin it
-consumes. One delayed push run showed a cross-domain asymmetry above the
-campaign's screening line (domain~2 p95 21.1~s against 4.0~s in domain~1);
-it was the only run above the line.
+consumes.
 
 The differences are confined to the load rise. Outside it, the four
 modes were indistinguishable, with baseline, recovery and demand-drop p95 at
@@ -2601,7 +2516,7 @@ drop shares flat at roughly 5--7~\%.
 
 \section{Bottleneck-Aware Scaling Action (RQ2)}\label{sec:results_rq2_action}
 
-The campaign asked what following the press buys over always scaling the
+The campaign evaluated what following the press buys over always scaling the
 same tier. Four scaling policies were compared under two demand episodes:
 no scaling, compute-only, storage-only, and bottleneck-aware selection,
 which scales compute and storage according to the pressing demand. Each
@@ -2967,7 +2882,8 @@ no-fault runs.
 
 Under backend notification the slow share, the fraction of completed or
 timed-out requests that took longer than one second, rose to 8.3--14.4~\% over the plateau,
-concentrated in the onset window, where the difference against the recovering
+concentrated in the onset window (the first 150~s of the plateau), where the
+difference against the recovering
 modes had a median of 28.0~pp (full plateau 7.64~pp, exact $p = 0.0040$). It
 stayed bounded at a 10.6~\% plateau median, under the pre-registered
 ceiling of 25~\%. The existing nodes kept serving the episode throughout,
@@ -3037,8 +2953,9 @@ Under a premature message at the evaluated lead of ten seconds, the
 expectation was that the modes that admit on the message would be
 exposed while the modes that check would absorb it
 (Table~\ref{tab:rq3_soundness} and
-Figure~\ref{fig:rq3_premature_damage}). Damage is the paired change defined
-in Section~\ref{sec:metrics_definitions}. Backend notification carried a
+Figure~\ref{fig:rq3_premature_damage}). Damage is the change, in percentage
+points, in the share of offered requests that fail, time out, or exceed one
+second, against a matched no-fault run. Backend notification carried a
 median damage
 of $+14.4$~pp against its matched no-fault runs. Notification with a fallback
 check shared the exposure (median $+11.7$~pp). Periodic polling stayed at 
@@ -3152,19 +3069,18 @@ robust, conditional, or not established.
         \midrule
         Telemetry Modes (RQ1) & Loss of intermediate evidence. New
         capacity became usable nearly three times later than under push,
-        and the episode p95 penalty was about ninefold, with complete
-        separation in every replicate & Delay:
-        costly in proportion to the absorption margin it consumes,
-        with two of seven delayed push runs collapsing to the level of
-        polling and sampled push & The full ordering A $<$ B $<$ C $\approx$ D, and polling
-        versus sampling not separated (C $\approx$ D) \\
+        the episode p95 penalty was about ninefold, and the A--D contrast
+        separated completely ($\delta = -1.000$) & Delay: costly in
+        proportion to the absorption margin it consumes, with two of seven
+        delayed push runs collapsing to the level of polling and sampled
+        push & Ordering B $<$ C on the episode p95, and sampled push worse
+        than polling (D $>$ C): neither separated \\
         Bottleneck-Aware Scaling Action (RQ2) & The storage-only policy under
-        the data-access press. Tier relief and a user-visible gain in the
-        data-access wait in every seed, on its own and as the first action
-        of the bottleneck-aware policy; on the mixed press every policy that
-        scales did better than no scaling, and the bottleneck-aware policy
-        did better than each single-tier policy, in every seed on at least
-        one measured outcome & Where the queue is. The
+        the data-access press, which relieved the pressed tier and reached
+        the data-access wait; on the mixed press every policy that scales did
+        better than no scaling, and the bottleneck-aware policy did better
+        than each single-tier policy, with all nine registered directions
+        holding in seven of seven blocks & Where the queue is. The
         storage action relieved a tier that was loaded without binding on
         the mixed press and reached users little, while the compute-only policy
         left the pressed storage tier worse than no scaling on the
@@ -3174,14 +3090,13 @@ robust, conditional, or not established.
         the tested conditions \\
         Readiness Admission Modes (RQ3) & Loss without a check leaves
         the new capacity unused (zero admissions in every loss run), and a
-        premature message damages only the modes that admit on it (damage
-        medians up to $+14.4$~pp) while the modes that check stay flat, the
-        confirmation check admitting only on a verified servable backend & The loss
-        cost under the reduced headroom the campaign fixed, and
-        premature-message damage for the modes that admit on the message
-        while the modes that check stay flat at the evaluated ten-second
-        lead & Two no-fault health-floor breaches meant not all criteria for
-        the lost condition were met together \\
+        premature message damages the modes that admit on it (medians
+        $+14.4$ and $+11.7$~pp) while the modes that check do not (medians
+        $-0.1$ and $-0.9$~pp, within the $2$~pp bound) & Both the size of the
+        loss cost and the premature-message damage were measured under one
+        condition each: the reduced headroom the campaign fixed, and a
+        ten-second lead & Two no-fault health-floor breaches meant not all
+        criteria for the lost condition were met together \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -3236,164 +3151,202 @@ Chapter~\ref{ch:conclusions}.
 
 
 \chapter{Conclusions and Future Work}\label{ch:conclusions}
+This chapter answers the research questions and sets out the contributions,
+limitations, and future research.
 
 \section{Conclusions}\label{sec:conclusions}
-% This dissertation asked how three interfaces of the demand-to-capacity chain
-% change what an edge service does under a demand shift, and measured each of
-% them in its own campaign on one platform.
+This dissertation examined three interfaces of the demand-to-capacity chain
+and established, for each, which property of the crossing decides the
+outcome and under which conditions: telemetry consumption by the controller,
+the tier served by the scaling action, and the admission of a ready backend
+to traffic. Each interface was varied on its own, on one platform, in its own
+campaign. Table~\ref{tab:ch6_answers} summarises the answer to each research
+question.
 
-%     On the telemetry interface, the mode decided how much capacity the
-% controller added, when that capacity became usable, and what users
-% experienced while the rise was absorbed. With every summary arriving, new
-% capacity served 28.5~s after the onset and the episode p95 was 3.7~s. When two
-% summaries in three were missing, the same platform took 79.6~s and 83.2~s and
-% the episode p95 reached 35.0~s and 34.5~s, a penalty of about nine times, and
-% the loss of intermediate evidence separated completely from push in every
-% replicate. A complete but delayed stream cost in proportion to the absorption
-% margin it consumed: 59.6~s and 10.8~s in aggregate, with two of the seven
-% delayed replicates collapsing to the level of the lossy modes and five staying
-% close to push. Missing evidence and late evidence are therefore different
-% faults, not two degrees of one.
+\begin{table}[htbp]
+    \centering
+    \caption{Answers to the research questions, the classification of each
+    finding within its own campaign (robust, conditional, or not
+    established), and the section that reports the evidence.}
+    \label{tab:ch6_answers}
+    \footnotesize
+    \setlength{\tabcolsep}{2pt}
+    \setlength{\emergencystretch}{1em}
+    \begin{tabular}{p{0.06\textwidth} p{0.42\textwidth} p{0.27\textwidth} p{0.17\textwidth}}
+        \toprule
+        RQ & Answer & Classification & Evidence \\
+        \midrule
+        RQ1 & Missing summaries, not delay, drove the user-visible cost.
+        With one summary in three, new capacity became usable nearly three
+        times later and the episode p95 rose about ninefold. Delay cost only
+        where the absorption margin ran out, in two of seven delayed runs.
+        & Robust: loss against push. Conditional: delay. Not established:
+        the delay-matched loss contrast and the polling--sampled-push
+        ordering.
+        & Section~\ref{sec:results_rq1_delivery}; Tables~\ref{tab:rq1_arms}
+        and~\ref{tab:rq1_edges}. \\
+        RQ2 & The tier that served the press decided the user-visible
+        outcome. Storage-only relieved the data-access press in every seed,
+        while compute-only left the pressed tier worse than no scaling. On
+        the mixed press, storage-only relieved a tier loaded without binding
+        and reached users little. Bottleneck-aware selection gave the highest
+        completion under both presses and spent on both tiers, but no
+        advantage over the matched policy beyond completion was established.
+        & Robust: nine registered directions, 7/7. Conditional: where the
+        queue formed. Not established: the size of the storage gain and any
+        advantage beyond completion.
+        & Section~\ref{sec:results_rq2_action}; Table~\ref{tab:rq2_arms}. \\
+        RQ3 & One configuration set latency and reliability at once. With the
+        message intact, backend notification admitted about seven seconds
+        earlier than polling at no user cost for fast-binding backends. With
+        the message lost, notification admitted nothing while the modes that
+        check recovered. With a premature message, only the modes that admit
+        on it were damaged; the confirmation check also reached first success
+        soonest. & Robust: loss without a check and premature-message damage.
+        Conditional: the size of the loss cost and the damage at the
+        ten-second lead. Not established: all lost-condition criteria met
+        together.
+        & Section~\ref{sec:results_rq3_readiness};
+        Tables~\ref{tab:rq3_delays}, \ref{tab:rq3_fault},
+        and~\ref{tab:rq3_soundness}. \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
-%     On the scaling-action interface, the value of an action followed the tier
-% that pressed the episode. Storage scale-up on the data-access press relieved
-% the pressed tier and cut the data-access wait in every seed, while compute-only
-% scaling on the same press left the pressed tier worse than no scaling. On the
-% mixed press, storage scale-up executed and relieved a tier that was loaded
-% without binding, and users gained little. Bottleneck-aware selection gave the
-% highest completion under both episodes, with the matched single-tier policy
-% second; beyond completion, the campaign did not establish a user-visible
-% advantage of selection over the matched policy.
+Read together, the three answers have a common shape, which
+Section~\ref{sec:discussion} develops. The interfaces act on the transition,
+not on the steady state.
+The user-visible telemetry and scaling effects appeared where the operating
+margin was consumed, and the admission effects separated by what each mode
+trusted and when it admitted. These findings hold for the evaluated two-domain testbed,
+its workloads, and its resource limits. No aggregate cost along the chain is
+claimed, because the campaigns vary one interface at a time under different
+workloads and their segments are not additive
+(Section~\ref{sec:lit_synthesis}).
 
-%     On the admission interface, one configuration set latency and reliability
-% at once. While the platform was healthy, backend notification admitted about
-% seven seconds earlier than polling at no user cost. When its single message was
-% lost, the same mode lost the admission entirely, while the modes that check
-% turned the same loss into a bounded delay and kept the provisioned capacity.
-% When the message arrived before the backend could serve, only the modes that
-% admit on it were damaged (medians of $+14.4$ and $+11.7$~pp), while polling and
-% the confirmation check stayed at their no-fault level, the confirmation check
-% also reaching the first successful response soonest (11.0~s against 19.5~s
-% under polling).
-
-%     Read together, the three interfaces decide how a demand shift is
-% weathered, not how the service performs once the shift has passed, and every
-% effect appeared at the edge of the operating envelope, where a margin was
-% consumed. These findings hold for the evaluated two-domain testbed, its
-% workloads, and its resource limits, and no aggregate cost along the chain is
-% claimed (Section~\ref{sec:lit_synthesis}).
+The motivations of Section~\ref{sec:context_motivation} close as findings or
+explicit non-claims. The storage tier behaved as a live capacity that must
+follow demand, and the storage action reached users only when the press bound
+that tier (RQ2). Scale-up alone did not guarantee usable capacity instantly:
+the telemetry mode set when new capacity became usable, and the admission
+mode set when a ready backend began serving (RQ1 and RQ3). The crossings
+differed in more than latency: missing evidence, a mismatched tier, and an
+unverified readiness message each produced a distinct failure (RQ1, RQ2, and
+RQ3). The replication bandwidth consumed by a membership change was not
+metered and is not a measured claim.
 
 \section{Research Contributions}\label{sec:contributions_revisited}
-% The contributions stated in Section~\ref{sec:contributions} are supported as
-% follows.
+The contributions stated in Section~\ref{sec:contributions} are supported as
+follows.
 
-%     \emph{Telemetry modes (RQ1).} The four delivery modes were compared on an
-% otherwise identical platform, and the campaign separates the two defects they
-% carry: missing intermediate evidence costs in every replicate, with new
-% capacity usable nearly three times later and an episode p95 penalty of about
-% nine times, while a complete but delayed stream costs conditionally, in
-% proportion to the absorption margin it consumes.
+\begin{enumerate}
+    \item \emph{Telemetry modes (RQ1).} The four telemetry modes were
+    compared on an otherwise identical platform. The campaign separates the
+    two faults they carry. Missing intermediate evidence cost in every
+    replicate relative to push: new capacity was usable nearly three times
+    later and the episode p95 penalty was about nine times. A complete but
+    delayed stream cost conditionally, in proportion to the absorption
+    margin it consumed (Section~\ref{sec:results_rq1_delivery}).
 
-%     \emph{Bottleneck-aware scaling action (RQ2).} Scaling the tier under
-% pressure was compared with two fixed single-tier policies and with no scaling
-% under two demand episodes. The storage action relieved the pressed tier and
-% reached users in every seed of the data-access press, a policy that served a
-% tier the episode did not press on reached users little, and scaling compute
-% under the data-access press left the pressed tier worse than no scaling.
-% Bottleneck-aware selection gave the highest completion under both episodes.
+    \item \emph{Bottleneck-aware scaling action (RQ2).} Scaling the tier
+    under pressure was compared with two fixed single-tier policies and with
+    no scaling under two demand episodes. The storage action relieved the
+    pressed tier and reached users in every seed of the data-access press. A
+    policy that served a tier the episode did not press reached users
+    little, and scaling compute under the data-access press left the pressed
+    tier worse than no scaling. Bottleneck-aware selection gave the highest
+    completion under both episodes and was the only policy that spent on
+    both tiers (Section~\ref{sec:results_rq2_action}).
 
-%     \emph{Readiness admission (RQ3).} The four admission modes were crossed
-% with three message conditions. The campaign measures the admission step that
-% the placement literature leaves outside its scope, as a bounded delay while the
-% platform is healthy, as an all-or-nothing loss when the message is dropped
-% without a check, and as damage confined to the modes that admit on a premature
-% message.
+    \item \emph{Readiness admission (RQ3).} The four admission modes were
+    crossed with three message conditions. The campaign measures the
+    admission step that the placement literature leaves outside its scope,
+    as a bounded delay while the platform is healthy, as an all-or-nothing
+    loss when the message is dropped without a check, and as damage confined
+    to the modes that admit on a premature message
+    (Section~\ref{sec:results_rq3_readiness}).
 
-%     \emph{Comparative synthesis.} Table~\ref{tab:synthesis} classifies each
-% finding as robust, conditional, or not established within its own campaign,
-% without pooling quantities across campaigns.
+    \item \emph{Comparative synthesis.} The three interfaces were synthesised
+    under one classification. Table~\ref{tab:synthesis} classifies each
+    finding as robust, conditional, or not established within its own
+    campaign, and no quantity is pooled across campaigns
+    (Section~\ref{sec:discussion}).
+\end{enumerate}
 
 \section{Limitations}\label{sec:limitations}
-% The evaluation is bounded in scope. It ran on a single host holding two network
-% domains joined by an emulated link, with a single window size, one workload
-% family, and the resource limits of Appendix~\ref{app:campaign_config}.
-% Cross-domain service placement remained held-constant platform context, the
-% mechanisms that depend on MongoDB were not generalised, and no end-to-end
-% coordination penalty is claimed: the per-interface results are synthesised only
-% under a matched schema (Section~\ref{sec:lit_synthesis}).
+The testbed is a single host with two emulated domains, so the control 
+plane is host-local and the data path is single-site, with no introduced 
+latency or jitter between the controller and the resources it manages. 
+The orchestration is therefore not distributed in the sense of a multi-site
+deployment, and no wide-area claim is made.
 
-%     The readiness admission campaign is affected by the platform state of the
-% runs rather than by a treatment. In the earlier runs a share of the spawned
-% backends stalled about ten seconds at socket bind (10.0--10.4~s whenever it
-% occurred), and none of the later-run backends did. The start-up class is
-% measured per backend and every gated comparison is made within class, which
-% holds the stall fixed in the reported contrasts; the slow class, however, draws
-% only on the earlier runs, so it carries no confirmation-check evidence, and the
-% pre-registered wake check that requires evidence in every stratum is carried as
-% not met.
+The compute tier is a set of Docker containers rather than a cluster orchestrator,
+so scheduling, image distribution, and multi-node placement were not evaluated.
+The platform also has no external baseline as it compares configurations of one
+controller process per domain but does not compare against an orchestration
+in which monitoring, autoscaling, and load balancing run as separate processes or
+on separate nodes, so the cost of that separation is not measured.
 
-%     The readiness-to-admission interval could not be re-measured in this build.
-% The admission log's readiness and admission timestamps read the same, so the
-% interval reads 0.000~s for essentially every backend, and the service log's
-% polling trace carries a quantisation of about 2.9~s. The interval reported in
-% Section~\ref{sec:results_rq3_readiness} is the recorded admission-timing set's.
+The controller keeps its state in memory and has no leader election or failover,
+and a restart loses the routing-pool state until it is re-derived from the network.
+The packet path runs inline in the controller's OpenFlow event loop, so throughput under
+high connection churn was not characterised. Controller failure, recovery, 
+peer-state expiry, and secure multi-domain control were not evaluated.
 
-%     Storage relief under the data-access press was not uniform. The action cut
-% the data-access component in every seed, but the size of the gain varied across
-% runs, and in three of the seven runs the component remained between 300~ms and
-% 1.5~s. The run records carry no per-connection trace, and the leading
-% explanation, a renewal that selects a member before its reported statistics
-% settle, remains a hypothesis. The storage benefit is therefore a direction that
-% held in every seed, not a magnitude that can be expected in any single run.
+The VIP routing pool is rebuilt on every topology tick rather than atomically
+on registration, so a backend can be recorded as admitted before it is
+selectable, and a draining backend can remain selectable until the next
+rebuild. The topology tick is one second, so the admission-to-first-request
+interval carries an up-to-one-second boundary. That boundary limits the
+precision of the admission timestamp, not the reported mode or policy
+contrasts, which are several seconds apart. Routing is also connection-level
+where an existing flow keeps its backend until it expires or is renewed, so a
+scaling action cannot redistribute traffic already in flight.
 
-%     The edge memory limit was marginal at press onset. Two runs reached the
-% container's memory cap as the episode began, at about 367--370~MB against a
-% 384~MB limit; one was replaced and one retained with its service outcome
-% flagged. That limit bounds the demand intensity at which the platform was
-% evaluated.
-
-%     The analysis population is bounded by the pre-registered screens. The
-% telemetry campaign excluded no run, and the two memory-cap runs above were the
-% only scaling-action removals. In the readiness admission campaign, one block
-% was excluded from the fault comparison because periodic polling's relief did
-% not complete in that run (its plateau tail read 4.08~\% against the 2~pp
-% bound), leaving five assessable blocks, and two no-fault runs fell outside the
-% pre-registered health floor. Neither exclusion rests on the treated outcome,
-% and neither reverses a reported direction.
-
-%     The data plane is fixed to the OpenFlow feature set on Open vSwitch, with
-% no programmable data plane and no in-band telemetry, and steering relies on the
-% host's kernel connection tracking.
+The storage tier inherits MongoDB's replication model, in which only the
+primary accepts writes. Storage scale-up therefore adds read capacity, not
+write capacity, and the evaluation covers read-bound storage pressure. Storage
+scale-up also activates a reserve prepared before the reaction path, so the
+measured action excludes cold member creation and initial synchronisation, and
+a deployment that creates a member on demand would see a longer and more
+variable action. The action is a membership change in the domain's own replica
+set, so cross-domain placement and the Tier~0 and Tier~1 data paths were held
+constant and are not evaluated.
 
 \section{Future Research Directions}\label{sec:future_work}
-% The evaluation leaves several directions open.
+The evaluation leaves several directions open.
 
-%     \emph{Coordination delay as a compound treatment.} The campaigns vary one
-% interface at a time. An injection that delays both handoffs at once, with
-% configurable delays at each, would test whether the effects compose.
+\emph{Coordination delay as a compound treatment.} The campaigns vary one
+interface at a time. An injection that delays several handoffs at once, with
+configurable delays at each, would test whether the effects compose
+(Section~\ref{sec:lit_synthesis}).
 
-%     \emph{Telemetry window and standard stacks.} Varying the window size would
-% trade freshness against noise. Repeating the telemetry campaign over
-% off-the-shelf observability components, such as an OpenTelemetry collector over
-% a message broker, would show whether the measured effects are properties of the
-% modes or of this implementation.
+\emph{Telemetry window and standard stacks.} Varying the window size would
+trade freshness against noise. Repeating the telemetry campaign over
+off-the-shelf observability components, such as an OpenTelemetry collector
+over a message broker, would show whether the measured effects are properties
+of the modes or of this implementation.
 
-%     \emph{Storage placement and tiering.} Tier~1 selective synchronisation is
-% implemented only partially and is disabled in the reported campaigns, and the
-% data-locality tiers (Tier~0, Tier~1, and Tier~2 cold and warm) were designed
-% but left outside the evaluation. Both would characterise the storage side of
-% the same chain.
+\emph{Storage placement and tiering.} Tier~1 selective synchronisation is
+implemented but disabled in the reported campaigns.
+Tier~0 and Tier~1 were designed but left outside the evaluation, while the
+evaluated storage action exercised the Tier~2 membership change. Evaluating
+the other two tiers would characterise the storage side of the same chain,
+and instrumenting replica-sync bandwidth and the transient cost of a
+membership change would close a measurement gap in the storage action.
 
-%     \emph{Action policy beyond the evaluated envelope.} A follow-up to the
-% scaling action would evaluate the conditions where a residual benefit is
-% expected, namely dispatch-side concurrency that fan-out cannot multiply, a
-% wrong-tier action that carries a priced user cost, and regime shifts beyond the
-% tested demand.
+\emph{Action policy beyond the evaluated envelope.} A follow-up to the
+scaling action would evaluate the conditions where a residual benefit is
+expected, namely dispatch-side concurrency that fan-out cannot multiply, a
+wrong-tier action that carries a priced user cost, and regime shifts beyond
+the tested demand.
 
-%     \emph{Scale and realism.} A larger deployment, real traffic traces, and
-% ML-driven threshold adaptation would test how far the findings extend; a
-% programmable data plane such as P4 would move steering and telemetry into the
-% network, at the cost of reproducing the connection tracking behaviour in-switch.
+\emph{Scale and realism.} A larger deployment, real traffic traces, and
+ML-driven threshold adaptation would test how far the findings extend. A
+programmable data plane such as P4 would move steering and telemetry into the
+network, at the cost of reproducing the connection-tracking behaviour
+in-switch. Controller redundancy and secure multi-domain control would extend
+the platform beyond the single-controller-per-domain model evaluated here.
 
 % =====================================================================
 % Annex A - Campaign Configuration Values
@@ -3424,16 +3377,14 @@ out the demand episode among them.
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{images/src/workload_phases.drawio.png}
-    \caption{Phases of a run, shown for the telemetry campaign. A phase fixes
-    its offered request intensity, as a per-client rate and an active-client
-    fraction, and its request mix for its duration. The phase that applies the
-    demand shift under test is the demand episode, and the outcomes are read
-    over it. The surrounding phases have fixed roles across the campaigns: the
-    baseline window establishes the healthy pre-shift operating point, the
-    recovery gap lets the platform settle, the demand drop is the release
-    window in which the episode's capacity is scaled down, and the idle tail
-    lets the release complete. Durations and intensities differ per campaign
-    and are listed in Table~\ref{tab:campaign_workloads}.}
+    \caption{Phases of a run, shown for the telemetry campaign. The phase that
+    applies the demand shift under test is the demand episode, and the outcomes
+    are read over it. The surrounding phases have fixed roles: the baseline
+    window establishes the healthy pre-shift operating point, the recovery gap
+    lets the platform settle, the demand drop is the release window in which
+    the episode's capacity is scaled down, and the idle tail, where a campaign
+    uses one, lets the release complete. Durations, intensities, and mixes
+    differ per campaign and are listed in Table~\ref{tab:campaign_workloads}.}
     \label{fig:workload_phases}
 \end{figure}
 
@@ -3460,14 +3411,11 @@ out the demand episode among them.
         \bottomrule
     \end{tabular}
 \end{table}
-{\footnotesize\noindent\textit{Note.} The scaling action campaign ran the
-mixed press at an edge quota of 0.15~vCPU and the data-access press at
-1.20~vCPU, with storage at 0.05 and 0.09~vCPU and an edge memory limit of
-384~MB. Two runs hit that limit at press onset
-(Chapter~\ref{ch:conclusions}). In the
-readiness admission campaign the fault runs used the reduced quota of
-0.12~vCPU and the intact-source admission-timing sets at 0.15 and 0.30~vCPU;
-storage scaling is not exercised in that campaign.\par}
+{\footnotesize\noindent\textit{Note.} Two scaling-action runs reached the edge
+container's memory limit as the press began, at about 367--370~MB against the
+384~MB limit; one was replaced and one retained with its outcome flagged. In
+the readiness admission campaign storage scaling is not exercised, and the
+intact-source admission-timing sets use the higher quotas listed.\par}
 
 \begin{table}[H]
     \centering
@@ -3495,10 +3443,10 @@ storage scaling is not exercised in that campaign.\par}
     \end{tabular}
 \end{table}
 {\footnotesize\noindent\textit{Note.} The latency statistic is the per-summary
-statistic that feeds the decision signals; the telemetry campaign
-keeps the mean statistic by design, the scaling action campaign runs the
-median statistic, and the readiness admission campaign runs the platform base
-decision configuration. In the telemetry modes column the zero utilisation
+statistic that feeds the decision signals; the telemetry campaign and the
+readiness admission campaign keep the mean statistic of the platform base
+configuration, and the scaling action campaign runs the median statistic. In
+the telemetry modes column the zero utilisation
 weight makes the storage signal latency-only; the action budget and the
 classification margin apply only to bottleneck-aware selection.\par}
 
@@ -3522,14 +3470,17 @@ classification margin apply only to bottleneck-aware selection.\par}
 functions that select a backend, and a storage member, for a new flow
 (Section~\ref{sec:vip_data_paths}). The readiness admission campaign
 pins these weights; the other two campaigns use the platform base
-weights.\par}
+weights. The weights need not sum to one, because each metric enters as a
+fraction of the largest value observed among the eligible candidates.\par}
 
 \begin{table}[H]
     \centering
     \caption{Control-plane cost per configuration (descriptive; medians
     across the runs of each configuration). Delivery records count delivered
     telemetry summaries; action records count provisioned units; admission
-    records count events or readiness checks.}
+    records count events or readiness checks. The admission rows list the
+    direct and discovery configurations; the fallback and confirmation checks
+    are not tabulated.}
     \label{tab:app_config_control_cost}
     \footnotesize
     \setlength{\tabcolsep}{3pt}
