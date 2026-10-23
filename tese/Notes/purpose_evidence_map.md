@@ -3,6 +3,8 @@
 > **Status:** 2026-07-31; refreshed 2026-08-01 (corpus reorganisation);
 > 2026-09-26 (RQ1 results written into §5.2, `sec:results_rq1_delivery`).
 > 2026-10-09: RQ1 terminology harmonised to the thesis-canonical vocabulary: telemetry modes — push / delayed push / polling / sampled push; RQ wording fixed in main.tex §1.3.
+> 2026-10-23: consistency pass — RQ1 Table 6.1 now states the robust/conditional distinction; RQ2 wording uses “no established user-visible benefit”; storage counts use “storage admissions”; “handover” replaces “handoff”; the run-level significance level (0.05) is stated in §5.1.4.
+> 2026-10-23 (later): load balancing repositioned as a held-constant platform mechanism, not an evaluated interface. §2.5 retitled “Readiness Admission in SDN Load Balancing” with the LB literature compressed (−85 words, all five citations kept); §3.4 and §4.4 retitled “Telemetry Delivery and Scaling”; the review bucket list now reads “telemetry, the scaling decision, readiness admission, and orchestration”. The results chapters already attributed every outcome to admission, so no results-side change was needed.
 > Companion to `thesis_overview.md` (framing) and
 > `../literature_review/global_literature_review.md` (evidence ledger).
 > **Quote source:** all verbatim quotes below come from the evidence ledger
@@ -200,8 +202,15 @@ record: `tese/research_questions/rq1/rq1_conclusions.md`.
 2. Edge-DB research treats database scalability as a **static/design-time** replication–sharding–placement decision — not as runtime capacity control.
 3. **No surveyed system makes a closed-loop, telemetry-driven decision of which tier — compute or storage — to scale from an observed bottleneck, and none co-locates monitoring + scaling + routing over both tiers with shared state.**
 
-**Answered (2026-10-18):** measured in the scaling-action campaign (56 runs
-plus one approved replacement; eight configurations over seeds 42--48). Under the
+**Answered (2026-10-18; compute-bound block added 2026-10-23):** measured in
+the scaling-action campaign (56 v5 runs plus one approved replacement; eight
+configurations over seeds 42--48) and the 28-run compute-bound block (four
+policies, seven seeds). Under the compute-bound press, only the compute-capable
+policies moved the press and the storage capability did not engage; storage-only
+and no scaling remained in the same band. The waste claim is stated as a
+mechanism consequence (a forced storage action would add unread members), not as
+a measured arm result in this block, because the storage-only capability does not
+fire under the hash-only mix. Under the
 data-access press the storage action relieved the pressed tier and cut the
 data-access component in every seed, on its own and as the first action of
 the bottleneck-aware policy, and every registered direction held. Under the mixed press
@@ -213,8 +222,8 @@ inaction on the data-access press. Reported in §5.3
 stats, control cost).
 
 **The cost of the scaling action itself (the honest claim):** the evaluated
-storage action is the activation of a prepared reserve, so the membership
-change and its replica sync sit off the reaction path. The campaign does not
+storage action is a storage admission, the activation of a prepared reserve, so
+the membership change and its replica sync sit off the reaction path. The campaign does not
 meter the replica-sync bandwidth consumed when the reserve is prepared, and
 the thesis carries that as a limitation (Ch.6). The claim is scoped to same-LAN
 reserve activation, with full placement/consistency semantics out of scope.

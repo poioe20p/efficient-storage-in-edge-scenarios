@@ -137,7 +137,7 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
 | **arm** | cell (retired 2026-10-03); arm/arms in prose (retired 2026-10-18) | one tested configuration of a campaign. Name it with the campaign's own unit: telemetry mode (RQ1), scaling policy (RQ2), admission mode or condition (RQ3); "configuration" or "set" only when speaking across campaigns |
 | **telemetry mode** (push, delayed push, polling, sampled push) | telemetry delivery semantics; delivery semantics; delivery mode; delivery treatment; event-preserving; delayed event-preserving; latest-state (all retired 2026-10-09); arm (2026-10-18) | RQ1's four modes, one per run; fixed RQ wording in §1.3 ("affect how the controller scales the service when load rises"); the RQ1 episode is "the load rise"; raw source literals (`event_preserving`, `delayed_event_preserving`, `poll`, `sampled_push`) only as config values in Table~\ref{tab:impl_delivery_sources} and the appendix |
 | **run** | lane (retired 2026-10-03) | a single campaign execution; "replicate" = run within a design block |
-| **load balancing** | backend selection, backend selector, selection policy, unit selection (retired 2026-10-10) | the function that chooses the backend for a new flow; the controller performs it with the cost function of §3.3.2; the readiness/vip sections say a unit "becomes eligible for load balancing" |
+| **load balancing** | backend selection, backend selector, selection policy, unit selection (retired 2026-10-10) | the function that chooses the backend for a new flow; the controller performs it with the cost function of §3.3.2; the readiness/vip sections say a unit "becomes eligible for load balancing". It is a held-constant mechanism, never an evaluated interface: no RQ varies the selection policy. The evaluated interface at that seam is **readiness admission**, i.e. how a backend enters the set selection draws from; §2.5 is titled "Readiness Admission in SDN Load Balancing" and states that selection among admitted backends is held fixed. Never let a section title or a review bucket imply load balancing is studied |
 | **routing pool** | selector's eligible pool (retired) | the set a unit enters on admission and leaves on removal |
 | **absorption margin** | absorbing margin (typo form) | the base fleet's spare capacity that absorbs delay while new capacity starts |
 | **operating envelope** | evaluated envelope (retired) | the evaluated operating conditions; resource-side bounds are "resource limits" |
@@ -152,15 +152,17 @@ Source: `tese/miscelineous/1594736316665isctenormasgraficas2020.pdf`
 | **check** (checking the backend) | probe, discovery (retired for RQ3 2026-10-11) | the controller's request to the backend's readiness endpoint; "fallback check" = the check a wait-then-check form runs when the message never arrives; the confirmation check = the check an arriving message wakes |
 | **condition** (intact / lost / premature) | fault arm, fault cell (in RQ3 prose) | the three states of the readiness message evaluated in RQ3, each held for the whole run; first use is the arrival-property triple "the message arrives intact, never arrives, or arrives before the backend can serve", sometimes introduced as "three message conditions"; prose then uses "under a lost message", "under a premature message"; "premature" is the table shorthand; the evaluated lead is 10 s |
 | **activation of a prepared reserve** | cold replica creation on the reaction path | storage-action wording rule |
+| **storage admission** | reserve activation, storage add, added storage unit | the activation of a prepared reserve; a per-domain admission count includes the preparation of the replacement reserve and is an event count, not a concurrent member count |
 | **Tier~0 / Tier~1 / Tier~2** | unqualified "hot copy" | Tier 1 = capability, held constant where unevaluated |
 | **prepared reserve, peer domain, spillover** | — | fixed vocabulary |
+| **handover** | handoff, hand-off | the step-to-step transition; attributive form: **handover delay** |
 | **summary** (first use: **telemetry summary**) | window, telemetry window, windowed summary, update (retired 2026-10-10 for the delivered object) | one aggregator report covering the last 10~s; the object the modes deliver and the policy evaluates; "window" survives only for lengths of time (exposure, release, onset, in-flight, warm-lease, scale-up/down) |
 | **degradation score, adaptive threshold, idle condition** | — | equations and `where:` lists in `sec:scaling_policy` |
 | **pre-dispatch wait** | — | the first request-path interval; boundary at **dispatch** (where the edge service time starts); read only as a difference (user-visible latency minus edge service time); contents enumerated in §4.4 |
 | **the reviewed state of the art / within the reviewed literature** | universal claims | corpus-bounded qualifiers |
 | British English: organised, characterisation, utilisation, normalised, behaviour | US spellings in prose | comments may lag |
 | **compute-only / storage-only** (fixed RQ2 policies) | compute-first, storage-first (retired from prose) | the fixed scaling policies scale a single tier only; introduced with the bottleneck gloss in §5.3 |
-| **mixed press / data-access press** (RQ2 demand episodes) | compute-bound episode, data-access-bound episode (retired 2026-10-18 for RQ2; "compute-bound" survives only for the RQ3 plateau and the classifier's classes) | the two evaluated presses: mixed = interactive requests plus content lookups, processing binds first; data-access = read-heavy content serving, the storage member binds first |
+| **compute-bound press / mixed press / data-access press** (RQ2 demand episodes) | compute-bound episode, data-access-bound episode (retired 2026-10-18 for RQ2); compute-first/storage-first (retired) | the three evaluated presses: compute-bound = hash-only, no storage reads, processing binds first; mixed = interactive requests plus content lookups, processing binds first; data-access = read-heavy content serving, the storage member binds first |
 | **scaling policy** (no scaling, compute-only, storage-only, bottleneck-aware) | adaptive policy, adaptive action, both-tier policy (as names); arm (2026-10-18) | RQ2's four configurations, one run per policy per demand episode; the policy that selects the pressed tier is always "bottleneck-aware" |
 | **bottleneck-aware selection** | both-tier policy, adaptive policy, adaptive action (as names); arm | RQ2's adaptive policy; gloss "scales compute and storage according to the pressing demand"; commits one tier per action, so both tiers can be scaled in sequence |
 | **no scaling** | no-action arm, no-action comparator, inaction (as a name) | RQ2's control policy, the platform without elasticity |
@@ -182,7 +184,7 @@ replica set", "edge servers/services".
   bimodality, OOM exclusions, unmetered replica-sync bandwidth); qualify
   RQ3 admission timestamps (registered vs pool-included vs first flow);
   include the consistency contract (primary writes, eventually consistent
-  secondary reads); describe shared-state ownership and handoff, never
+  secondary reads); describe shared-state ownership and handover, never
   claim "no shared mutable state"; Tier 2 topics (HA, security) get at most
   one §6.4 one-liner.
 - Counts (works, runs, n) must reconcile with the corpus README and run
@@ -222,6 +224,12 @@ replica set", "edge servers/services".
 - Semicolons are reserved for separating items within a list (including
   table cells). Never join independent clauses with a semicolon. Use a
   full stop or rephrase instead.
+- Colons are reserved for introducing a list. Never join a clause to its
+  explanation, consequence, or restatement with a colon; use a full stop.
+  For example, write "the storage tier is itself a live capacity. When the
+  pressure sits in the data, adding instances does not relieve it", not
+  "the storage tier is itself a live capacity: when the pressure sits in the
+  data, adding instances does not relieve it".
 - Prefer minimal, simpler terminology. Use the shortest word or
   construction that keeps the claim exact, and replace formal or inflated
   variants with plain ones wherever nothing is lost (for example, "starts

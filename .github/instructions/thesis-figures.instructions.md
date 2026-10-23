@@ -51,5 +51,9 @@ whenever a figure is created, revised, referenced, or moved.
   `main.tex` never changes; git holds the previous state. The `_vN` naming
   applies to the legacy renders under `tese/images/`.
 - `tese/images/` holds only images referenced by the build (`main.tex`,
-  `preamble.sty`). Superseded legacy renders move to `tese/images/unused/`;
-  superseded legacy sources move to `tese/images/src/superseded/`.
+  `preamble.sty`). Every superseded render and source moves to
+  `tese/images/unused/`, which is the single archive and is excluded from the
+  build. `tese/images/src/` holds only the current drawio figures, their
+  sources and `STYLE.md`; `tese/images/src/assets/` holds the drawing assets
+  (logos) that `source/scripts/testing/analysis/diagram_thesis_drawio.py`
+  needs to regenerate a figure, so it is an input, not an archive.

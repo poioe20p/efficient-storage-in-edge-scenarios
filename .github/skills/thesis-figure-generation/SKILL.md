@@ -36,8 +36,11 @@ Existing figures such as `control_workflow.drawio.png` and
    re-export with the diagram embedded); never paint the pixels.
 3. **Revise in place.** Re-export over the same
    `tese/images/src/<name>.drawio.png`, so `main.tex` never changes and git
-   holds the previous state. The `_vN` naming and the `unused/` /
-   `src/superseded/` moves apply to the legacy renders under `tese/images/`.
+   holds the previous state. The `_vN` naming applies to the legacy renders
+   under `tese/images/`, and every superseded render or source moves to
+   `tese/images/unused/`, the single archive excluded from the build.
+   `tese/images/src/assets/` is not an archive: it holds the drawing assets
+   that `diagram_thesis_drawio.py` needs to regenerate a figure.
 4. **The checker must pass before export** — fix every FAIL; report any
    remaining WARNs.
 5. **Propose before editing** (house rule): thesis visuals are author-owned —
