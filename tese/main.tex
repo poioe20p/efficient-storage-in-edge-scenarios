@@ -79,22 +79,21 @@
 
 
 
-
 % =====================================================================
 %                           RESUMO + ABSTRACT
 % =====================================================================
 % Resumo, em Português
 \resumo{
- O aumento da capacidade não garante, por si só, serviço aos utilizadores em
-espera. A nova capacidade pode chegar demasiado tarde, ser atribuída a uma
+O aumento de capacidade num serviço não garante, por si só, maior disponibilidade aos 
+utilizadores em espera. A nova capacidade pode chegar demasiado tarde, ser atribuída a uma
 componente do serviço que não está sob pressão ou permanecer inativa ou
 receber tráfego antes de estar apta a responder. Embora estas falhas sejam
-referidas na literatura, os estudos existentes não isolam as etapas que lhes
-dão origem. Esta dissertação analisa cada etapa isoladamente, através da
-degradação controlada de cada etapa, numa plataforma emulada com dois
-domínios de rede, constituída por um controlador de rede definida por software,
-servidores em contentores e uma base de dados de documentos, avaliando o
-desempenho da perspetiva do utilizador. Os resultados mostram que a perda
+referidas na literatura, nenhum dos trabalhos revistos caracteriza o
+comportamento de cada etapa sob diferentes condições de funcionamento. Esta
+dissertação varia cada etapa isoladamente, num ambiente experimental emulado
+com duas redes, um controlador de rede definida por software, servidores em
+contentores e uma base de dados de documentos, avaliando o desempenho da
+perspetiva do utilizador. Os resultados mostram que a perda
 parcial de informação sobre a carga atrasa significativamente a
 disponibilização de capacidade útil e aumenta os tempos de espera. A
 informação completa, mas tardia, só prejudica o desempenho quando os
@@ -102,24 +101,26 @@ servidores não dispõem de capacidade de reserva. A atribuição de recursos à
 componente sob pressão é determinante para beneficiar os utilizadores, podendo
 uma atribuição incorreta produzir resultados piores do que a ausência de
 capacidade adicional. A validação dos anúncios de prontidão dos servidores
-revela outro compromisso: agir sem verificação é mais rápido, mas a perda do
+revela que agir sem verificação é mais rápido, mas a perda do
 anúncio impede a admissão de tráfego, enquanto um anúncio prematuro pode
-encaminhar pedidos para servidores ainda indisponíveis. As conclusões,
-limitadas ao ambiente experimental utilizado, identificam três causas
-distintas: informação em falta, afetação inadequada de recursos e confiança em
-anúncios não verificados.
+encaminhar pedidos para servidores ainda indisponíveis. As conclusões
+apontam uma propriedade decisiva em cada etapa sendo estas a informação disponível, a
+componente a que se atribui capacidade e a verificação do anúncio de
+prontidão.
 }{
 Computação na periferia; redes definidas por software; escalonamento
-automático; telemetria; admissão por prontidão; MongoDB
+automático; telemetria; MongoDB; admissão por prontidão
 }
 % Abstract
 \abstract{
- More capacity does not by itself help the waiting user. The new capacity can
-arrive too late to matter, it can go to a part that was not under strain, and
-it can sit unused or receive traffic before it can answer. Each failure
-appears in the literature, but the reports do not separate the steps that
-produce it. This dissertation degrades one step at a time on an emulated
-platform with two network domains, built from a software-defined network
+More capacity in a service does not by itself give the waiting users greater
+availability. New capacity can arrive too late to matter, it can go to a part
+that was not under strain, and it can sit unused or receive traffic before it
+can answer. Each failure
+appears in the literature, but none of the reviewed studies characterises
+the behaviour of each step under different operating conditions. This
+dissertation varies one step at a time on an emulated platform with two
+network domains, built from a software-defined network
 controller, containerised servers and a document database, watching it as a
 user would. When part of the load information that drives the adjustment goes
 missing, new capacity takes much longer to become useful and users wait far
@@ -128,15 +129,14 @@ servers have no spare capacity. Adding capacity to the part of the service
 under strain decides whether users gain anything, and adding it elsewhere can
 leave them worse off than adding nothing. When a newly started server
 announces that it is ready, acting on that announcement unchecked is the
-fastest option and the most fragile: it saves time while the platform is
+fastest option and the most fragile as it saves time while the platform is
 healthy, admits nothing once the announcement is lost, and lets traffic reach
-a server that cannot yet serve it. Findings hold only within one emulated
-testbed. Each failure has a step to blame. Missing information delays usable
-capacity, a misdirected action spends capacity where it is not needed, and a
-trusted announcement puts capacity in the wrong state.
+a server that cannot yet serve it. The conclusions point to one deciding
+property at each step, with them being the information available, the tier that receives the
+capacity, and the checking of the readiness message.
 }{
 Edge computing; software-defined networking; auto-scaling; telemetry;
-readiness admission; MongoDB
+MongoDB; readiness admission
 }
 % =====================================================================
 
@@ -177,7 +177,7 @@ Figure~\ref{fig:internet_traffic}.
     \label{fig:internet_traffic}
 \end{figure}
 
-    This growth accompanies the emergence of real-time interactive and
+This growth accompanies the emergence of real-time interactive and
 data-intensive applications. Examples include web streaming
 and cloud gaming, both services where users expect sub-second latency and
 high-resolution multimedia, highlighting the need for fast and capable
@@ -190,7 +190,7 @@ distributed offering and availability that have established it as the
 foundational layer supporting modern applications and services
 \parencite{Gurung2026CloudRevolutionTracingOriginsRise}.
 
-    Yet, in parallel, a growing share of internet traffic now originates from
+Yet, in parallel, a growing share of internet traffic now originates from
 mobile devices, which have become the main gateway to internet access
 \parencite{Gaudiaut2026MobileTrafficShare}. Much of this access is
 therefore generated and consumed at the network edge. Edge computing
@@ -200,7 +200,7 @@ applications~\parencite{Cao2020OverviewEdgeComputingResearch,Satyanarayanan2017E
 Since data can be processed and stored locally, only a subset of it is
 sent to the cloud~\parencite{Cao2020OverviewEdgeComputingResearch}. 
 
-    Despite these advantages, edge resources are dispersed, which translates
+Despite these advantages, edge resources are dispersed, which translates
 into less capacity per location and greater complexity in managing the
 distributed edge servers. As Satyanarayanan puts it, \enquote{the dispersion inherent in
 edge computing raises the complexity of management considerably}
@@ -208,9 +208,8 @@ edge computing raises the complexity of management considerably}
 aggravated by considerable variation in user demand over time and by the
 heterogeneous resource requirements of the requests served. Luo et al. further
 highlight that, without efficient resource scheduling, this distributed nature
-leads to resource waste
-\parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}. Resource
-management therefore becomes increasingly important, since the limited
+leads to resource waste \parencite{Luo2021ResourceSchedulingEdgeComputingSurvey}.
+Resource management therefore becomes increasingly important, since the limited
 capacity of each location must be adjusted over time to suit the constant
 fluctuation of user demand.
 
@@ -249,18 +248,16 @@ an ongoing demand shift. They may run as separate components, each with its
 own control loop, or within one control process, and the interfaces between
 them remain in both arrangements. In the reviewed literature the cost of these
 crossings is acknowledged, but no study varies one crossing on its own to see
-what difference it
-makes~\parencite{Qu2018AutoScalingWebApplicationsClouds,
-Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}.
-The crossings also differ in more than latency: telemetry can arrive
-complete and fresh, complete but delayed, or with summaries
-missing~\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork};
+what difference it makes~\parencite{Qu2018AutoScalingWebApplicationsClouds,
+Llorens2021SDNBasedHorizontalAutoScalingLoadBalancing}. The crossings also differ
+in more than latency: telemetry can arrive complete and fresh, complete but delayed,
+or with summaries missing~\parencite{Yaseen2025CountersTelemetrySurveyProgrammableNetwork};
 a scaling action can serve the tier that binds the demand or one that
 does not~\parencite{Nikravesh2017ImpactDatabaseLayerAutoScaling}; and the
 state that admits a backend to traffic can be late or 
 inaccurate~\parencite{Dreibholz2023TowardsLightweightTaskSchedulingFramework}.
 
-    This thesis varies the three interfaces of the chain one at a time: how telemetry is
+This thesis varies the three interfaces of the chain one at a time: how telemetry is
 consumed by the controller (the telemetry mode); whether the scaling action
 serves the tier the demand presses on (bottleneck-aware scaling action); and
 whether a ready backend is admitted on the backend's notification alone, on
@@ -274,13 +271,12 @@ incidental coupling. Telemetry production and aggregation remain external to
 the controller, so how aggregated telemetry is consumed is an explicit
 boundary, while scaling and admission are exposed as lifecycle hooks.
 
-    The thesis claims that, within the evaluated testbed, the property of each
-interface decides whether new capacity reaches users during a demand shift, and
-that each property can be measured on its own. It does not claim that this
-SDN-based architecture is superior to existing orchestration platforms such as
-Kubernetes or NFV Management and Orchestration (MANO) platforms, nor that its
-mechanisms generalise beyond the tested infrastructure, and it claims no
-aggregate cost along the chain.
+The thesis claims that the property of each interface decides whether and how new
+capacity reaches users during a demand shift, and that each property can be
+measured on its own. It does not claim that the architecture is superior to
+existing orchestration platforms such as Kubernetes or NFV Management and
+Orchestration (MANO) platforms, and it claims no aggregate cost along the
+chain.
 
 \section{Objectives}\label{sec:objectives} %DONE
 The main objective of this thesis is to contribute to more efficient
@@ -335,14 +331,14 @@ and demonstrated in Figure~\ref{fig:design_science_research_methodology}.
     \label{fig:design_science_research_methodology}    
 \end{figure}
 
-    Design science produces and evaluates purposeful artefacts that address certain
+Design science produces and evaluates purposeful artefacts that address certain
 real-world problems, the research contribution corresponds to the knowledge gained
 by designing the artefact and evaluating it against defined objectives.
 In \ac{DSRM} the research is organised into six categories: problem
 identification and motivation, definition of the objectives of a solution,
 design and development, demonstration, evaluation, and communication.
 
-    This dissertation follows a problem-centred approach, in which the problem
+This dissertation follows a problem-centred approach, in which the problem
 motivates the research and is defined as the coordination between the
 functions that orchestrate an edge service, where handovers that are late,
 incomplete, mismatched, or unverified can lower orchestration efficiency
@@ -414,9 +410,6 @@ This dissertation makes the following contributions:
     under their respective controlled workload regimes, identifying which
     effects were robust, conditional, or not established.
 \end{enumerate}
-
-    These contributions hold within the evaluated two-domain testbed and
-workload families.
 
 \section{Dissertation Structure}\label{sec:document_structure} %DONE
 This dissertation is organised into six chapters.
@@ -2510,9 +2503,9 @@ data-access press the two policies that scaled storage relieved the binding
 tier, while compute-only added one unit and left the press in place. The
 bottleneck-aware policy is the only one that spent on both tiers in both
 episodes, and it ended at or above the best single-tier policy on completion
-in both (Table~\ref{tab:rq2_arms}, Figure~\ref{fig:rq2_relief}). Within the
-evaluated envelope, what reached users was decided by the tier a policy
-served, not by the number of units it added.
+in both (Table~\ref{tab:rq2_arms}, Figure~\ref{fig:rq2_relief}). What
+reached users was decided by the tier a policy served, not by the number
+of units it added.
 
 \begin{figure}[htbp]
     \centering
@@ -2810,31 +2803,20 @@ confirmation check and periodic polling sit at a descriptive near-tie
     \label{fig:rq3_premature_damage}
 \end{figure}
 
-% Across the three conditions, the expectations held as earlier admission
-% with the message intact, recovery with the message lost, and, with a
-% premature message, exposure for the modes that admit on it against
-% immunity for the modes that check, with the two marginal no-fault
-% breaches noted above the only shortfall. The confirmation check met the
-% same expectations wherever its runs carry measurements, admitting only
-% once the backend could serve.
-
-% In sum, while the message was intact, the admission interval was bounded by the
-% polling period and passed without user-visible cost. When the message was
-% lost under reduced headroom, backend notification paid a
-% bounded service-quality cost while the modes that check
-% recovered. And when the message arrived early, the modes separated by
-% what their evidence can see. A premature message cost the modes that
-% admit on it while the modes that check priced it at nothing. Readiness-admission
-% coordination is therefore at once a latency choice (about seven seconds
-% of added delay while everything works) and a reliability choice, deciding
-% whether a ready backend's capacity is delayed or lost when the
-% message is lost, and whether a premature message reaches
-% traffic before the backend can serve. Because admission fills the
-% routing pool, the same choice sets what the load distribution can rely
-% on when load has triggered the scaling. A lost message hides ready
-% capacity from the pool. A premature message exposes capacity that cannot
-% yet absorb traffic. The reported effects hold for the evaluated
-% two-domain testbed, its workloads, and its resource limits.
+In sum, while the message was intact, the admission interval was bounded by
+the polling period and passed without user-visible cost. When the message was
+lost under reduced headroom, backend notification paid a bounded
+service-quality cost while the modes that check recovered. And when the message
+arrived early, the modes separated by what their evidence can see. A premature
+message cost the modes that admit on it while the modes that check priced it at
+nothing. Readiness-admission coordination is therefore at once a latency choice
+(about seven seconds of added delay while everything works) and a reliability
+choice, deciding whether a ready backend's capacity is delayed or lost when the
+message does not arrive, and whether a premature message reaches traffic before
+the backend can serve. Because admission fills the routing pool, the same choice
+sets what the load distribution can rely on when load has triggered the
+scaling. A lost message hides ready capacity from the pool. A premature message
+exposes capacity that cannot yet absorb traffic.
 
 
 \section{Discussion: Synthesis Across Interfaces}\label{sec:discussion}
@@ -2897,9 +2879,8 @@ and the cost of delay appeared only when the absorption margin of the existing
 nodes ran out. The action improved user-visible quality only where it removed
 the queue the episode formed. The admission delay cost nothing while the nodes
 held spare capacity, and the lost message consumed that margin under the
-reduced headroom the campaign fixed. On the evaluated testbed, the three
-interfaces decide how a demand shift is weathered, not how the service performs
-once the shift has passed.
+reduced headroom the campaign fixed. The three interfaces decide how a demand
+shift is weathered, not how the service performs once it has passed.
 
 The campaigns also separate failure modes that monitoring and scaling are often
 discussed as one. Across the telemetry modes, missing summaries and late
@@ -2987,11 +2968,9 @@ where no margin is being consumed, and an admission that trusts the
 announcement withholds ready capacity when the announcement is lost and exposes
 unusable capacity when it arrives early. The user is affected only where the
 margin runs out, which is why the interfaces act on the transition rather than
-on the steady state. These findings hold for the evaluated two-domain testbed,
-its workloads and its resource limits, and no aggregate cost along the chain is
-claimed, because the campaigns vary one interface at a time under different
-workloads and their segments are not additive
-(Section~\ref{sec:lit_synthesis}).
+on the steady state. No aggregate cost along the chain is claimed, because the
+campaigns vary one interface at a time under different workloads and their
+segments are not additive (Section~\ref{sec:lit_synthesis}).
 
 The motivations of Section~\ref{sec:context_motivation} close as findings or
 explicit non-claims. The storage tier behaved as a live capacity that must
@@ -3002,7 +2981,7 @@ mode set when a ready backend began serving (RQ1 and RQ3). The crossings
 differed in more than latency: missing evidence, a mismatched tier, and an
 unverified readiness message each produced a distinct failure (RQ1, RQ2, and
 RQ3). The replication bandwidth consumed by a membership change was not
-metered and is not a measured claim.
+metered.
 
 \section{Research Contributions}\label{sec:contributions_revisited}
 The contributions stated in Section~\ref{sec:contributions} are supported as
